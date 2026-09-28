@@ -10,3 +10,10 @@
 修改 SVG 后运行 `bun run icons`，并一同提交生成的 PNG。标题栏直接引用 `tray.svg`，由 Vite 打包。
 
 中文轮廓来自项目已有的得意黑，许可证位于 `src/renderer/src/assets/fonts/SmileySans-OFL.txt`。
+
+## 本目录其他内容
+
+- `installer/`：安装包的脚本和界面插件，见 `installer/README.md`。它只在打安装包时用，不进程序本体（`electron-builder.yml` 的 `files` 已排除）。
+- `installer.nsh`：安装包的两段构建都会包含的片段。真正卸载时删除开机自启项；覆盖安装和自动更新时保留。
+
+本目录下除 `*.svg`、`installer.nsh` 和 `installer/` 以外的文件都会打进程序，程序运行时从这里读取图标。

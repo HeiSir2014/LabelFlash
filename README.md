@@ -1,6 +1,16 @@
 # CDL-云签速印（LabelFlash）
 
-CDL 出品的扫码打标签工具。用扫码枪扫描二维码或条码，软件按识别规则拆出字段，立即按模板生成 60×40mm 标签的预览，并在选中的本机打印机上打印。样衣标签（`编码-颜色-尺码`，例如 `CL5640-TK-图片色-XL`）、纯数字订单号、多行「名称：值」内容开箱即用，其他格式可以自己配规则。
+CDL 出品的扫码打标签工具，支持 Windows 和 macOS。用扫码枪扫描二维码或条码，软件按识别规则拆出字段，立即按模板生成 60×40mm 标签的预览，并在选中的本机打印机上打印。样衣标签（`编码-颜色-尺码`，例如 `CL5640-TK-图片色-XL`）、纯数字订单号、多行「名称：值」内容开箱即用，其他格式可以自己配规则。
+
+## 支持的系统
+
+| | Windows 10/11（x64） | macOS |
+|---|---|---|
+| 扫码、识别规则、预览、模板、打印记录、语音、打印结果通知、密钥 | ✅ | ✅ |
+| 打印到本机打印机 | ✅ | ✅（家用打印机已实测，热敏标签机待验证） |
+| 驱动纸张检测、打开打印机设置 | ✅ | ✅ |
+| 打印机离线 / 缺纸 / 卡纸检测与提醒 | ✅ | 暂不支持（不影响打印） |
+| 安装包与自动更新 | ✅ | 暂无安装包，需从源码运行（见「开发」） |
 
 ## 功能
 
@@ -27,15 +37,28 @@ CDL 出品的扫码打标签工具。用扫码枪扫描二维码或条码，软�
   - 可以回看任意一条记录的预览，也可以重打。
   - 记录按环形方式保留，默认最多 10 万条，超出后自动删除最早的记录。
   - 支持按扫码内容全文搜索。
-- **打印机**：本机打印机再多，也可以搜索后选择。选择会保存下来。软件会检测打印机是否离线、缺纸或卡纸，并检查驱动默认纸张是否为 60×40mm。
-- **无边框窗口**：关闭窗口时最小化到托盘，并支持开机自启。
+- **打印机**：本机打印机再多，也可以搜索后选择。选择会保存下来。软件会检查驱动默认纸张是否为 60×40mm；Windows 上还会检测打印机是否离线、缺纸或卡纸。
+- **窗口**：Windows 上是无边框窗口，按钮由软件自绘；macOS 上保留系统红绿灯。关闭窗口时最小化到托盘（macOS 是菜单栏），并支持开机自启。
 - **语音播报**：每种结果播一句固定的话，共 19 句，用词和状态栏一致，例如「已发送打印」「重复扫码，已拦截」「打印机缺纸」。播报按「故障 > 提醒 > 确认」分级，故障提示不会被随后的确认打断。设置页可以调整音色和语速，并逐句试听。音频缓存在本机，播放无延迟。
-- **打印机异常提醒**：离线、缺纸、卡纸时弹出系统通知；同类问题 30 分钟内不重复，每天最多 2 次。
-- **自动更新**：从 GitHub Releases 后台下载新版本，标题栏提示后重启即可更新；也可以在设置页手动检查。
+- **打印机异常提醒**（Windows）：离线、缺纸、卡纸时弹出系统通知；同类问题 30 分钟内不重复，每天最多 2 次。
+- **自动更新**（Windows）：从 GitHub Releases 后台下载新版本，只下载和本机版本不同的部分（差分下载）；标题栏提示后重启即可更新，也可以在设置页手动检查。
+
+## 安装、更新与卸载（Windows）
+
+macOS 目前没有安装包，按「开发」一节从源码运行（`bun install` 后 `bun run dev`）。macOS 的打包（dmg、签名与公证）和自动更新在路线图上。
+
+- **安装**：从 [GitHub Releases](https://github.com/HeiSir2014/LabelFlash/releases) 下载 `CDL-LabelFlash-Setup-<版本>.exe`，双击运行，点「立即安装」。
+  - 安装包还没有代码签名，第一次运行时 Windows SmartScreen 会拦一下，点「更多信息 → 仍要运行」。
+  - 按当前用户安装，不需要管理员权限，默认装到 `%LOCALAPPDATA%\Programs\CDL-LabelFlash`，也可以点「更改」换位置。
+  - 装完自动启动程序，并默认开机自启（可以在设置里关掉）。
+- **更新**：程序启动 15 秒后检查一次，之后每 4 小时检查一次，发现新版本就在后台下载。
+  - 下载完成后，标题栏出现「新版本 x 已就绪 · 重启更新」，点两次确认，程序重启并装好新版本。
+  - 一直不点也没关系：下次退出程序时会在后台静默安装，下次打开就是新版本。
+- **卸载**：在 Windows「设置 → 应用」里卸载。安装目录、快捷方式和开机自启项都会删掉，`%LOCALAPPDATA%\CDL-LabelFlash` 里的数据保留，重装后接着用。
 
 ## 数据与日志
 
-所有数据都保存在 `%LOCALAPPDATA%\CDL-LabelFlash\`：
+所有数据都保存在数据目录里：Windows 是 `%LOCALAPPDATA%\CDL-LabelFlash\`，macOS 是 `~/Library/Application Support/CDL-LabelFlash/`。
 
 | 路径 | 内容 |
 |---|---|
@@ -43,15 +66,23 @@ CDL 出品的扫码打标签工具。用扫码枪扫描二维码或条码，软�
 | `logs\labelflash-YYYY-MM-DD.log` | 运行日志，每天一个文件（纯文本、UTF-8，时间带时区），保留最近 14 天；同一天超过 5MB 时滚动为 `.1.log`、`.2.log`。遇到问题时，把出问题那天的文件发给维护人员 |
 | `voice-cache\` | 语音播报的 mp3 缓存，可随时删除，下次会重新生成 |
 
+Windows 上另外还有两个目录：
+
+- `%LOCALAPPDATA%\Programs\CDL-LabelFlash\`：程序本身，卸载时删除。
+- `%LOCALAPPDATA%\cdl-labelflash-updater\`：自动更新的缓存，存着本机安装包的副本（差分下载时作为底）和已下载、待安装的新版本。
+
 ## 扫码枪设置
 
-扫码枪需要能输出中文（二维码里有"图片色"之类的中文）。请按扫码枪说明书扫描"中文输出 / Windows Unicode"设置码，并把 Windows 输入法切换到英文状态。
+扫码枪需要能输出中文（二维码里有"图片色"之类的中文）。
+
+- **Windows**：按扫码枪说明书扫描"中文输出 / Windows Unicode"设置码，并把输入法切换到英文状态。
+- **macOS**：Windows 的「Alt + 小键盘」中文输出在 macOS 上不可用。按说明书选 macOS 对应的中文输出方式，并把输入法切到英文（ABC）。
 
 扫码枪的结束符设为回车（默认即是）。二维码里的换行和制表符会以回车、Tab 发出，软件能区分；如果多行内容被拆成了几次扫码，在设置里把「多行扫码等待」调大一点。
 
 ## 开发
 
-需要 [Bun](https://bun.sh) 1.4 或更高版本。
+需要 [Bun](https://bun.sh) 1.4 或更高版本。Windows 和 macOS 都可以开发和运行；`dist:win` 只能在 Windows 上跑。
 
 ```bash
 bun install
@@ -63,11 +94,10 @@ bun run installer:skin  # 只生成安装界面的皮肤（调界面时用），
 bun run dist:win   # 在 Windows 上打安装包，输出到 dist/
 ```
 
-安装包的界面是自绘的圆形窗口（nsNiuniuSkin 插件，来源和许可见 `resources/installer/plugins/NOTICE.md`）：
+开发和测试时，设置环境变量 `CDL_LABELFLASH_USER_DATA` 可以让程序使用单独的数据目录，不动本机真实数据。这个变量只对开发版生效，安装版忽略它。
 
-- 界面的图片和布局由 `scripts/installer/skin-design.ts` 生成，文案也都在那里。
-- 安装脚本是 `resources/installer/`。
-- `dist:win` 分两段调用 electron-builder。不要直接运行 `electron-builder` 出安装包，那样得到的是默认界面。
+- 编码约定、提交前必须通过的检查、各层的规则：见根目录和各目录下的 `CLAUDE.md`。
+- 安装包的构建、运行方式和插件来源：见 `resources/installer/README.md`。
 
 GitHub Actions 在 Windows 上运行：
 
@@ -86,7 +116,9 @@ src/core       业务层（纯 TypeScript，不依赖 Electron）：识别规则
 src/shared     主进程与界面共用：IPC 契约、设置、常量
 src/main       Electron 主进程：app:// 协议、安全加固、SQLite 存储、正则沙箱与 HTTP 查询（scan/）、查找表导入（lookup/）、通知队列与签名（notify/）、密钥加密（secrets/）、打印适配器与二维码排布、打印机状态与异常通知、驱动纸张检测、语音缓存、IPC、窗口、托盘、日志、自动更新
 src/preload    contextBridge
-src/renderer   界面（React，MVVM：view-models + components）
+src/renderer   界面（React，MVVM：lib + view-models + components）
+scripts/       构建脚本：bundle 自包含检查、图标生成、安装包（installer/：皮肤生成与两段构建）
+resources/     应用图标和托盘图标（见 resources/README.md）、安装包资源（installer/）
 e2e/           Playwright 端到端测试
-docs/          设计文档、实施计划与路线图
+docs/          设计文档、实施计划、路线图、Windows 验收记录
 ```

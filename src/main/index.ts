@@ -16,6 +16,7 @@ import { minutesToMs } from '../shared/settings';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
+import { LOGS_DIR_NAME } from './log-files';
 import { setupLogging } from './logging';
 import { resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
@@ -103,7 +104,7 @@ function requireWebContents() {
 }
 
 async function bootstrap(): Promise<void> {
-  const logPath = setupLogging();
+  const logsDir = setupLogging();
   console.info(`[app] ${BRAND.productName} ${app.getVersion()} starting`);
   console.info(`[gpu] rendering mode: ${isSoftwareRendering ? 'software' : 'hardware'}`);
   const onGpuGone = createGpuCrashHandler({
@@ -178,7 +179,7 @@ async function bootstrap(): Promise<void> {
       brandOwner: BRAND.owner,
       version: app.getVersion(),
       dataPath,
-      logPath,
+      logsDir,
     },
     updater,
     voice,
@@ -246,7 +247,7 @@ if (!app.requestSingleInstanceLock()) {
       console.error('[app] startup failed', error);
       dialog.showErrorBox(
         `${BRAND.productName} 无法启动`,
-        `${describeStartupError(error)}\n\n详细日志：${join(app.getPath('userData'), 'logs')}`,
+        `${describeStartupError(error)}\n\n详细日志：${join(app.getPath('userData'), LOGS_DIR_NAME)}`,
       );
       app.quit();
     });

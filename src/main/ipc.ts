@@ -1,4 +1,3 @@
-import { dirname } from 'node:path';
 import { type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, ipcMain, shell } from 'electron';
 import type { PrintService } from '../core/print-service';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
@@ -126,7 +125,7 @@ export function registerIpc(deps: IpcDeps): void {
   });
   handle(IpcChannel.GetAppInfo, () => deps.appInfo);
   handle(IpcChannel.OpenLogFolder, async () => {
-    const error = await shell.openPath(dirname(deps.appInfo.logPath));
+    const error = await shell.openPath(deps.appInfo.logsDir);
     if (error) {
       throw new Error(error);
     }

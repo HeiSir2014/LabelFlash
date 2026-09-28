@@ -55,7 +55,8 @@ export interface AppInfo {
   brandOwner: string;
   version: string;
   dataPath: string;
-  logPath: string;
+  /** 日志目录：每天一个 labelflash-<日期>.log。 */
+  logsDir: string;
 }
 
 export interface LabelFlashApi {

@@ -15,6 +15,7 @@ import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
 import { describePrinterChip } from './lib/printer-chip';
 import { describeScan } from './lib/status-text';
+import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
@@ -25,6 +26,7 @@ import { usePrinters } from './view-models/use-printers';
 import { useScanStation } from './view-models/use-scan-station';
 import { useSettings } from './view-models/use-settings';
 import { useTemplates } from './view-models/use-templates';
+import { useUpdateStatus } from './view-models/use-update-status';
 
 export function App() {
   const { settings, hasLoadError, reload, update, replace } = useSettings();
@@ -32,6 +34,8 @@ export function App() {
   const jobLog = useJobLog();
   const appInfo = useAppInfo();
   const { notices, dismiss } = useNotices();
+  const updates = useUpdateStatus();
+  const updateView = describeUpdate(updates.status);
   const [sideTab, setSideTab] = useState<SideTab>('printers');
 
   const printerName = settings?.selectedPrinter ?? null;
@@ -103,7 +107,11 @@ export function App() {
 
   return (
     <div className="app">
-      <TitleBar printerChip={printerChip} />
+      <TitleBar
+        printerChip={printerChip}
+        readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
+        onInstallUpdate={updates.install}
+      />
       {settings === null ? (
         <div className="loading">
           {hasLoadError ? (
@@ -182,8 +190,10 @@ export function App() {
                   settings={settings}
                   jobTotal={jobLog.total}
                   appInfo={appInfo}
+                  update={updateView}
                   onChange={changeSettings}
                   onOpenLogFolder={openLogFolder}
+                  onCheckForUpdates={updates.check}
                 />
               ),
             }}

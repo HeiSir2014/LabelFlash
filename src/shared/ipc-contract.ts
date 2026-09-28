@@ -3,6 +3,7 @@ import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { JobPage, JobQuery } from './job-history';
 import type { PrinterReadiness } from './printer-readiness';
 import type { AppSettings } from './settings';
+import type { UpdateStatus } from './update-status';
 
 export const IpcChannel = {
   Preview: 'label:preview',
@@ -20,6 +21,10 @@ export const IpcChannel = {
   DeleteTemplate: 'templates:delete',
   GetAppInfo: 'app:info',
   OpenLogFolder: 'app:open-log-folder',
+  GetUpdateStatus: 'update:status',
+  CheckForUpdates: 'update:check',
+  InstallUpdate: 'update:install',
+  UpdateStatusChanged: 'update:status-changed',
   WindowMinimize: 'window:minimize',
   WindowToggleMaximize: 'window:toggle-maximize',
   WindowClose: 'window:close',
@@ -66,6 +71,11 @@ export interface LabelFlashApi {
   deleteTemplate(id: string): Promise<AppSettings>;
   getAppInfo(): Promise<AppInfo>;
   openLogFolder(): Promise<void>;
+  getUpdateStatus(): Promise<UpdateStatus>;
+  checkForUpdates(): Promise<void>;
+  /** 仅在新版本已下载（ready）时有效：重启并安装。 */
+  installUpdate(): Promise<void>;
+  onUpdateStatus(listener: (status: UpdateStatus) => void): () => void;
 }
 
 export interface WindowControlsApi {

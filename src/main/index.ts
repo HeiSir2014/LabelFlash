@@ -10,6 +10,7 @@ import { PrintService } from '../core/print-service';
 import { TemplateCatalog } from '../core/templates/template-catalog';
 import { systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
+import { IpcChannel } from '../shared/ipc-contract';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
 import { minutesToMs } from '../shared/settings';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
@@ -24,6 +25,7 @@ import { SqliteJobStore } from './storage/sqlite-job-store';
 import { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import { SqliteTemplateRepository } from './storage/sqlite-template-repository';
 import { type AppTray, createTray } from './tray';
+import { AppUpdater } from './updater';
 import { createMainWindow } from './window';
 
 const DATABASE_FILE_NAME = 'labelflash.db';
@@ -110,6 +112,12 @@ async function bootstrap(): Promise<void> {
     resolveTemplate: () => resolvePrintTemplate(templates, settings.current),
   });
   service.restore();
+  const updater = new AppUpdater({
+    onStatus: (status) => mainWindow?.webContents.send(IpcChannel.UpdateStatusChanged, status),
+    onBeforeInstall: () => {
+      isQuitting = true;
+    },
+  });
 
   registerIpc({
     service,
@@ -125,6 +133,7 @@ async function bootstrap(): Promise<void> {
       dataPath,
       logPath,
     },
+    updater,
     getWindow: () => mainWindow,
     onSettingsChanged: async (next, previous) => {
       guard.setWindowMs(minutesToMs(next.dedupWindowMinutes));
@@ -155,6 +164,7 @@ async function bootstrap(): Promise<void> {
     closeDatabase();
   });
   tray = createTray(trayIcon, { show: showMainWindow, quit });
+  updater.start();
   app.on('will-quit', () => {
     status.stop();
     tray?.destroy();

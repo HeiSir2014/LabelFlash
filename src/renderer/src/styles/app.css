@@ -64,6 +64,25 @@ input {
   gap: var(--space-2);
 }
 
+/* 新版本已下载：标题栏里的可点击提示（必须排除在拖拽区域之外才能点击） */
+.update-pill {
+  margin-left: var(--space-4);
+  padding: 2px var(--space-3);
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-tape);
+  color: var(--color-ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.update-pill.button--armed {
+  background: var(--color-warning);
+  color: var(--color-paper);
+}
+
 .brand-mark {
   padding: 1px 6px;
   border-radius: 4px;
@@ -1004,6 +1023,11 @@ input {
   font-size: 12px;
   word-break: break-all;
   user-select: text;
+}
+
+.about__actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
 /* 通知 */

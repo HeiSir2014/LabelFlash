@@ -21,6 +21,7 @@ import { renderLabelHtml } from './printing/label-html';
 import type { PrinterStatusMonitor } from './printing/printer-status';
 import type { SqliteJobStore } from './storage/sqlite-job-store';
 import type { SqliteSettingsStore } from './storage/sqlite-settings-store';
+import type { AppUpdater } from './updater';
 
 const DRAFT_TEMPLATE_ID = `${CUSTOM_TEMPLATE_PREFIX}draft`;
 
@@ -32,6 +33,7 @@ export interface IpcDeps {
   templates: TemplateCatalog;
   status: PrinterStatusMonitor;
   appInfo: AppInfo;
+  updater: AppUpdater;
   getWindow: () => BrowserWindow | null;
   onSettingsChanged: (next: AppSettings, previous: AppSettings) => Promise<void>;
 }
@@ -104,6 +106,9 @@ export function registerIpc(deps: IpcDeps): void {
       throw new Error(error);
     }
   });
+  handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
+  handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
+  handle(IpcChannel.InstallUpdate, () => deps.updater.install());
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());
   on(IpcChannel.WindowToggleMaximize, () => {

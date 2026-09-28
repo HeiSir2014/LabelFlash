@@ -8,6 +8,7 @@ import {
   MAX_NOTE_PRESETS,
   sanitizeNoteText,
 } from '../../../shared/settings';
+import type { UpdateView } from '../lib/update-text';
 import { ConfirmButton } from './ConfirmButton';
 
 const NUMBER_FORMAT = new Intl.NumberFormat('zh-CN');
@@ -16,11 +17,21 @@ interface SettingsFormProps {
   settings: AppSettings;
   jobTotal: number;
   appInfo: AppInfo | null;
+  update: UpdateView;
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
   onOpenLogFolder: () => void;
+  onCheckForUpdates: () => void;
 }
 
-export function SettingsForm({ settings, jobTotal, appInfo, onChange, onOpenLogFolder }: SettingsFormProps) {
+export function SettingsForm({
+  settings,
+  jobTotal,
+  appInfo,
+  update,
+  onChange,
+  onOpenLogFolder,
+  onCheckForUpdates,
+}: SettingsFormProps) {
   const [pendingHistoryLimit, setPendingHistoryLimit] = useState<number | null>(null);
   const [newNote, setNewNote] = useState('');
   const newNoteText = sanitizeNoteText(newNote);
@@ -157,9 +168,22 @@ export function SettingsForm({ settings, jobTotal, appInfo, onChange, onOpenLogF
         ) : (
           <p className="setting__hint">正在读取版本信息…</p>
         )}
-        <button type="button" className="button button--small button--quiet" onClick={onOpenLogFolder}>
-          打开日志目录
-        </button>
+        <p className="setting__hint" role="status">
+          {update.text}
+        </p>
+        <div className="about__actions">
+          <button
+            type="button"
+            className="button button--small"
+            onClick={onCheckForUpdates}
+            disabled={!update.canCheck}
+          >
+            检查更新
+          </button>
+          <button type="button" className="button button--small button--quiet" onClick={onOpenLogFolder}>
+            打开日志目录
+          </button>
+        </div>
       </section>
     </div>
   );

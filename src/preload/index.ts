@@ -1,6 +1,15 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from 'electron';
 import { IpcChannel, type LabelFlashApi, type WindowControlsApi } from '../shared/ipc-contract';
 
+/** 订阅主进程推送：只把数据转给回调，不把 IpcRendererEvent（含 sender）暴露给页面。 */
+function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
+  const handler = (_event: IpcRendererEvent, payload: T) => listener(payload);
+  ipcRenderer.on(channel, handler);
+  return () => {
+    ipcRenderer.removeListener(channel, handler);
+  };
+}
+
 const api: LabelFlashApi = {
   preview: (raw) => ipcRenderer.invoke(IpcChannel.Preview, raw),
   previewTemplate: (raw, template) => ipcRenderer.invoke(IpcChannel.PreviewTemplate, raw, template),
@@ -17,19 +26,17 @@ const api: LabelFlashApi = {
   deleteTemplate: (id) => ipcRenderer.invoke(IpcChannel.DeleteTemplate, id),
   getAppInfo: () => ipcRenderer.invoke(IpcChannel.GetAppInfo),
   openLogFolder: () => ipcRenderer.invoke(IpcChannel.OpenLogFolder),
+  getUpdateStatus: () => ipcRenderer.invoke(IpcChannel.GetUpdateStatus),
+  checkForUpdates: () => ipcRenderer.invoke(IpcChannel.CheckForUpdates),
+  installUpdate: () => ipcRenderer.invoke(IpcChannel.InstallUpdate),
+  onUpdateStatus: (listener) => subscribe(IpcChannel.UpdateStatusChanged, listener),
 };
 
 const windowControls: WindowControlsApi = {
   minimize: () => ipcRenderer.send(IpcChannel.WindowMinimize),
   toggleMaximize: () => ipcRenderer.send(IpcChannel.WindowToggleMaximize),
   close: () => ipcRenderer.send(IpcChannel.WindowClose),
-  onMaximizedChange: (listener) => {
-    const handler = (_event: IpcRendererEvent, isMaximized: boolean) => listener(isMaximized);
-    ipcRenderer.on(IpcChannel.WindowMaximizedChanged, handler);
-    return () => {
-      ipcRenderer.removeListener(IpcChannel.WindowMaximizedChanged, handler);
-    };
-  },
+  onMaximizedChange: (listener) => subscribe(IpcChannel.WindowMaximizedChanged, listener),
 };
 
 contextBridge.exposeInMainWorld('api', api);

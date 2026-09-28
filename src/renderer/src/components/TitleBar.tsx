@@ -1,12 +1,16 @@
 import { BRAND } from '../../../shared/brand';
 import type { PrinterChipView } from '../lib/printer-chip';
 import { useWindowControls } from '../view-models/use-window-controls';
+import { ConfirmButton } from './ConfirmButton';
 
 interface TitleBarProps {
   printerChip: PrinterChipView;
+  /** 新版本已下载时显示的版本号；null 表示没有待安装的更新。 */
+  readyUpdateVersion: string | null;
+  onInstallUpdate: () => void;
 }
 
-export function TitleBar({ printerChip }: TitleBarProps) {
+export function TitleBar({ printerChip, readyUpdateVersion, onInstallUpdate }: TitleBarProps) {
   const { isMaximized, minimize, toggleMaximize, close } = useWindowControls();
 
   return (
@@ -15,6 +19,14 @@ export function TitleBar({ printerChip }: TitleBarProps) {
         <span className="brand-mark">{BRAND.mark}</span>
         <span className="title-bar__name">{BRAND.productName.replace(`${BRAND.mark}-`, '')}</span>
       </div>
+      {readyUpdateVersion && (
+        <ConfirmButton
+          className="update-pill"
+          label={`新版本 ${readyUpdateVersion} 已就绪 · 重启更新`}
+          confirmLabel="再点一次：立即重启并更新"
+          onConfirm={onInstallUpdate}
+        />
+      )}
       <div className={`printer-chip printer-chip--${printerChip.tone}`} title="当前打印机">
         <span className="printer-chip__dot" aria-hidden="true" />
         <span className="printer-chip__name">{printerChip.text}</span>

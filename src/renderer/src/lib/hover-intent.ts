@@ -6,6 +6,12 @@ export interface IntentTimers {
   clear(handle: number): void;
 }
 
+/** 界面里用的真实计时器；测试注入假时钟。 */
+export const WINDOW_TIMERS: IntentTimers = {
+  set: (callback, ms) => window.setTimeout(callback, ms),
+  clear: (handle) => window.clearTimeout(handle),
+};
+
 /**
  * 悬停意图：进入某一项后停留满 delayMs 才上报；在项之间移动时保留当前上报的项，
  * 直到新的一项停留满时间；离开整个列表时立即清除（上报 null）。

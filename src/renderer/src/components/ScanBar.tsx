@@ -1,19 +1,6 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 import type { NoteOption } from '../lib/note-options';
-
-const REFOCUS_DELAY_MS = 300;
-/** 焦点停在搜索框等文本框里、且这么久没有输入时，自动回到扫码框，避免扫码被别的输入框吃掉。 */
-const TEXT_FIELD_IDLE_RETURN_MS = 8_000;
-/** 在这些区域（模板编辑、设置）里的文本框可以长时间保留焦点。 */
-const KEEP_FOCUS_SELECTOR = '[data-keep-focus]';
-const TEXT_ENTRY_TYPES: ReadonlySet<string> = new Set(['text', 'search', 'number']);
-
-function isTextEntry(element: Element | null): boolean {
-  if (element instanceof HTMLInputElement) {
-    return TEXT_ENTRY_TYPES.has(element.type);
-  }
-  return element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement;
-}
+import { useScanFocus } from '../view-models/use-scan-focus';
 
 export interface NoteControl {
   options: NoteOption[];
@@ -29,50 +16,8 @@ interface ScanBarProps {
 }
 
 export function ScanBar({ autoPrint, note, onAutoPrintChange, onScan }: ScanBarProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useScanFocus();
   const [value, setValue] = useState('');
-
-  useEffect(() => {
-    const focusScanInput = () => inputRef.current?.focus();
-    let idleTimer: number | undefined;
-
-    const scheduleIdleReturn = () => {
-      window.clearTimeout(idleTimer);
-      const active = document.activeElement;
-      if (active === inputRef.current || !isTextEntry(active) || active?.closest(KEEP_FOCUS_SELECTOR)) {
-        return;
-      }
-      idleTimer = window.setTimeout(() => {
-        if (document.activeElement === active) {
-          focusScanInput();
-        }
-      }, TEXT_FIELD_IDLE_RETURN_MS);
-    };
-
-    // 焦点落到按钮、开关、空白处时拉回扫码框：否则扫码枪的回车会「点击」刚才的按钮。
-    const onFocusOut = () => {
-      window.setTimeout(() => {
-        const active = document.activeElement;
-        if (active === inputRef.current) {
-          return;
-        }
-        if (isTextEntry(active)) {
-          scheduleIdleReturn();
-          return;
-        }
-        focusScanInput();
-      }, REFOCUS_DELAY_MS);
-    };
-
-    focusScanInput();
-    document.addEventListener('focusout', onFocusOut);
-    document.addEventListener('keydown', scheduleIdleReturn, true);
-    return () => {
-      window.clearTimeout(idleTimer);
-      document.removeEventListener('focusout', onFocusOut);
-      document.removeEventListener('keydown', scheduleIdleReturn, true);
-    };
-  }, []);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) {
@@ -97,6 +42,8 @@ export function ScanBar({ autoPrint, note, onAutoPrintChange, onScan }: ScanBarP
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={handleKeyDown}
+          // 编码里有「-」，默认双击只选中一段；扫码框里的内容是一个整体，双击全选。
+          onDoubleClick={(event) => event.currentTarget.select()}
           placeholder="用扫码枪扫标签二维码，或手动输入后回车"
           autoComplete="off"
           spellCheck={false}

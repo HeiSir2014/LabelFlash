@@ -87,11 +87,17 @@ test('previews a template after the pointer rests on it, without switching to it
   await expect(badge).toHaveText('示例 · 标准（二维码在左）');
 
   const rightRow = page.locator('.template-row', { hasText: '二维码在右' });
-  await rightRow.locator('.template-row__name').hover();
+  const name = rightRow.locator('.template-row__name');
+  await name.hover();
   // 停留不到 1 秒不切换，满 1 秒后才预览。
   await page.waitForTimeout(500);
   await expect(badge).toHaveText('示例 · 标准（二维码在左）');
-  await expect(badge).toHaveText('预览 · 二维码在右 · 点「使用」后才会用于打印', { timeout: 2_000 });
+  // 在有人使用的电脑上，系统会按真实光标位置补发「离开窗口」，打断计时。
+  // 每一轮重新悬停（像手在行上轻微晃动），再等满 1 秒以上：没被打断时第一轮就通过。
+  await expect(async () => {
+    await name.hover({ position: { x: 2, y: 2 } });
+    await expect(badge).toHaveText('预览 · 二维码在右 · 点「使用」后才会用于打印', { timeout: 1_500 });
+  }).toPass({ timeout: 6_000 });
   await expect(rightRow).toContainText('预览中');
   await expect(page.frameLocator('.label-frame').locator('body')).toHaveClass(/layout-qr-right/);
   await expect(page.locator('.template-row', { hasText: '使用中' })).toContainText('标准（二维码在左）');
@@ -100,6 +106,30 @@ test('previews a template after the pointer rests on it, without switching to it
   await page.locator('.scan-bar__input').hover();
   await expect(badge).toHaveText('示例 · 标准（二维码在左）');
   await expect(rightRow).not.toContainText('预览中');
+  await app.close();
+});
+
+test('keeps the scan box ready without touching its selection', async () => {
+  const { app, page } = await launch();
+  const input = page.locator('.scan-bar__input');
+  const selection = () => input.evaluate((element: HTMLInputElement) => [element.selectionStart, element.selectionEnd]);
+
+  // 焦点在按钮上时扫码枪开始「打字」：第一个字符就切到扫码框，一个都不丢。
+  await page.getByRole('tab', { name: '打印记录' }).focus();
+  await page.keyboard.type('ABC-RED-XL');
+  await expect(input).toHaveValue('ABC-RED-XL');
+
+  // 点软件里的空白处：焦点回到扫码框，但不全选、不改动内容。
+  await page.locator('.preview-stage').click({ position: { x: 5, y: 5 } });
+  await page.waitForTimeout(400);
+  await expect(input).toBeFocused();
+  const [start, end] = await selection();
+  expect(start).toBe(end);
+  await expect(input).toHaveValue('ABC-RED-XL');
+
+  // 只有在扫码框里双击才全选：编码里有「-」，默认双击只会选中其中一截。
+  await input.dblclick();
+  expect(await selection()).toEqual([0, 'ABC-RED-XL'.length]);
   await app.close();
 });
 

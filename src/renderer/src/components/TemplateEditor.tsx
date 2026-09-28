@@ -65,7 +65,7 @@ export function TemplateEditor({ draft, isDirty, onChange, onSave, onCancel }: T
   const setNote = (patch: Partial<NoteConfig>) => onChange({ ...draft, note: { ...draft.note, ...patch } });
 
   return (
-    <div className="template-editor" data-keep-focus>
+    <div className="template-editor">
       <div className="template-editor__scroll">
         <section className="form-section">
           <h3 className="form-section__title">基本</h3>

@@ -1,10 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { HOVER_PREVIEW_DELAY_MS, HoverIntent, type IntentTimers } from '../lib/hover-intent';
-
-const WINDOW_TIMERS: IntentTimers = {
-  set: (callback, ms) => window.setTimeout(callback, ms),
-  clear: (handle) => window.clearTimeout(handle),
-};
+import { HOVER_PREVIEW_DELAY_MS, HoverIntent, WINDOW_TIMERS } from '../lib/hover-intent';
 
 /**
  * 列表项的悬停预览：返回 enter(id) / leave()。组件卸载（切走标签页、进入编辑）时自动清除预览。

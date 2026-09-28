@@ -60,7 +60,7 @@ export function SettingsForm({
   };
 
   return (
-    <div className="settings" data-keep-focus>
+    <div className="settings">
       <NumberSetting
         label="防重复打印"
         unit="秒"

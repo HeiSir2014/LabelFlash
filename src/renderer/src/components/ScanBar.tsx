@@ -96,37 +96,40 @@ export function ScanBar({ autoPrint, lineGapMs, note, onAutoPrintChange, onScan 
           spellCheck={false}
         />
       </label>
-      <label className="note-picker">
-        <span className="note-picker__label">备注</span>
-        <select
-          className="note-picker__select"
-          value={note.selected}
-          onChange={(event) => {
-            note.onSelect(event.target.value);
-            // 选完立刻把焦点还给扫码框，避免下一次扫码的回车落在下拉框上。
-            inputRef.current?.focus();
-          }}
-        >
-          {note.options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="switch">
-        <input
-          type="checkbox"
-          role="switch"
-          aria-checked={autoPrint}
-          checked={autoPrint}
-          onChange={(event) => onAutoPrintChange(event.target.checked)}
-        />
-        <span className="switch__track" aria-hidden="true">
-          <span className="switch__thumb" />
-        </span>
-        <span className="switch__text">{autoPrint ? '自动打印' : '手动打印'}</span>
-      </label>
+      {/* 窗口窄时这一组整体换到第二行，扫码框不被挤窄。 */}
+      <div className="scan-bar__options">
+        <label className="note-picker">
+          <span className="note-picker__label">备注</span>
+          <select
+            className="note-picker__select"
+            value={note.selected}
+            onChange={(event) => {
+              note.onSelect(event.target.value);
+              // 选完立刻把焦点还给扫码框，避免下一次扫码的回车落在下拉框上。
+              inputRef.current?.focus();
+            }}
+          >
+            {note.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="switch">
+          <input
+            type="checkbox"
+            role="switch"
+            aria-checked={autoPrint}
+            checked={autoPrint}
+            onChange={(event) => onAutoPrintChange(event.target.checked)}
+          />
+          <span className="switch__track" aria-hidden="true">
+            <span className="switch__thumb" />
+          </span>
+          <span className="switch__text">{autoPrint ? '自动打印' : '手动打印'}</span>
+        </label>
+      </div>
     </section>
   );
 }

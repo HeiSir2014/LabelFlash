@@ -9,8 +9,11 @@ const NO_PREVIEW: LabelPreview = {
   result: { status: 'invalid', reason: 'INVALID_CONTENT' },
   html: null,
   templateName: null,
+  isTemplateBound: false,
   qrOmitted: false,
 };
+/** 识别超过这么久（通常是查找表或接口查询）才显示「正在查询」，快的扫码不闪一下。 */
+const QUERYING_DELAY_MS = 200;
 
 export interface ScanState extends ScanSnapshot {
   /** 递增序号：旧扫描的异步结果不能覆盖新扫描的界面。 */
@@ -42,6 +45,7 @@ function printMode(source: RendererPrintSource, force: boolean): PrintMode {
 export function useScanStation({ printerName, autoPrint, onJobRecorded, announce }: StationOptions) {
   const latestSeq = useRef(0);
   const [scan, setScan] = useState<ScanState | null>(null);
+  const [queryingRaw, setQueryingRaw] = useState<string | null>(null);
 
   const patchIfCurrent = useCallback((seq: number, patch: Partial<ScanState>) => {
     setScan((current) => (current && current.seq === seq ? { ...current, ...patch } : current));
@@ -77,15 +81,24 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded, announce
       const seq = latestSeq.current;
       let preview = NO_PREVIEW;
       let hasIpcError = false;
+      // 查询慢时先说「正在查询」，上一张的预览留着，不清空成白板。
+      const queryingTimer = window.setTimeout(() => {
+        if (seq === latestSeq.current) {
+          setQueryingRaw(raw);
+        }
+      }, QUERYING_DELAY_MS);
       try {
         preview = await window.api.preview(raw);
       } catch (error) {
         reportError('生成预览', error);
         hasIpcError = true;
+      } finally {
+        window.clearTimeout(queryingTimer);
       }
       const isValid = !hasIpcError && preview.result.status === 'ok';
       const willPrint = mode.printNow && isValid && printerName !== null;
       if (seq === latestSeq.current) {
+        setQueryingRaw(null);
         setScan({ seq, raw, preview, source: mode.source, print: null, isPrinting: willPrint, hasIpcError });
       }
       if (!isValid) {
@@ -139,5 +152,5 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded, announce
     }
   }, [scan, patchIfCurrent]);
 
-  return { scan, scanCode, review, reprint, printCurrent, refreshPreview };
+  return { scan, queryingRaw, scanCode, review, reprint, printCurrent, refreshPreview };
 }

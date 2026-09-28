@@ -42,7 +42,8 @@ export function JobLog({
         <input
           type="search"
           className="text-field"
-          placeholder="按编码、颜色、尺码搜索全部记录"
+          aria-label="搜索打印记录"
+          placeholder="按扫码内容搜索"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
         />

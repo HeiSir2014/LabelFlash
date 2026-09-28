@@ -48,23 +48,26 @@ test('loads the UI over app:// and previews a scanned label', async () => {
   await expect(page.locator('.title-bar__name')).toHaveText('CDL-云签速印');
   await expect(page.locator('.title-bar__version')).toHaveText(`v${version}`);
 
+  // 没扫码时用示例内容展示当前模板。
+  const usage = page.locator('.preview-toolbar__usage');
+  await expect(usage).toHaveText('示例内容 · 模板：通用（二维码在左）');
+
   // 横杠三段：默认绑定样衣标准模板，只显示编码 / 颜色 / 尺码。
   await scan(page, 'CL5640-TK-图片色-XXL');
   await expect(page.locator('.status-strip__title')).toHaveText('还没选打印机');
-  const badge = page.locator('.label-badge');
-  await expect(badge).toHaveText('横杠三段（编码-颜色-尺码） · 样衣标准（二维码在左）');
+  await expect(usage).toHaveText('规则：横杠三段（编码-颜色-尺码） · 模板：样衣标准（二维码在左）（规则指定）');
   const values = page.frameLocator('.label-frame').locator('.value');
   await expect(values).toHaveText(['CL5640-TK', '图片色', 'XXL']);
 
   // 纯数字订单号：用当前模板（通用），字段区列出「订单号」。
   await scan(page, '202609280001');
-  await expect(badge).toHaveText('纯数字订单号 · 通用（二维码在左）');
+  await expect(usage).toHaveText('规则：纯数字订单号 · 模板：通用（二维码在左）');
   await expect(values).toHaveText(['202609280001']);
   await expect(page.frameLocator('.label-frame').locator('.prefix')).toHaveText(['订单号：']);
 
   // 任意内容原样打印。
   await scan(page, 'hello');
-  await expect(badge).toHaveText('原样打印 · 通用（二维码在左）');
+  await expect(usage).toHaveText('规则：原样打印 · 模板：通用（二维码在左）');
   await expect(values).toHaveText(['hello']);
 
   // 含不可见字符的内容无法识别。
@@ -82,7 +85,7 @@ test('takes a burst of lines with Enters in between as one multi-line scan', asy
     await page.keyboard.type(line);
     await page.keyboard.press('Enter');
   }
-  await expect(page.locator('.label-badge')).toHaveText('多行键值 · 通用（二维码在左）');
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：多行键值 · 模板：通用（二维码在左）');
   await expect(page.frameLocator('.label-frame').locator('.value')).toHaveText(['A001', 'CL5640', 'XL']);
   await expect(input).toHaveValue('');
   await app.close();
@@ -105,7 +108,18 @@ test('tries content against the rules and prints with the template bound to a ru
 
   await page.getByLabel('「纯数字订单号」用的模板').selectOption({ label: '样衣标准（二维码在左）' });
   await scan(page, '202609280001');
-  await expect(page.locator('.label-badge')).toHaveText('纯数字订单号 · 样衣标准（二维码在左）');
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText(
+    '规则：纯数字订单号 · 模板：样衣标准（二维码在左）（规则指定）',
+  );
+  await app.close();
+});
+
+test('switches the current template from the preview toolbar', async () => {
+  const { app, page } = await launch();
+  await page.getByRole('combobox', { name: '当前模板' }).selectOption({ label: '通用（二维码在右）' });
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText('示例内容 · 模板：通用（二维码在右）');
+  await expect(page.frameLocator('.label-frame').locator('body')).toHaveClass(/layout-qr-right/);
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
   await app.close();
 });
 
@@ -140,15 +154,15 @@ test('keeps a saved custom template and the note selection after a restart', asy
 test('previews a template after the pointer rests on it, without switching to it', async () => {
   const { app, page } = await launch();
   await page.getByRole('tab', { name: '模板' }).click();
-  const badge = page.locator('.label-badge');
-  await expect(badge).toHaveText('示例 · 通用（二维码在左）');
+  const badge = page.locator('.preview-toolbar__usage');
+  await expect(badge).toHaveText('示例内容 · 模板：通用（二维码在左）');
 
   const rightRow = page.locator('.template-row', { hasText: '通用（二维码在右）' });
   const name = rightRow.locator('.template-row__name');
   await name.hover();
   // 停留不到 1 秒不切换，满 1 秒后才预览。
   await page.waitForTimeout(500);
-  await expect(badge).toHaveText('示例 · 通用（二维码在左）');
+  await expect(badge).toHaveText('示例内容 · 模板：通用（二维码在左）');
   // 在有人使用的电脑上，系统会按真实光标位置补发「离开窗口」，打断计时。
   // 每一轮重新悬停（像手在行上轻微晃动），再等满 1 秒以上：没被打断时第一轮就通过。
   await expect(async () => {
@@ -161,7 +175,7 @@ test('previews a template after the pointer rests on it, without switching to it
 
   // 离开列表立即恢复成使用中的模板。
   await page.locator('.scan-bar__input').hover();
-  await expect(badge).toHaveText('示例 · 通用（二维码在左）');
+  await expect(badge).toHaveText('示例内容 · 模板：通用（二维码在左）');
   await expect(rightRow).not.toContainText('预览中');
   await app.close();
 });

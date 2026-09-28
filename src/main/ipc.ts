@@ -33,7 +33,7 @@ import {
 } from './ipc-validators';
 import type { LookupTables } from './lookup/lookup-tables';
 import type { WebhookOutbox } from './notify/webhook-outbox';
-import { resolvePrintTemplate } from './print-template';
+import { boundTemplate, resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
 import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { renderLabelHtml } from './printing/label-html';
@@ -107,8 +107,9 @@ export function registerIpc(deps: IpcDeps): void {
     }
     return printerName;
   };
+  const scanOf = (result: PreviewResult) => (result.status === 'ok' ? result.scan : null);
   const templateFor = (result: PreviewResult) =>
-    resolvePrintTemplate(deps.templates, deps.settings.current, result.status === 'ok' ? result.scan : null);
+    resolvePrintTemplate(deps.templates, deps.settings.current, scanOf(result));
   const updateSettings = async (patch: Partial<AppSettings>): Promise<AppSettings> => {
     const previous = deps.settings.current;
     const next = deps.settings.update(patch);
@@ -118,12 +119,13 @@ export function registerIpc(deps: IpcDeps): void {
 
   handle(IpcChannel.Preview, async (raw) => {
     const result = await deps.service.preview(requireRaw(raw));
-    return renderPreview(result, templateFor(result));
+    const isBound = boundTemplate(deps.templates, deps.settings.current, scanOf(result)) !== null;
+    return renderPreview(result, templateFor(result), isBound);
   });
   handle(IpcChannel.PreviewTemplate, async (raw, template) => {
     const result = await deps.service.preview(requireRaw(raw));
     const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, templateFor(result));
-    return renderPreview(result, draft);
+    return renderPreview(result, draft, false);
   });
   handle(IpcChannel.Print, (raw, printerName, options) =>
     deps.service.submit({
@@ -224,10 +226,10 @@ export function registerIpc(deps: IpcDeps): void {
   on(IpcChannel.WindowClose, () => deps.getWindow()?.close());
 }
 
-function renderPreview(result: PreviewResult, template: LabelTemplate): LabelPreview {
+function renderPreview(result: PreviewResult, template: LabelTemplate, isTemplateBound: boolean): LabelPreview {
   if (result.status !== 'ok') {
-    return { result, html: null, templateName: null, qrOmitted: false };
+    return { result, html: null, templateName: null, isTemplateBound: false, qrOmitted: false };
   }
   const { html, qrOmitted } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() });
-  return { result, html, templateName: template.name, qrOmitted };
+  return { result, html, templateName: template.name, isTemplateBound, qrOmitted };
 }

@@ -12,9 +12,11 @@ import { SettingsForm } from './components/SettingsForm';
 import { SidePanel, type SideTab } from './components/SidePanel';
 import { TemplatePanel } from './components/TemplatePanel';
 import { TitleBar } from './components/TitleBar';
+import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
 import { describePaperCheck } from './lib/paper-text';
+import { describePreviewUsage, type PreviewUsage } from './lib/preview-usage';
 import { describePrinterChip } from './lib/printer-chip';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
@@ -88,18 +90,18 @@ export function App() {
   const previewTemplate = templates.draft ?? hoverTemplate ?? (station.scan ? null : effectiveTemplate);
   const previewRaw = station.scan?.preview.result.status === 'ok' ? station.scan.raw : SAMPLE_LABEL_RAW;
   const overridePreview = useTemplatePreview(previewRaw, previewTemplate);
-  const overrideOf = (badge: string): PreviewOverride => ({
-    html: overridePreview?.html ?? null,
-    qrOmitted: overridePreview?.qrOmitted ?? false,
-    badge,
-  });
-  const override: PreviewOverride | null = templates.draft
-    ? overrideOf('模板编辑中 · 未保存不会用于打印')
+  const override: PreviewOverride | null = previewTemplate
+    ? {
+        html: overridePreview?.html ?? null,
+        qrOmitted: overridePreview?.qrOmitted ?? false,
+        feedKey: previewTemplate.id,
+      }
+    : null;
+  const previewUsage: PreviewUsage | null = templates.draft
+    ? { source: '模板编辑中', template: '未保存不会用于打印' }
     : hoverTemplate
-      ? overrideOf(`预览 · ${hoverTemplate.name} · 点「使用」后才会用于打印`)
-      : previewTemplate && templates.active
-        ? overrideOf(`示例 · ${templates.active.name}`)
-        : null;
+      ? { source: `预览 · ${hoverTemplate.name}`, template: '点「使用」后才会用于打印' }
+      : describePreviewUsage(station.scan?.preview ?? null, templates.active?.name ?? null);
 
   const noteOptions = buildNoteOptions(settings?.notePresets ?? [], noteOverride);
   const selectNote = async (value: string) => {
@@ -113,7 +115,12 @@ export function App() {
     }
   };
 
-  const view = describeScan(station.scan, { autoPrint, hasPrinter: printerName !== null, now: Date.now() });
+  const view = describeScan(station.scan, {
+    autoPrint,
+    hasPrinter: printerName !== null,
+    now: Date.now(),
+    queryingRaw: station.queryingRaw,
+  });
 
   useHotkey('F2', () => {
     if (view.actions.print) {
@@ -177,6 +184,14 @@ export function App() {
               onScan={station.scanCode}
             />
             <PreviewStage
+              toolbar={
+                <PreviewToolbar
+                  templates={templates.templates}
+                  activeTemplateId={templates.active?.id ?? null}
+                  usage={previewUsage}
+                  onActivate={(id) => void templates.activate(id)}
+                />
+              }
               scan={station.scan}
               view={view}
               override={override}

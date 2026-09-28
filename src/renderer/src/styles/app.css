@@ -258,16 +258,20 @@ input {
 
 /* ── 扫码条 ── */
 .scan-bar {
+  /* 扫码框（输入区）至少这么宽；放不下时备注和开关整体换到第二行。 */
+  --scan-input-min: 240px;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
 }
 
 .scan-bar__field {
   display: flex;
-  flex: 1;
+  /* 基准宽度 = 输入区最小宽度 + 「扫码」标签（两个 18px 字）+ 间距 + 左右内边距 + 边框。 */
+  flex: 1 1 calc(var(--scan-input-min) + 36px + var(--space-3) + 2 * var(--space-4) + 4px);
   align-items: center;
   gap: var(--space-3);
-  /* 允许扫码框比输入框的默认宽度更窄：否则最小窗口下备注和开关会被挤到右侧面板上。 */
+  /* 不让输入框的默认宽度撑大这一格：宽度只由上面的基准宽度和剩余空间决定。 */
   min-width: 0;
   height: 64px;
   padding: 0 var(--space-4);
@@ -284,12 +288,22 @@ input {
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: var(--font-display-weight);
+  white-space: nowrap;
 }
 
+.scan-bar__options {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/*
+ * textarea 不像 input 那样把单行文字垂直居中：行高等于框高，文字和占位文字都落在框的中线上，
+ * 再由外层 flex 居中，与「扫码」标签中线对齐（Windows 150% 缩放下曾偏差约 8px）。
+ */
 .scan-bar__input {
   flex: 1;
   min-width: 0;
-  height: 1.4em;
+  height: 32px;
   padding: 0;
   border: 0;
   outline: none;
@@ -298,7 +312,7 @@ input {
   background: transparent;
   font-family: var(--font-data);
   font-size: 22px;
-  line-height: 1.4;
+  line-height: 32px;
   white-space: pre;
   user-select: text;
 }
@@ -307,6 +321,7 @@ input {
   color: var(--color-ink-soft);
   font-family: var(--font-body);
   font-size: 15px;
+  line-height: 32px;
 }
 
 /* ── 开关 ── */
@@ -406,7 +421,76 @@ input {
   background: var(--color-paper);
 }
 
-.preview-stage__bench {
+.preview-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-4);
+  height: 44px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-paper);
+}
+
+.preview-toolbar__template {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.preview-toolbar__label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 宽度随最长的模板名，最宽 220px：窄窗口下把地方留给右侧说明。 */
+.preview-toolbar__select {
+  max-width: 220px;
+  height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.preview-toolbar__usage {
+  display: flex;
+  flex: 1;
+  justify-content: flex-end;
+  min-width: 0;
+  margin: 0;
+  color: var(--color-ink-soft);
+  white-space: pre;
+}
+
+/* 放不下时先省略内容来源；模板名不收缩，只在超过「整行减去来源的最小宽度」时才省略。 */
+.preview-toolbar__source,
+.preview-toolbar__used-template {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-toolbar__source {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.preview-toolbar__separator {
+  flex-shrink: 0;
+}
+
+.preview-toolbar__used-template {
+  --source-min: 5em;
+  flex-shrink: 0;
+  max-width: calc(100% - var(--source-min));
+  color: var(--color-ink);
+}
+
+/* 软尺框住实物比例的标签：工作台和配置中心共用 */
+.label-preview {
   --preview-scale: 2;
   --mm: calc(3.7795px * var(--preview-scale));
   --ruler-depth: calc(4 * var(--mm));

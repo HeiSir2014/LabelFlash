@@ -17,16 +17,25 @@ export function activeRules(rules: RuleCatalog, settings: AppSettings): ScanRule
   return orderedEnabledRules(merged, all);
 }
 
+/** 命中的规则指定的模板；没有指定或指定的模板已被删除时为 null。 */
+export function boundTemplate(
+  templates: TemplateCatalog,
+  settings: AppSettings,
+  scan: ScanResult | null,
+): LabelTemplate | null {
+  const boundId = scan ? templateIdFor(settings.ruleSettings, scan.ruleId) : null;
+  return boundId ? templates.get(boundId) : null;
+}
+
 /**
- * 实际用于打印和预览的模板：命中的规则绑定了模板就用它（绑定的模板已被删除时退回当前模板），
- * 否则用当前模板；再叠加主界面「备注」下拉框的选择。
+ * 实际用于打印和预览的模板：命中的规则指定了模板就用它，否则用当前模板；
+ * 再叠加主界面「备注」下拉框的选择。
  */
 export function resolvePrintTemplate(
   templates: TemplateCatalog,
   settings: AppSettings,
   scan: ScanResult | null,
 ): LabelTemplate {
-  const boundId = scan ? templateIdFor(settings.ruleSettings, scan.ruleId) : null;
-  const bound = boundId ? templates.get(boundId) : null;
+  const bound = boundTemplate(templates, settings, scan);
   return applyNoteOverride(bound ?? templates.resolve(settings.activeTemplateId), settings.noteOverride);
 }

@@ -6,7 +6,7 @@ import { GENERIC_TEMPLATE, STANDARD_TEMPLATE } from '../core/templates/builtin-t
 import { TemplateCatalog } from '../core/templates/template-catalog';
 import { InMemoryRuleRepository, InMemoryTemplateRepository } from '../core/testing/in-memory-repositories';
 import { DEFAULT_SETTINGS } from '../shared/settings';
-import { activeRules, resolvePrintTemplate } from './print-template';
+import { activeRules, boundTemplate, resolvePrintTemplate } from './print-template';
 
 function scanOf(ruleId: string): ScanResult {
   return { raw: 'x', ruleId, ruleName: 'r', fields: [{ name: '内容', value: 'x' }] };
@@ -38,6 +38,14 @@ describe('resolvePrintTemplate', () => {
       ruleSettings: DEFAULT_SETTINGS.ruleSettings.map((setting) => ({ ...setting, templateId: 'custom:deleted' })),
     };
     expect(resolvePrintTemplate(templates, settings, scanOf(DASH_THREE_RULE_ID)).id).toBe(copy.id);
+    expect(boundTemplate(templates, settings, scanOf(DASH_THREE_RULE_ID))).toBeNull();
+  });
+
+  test('tells whether the template came from the rule', () => {
+    const templates = createTemplates();
+    expect(boundTemplate(templates, DEFAULT_SETTINGS, scanOf(DASH_THREE_RULE_ID))?.id).toBe(STANDARD_TEMPLATE.id);
+    expect(boundTemplate(templates, DEFAULT_SETTINGS, scanOf(RAW_RULE_ID))).toBeNull();
+    expect(boundTemplate(templates, DEFAULT_SETTINGS, null)).toBeNull();
   });
 
   test('applies the note chosen on the main screen', () => {

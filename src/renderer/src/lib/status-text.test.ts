@@ -28,12 +28,14 @@ const OK_PREVIEW: LabelPreview = {
   result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: null },
   html: '<html></html>',
   templateName: '样衣标准（二维码在左）',
+  isTemplateBound: true,
   qrOmitted: false,
 };
 const INVALID_PREVIEW = (reason: 'INVALID_CONTENT' | 'NO_MATCHING_RULE'): LabelPreview => ({
   result: { status: 'invalid', reason },
   html: null,
   templateName: null,
+  isTemplateBound: false,
   qrOmitted: false,
 });
 
@@ -49,6 +51,7 @@ const context = (overrides: Partial<ScanContext> = {}): ScanContext => ({
   autoPrint: false,
   hasPrinter: true,
   now: NOW,
+  queryingRaw: null,
   ...overrides,
 });
 
@@ -139,6 +142,15 @@ describe('describeScan', () => {
 
   test('printing is pending', () => {
     expect(describeScan(snapshot({ isPrinting: true }), context()).status.tone).toBe('pending');
+  });
+
+  test('a slow lookup shows the new scan as querying, with nothing to press until it returns', () => {
+    const querying = { queryingRaw: '订单号：A001\n款号：CL5640' };
+    for (const previous of [null, snapshot(), snapshot({ hasIpcError: true })]) {
+      const view = describeScan(previous, context(querying));
+      expect(view.status).toEqual({ tone: 'pending', title: '正在查询…', detail: '订单号：A001' });
+      expect(view.actions).toEqual({ print: null, forceReprint: false });
+    }
   });
 
   test('manual mode offers print for a fresh label', () => {

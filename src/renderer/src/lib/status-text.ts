@@ -42,6 +42,8 @@ export interface ScanContext {
   autoPrint: boolean;
   hasPrinter: boolean;
   now: number;
+  /** 刚扫的内容还在识别或查询（超过一小会儿才算）；界面暂时保留上一张的预览。 */
+  queryingRaw: string | null;
 }
 
 export interface ScanView {
@@ -186,6 +188,10 @@ export const IPC_ERROR_VIEW: FeedbackStatusView = {
 };
 
 export function describeScan(scan: ScanSnapshot | null, context: ScanContext): ScanView {
+  if (context.queryingRaw !== null) {
+    const [firstLine = ''] = context.queryingRaw.split('\n');
+    return { status: { tone: 'pending', title: '正在查询…', detail: firstLine }, actions: NO_ACTIONS };
+  }
   if (!scan) {
     return {
       status: {

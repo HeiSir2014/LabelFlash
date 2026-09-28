@@ -22,7 +22,7 @@
 
 **Verified:**
 - 本计划的全部代码都来自一个已跑通的参考工程。
-- `bun run check`（lint + 三个 tsconfig + 202 个单元测试）全部通过；`bun run test:e2e`（Playwright 驱动 Electron）3 个用例通过；`electron-vite build` 成功。
+- `bun run check`（lint + 三个 tsconfig + 203 个单元测试）全部通过；`bun run test:e2e`（Playwright 驱动 Electron）3 个用例通过；`electron-vite build` 成功。
 - 开发版走过"复制模板 → 编辑 → 保存 → 使用 → 扫码"和"添加常用备注 → 下拉框切换 → 扫码"。
 - 语音预热在 Electron 中真实生成 6 段 mp3 缓存。
 - `electron-builder --mac dir` 打包后能启动，fuses 生效。
@@ -9183,6 +9183,12 @@ describe('resolveBundlePath', () => {
     expect(resolveBundlePath(ROOT, 'app://bundle/')).toBeNull();
   });
 
+  test('rejects encoded backslashes and NUL on every platform', () => {
+    expect(resolveBundlePath(ROOT, 'app://bundle/..%5C..%5Csecrets.txt')).toBeNull();
+    expect(resolveBundlePath(ROOT, 'app://bundle/assets%5Cindex.js')).toBeNull();
+    expect(resolveBundlePath(ROOT, 'app://bundle/index.html%00.js')).toBeNull();
+  });
+
   test('dot segments are normalized by the URL parser and stay inside the bundle', () => {
     expect(resolveBundlePath(ROOT, 'app://bundle/%2e%2e/%2e%2e/secrets.txt')).toBe(join(ROOT, 'secrets.txt'));
     expect(resolveBundlePath(ROOT, 'app://bundle/../../secrets.txt')).toBe(join(ROOT, 'secrets.txt'));
@@ -9212,6 +9218,9 @@ export const APP_SCHEME = 'app';
 export const APP_HOST = 'bundle';
 export const APP_ENTRY_URL = `${APP_SCHEME}://${APP_HOST}/index.html`;
 
+/** 反斜杠只在 Windows 上是路径分隔符，NUL 会截断路径：两者都没有合法用途，一律拒绝，行为不随平台变化。 */
+const FORBIDDEN_PATH_CHARACTERS = /[\\\0]/;
+
 /** 把 app://bundle/<路径> 映射到 rootDir 内的文件；主机不对、路径越界或编码非法都返回 null。 */
 export function resolveBundlePath(rootDir: string, requestUrl: string): string | null {
   let pathname: string;
@@ -9224,6 +9233,9 @@ export function resolveBundlePath(rootDir: string, requestUrl: string): string |
   } catch {
     return null;
   }
+  if (FORBIDDEN_PATH_CHARACTERS.test(pathname)) {
+    return null;
+  }
   const target = normalize(join(rootDir, pathname));
   const relativePath = relative(rootDir, target);
   if (relativePath === '' || relativePath.startsWith('..') || isAbsolute(relativePath)) {
@@ -9233,7 +9245,7 @@ export function resolveBundlePath(rootDir: string, requestUrl: string): string |
 }
 ```
 
-Run: `bun test src/main/bundle-path.test.ts` → PASS（4 个）。
+Run: `bun test src/main/bundle-path.test.ts` → PASS（5 个）。
 
 - [ ] **Step 3: 实现 `src/main/app-protocol.ts` 与 `src/main/security.ts`**
 
@@ -10023,7 +10035,7 @@ export interface DriverPaperProps {
 
 - [ ] **Step 9: 验证并提交**
 
-Run: `bun run check && bun run test:e2e` → 202 个单元测试、3 个 E2E 全部通过。
+Run: `bun run check && bun run test:e2e` → 203 个单元测试、3 个 E2E 全部通过。
 
 真机冒烟：
 - Windows：选中标签机，如果驱动默认纸张不是 60×40，选中行下面出现橙色提示。点「打开打印首选项」，打开的是该打印机的首选项窗口；改成 60×40 并关闭后，提示变为「驱动纸张 60×40mm · 203dpi」。
@@ -10257,7 +10269,7 @@ docs/          设计文档、实施计划与路线图
 - [ ] **Step 5: 本地全量检查**
 
 Run: `bun run check && bun run test:e2e`
-Expected: Biome 无问题，三个 tsconfig 零错误，202 个单元测试和 3 个 E2E 全部通过，构建成功。
+Expected: Biome 无问题，三个 tsconfig 零错误，203 个单元测试和 3 个 E2E 全部通过，构建成功。
 
 - [ ] **Step 6: Commit 并推送，确认 CI 通过**
 

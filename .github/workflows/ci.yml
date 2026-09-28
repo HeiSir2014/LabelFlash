@@ -33,7 +33,11 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      # 手机扫码的默认中转地址：代码里不写域名，官方安装包从仓库的 Actions 变量注入（见 electron.vite.config.ts）。
+      # check 作业不注入：E2E 要验证「没有默认地址」时的提示。
       - run: bun run dist:win
+        env:
+          CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
       - uses: actions/upload-artifact@v4
         with:
           name: CDL-LabelFlash-windows
@@ -47,8 +51,32 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # 要完整历史才能判断标签所在的提交是不是在 master 上。
+          fetch-depth: 0
+      # 发布前的三道检查：只从 master 发布；标签和 package.json 的版本一致（客户端按版本号比较、按文件名找旧版 blockmap）；
+      # 官方安装包必须带默认中转地址，否则手机扫码要用户自己填。
+      - name: Check the tag, the version and the build settings
+        shell: bash
+        run: |
+          git fetch --no-tags origin master
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            echo "::error::标签 $GITHUB_REF_NAME 指向的提交不在 master 上。先经 PR 合进 master，再在 master 的提交上打标签。"
+            exit 1
+          fi
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::标签 $GITHUB_REF_NAME 和 package.json 的版本 $version 不一致。"
+            exit 1
+          fi
+          if [ -z "$CDL_LABELFLASH_DEFAULT_RELAY_URL" ]; then
+            echo "::error::仓库的 Actions 变量 LABELFLASH_DEFAULT_RELAY_URL 没有设置，官方安装包会没有默认中转地址。"
+            exit 1
+          fi
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2

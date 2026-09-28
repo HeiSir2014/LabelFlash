@@ -42,7 +42,7 @@ export function SettingsForm({
 }: SettingsFormProps) {
   const [pendingHistoryLimit, setPendingHistoryLimit] = useState<number | null>(null);
   const [newNote, setNewNote] = useState('');
-  const shopQr = useQrImage(BRAND.shop.mobileUrl);
+  const shopQr = useQrImage(BRAND.shop.url);
   const newNoteText = sanitizeNoteText(newNote);
   const canAddNote =
     newNoteText !== null &&

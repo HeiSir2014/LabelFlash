@@ -6,12 +6,12 @@ export const BRAND = {
   productName: 'CDL-云签速印',
   productNameAscii: 'CDL-LabelFlash',
   appId: 'com.cdl.labelflash',
-  /** 出品方的淘宝店铺：显示在标题栏和「关于」里。 */
+  /**
+   * 出品方的淘宝店铺：显示在标题栏和「关于」里；电脑上点击打开，「关于」里的二维码给手机淘宝扫码进店。
+   * 用店铺编号地址而不是分享短链：分享短链带分享 token 和签名，可能过期，而二维码会随安装包长期存在。
+   */
   shop: {
     name: 'CDLCOUTURE极简女装',
-    /** 电脑上点击打开的店铺首页（短链在电脑上只是一个中转页，直接用店铺地址）。 */
     url: 'https://shop476061869.taobao.com',
-    /** 「关于」里的二维码内容：手机淘宝扫码进店。 */
-    mobileUrl: 'https://m.tb.cn/h.8wFoJTZnJAhPpdP',
   },
 } as const;

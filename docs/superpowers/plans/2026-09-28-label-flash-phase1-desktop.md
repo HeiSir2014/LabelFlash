@@ -5,27 +5,27 @@
 **Goal:** 做一个 Windows 桌面程序：扫码枪扫样衣标签二维码 → 立即预览 60×40mm 标签 → 自动或手动打印到选中的本机标签打印机。带时间窗口防重门限、可回溯重打的环形打印记录，以及无边框自绘窗口。
 
 **Architecture:**
-- `src/core` 是纯 TypeScript 业务层（解析、门限、队列、环形池、PrintService），不依赖 Electron，用 `bun test` 全覆盖。
-- Electron 主进程提供三样东西：打印适配器（隐藏窗口渲染 HTML + `webContents.print` 静默打印）、JSONL 存储、IPC。
+- `src/core` 是纯 TypeScript 业务层（解析、门限、队列、PrintService），不依赖 Electron，用 `bun test` 全覆盖。
+- Electron 主进程提供三样东西：打印适配器（隐藏窗口渲染 HTML + `webContents.print` 静默打印）、`node:sqlite` 存储（Electron 内置 Node 24 自带）、IPC。
 - React 渲染进程按 MVVM 组织：view-model hooks 调 `window.api`，组件只负责渲染。
 - 预览和打印共用同一份标签 HTML。
 
-**Tech Stack:** Bun 1.4、Electron 44、electron-vite 5、Vite 7、React 19、TypeScript 5.9 strict、qrcode、electron-builder 26（NSIS）
+**Tech Stack:** Bun 1.4、Electron 44（Node 24.21 / `node:sqlite` / SQLite 3.53.4）、electron-vite 5、Vite 7、React 19、TypeScript 5.9 strict、qrcode、electron-builder 26（NSIS）
 
 ## Global Constraints
 
 - Spec：`docs/superpowers/specs/2026-09-28-label-flash-design.md`（Phase 1 范围）。
 - 包名 `label-flash`，productName `云签速印`，appId `com.labelflash.app`，安装包名 `LabelFlash-Setup-${version}.exe`。
-- 数据目录固定为 `%APPDATA%\LabelFlash`（`app.setPath('userData', …)`），包含 `settings.json` 和 `jobs.jsonl`。
+- 数据目录固定为 `%APPDATA%\LabelFlash`（`app.setPath('userData', …)`），数据库文件 `labelflash.db`：`node:sqlite` 的 `DatabaseSync`，WAL，`PRAGMA user_version` 迁移（只追加），打印记录和设置都存在里面。
 - 二维码格式为 `编码-颜色-尺码`，从右往左拆；`raw` trim 后长度 1–128，不能含控制字符。
 - 标签 60×40mm，与原标签版面一致，只是去掉库位；预览和打印使用同一个 `renderLabelHtml`。
 - 门限窗口默认 10 分钟，范围 0–1440（0 表示关闭）；force 可以跳过窗口，但不能跳过正在打印的同一个码。
-- 打印记录环形池默认 500 条，范围 50–5000；文件行数超过容量 2 倍时压缩。
+- 打印记录环形保留：`jobs` 表只留最新 N 条（默认 100,000，范围 1,000–1,000,000），插入和裁剪在同一个事务里完成；界面按页（每页 100 条）加载，搜索在 SQL 中进行。
 - 自动打印默认开启；手动模式下按 F2 或点"打印"才出纸。
 - 窗口无系统边框（`frame: false`），标题栏自绘；关闭按钮 = 隐藏到托盘；最小尺寸 960×640。
 - 视觉 token：机壳灰 `#E4E7E2`、纸白 `#FBFBF8`、墨黑 `#18211E`、软尺黄 `#F2C12E`、成功 `#1F8A5B`、重复 `#E0752D`、失败 `#C8372D`；标题和大字状态用得意黑 Smiley Sans，正文用 Microsoft YaHei UI，数据用 Cascadia Mono / Consolas。
 - 安全：`contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`；IPC 参数在主进程校验；标签 HTML 中的所有文本都要转义。
-- 不使用任何原生 Node 模块；运行时依赖只有 `qrcode`。
+- 不引入第三方原生模块：SQLite 直接用 Electron 内置的 `node:sqlite`；运行时依赖只有 `qrcode`。存储层接口是同步的（与 `DatabaseSync` 一致）。
 - 用 Bun 做包管理和测试；每个任务结束时 `bun test`、`bun run typecheck` 都必须零错误。
 - 代码风格：TS 用 camelCase / PascalCase / UPPER_SNAKE_CASE；不写魔法数字；界面文案用中文。
 
@@ -40,14 +40,15 @@ scripts/generate-icon.ts            生成 resources/icon.png
 resources/icon.png
 src/core/                           纯业务层（bun test）
   types.ts  errors.ts  label-parser.ts  dedup-guard.ts  serial-queue.ts
-  print-queue.ts  ring-buffer.ts  job-store.ts  print-service.ts
-  testing/fake-clock.ts  testing/fake-printer-adapter.ts
+  print-queue.ts  job-store.ts  print-service.ts
+  testing/fake-clock.ts  testing/fake-printer-adapter.ts  testing/in-memory-job-store.ts
 src/shared/                         主进程与界面共用
   settings.ts  label-size.ts  ipc-contract.ts
 src/main/
   index.ts  window.ts  tray.ts  ipc.ts
   printing/label-template.ts  printing/electron-driver-adapter.ts
-  storage/fs-errors.ts  storage/jsonl-job-store.ts  storage/settings-store.ts
+  storage/database.ts  storage/migrations.ts  storage/row-readers.ts
+  storage/sqlite-job-store.ts  storage/sqlite-settings-store.ts
 src/preload/index.ts
 src/renderer/
   index.html  tsconfig.json
@@ -73,7 +74,7 @@ src/renderer/
 - Test: `src/core/label-parser.test.ts`
 
 **Interfaces:**
-- Produces: `LabelData`, `PrintSource`, `PrintRequest`, `PrintFailureReason`, `PrintResult`, `PrintStatus`, `PreviewResult`, `PrinterInfo`, `PrinterAdapter`, `JobRecord`, `Clock`, `systemClock`（`src/core/types.ts`）；`PrintError`、`toFailureReason(error: unknown): PrintFailureReason`（`src/core/errors.ts`）；`MAX_RAW_LENGTH = 128`、`parseLabel(input: string): LabelData | null`（`src/core/label-parser.ts`）
+- Produces: `PRINT_SOURCES`、`PRINT_STATUSES`、`PRINT_FAILURE_REASONS`（常量数组，供数据库行校验）、`LabelData`, `PrintSource`, `PrintRequest`, `PrintFailureReason`, `PrintResult`, `PrintStatus`, `PreviewResult`, `PrinterInfo`, `PrinterAdapter`, `JobRecord`, `Clock`, `systemClock`（`src/core/types.ts`）；`PrintError`、`toFailureReason(error: unknown): PrintFailureReason`（`src/core/errors.ts`）；`MAX_RAW_LENGTH = 128`、`parseLabel(input: string): LabelData | null`（`src/core/label-parser.ts`）
 
 - [ ] **Step 1: 创建 `package.json`**
 
@@ -111,12 +112,11 @@ src/renderer/
     "react-dom": "^19.3.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.6"
-  },
-  "trustedDependencies": ["electron", "esbuild"]
+  }
 }
 ```
 
-> electron-vite 5 的 peer 依赖是 `vite ^5 || ^6 || ^7`，所以固定用 Vite 7 和 plugin-react 5。`trustedDependencies` 让 Bun 执行 electron 的 postinstall（下载 Electron 二进制）。不要加 `"type": "module"`：sandbox 下的 preload 必须是 CommonJS。
+> electron-vite 5 的 peer 依赖是 `vite ^5 || ^6 || ^7`，所以固定用 Vite 7 和 plugin-react 5。Electron 44 已经没有 postinstall，二进制在第一次运行 `electron` 时才下载，所以不需要 `trustedDependencies`。不要加 `"type": "module"`：sandbox 下的 preload 必须是 CommonJS。
 
 - [ ] **Step 2: 创建 `bunfig.toml`、`tsconfig.json`、`.gitignore`**
 
@@ -168,7 +168,7 @@ dist/
 - [ ] **Step 3: 安装依赖**
 
 Run: `bun install`
-Expected: 安装成功，生成 `bun.lock`，`node_modules/electron/dist` 存在（`ls node_modules/electron/dist | head -3` 能列出文件）。
+Expected: 安装成功，生成 `bun.lock`。Bun 会提示 `Blocked 1 postinstall`（electron-winstaller 的，NSIS 打包用不到），忽略即可。
 
 - [ ] **Step 4: 创建 `src/core/types.ts`**
 
@@ -182,7 +182,8 @@ export interface LabelData {
 }
 
 /** desktop = 扫码枪，history = 从打印记录重打，mobile = 手机（Phase 2）。 */
-export type PrintSource = 'desktop' | 'history' | 'mobile';
+export const PRINT_SOURCES = ['desktop', 'history', 'mobile'] as const;
+export type PrintSource = (typeof PRINT_SOURCES)[number];
 
 export interface PrintRequest {
   raw: string;
@@ -192,7 +193,8 @@ export interface PrintRequest {
   force?: boolean;
 }
 
-export type PrintFailureReason = 'PRINTER_NOT_FOUND' | 'PRINT_TIMEOUT' | 'PRINT_ERROR';
+export const PRINT_FAILURE_REASONS = ['PRINTER_NOT_FOUND', 'PRINT_TIMEOUT', 'PRINT_ERROR'] as const;
+export type PrintFailureReason = (typeof PRINT_FAILURE_REASONS)[number];
 
 export type PrintResult =
   | { status: 'printed'; jobId: string; label: LabelData }
@@ -201,6 +203,7 @@ export type PrintResult =
   | { status: 'failed'; reason: PrintFailureReason };
 
 export type PrintStatus = PrintResult['status'];
+export const PRINT_STATUSES = ['printed', 'duplicate', 'invalid', 'failed'] as const satisfies readonly PrintStatus[];
 
 export type PreviewResult =
   | { status: 'ok'; label: LabelData; lastPrintedAt: number | null }
@@ -739,233 +742,325 @@ git commit -m "feat(core): per-printer serial print queue with timeout"
 
 ---
 
-### Task 4: RingBuffer 环形池
+### Task 4: SQLite 数据库（node:sqlite + 迁移 + 事务）
 
 **Files:**
-- Create: `src/core/ring-buffer.ts`
-- Test: `src/core/ring-buffer.test.ts`
+- Create: `src/main/storage/database.ts`, `src/main/storage/migrations.ts`, `src/main/storage/row-readers.ts`
+- Test: `src/main/storage/database.test.ts`
 
 **Interfaces:**
-- Produces: `class RingBuffer<T>(capacity: number)`，成员如下：
-  - `capacity`、`size`
-  - `push(item): T | undefined`：返回被挤出的最旧一项
-  - `toArray(): T[]`：从旧到新
-  - `resize(capacity)`
+- Produces：
+  - `openDatabase(path: string): DatabaseSync`：自动建目录、设置 pragma、执行迁移；`':memory:'` 也可以用
+  - `migrate(db, migrations?: readonly string[]): void`
+  - `runInTransaction<T>(db, work: () => T): T`
+  - `MIGRATIONS: readonly string[]`
+  - `Row = Record<string, unknown>`
+  - 行读取函数：`readString(row, column)`、`readInteger(row, column)`、`readEnum(row, column, allowed)`
 
-  容量必须是 ≥1 的整数，否则抛出 `RangeError`。
+> `node:sqlite` 是 Electron 44 内置 Node 24.21 自带的模块（SQLite 3.53.4）；Bun 1.4 也实现了它，两边行为一致（命名参数、STRICT、CHECK、`user_version` 都已验证）。所以存储层可以直接用 `bun test` 测，生产环境也是同一套 API。
 
-- [ ] **Step 1: 写失败的测试 `src/core/ring-buffer.test.ts`**
+- [ ] **Step 1: 写失败的测试 `src/main/storage/database.test.ts`**
 
 ```ts
 import { describe, expect, test } from 'bun:test';
-import { RingBuffer } from './ring-buffer';
+import type { DatabaseSync } from 'node:sqlite';
+import { migrate, openDatabase, runInTransaction } from './database';
+import { MIGRATIONS } from './migrations';
 
-function filled(capacity: number, count: number): RingBuffer<number> {
-  const ring = new RingBuffer<number>(capacity);
-  for (let i = 1; i <= count; i += 1) ring.push(i);
-  return ring;
+function userVersion(db: DatabaseSync): unknown {
+  return db.prepare('PRAGMA user_version').get()?.['user_version'];
 }
 
-describe('RingBuffer', () => {
-  test('keeps items oldest-first until full', () => {
-    const ring = filled(3, 2);
-    expect(ring.toArray()).toEqual([1, 2]);
-    expect(ring.size).toBe(2);
+function tableNames(db: DatabaseSync): string[] {
+  return db
+    .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .all()
+    .map((row) => String(row['name']));
+}
+
+describe('openDatabase', () => {
+  test('migrates a fresh database to the latest schema', () => {
+    const db = openDatabase(':memory:');
+    expect(userVersion(db)).toBe(MIGRATIONS.length);
+    expect(tableNames(db)).toEqual(['jobs', 'settings']);
+    db.close();
+  });
+});
+
+describe('migrate', () => {
+  test('applies only pending migrations and is idempotent', () => {
+    const db = openDatabase(':memory:');
+    const extra = [...MIGRATIONS, 'CREATE TABLE extra (x INTEGER) STRICT;'];
+    migrate(db, extra);
+    migrate(db, extra);
+    expect(userVersion(db)).toBe(extra.length);
+    expect(tableNames(db)).toContain('extra');
+    db.close();
   });
 
-  test('evicts and returns the oldest item once full', () => {
-    const ring = filled(3, 3);
-    expect(ring.push(4)).toBe(1);
-    expect(ring.toArray()).toEqual([2, 3, 4]);
-    expect(ring.size).toBe(3);
+  test('rolls back a failing migration and keeps the old version', () => {
+    const db = openDatabase(':memory:');
+    const broken = [...MIGRATIONS, 'CREATE TABLE half (x INTEGER) STRICT; CREATE TABLE half (x INTEGER) STRICT;'];
+    expect(() => migrate(db, broken)).toThrow();
+    expect(userVersion(db)).toBe(MIGRATIONS.length);
+    expect(tableNames(db)).not.toContain('half');
+    db.close();
   });
 
-  test('keeps order after wrapping around many times', () => {
-    expect(filled(3, 10).toArray()).toEqual([8, 9, 10]);
+  test('refuses a database written by a newer app version', () => {
+    const db = openDatabase(':memory:');
+    db.exec(`PRAGMA user_version = ${MIGRATIONS.length + 1}`);
+    expect(() => migrate(db)).toThrow(/newer/);
+    db.close();
   });
+});
 
-  test('shrinking keeps the newest items', () => {
-    const ring = filled(5, 5);
-    ring.resize(2);
-    expect(ring.capacity).toBe(2);
-    expect(ring.toArray()).toEqual([4, 5]);
-  });
-
-  test('growing keeps everything and accepts more', () => {
-    const ring = filled(2, 4);
-    ring.resize(4);
-    ring.push(5);
-    expect(ring.toArray()).toEqual([3, 4, 5]);
-  });
-
-  test.each([0, -1, 1.5])('rejects capacity %p', (capacity) => {
-    expect(() => new RingBuffer<number>(capacity)).toThrow(RangeError);
+describe('runInTransaction', () => {
+  test('rolls back every statement when the work throws', () => {
+    const db = openDatabase(':memory:');
+    expect(() =>
+      runInTransaction(db, () => {
+        db.prepare("INSERT INTO settings (key, value) VALUES ('a', '1')").run();
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+    expect(db.prepare('SELECT COUNT(*) AS n FROM settings').get()?.['n']).toBe(0);
+    db.close();
   });
 });
 ```
 
 - [ ] **Step 2: 运行测试，确认失败**
 
-Run: `bun test src/core/ring-buffer.test.ts`
-Expected: FAIL，`Cannot find module './ring-buffer'`
+Run: `bun test src/main/storage/database.test.ts`
+Expected: FAIL，`Cannot find module './database'`
 
-- [ ] **Step 3: 实现 `src/core/ring-buffer.ts`**
+- [ ] **Step 3: 实现 `src/main/storage/migrations.ts`**
 
 ```ts
-/** 固定容量的环形缓冲区：满了之后新项覆盖最旧的项。 */
-export class RingBuffer<T> {
-  private buffer: Array<T | undefined>;
-  private start = 0;
-  private count = 0;
+/**
+ * Schema 迁移：按顺序执行，数组下标 + 1 就是 PRAGMA user_version。
+ * 已发布的迁移不能修改，只能在末尾追加。
+ */
+export const MIGRATIONS: readonly string[] = [
+  `
+  CREATE TABLE jobs (
+    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id             TEXT    NOT NULL UNIQUE,
+    created_at     INTEGER NOT NULL,
+    raw            TEXT    NOT NULL,
+    printer_name   TEXT    NOT NULL,
+    source         TEXT    NOT NULL CHECK (source IN ('desktop', 'history', 'mobile')),
+    status         TEXT    NOT NULL CHECK (status IN ('printed', 'duplicate', 'invalid', 'failed')),
+    forced         INTEGER NOT NULL CHECK (forced IN (0, 1)),
+    failure_reason TEXT             CHECK (failure_reason IN ('PRINTER_NOT_FOUND', 'PRINT_TIMEOUT', 'PRINT_ERROR'))
+  ) STRICT;
 
-  constructor(capacity: number) {
-    this.buffer = new Array<T | undefined>(assertCapacity(capacity));
+  CREATE INDEX jobs_printed_at ON jobs (created_at) WHERE status = 'printed';
+
+  CREATE TABLE settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  ) STRICT;
+  `,
+];
+```
+
+- [ ] **Step 4: 实现 `src/main/storage/database.ts`**
+
+```ts
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { MIGRATIONS } from './migrations';
+
+const IN_MEMORY_PATH = ':memory:';
+const BUSY_TIMEOUT_MS = 5_000;
+
+/** 打开（或创建）数据库，设置 pragma，并执行尚未应用的迁移。 */
+export function openDatabase(path: string): DatabaseSync {
+  if (path !== IN_MEMORY_PATH) {
+    mkdirSync(dirname(path), { recursive: true });
   }
+  const db = new DatabaseSync(path);
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};
+  `);
+  migrate(db);
+  return db;
+}
 
-  get capacity(): number {
-    return this.buffer.length;
+export function migrate(db: DatabaseSync, migrations: readonly string[] = MIGRATIONS): void {
+  const current = readUserVersion(db);
+  if (current > migrations.length) {
+    throw new Error(`Database schema v${current} is newer than this app supports (v${migrations.length})`);
   }
-
-  get size(): number {
-    return this.count;
-  }
-
-  /** 追加一项；已满时覆盖最旧的一项并把它返回。 */
-  push(item: T): T | undefined {
-    const capacity = this.buffer.length;
-    if (this.count < capacity) {
-      this.buffer[(this.start + this.count) % capacity] = item;
-      this.count += 1;
-      return undefined;
+  for (const [index, sql] of migrations.entries()) {
+    if (index < current) {
+      continue;
     }
-    const evicted = this.buffer[this.start];
-    this.buffer[this.start] = item;
-    this.start = (this.start + 1) % capacity;
-    return evicted;
-  }
-
-  /** 从旧到新。 */
-  toArray(): T[] {
-    const items: T[] = [];
-    for (let i = 0; i < this.count; i += 1) {
-      items.push(this.buffer[(this.start + i) % this.buffer.length] as T);
-    }
-    return items;
-  }
-
-  /** 改变容量；缩小时丢弃最旧的项。 */
-  resize(capacity: number): void {
-    const kept = this.toArray().slice(-assertCapacity(capacity));
-    this.buffer = new Array<T | undefined>(capacity);
-    this.start = 0;
-    this.count = 0;
-    for (const item of kept) {
-      this.push(item);
-    }
+    runInTransaction(db, () => {
+      db.exec(sql);
+      db.exec(`PRAGMA user_version = ${index + 1}`);
+    });
   }
 }
 
-function assertCapacity(capacity: number): number {
-  if (!Number.isInteger(capacity) || capacity < 1) {
-    throw new RangeError(`Invalid ring buffer capacity: ${capacity}`);
+export function runInTransaction<T>(db: DatabaseSync, work: () => T): T {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = work();
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
   }
-  return capacity;
+}
+
+function readUserVersion(db: DatabaseSync): number {
+  const version = db.prepare('PRAGMA user_version').get()?.['user_version'];
+  if (typeof version !== 'number') {
+    throw new Error('Unable to read database schema version');
+  }
+  return version;
 }
 ```
 
-- [ ] **Step 4: 运行测试**
+- [ ] **Step 5: 实现 `src/main/storage/row-readers.ts`**
 
-Run: `bun test src/core/ring-buffer.test.ts && bunx tsc --noEmit -p tsconfig.json`
-Expected: 8 pass, 0 fail；tsc 无输出。
+```ts
+export type Row = Record<string, unknown>;
 
-- [ ] **Step 5: Commit**
+/** 数据库行进入领域层前的类型校验：列类型不符说明数据损坏，直接抛错。 */
+export function readString(row: Row, column: string): string {
+  const value = row[column];
+  if (typeof value !== 'string') {
+    throw new TypeError(`Column "${column}" is not TEXT`);
+  }
+  return value;
+}
+
+export function readInteger(row: Row, column: string): number {
+  const value = row[column];
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new TypeError(`Column "${column}" is not INTEGER`);
+  }
+  return value;
+}
+
+export function readEnum<T extends string>(row: Row, column: string, allowed: readonly T[]): T {
+  const value = readString(row, column);
+  if (!(allowed as readonly string[]).includes(value)) {
+    throw new TypeError(`Column "${column}" has unexpected value "${value}"`);
+  }
+  return value as T;
+}
+```
+
+- [ ] **Step 6: 运行测试**
+
+Run: `bun test src/main/storage && bunx tsc --noEmit -p tsconfig.json`
+Expected: 5 pass, 0 fail；tsc 无输出。
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/core/ring-buffer.ts src/core/ring-buffer.test.ts
-git commit -m "feat(core): fixed-capacity ring buffer for bounded print history"
+git add src/main/storage
+git commit -m "feat(storage): node:sqlite database with WAL, versioned migrations and transactions"
 ```
 
 ---
 
-### Task 5: JobStore + PrintService
+### Task 5: JobStore 接口 + PrintService
 
 **Files:**
-- Create: `src/core/job-store.ts`, `src/core/print-service.ts`, `src/core/testing/fake-printer-adapter.ts`
+- Create: `src/core/job-store.ts`, `src/core/print-service.ts`
+- Create: `src/core/testing/fake-printer-adapter.ts`, `src/core/testing/in-memory-job-store.ts`
 - Test: `src/core/print-service.test.ts`
 
 **Interfaces:**
-- Consumes:
+- Consumes：
   - `parseLabel`、`MAX_RAW_LENGTH`（Task 1）
   - `DedupGuard`、`MAX_DEDUP_WINDOW_MS`（Task 2）
   - `PrintQueue`（Task 3）
-  - `RingBuffer`（Task 4）
   - `toFailureReason`（Task 1）
-- Produces:
-  - `interface JobStore`：
-    - `append(job): Promise<void>`
-    - `listRecent(limit): Promise<JobRecord[]>`：从新到旧
-    - `listPrintedSince(since): Promise<JobRecord[]>`
-    - `setCapacity(capacity): Promise<void>`
-  - `InMemoryJobStore(capacity)`
-  - `newestFirst(jobs, limit): JobRecord[]`
-  - `TEST_LABEL: LabelData`
+- Produces：
+  - `interface JobStore`（同步，因为 `DatabaseSync` 是同步的）：
+    - `append(job): void`
+    - `listLastPrinted(since): LastPrinted[]`
+    - `setCapacity(capacity): void`
+  - `LastPrinted = { raw: string; printedAt: number }`
+  - `TEST_LABEL`
   - `class PrintService(deps: PrintServiceDeps)`：
-    - `restore(): Promise<void>`
-    - `preview(raw: string): PreviewResult`
-    - `submit(request: PrintRequest): Promise<PrintResult>`
-    - `printTest(printerName: string): Promise<PrintResult>`
-  - `PrintServiceDeps = { adapter, store, guard, queue, clock, createId: () => string }`
-  - `FakePrinterAdapter`
+    - `restore(): void`
+    - `preview(raw): PreviewResult`
+    - `submit(request): Promise<PrintResult>`
+    - `printTest(printerName): Promise<PrintResult>`
+  - 测试替身：`FakePrinterAdapter`、`InMemoryJobStore`（额外提供 `listRecent(limit)` 供断言）
 
 - [ ] **Step 1: 创建 `src/core/job-store.ts`**
 
 ```ts
-import { RingBuffer } from './ring-buffer';
 import type { JobRecord } from './types';
 
-export interface JobStore {
-  append(job: JobRecord): Promise<void>;
-  /** 从新到旧，最多 limit 条。 */
-  listRecent(limit: number): Promise<JobRecord[]>;
-  listPrintedSince(since: number): Promise<JobRecord[]>;
-  /** 调整环形池容量，超出部分淘汰最旧的记录。 */
-  setCapacity(capacity: number): Promise<void>;
+export interface LastPrinted {
+  raw: string;
+  printedAt: number;
 }
 
-export function newestFirst(jobs: JobRecord[], limit: number): JobRecord[] {
-  if (limit <= 0) {
-    return [];
-  }
-  return jobs.slice(-limit).reverse();
+/** 打印记录。实现必须是环形保留：只保留最新的 capacity 条。 */
+export interface JobStore {
+  append(job: JobRecord): void;
+  /** since 之后每个码最后一次成功打印的时间，用于重启后恢复门限。 */
+  listLastPrinted(since: number): LastPrinted[];
+  setCapacity(capacity: number): void;
 }
+```
+
+- [ ] **Step 2: 创建测试替身**
+
+`src/core/testing/in-memory-job-store.ts`:
+```ts
+import type { JobStore, LastPrinted } from '../job-store';
+import type { JobRecord } from '../types';
+
+const DEFAULT_CAPACITY = 100;
 
 export class InMemoryJobStore implements JobStore {
-  private readonly jobs: RingBuffer<JobRecord>;
+  private jobs: JobRecord[] = [];
 
-  constructor(capacity: number) {
-    this.jobs = new RingBuffer<JobRecord>(capacity);
+  constructor(private capacity: number = DEFAULT_CAPACITY) {}
+
+  append(job: JobRecord): void {
+    this.jobs = [...this.jobs, job].slice(-this.capacity);
   }
 
-  async append(job: JobRecord): Promise<void> {
-    this.jobs.push(job);
+  listRecent(limit: number): JobRecord[] {
+    return this.jobs.slice(-limit).reverse();
   }
 
-  async listRecent(limit: number): Promise<JobRecord[]> {
-    return newestFirst(this.jobs.toArray(), limit);
+  listLastPrinted(since: number): LastPrinted[] {
+    const latest = new Map<string, number>();
+    for (const job of this.jobs) {
+      if (job.status === 'printed' && job.createdAt >= since) {
+        latest.set(job.raw, Math.max(latest.get(job.raw) ?? job.createdAt, job.createdAt));
+      }
+    }
+    return [...latest].map(([raw, printedAt]) => ({ raw, printedAt }));
   }
 
-  async listPrintedSince(since: number): Promise<JobRecord[]> {
-    return this.jobs.toArray().filter((job) => job.status === 'printed' && job.createdAt >= since);
-  }
-
-  async setCapacity(capacity: number): Promise<void> {
-    this.jobs.resize(capacity);
+  setCapacity(capacity: number): void {
+    this.capacity = capacity;
+    this.jobs = this.jobs.slice(-capacity);
   }
 }
 ```
 
-- [ ] **Step 2: 创建 `src/core/testing/fake-printer-adapter.ts`**
-
+`src/core/testing/fake-printer-adapter.ts`:
 ```ts
 import type { LabelData, PrinterAdapter, PrinterInfo } from '../types';
 
@@ -1015,18 +1110,18 @@ export class FakePrinterAdapter implements PrinterAdapter {
 import { describe, expect, test } from 'bun:test';
 import { DedupGuard } from './dedup-guard';
 import { PrintError } from './errors';
-import { InMemoryJobStore } from './job-store';
 import { PrintQueue } from './print-queue';
 import { PrintService, TEST_LABEL } from './print-service';
 import { FAKE_CLOCK_START, FakeClock } from './testing/fake-clock';
 import { FakePrinterAdapter } from './testing/fake-printer-adapter';
+import { InMemoryJobStore } from './testing/in-memory-job-store';
 import type { PrintRequest } from './types';
 
 const WINDOW_MS = 10 * 60_000;
 const RAW = 'CL5640-TK-图片色-36';
 const PRINTER = 'HPRT N31C';
 
-function createHarness(store = new InMemoryJobStore(100)) {
+function createHarness(store = new InMemoryJobStore()) {
   const clock = new FakeClock();
   const adapter = new FakePrinterAdapter();
   const guard = new DedupGuard(clock, WINDOW_MS);
@@ -1056,15 +1151,21 @@ describe('PrintService.submit', () => {
       label: { raw: RAW, code: 'CL5640-TK', color: '图片色', size: '36' },
     });
     expect(adapter.printed).toEqual([{ printerName: PRINTER, raw: RAW }]);
-    const [job] = await store.listRecent(1);
-    expect(job).toMatchObject({ id: 'job-1', raw: RAW, printerName: PRINTER, source: 'desktop', status: 'printed', forced: false });
+    expect(store.listRecent(1)[0]).toMatchObject({
+      id: 'job-1',
+      raw: RAW,
+      printerName: PRINTER,
+      source: 'desktop',
+      status: 'printed',
+      forced: false,
+    });
   });
 
   test('rejects malformed input without printing', async () => {
     const { service, adapter, store } = createHarness();
     expect(await service.submit(request({ raw: 'hello' }))).toEqual({ status: 'invalid', reason: 'INVALID_FORMAT' });
     expect(adapter.printed).toHaveLength(0);
-    expect((await store.listRecent(1))[0]?.status).toBe('invalid');
+    expect(store.listRecent(1)[0]?.status).toBe('invalid');
   });
 
   test('blocks a repeat scan inside the window', async () => {
@@ -1098,7 +1199,7 @@ describe('PrintService.submit', () => {
     const { service, adapter, store } = createHarness();
     adapter.failNext(new Error('driver crashed'));
     expect(await service.submit(request())).toEqual({ status: 'failed', reason: 'PRINT_ERROR' });
-    expect((await store.listRecent(1))[0]?.failureReason).toBe('PRINT_ERROR');
+    expect(store.listRecent(1)[0]?.failureReason).toBe('PRINT_ERROR');
   });
 
   test('force reprints inside the window and is recorded as forced', async () => {
@@ -1106,12 +1207,12 @@ describe('PrintService.submit', () => {
     await service.submit(request());
     expect((await service.submit(request({ force: true, source: 'history' }))).status).toBe('printed');
     expect(adapter.printed).toHaveLength(2);
-    expect((await store.listRecent(1))[0]).toMatchObject({ forced: true, source: 'history' });
+    expect(store.listRecent(1)[0]).toMatchObject({ forced: true, source: 'history' });
   });
 
-  test('a history store failure does not turn a printed job into a failure', async () => {
-    const failingStore = new InMemoryJobStore(10);
-    failingStore.append = async () => {
+  test('a history write failure does not turn a printed job into a failure', async () => {
+    const failingStore = new InMemoryJobStore();
+    failingStore.append = () => {
       throw new Error('disk full');
     };
     const { service } = createHarness(failingStore);
@@ -1146,11 +1247,11 @@ describe('PrintService.preview', () => {
 
 describe('PrintService.restore', () => {
   test('rebuilds the window from recorded prints after a restart', async () => {
-    const store = new InMemoryJobStore(10);
+    const store = new InMemoryJobStore();
     const printedAt = FAKE_CLOCK_START - 60_000;
-    await store.append({ id: 'old', createdAt: printedAt, raw: RAW, printerName: PRINTER, source: 'desktop', status: 'printed', forced: false });
+    store.append({ id: 'old', createdAt: printedAt, raw: RAW, printerName: PRINTER, source: 'desktop', status: 'printed', forced: false });
     const { service } = createHarness(store);
-    await service.restore();
+    service.restore();
     expect(await service.submit(request())).toEqual({ status: 'duplicate', lastPrintedAt: printedAt, windowMs: WINDOW_MS });
   });
 });
@@ -1164,7 +1265,7 @@ describe('PrintService.printTest', () => {
       { printerName: PRINTER, raw: TEST_LABEL.raw },
       { printerName: PRINTER, raw: TEST_LABEL.raw },
     ]);
-    expect(await store.listRecent(10)).toEqual([]);
+    expect(store.listRecent(10)).toEqual([]);
   });
 });
 ```
@@ -1213,10 +1314,10 @@ export class PrintService {
   constructor(private readonly deps: PrintServiceDeps) {}
 
   /** 启动时从打印记录回放门限状态，重启后窗口仍然有效。 */
-  async restore(): Promise<void> {
+  restore(): void {
     const since = this.deps.clock.now() - MAX_DEDUP_WINDOW_MS;
-    for (const job of await this.deps.store.listPrintedSince(since)) {
-      this.deps.guard.restore(job.raw, job.createdAt);
+    for (const { raw, printedAt } of this.deps.store.listLastPrinted(since)) {
+      this.deps.guard.restore(raw, printedAt);
     }
   }
 
@@ -1264,7 +1365,7 @@ export class PrintService {
     }
   }
 
-  private async finish(id: string, request: PrintRequest, raw: string, result: PrintResult): Promise<PrintResult> {
+  private finish(id: string, request: PrintRequest, raw: string, result: PrintResult): PrintResult {
     const job: JobRecord = {
       id,
       createdAt: this.deps.clock.now(),
@@ -1278,7 +1379,7 @@ export class PrintService {
       job.failureReason = result.reason;
     }
     try {
-      await this.deps.store.append(job);
+      this.deps.store.append(job);
     } catch (error) {
       // 以打印机为准：记录写失败不能把已出纸的任务报成失败，否则操作员会重复打印。
       console.error('[PrintService] failed to record job', error);
@@ -1302,33 +1403,65 @@ git commit -m "feat(core): PrintService with preview, dedup-guarded submit and h
 
 ---
 
-### Task 6: JsonlJobStore（磁盘环形池）
+### Task 6: SqliteJobStore（环形保留 + 分页查询的打印记录）
 
 **Files:**
-- Create: `src/main/storage/fs-errors.ts`, `src/main/storage/jsonl-job-store.ts`
-- Test: `src/main/storage/jsonl-job-store.test.ts`
+- Create: `src/shared/job-history.ts`, `src/main/storage/sqlite-job-store.ts`
+- Test: `src/main/storage/sqlite-job-store.test.ts`
 
 **Interfaces:**
-- Consumes: `JobStore`、`newestFirst`（Task 5）；`RingBuffer`（Task 4）；`SerialQueue`（Task 3）
-- Produces: `isMissingFile(error: unknown): boolean`；`JsonlJobStore.open(filePath: string, capacity: number): Promise<JsonlJobStore>`（实现 `JobStore`）
+- Consumes：`openDatabase`、`runInTransaction`、`readString`、`readInteger`、`readEnum`（Task 4）；`JobStore`、`LastPrinted`（Task 5）；`PRINT_SOURCES`、`PRINT_STATUSES`、`PRINT_FAILURE_REASONS`（Task 1）
+- Produces：
+  - `JobQuery = { limit: number; search?: string; before?: number }`：`before` 是分页游标
+  - `JobPage = { jobs: JobRecord[]; nextCursor: number | null; total: number }`
+  - 常量：`JOB_PAGE_SIZE = 100`、`MAX_JOB_PAGE_SIZE = 500`
+  - `class SqliteJobStore(db: DatabaseSync, capacity: number) implements JobStore`，另有两个查询方法：
+    - `listPage(query: JobQuery): JobPage`：从新到旧，SQL 搜索 + keyset 分页
+    - `count(): number`
 
-- [ ] **Step 1: 创建 `src/main/storage/fs-errors.ts`**
+  容量不是 ≥1 的整数时抛 `RangeError`。
+
+> 容量可以到 10 万甚至百万级：
+> - **插入后裁剪**：用 `DELETE … WHERE seq <= :lastSeq - :capacity`，走主键索引，开销与容量无关。
+> - **调整容量时**：用 `OFFSET` 精确裁剪；这个操作很少发生。
+> - **界面**：只按页取数据，永远不会整表加载。
+
+- [ ] **Step 1: 创建 `src/shared/job-history.ts`**
 
 ```ts
-export function isMissingFile(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'ENOENT';
+import type { JobRecord } from '../core/types';
+
+export const JOB_PAGE_SIZE = 100;
+export const MAX_JOB_PAGE_SIZE = 500;
+
+export interface JobQuery {
+  limit: number;
+  /** 按二维码内容模糊搜索（不区分 ASCII 大小写）。 */
+  search?: string;
+  /** 分页游标：上一页返回的 nextCursor。 */
+  before?: number;
+}
+
+export interface JobPage {
+  /** 从新到旧。 */
+  jobs: JobRecord[];
+  nextCursor: number | null;
+  /** 当前保留的记录总数（不受搜索影响）。 */
+  total: number;
 }
 ```
 
-- [ ] **Step 2: 写失败的测试 `src/main/storage/jsonl-job-store.test.ts`**
+- [ ] **Step 2: 写失败的测试 `src/main/storage/sqlite-job-store.test.ts`**
 
 ```ts
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
+import type { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { JobRecord } from '../../core/types';
-import { JsonlJobStore } from './jsonl-job-store';
+import { openDatabase } from './database';
+import { SqliteJobStore } from './sqlite-job-store';
 
 function job(n: number, overrides: Partial<JobRecord> = {}): JobRecord {
   return {
@@ -1343,244 +1476,285 @@ function job(n: number, overrides: Partial<JobRecord> = {}): JobRecord {
   };
 }
 
-async function countLines(path: string): Promise<number> {
-  return (await readFile(path, 'utf8')).split('\n').filter((line) => line.trim() !== '').length;
+function ids(jobs: JobRecord[]): string[] {
+  return jobs.map((j) => j.id);
 }
 
-describe('JsonlJobStore', () => {
+describe('SqliteJobStore', () => {
+  let db: DatabaseSync;
+
+  beforeEach(() => {
+    db = openDatabase(':memory:');
+  });
+
+  afterEach(() => {
+    if (db.isOpen) {
+      db.close();
+    }
+  });
+
+  test('starts empty', () => {
+    expect(new SqliteJobStore(db, 10).listPage({ limit: 10 })).toEqual({ jobs: [], nextCursor: null, total: 0 });
+  });
+
+  test('round-trips every field, newest first', () => {
+    const store = new SqliteJobStore(db, 10);
+    const failed = job(2, { status: 'failed', failureReason: 'PRINT_TIMEOUT', source: 'history', forced: true });
+    store.append(job(1));
+    store.append(failed);
+    expect(store.listPage({ limit: 10 }).jobs).toEqual([failed, job(1)]);
+  });
+
+  test('keeps only the newest jobs once capacity is reached (ring)', () => {
+    const store = new SqliteJobStore(db, 3);
+    for (let n = 1; n <= 5; n += 1) store.append(job(n));
+    expect(ids(store.listPage({ limit: 10 }).jobs)).toEqual(['job-5', 'job-4', 'job-3']);
+    expect(store.count()).toBe(3);
+  });
+
+  test('setCapacity trims immediately', () => {
+    const store = new SqliteJobStore(db, 5);
+    for (let n = 1; n <= 5; n += 1) store.append(job(n));
+    store.setCapacity(2);
+    expect(ids(store.listPage({ limit: 10 }).jobs)).toEqual(['job-5', 'job-4']);
+  });
+
+  test('trims on open when the stored history exceeds capacity', () => {
+    const large = new SqliteJobStore(db, 10);
+    for (let n = 1; n <= 4; n += 1) large.append(job(n));
+    expect(new SqliteJobStore(db, 2).count()).toBe(2);
+  });
+
+  test('pages through history with a cursor', () => {
+    const store = new SqliteJobStore(db, 10);
+    for (let n = 1; n <= 5; n += 1) store.append(job(n));
+    const first = store.listPage({ limit: 2 });
+    expect(ids(first.jobs)).toEqual(['job-5', 'job-4']);
+    expect(first.total).toBe(5);
+    const second = store.listPage({ limit: 2, before: first.nextCursor ?? undefined });
+    expect(ids(second.jobs)).toEqual(['job-3', 'job-2']);
+    const last = store.listPage({ limit: 2, before: second.nextCursor ?? undefined });
+    expect(ids(last.jobs)).toEqual(['job-1']);
+    expect(last.nextCursor).toBeNull();
+  });
+
+  test('searches case-insensitively and treats LIKE wildcards literally', () => {
+    const store = new SqliteJobStore(db, 10);
+    store.append(job(1, { raw: 'CL5640-TK-图片色-36' }));
+    store.append(job(2, { raw: 'AB12-黑-40' }));
+    store.append(job(3, { raw: 'X%Y-红-1' }));
+    expect(ids(store.listPage({ limit: 10, search: 'cl5640' }).jobs)).toEqual(['job-1']);
+    expect(ids(store.listPage({ limit: 10, search: '%' }).jobs)).toEqual(['job-3']);
+    expect(store.listPage({ limit: 10, search: 'cl5640' }).total).toBe(3);
+  });
+
+  test('lists the latest successful print per code since a timestamp', () => {
+    const store = new SqliteJobStore(db, 10);
+    store.append(job(1, { raw: 'A-红-1', createdAt: 100 }));
+    store.append(job(2, { raw: 'A-红-1', createdAt: 300 }));
+    store.append(job(3, { raw: 'B-黑-2', createdAt: 400, status: 'duplicate' }));
+    store.append(job(4, { raw: 'C-白-3', createdAt: 50 }));
+    expect(store.listLastPrinted(90)).toEqual([{ raw: 'A-红-1', printedAt: 300 }]);
+  });
+
+  test.each([0, -1, 2.5])('rejects capacity %p', (capacity) => {
+    expect(() => new SqliteJobStore(db, capacity)).toThrow(RangeError);
+  });
+});
+
+describe('SqliteJobStore persistence', () => {
   let dir: string;
-  let filePath: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'labelflash-jobs-'));
-    filePath = join(dir, 'nested', 'jobs.jsonl');
+    dir = await mkdtemp(join(tmpdir(), 'labelflash-db-'));
   });
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  test('starts empty when the file does not exist', async () => {
-    const store = await JsonlJobStore.open(filePath, 10);
-    expect(await store.listRecent(10)).toEqual([]);
-  });
-
-  test('persists jobs across reopen', async () => {
-    const store = await JsonlJobStore.open(filePath, 10);
-    await store.append(job(1));
-    await store.append(job(2));
-    const reopened = await JsonlJobStore.open(filePath, 10);
-    expect((await reopened.listRecent(10)).map((j) => j.id)).toEqual(['job-2', 'job-1']);
-  });
-
-  test('lists newest first with a limit', async () => {
-    const store = await JsonlJobStore.open(filePath, 10);
-    for (let n = 1; n <= 4; n += 1) await store.append(job(n));
-    expect((await store.listRecent(2)).map((j) => j.id)).toEqual(['job-4', 'job-3']);
-  });
-
-  test('lists only printed jobs since a timestamp', async () => {
-    const store = await JsonlJobStore.open(filePath, 10);
-    await store.append(job(1));
-    await store.append(job(5, { status: 'duplicate' }));
-    await store.append(job(9));
-    expect((await store.listPrintedSince(1_002)).map((j) => j.id)).toEqual(['job-9']);
-  });
-
-  test('drops the oldest jobs once the ring is full', async () => {
-    const store = await JsonlJobStore.open(filePath, 3);
-    for (let n = 1; n <= 5; n += 1) await store.append(job(n));
-    expect((await store.listRecent(10)).map((j) => j.id)).toEqual(['job-5', 'job-4', 'job-3']);
-  });
-
-  test('compacts the file once it grows past twice the capacity', async () => {
-    const store = await JsonlJobStore.open(filePath, 2);
-    for (let n = 1; n <= 4; n += 1) await store.append(job(n));
-    expect(await countLines(filePath)).toBe(4);
-    await store.append(job(5));
-    expect(await countLines(filePath)).toBe(2);
-    const reopened = await JsonlJobStore.open(filePath, 2);
-    expect((await reopened.listRecent(10)).map((j) => j.id)).toEqual(['job-5', 'job-4']);
-  });
-
-  test('setCapacity trims memory and file', async () => {
-    const store = await JsonlJobStore.open(filePath, 5);
-    for (let n = 1; n <= 5; n += 1) await store.append(job(n));
-    await store.setCapacity(2);
-    expect((await store.listRecent(10)).map((j) => j.id)).toEqual(['job-5', 'job-4']);
-    expect(await countLines(filePath)).toBe(2);
-  });
-
-  test('skips unreadable lines', async () => {
-    await writeFile(join(dir, 'jobs.jsonl'), `${JSON.stringify(job(1))}\nnot json\n{"id":1}\n`, 'utf8');
-    const store = await JsonlJobStore.open(join(dir, 'jobs.jsonl'), 10);
-    expect((await store.listRecent(10)).map((j) => j.id)).toEqual(['job-1']);
+  test('keeps history across reopen', () => {
+    const path = join(dir, 'LabelFlash', 'labelflash.db');
+    const first = openDatabase(path);
+    new SqliteJobStore(first, 10).append(job(1));
+    first.close();
+    const second = openDatabase(path);
+    expect(ids(new SqliteJobStore(second, 10).listPage({ limit: 10 }).jobs)).toEqual(['job-1']);
+    second.close();
   });
 });
 ```
 
 - [ ] **Step 3: 运行测试，确认失败**
 
-Run: `bun test src/main/storage/jsonl-job-store.test.ts`
-Expected: FAIL，`Cannot find module './jsonl-job-store'`
+Run: `bun test src/main/storage/sqlite-job-store.test.ts`
+Expected: FAIL，`Cannot find module './sqlite-job-store'`
 
-- [ ] **Step 4: 实现 `src/main/storage/jsonl-job-store.ts`**
+- [ ] **Step 4: 实现 `src/main/storage/sqlite-job-store.ts`**
 
 ```ts
-import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { newestFirst, type JobStore } from '../../core/job-store';
-import { RingBuffer } from '../../core/ring-buffer';
-import { SerialQueue } from '../../core/serial-queue';
-import type { JobRecord } from '../../core/types';
-import { isMissingFile } from './fs-errors';
+import type { DatabaseSync, StatementSync } from 'node:sqlite';
+import type { JobStore, LastPrinted } from '../../core/job-store';
+import { PRINT_FAILURE_REASONS, PRINT_SOURCES, PRINT_STATUSES, type JobRecord } from '../../core/types';
+import type { JobPage, JobQuery } from '../../shared/job-history';
+import { runInTransaction } from './database';
+import { readEnum, readInteger, readString, type Row } from './row-readers';
 
-/** 文件行数超过容量的这个倍数时，重写文件，只保留环形池里的记录。 */
-const COMPACT_FACTOR = 2;
-const PRINT_SOURCES: ReadonlySet<string> = new Set(['desktop', 'history', 'mobile']);
-const PRINT_STATUSES: ReadonlySet<string> = new Set(['printed', 'duplicate', 'invalid', 'failed']);
+const JOB_COLUMNS = `
+  seq, id, created_at AS createdAt, raw, printer_name AS printerName,
+  source, status, forced, failure_reason AS failureReason`;
 
-/** 打印记录：内存里是环形池，磁盘上是追加写的 JSONL，定期压缩。 */
-export class JsonlJobStore implements JobStore {
-  private readonly writes = new SerialQueue();
-  private fileLines = 0;
+/**
+ * 打印记录，环形保留：jobs 表只保留最新的 capacity 条。
+ * seq 是 AUTOINCREMENT，单调递增且不复用。
+ */
+export class SqliteJobStore implements JobStore {
+  private capacity: number;
+  private readonly insertJob: StatementSync;
+  private readonly trimBehind: StatementSync;
+  private readonly trimToCapacity: StatementSync;
+  private readonly selectPage: StatementSync;
+  private readonly selectCount: StatementSync;
+  private readonly selectLastPrinted: StatementSync;
 
-  private constructor(
-    private readonly filePath: string,
-    private readonly jobs: RingBuffer<JobRecord>,
-  ) {}
-
-  static async open(filePath: string, capacity: number): Promise<JsonlJobStore> {
-    const store = new JsonlJobStore(filePath, new RingBuffer<JobRecord>(capacity));
-    await store.load();
-    return store;
+  constructor(
+    private readonly db: DatabaseSync,
+    capacity: number,
+  ) {
+    this.capacity = assertCapacity(capacity);
+    this.insertJob = db.prepare(`
+      INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason)
+      VALUES (:id, :createdAt, :raw, :printerName, :source, :status, :forced, :failureReason)`);
+    // 插入后使用：只保留 seq 落在最新 capacity 个序号内的记录，走主键，开销与容量无关。
+    this.trimBehind = db.prepare('DELETE FROM jobs WHERE seq <= :lastSeq - :capacity');
+    // 调整容量或启动时使用：精确裁剪到 capacity 条。
+    this.trimToCapacity = db.prepare(`
+      DELETE FROM jobs
+      WHERE seq <= (SELECT seq FROM jobs ORDER BY seq DESC LIMIT 1 OFFSET :capacity)`);
+    this.selectPage = db.prepare(`
+      SELECT ${JOB_COLUMNS} FROM jobs
+      WHERE (:before IS NULL OR seq < :before)
+        AND (:pattern IS NULL OR raw LIKE :pattern ESCAPE '\\')
+      ORDER BY seq DESC
+      LIMIT :limit`);
+    this.selectCount = db.prepare('SELECT COUNT(*) AS total FROM jobs');
+    this.selectLastPrinted = db.prepare(`
+      SELECT raw, MAX(created_at) AS printedAt
+      FROM jobs
+      WHERE status = 'printed' AND created_at >= :since
+      GROUP BY raw`);
+    this.trimToCapacity.run({ capacity: this.capacity });
   }
 
-  append(job: JobRecord): Promise<void> {
-    return this.writes.run(async () => {
-      this.jobs.push(job);
-      await mkdir(dirname(this.filePath), { recursive: true });
-      await appendFile(this.filePath, `${JSON.stringify(job)}\n`, 'utf8');
-      this.fileLines += 1;
-      await this.compactIfNeeded();
+  append(job: JobRecord): void {
+    runInTransaction(this.db, () => {
+      const { lastInsertRowid } = this.insertJob.run({
+        id: job.id,
+        createdAt: job.createdAt,
+        raw: job.raw,
+        printerName: job.printerName,
+        source: job.source,
+        status: job.status,
+        forced: job.forced ? 1 : 0,
+        failureReason: job.failureReason ?? null,
+      });
+      this.trimBehind.run({ lastSeq: lastInsertRowid, capacity: this.capacity });
     });
   }
 
-  async listRecent(limit: number): Promise<JobRecord[]> {
-    return newestFirst(this.jobs.toArray(), limit);
-  }
-
-  async listPrintedSince(since: number): Promise<JobRecord[]> {
-    return this.jobs.toArray().filter((job) => job.status === 'printed' && job.createdAt >= since);
-  }
-
-  setCapacity(capacity: number): Promise<void> {
-    return this.writes.run(async () => {
-      this.jobs.resize(capacity);
-      await this.rewrite();
+  listPage(query: JobQuery): JobPage {
+    const search = query.search?.trim() ?? '';
+    const rows = this.selectPage.all({
+      before: query.before ?? null,
+      pattern: search === '' ? null : `%${escapeLike(search)}%`,
+      limit: query.limit + 1,
     });
+    const hasMore = rows.length > query.limit;
+    const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
+    const lastRow = pageRows.at(-1);
+    return {
+      jobs: pageRows.map(toJobRecord),
+      nextCursor: hasMore && lastRow ? readInteger(lastRow, 'seq') : null,
+      total: this.count(),
+    };
   }
 
-  private async load(): Promise<void> {
-    let text: string;
-    try {
-      text = await readFile(this.filePath, 'utf8');
-    } catch (error) {
-      if (isMissingFile(error)) {
-        return;
-      }
-      throw error;
+  count(): number {
+    const row = this.selectCount.get();
+    if (!row) {
+      throw new Error('COUNT query returned no row');
     }
-    let skipped = 0;
-    for (const line of text.split('\n')) {
-      if (line.trim() === '') {
-        continue;
-      }
-      this.fileLines += 1;
-      const job = parseJob(line);
-      if (job) {
-        this.jobs.push(job);
-      } else {
-        skipped += 1;
-      }
-    }
-    if (skipped > 0) {
-      console.warn(`[JsonlJobStore] skipped ${skipped} unreadable line(s) in ${this.filePath}`);
-    }
-    await this.compactIfNeeded();
+    return readInteger(row, 'total');
   }
 
-  private async compactIfNeeded(): Promise<void> {
-    if (this.fileLines > this.jobs.capacity * COMPACT_FACTOR) {
-      await this.rewrite();
-    }
+  listLastPrinted(since: number): LastPrinted[] {
+    return this.selectLastPrinted.all({ since }).map((row) => ({
+      raw: readString(row, 'raw'),
+      printedAt: readInteger(row, 'printedAt'),
+    }));
   }
 
-  private async rewrite(): Promise<void> {
-    const jobs = this.jobs.toArray();
-    const tempPath = `${this.filePath}.tmp`;
-    await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(tempPath, jobs.map((job) => `${JSON.stringify(job)}\n`).join(''), 'utf8');
-    await rename(tempPath, this.filePath);
-    this.fileLines = jobs.length;
+  setCapacity(capacity: number): void {
+    this.capacity = assertCapacity(capacity);
+    this.trimToCapacity.run({ capacity: this.capacity });
   }
 }
 
-function parseJob(line: string): JobRecord | null {
-  try {
-    const value: unknown = JSON.parse(line);
-    return isJobRecord(value) ? value : null;
-  } catch {
-    return null;
+function toJobRecord(row: Row): JobRecord {
+  const job: JobRecord = {
+    id: readString(row, 'id'),
+    createdAt: readInteger(row, 'createdAt'),
+    raw: readString(row, 'raw'),
+    printerName: readString(row, 'printerName'),
+    source: readEnum(row, 'source', PRINT_SOURCES),
+    status: readEnum(row, 'status', PRINT_STATUSES),
+    forced: readInteger(row, 'forced') === 1,
+  };
+  if (row['failureReason'] !== null) {
+    job.failureReason = readEnum(row, 'failureReason', PRINT_FAILURE_REASONS);
   }
+  return job;
 }
 
-function isJobRecord(value: unknown): value is JobRecord {
-  if (typeof value !== 'object' || value === null) {
-    return false;
+function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, '\\$&');
+}
+
+function assertCapacity(capacity: number): number {
+  if (!Number.isInteger(capacity) || capacity < 1) {
+    throw new RangeError(`Invalid history capacity: ${capacity}`);
   }
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record['id'] === 'string' &&
-    typeof record['createdAt'] === 'number' &&
-    typeof record['raw'] === 'string' &&
-    typeof record['printerName'] === 'string' &&
-    typeof record['source'] === 'string' &&
-    PRINT_SOURCES.has(record['source']) &&
-    typeof record['status'] === 'string' &&
-    PRINT_STATUSES.has(record['status']) &&
-    typeof record['forced'] === 'boolean'
-  );
+  return capacity;
 }
 ```
 
 - [ ] **Step 5: 运行测试**
 
 Run: `bun test src/main/storage && bunx tsc --noEmit -p tsconfig.json`
-Expected: 8 pass, 0 fail；tsc 无输出。
+Expected: 全部 pass（本任务新增 12 个），0 fail；tsc 无输出。
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/main/storage
-git commit -m "feat(storage): JSONL job history bounded by ring buffer with compaction"
+git add src/shared/job-history.ts src/main/storage/sqlite-job-store.ts src/main/storage/sqlite-job-store.test.ts
+git commit -m "feat(storage): SQLite job history with ring retention, search and keyset paging"
 ```
 
 ---
 
-### Task 7: 设置（校验 + AppData 持久化）
+### Task 7: 设置（校验 + SQLite 持久化）
 
 **Files:**
-- Create: `src/shared/settings.ts`, `src/main/storage/settings-store.ts`
-- Test: `src/shared/settings.test.ts`, `src/main/storage/settings-store.test.ts`
+- Create: `src/shared/settings.ts`, `src/main/storage/sqlite-settings-store.ts`
+- Test: `src/shared/settings.test.ts`, `src/main/storage/sqlite-settings-store.test.ts`
 
 **Interfaces:**
-- Consumes: `MAX_DEDUP_WINDOW_MS`（Task 2）；`SerialQueue`（Task 3）；`isMissingFile`（Task 6）
-- Produces:
+- Consumes：`MAX_DEDUP_WINDOW_MS`（Task 2）；`openDatabase`、`runInTransaction`、`readString`（Task 4）
+- Produces：
   - `AppSettings = { selectedPrinter: string | null; autoPrint: boolean; dedupWindowMinutes: number; historyLimit: number; launchAtLogin: boolean }`
   - 常量：`DEFAULT_SETTINGS`、`MAX_DEDUP_WINDOW_MINUTES`、`HISTORY_LIMIT_RANGE`
   - 函数：`sanitizeSettings(value: unknown): AppSettings`、`minutesToMs(minutes)`、`isRecord(value)`
-  - `SettingsStore.open(filePath)`，成员：`current: AppSettings`、`update(patch: Partial<AppSettings>): Promise<AppSettings>`
+  - `class SqliteSettingsStore(db: DatabaseSync)`，成员：`current: AppSettings`、`update(patch: Partial<AppSettings>): AppSettings`
 
 - [ ] **Step 1: 写失败的测试 `src/shared/settings.test.ts`**
 
@@ -1589,12 +1763,15 @@ import { describe, expect, test } from 'bun:test';
 import { DEFAULT_SETTINGS, HISTORY_LIMIT_RANGE, MAX_DEDUP_WINDOW_MINUTES, sanitizeSettings } from './settings';
 
 describe('sanitizeSettings', () => {
-  test.each([undefined, null, 42, 'x', []])('falls back to defaults for %p', (value) => {
-    expect(sanitizeSettings(value)).toEqual(DEFAULT_SETTINGS);
+  // 不用 test.each：Bun 会把 undefined 那一行的参数当成 done 回调，导致超时。
+  test('falls back to defaults for non-object input', () => {
+    for (const value of [undefined, null, 42, 'x', []]) {
+      expect(sanitizeSettings(value)).toEqual(DEFAULT_SETTINGS);
+    }
   });
 
   test('keeps valid values', () => {
-    const settings = { selectedPrinter: '标签', autoPrint: false, dedupWindowMinutes: 30, historyLimit: 800, launchAtLogin: true };
+    const settings = { selectedPrinter: '标签', autoPrint: false, dedupWindowMinutes: 30, historyLimit: 20_000, launchAtLogin: true };
     expect(sanitizeSettings(settings)).toEqual(settings);
   });
 
@@ -1614,57 +1791,64 @@ describe('sanitizeSettings', () => {
 });
 ```
 
-- [ ] **Step 2: 写失败的测试 `src/main/storage/settings-store.test.ts`**
+- [ ] **Step 2: 写失败的测试 `src/main/storage/sqlite-settings-store.test.ts`**
 
 ```ts
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_SETTINGS, MAX_DEDUP_WINDOW_MINUTES } from '../../shared/settings';
-import { SettingsStore } from './settings-store';
+import { openDatabase } from './database';
+import { SqliteSettingsStore } from './sqlite-settings-store';
 
-describe('SettingsStore', () => {
+describe('SqliteSettingsStore', () => {
   let dir: string;
-  let filePath: string;
+  let path: string;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'labelflash-settings-'));
-    filePath = join(dir, 'LabelFlash', 'settings.json');
+    path = join(dir, 'labelflash.db');
   });
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  test('uses defaults when no file exists', async () => {
-    expect((await SettingsStore.open(filePath)).current).toEqual(DEFAULT_SETTINGS);
+  test('uses defaults on a fresh database', () => {
+    const db = openDatabase(path);
+    expect(new SqliteSettingsStore(db).current).toEqual(DEFAULT_SETTINGS);
+    db.close();
   });
 
-  test('persists the selected printer across reopen', async () => {
-    const store = await SettingsStore.open(filePath);
-    await store.update({ selectedPrinter: 'Qirui QR-488', autoPrint: false });
-    const reopened = await SettingsStore.open(filePath);
-    expect(reopened.current).toMatchObject({ selectedPrinter: 'Qirui QR-488', autoPrint: false });
+  test('persists the selected printer across reopen', () => {
+    const first = openDatabase(path);
+    new SqliteSettingsStore(first).update({ selectedPrinter: 'Qirui QR-488', autoPrint: false });
+    first.close();
+    const second = openDatabase(path);
+    expect(new SqliteSettingsStore(second).current).toMatchObject({ selectedPrinter: 'Qirui QR-488', autoPrint: false });
+    second.close();
   });
 
-  test('sanitizes updates', async () => {
-    const store = await SettingsStore.open(filePath);
-    expect((await store.update({ dedupWindowMinutes: 99_999 })).dedupWindowMinutes).toBe(MAX_DEDUP_WINDOW_MINUTES);
+  test('sanitizes updates', () => {
+    const db = openDatabase(path);
+    expect(new SqliteSettingsStore(db).update({ dedupWindowMinutes: 99_999 }).dedupWindowMinutes).toBe(MAX_DEDUP_WINDOW_MINUTES);
+    db.close();
   });
 
-  test('falls back to defaults when the file is corrupt', async () => {
-    const corruptPath = join(dir, 'settings.json');
-    await writeFile(corruptPath, '{not json', 'utf8');
-    expect((await SettingsStore.open(corruptPath)).current).toEqual(DEFAULT_SETTINGS);
+  test('ignores a stored value that is not valid JSON', () => {
+    const db = openDatabase(path);
+    db.prepare("INSERT INTO settings (key, value) VALUES ('autoPrint', 'not json')").run();
+    expect(new SqliteSettingsStore(db).current.autoPrint).toBe(DEFAULT_SETTINGS.autoPrint);
+    db.close();
   });
 });
 ```
 
 - [ ] **Step 3: 运行测试，确认失败**
 
-Run: `bun test src/shared src/main/storage/settings-store.test.ts`
-Expected: FAIL，`Cannot find module './settings'` / `'./settings-store'`
+Run: `bun test src/shared src/main/storage/sqlite-settings-store.test.ts`
+Expected: FAIL，`Cannot find module './settings'` / `'./sqlite-settings-store'`
 
 - [ ] **Step 4: 实现 `src/shared/settings.ts`**
 
@@ -1681,14 +1865,14 @@ export interface AppSettings {
 
 export const MS_PER_MINUTE = 60_000;
 export const MAX_DEDUP_WINDOW_MINUTES = MAX_DEDUP_WINDOW_MS / MS_PER_MINUTE;
-export const HISTORY_LIMIT_RANGE = { min: 50, max: 5_000 } as const;
+export const HISTORY_LIMIT_RANGE = { min: 1_000, max: 1_000_000 } as const;
 const MAX_PRINTER_NAME_LENGTH = 256;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   selectedPrinter: null,
   autoPrint: true,
   dedupWindowMinutes: 10,
-  historyLimit: 500,
+  historyLimit: 100_000,
   launchAtLogin: false,
 };
 
@@ -1737,50 +1921,54 @@ function sanitizeInteger(value: unknown, min: number, max: number, fallback: num
 }
 ```
 
-- [ ] **Step 5: 实现 `src/main/storage/settings-store.ts`**
+- [ ] **Step 5: 实现 `src/main/storage/sqlite-settings-store.ts`**
 
 ```ts
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { SerialQueue } from '../../core/serial-queue';
+import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import { sanitizeSettings, type AppSettings } from '../../shared/settings';
-import { isMissingFile } from './fs-errors';
+import { runInTransaction } from './database';
+import { readString } from './row-readers';
 
-/** %APPDATA%\LabelFlash\settings.json：先写临时文件再原子替换。 */
-export class SettingsStore {
-  private readonly writes = new SerialQueue();
+/** 设置存在 settings 表（key → JSON value）；读取和写入都经过 sanitizeSettings。 */
+export class SqliteSettingsStore {
+  private readonly selectAll: StatementSync;
+  private readonly upsert: StatementSync;
+  private settings: AppSettings;
 
-  private constructor(
-    private readonly filePath: string,
-    private settings: AppSettings,
-  ) {}
-
-  static async open(filePath: string): Promise<SettingsStore> {
-    let stored: unknown = {};
-    try {
-      stored = JSON.parse(await readFile(filePath, 'utf8'));
-    } catch (error) {
-      if (!isMissingFile(error)) {
-        console.warn(`[SettingsStore] ${filePath} is unreadable, falling back to defaults`, error);
-      }
-    }
-    return new SettingsStore(filePath, sanitizeSettings(stored));
+  constructor(private readonly db: DatabaseSync) {
+    this.selectAll = db.prepare('SELECT key, value FROM settings');
+    this.upsert = db.prepare(`
+      INSERT INTO settings (key, value) VALUES (:key, :value)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value`);
+    this.settings = sanitizeSettings(this.readStored());
   }
 
   get current(): AppSettings {
     return this.settings;
   }
 
-  update(patch: Partial<AppSettings>): Promise<AppSettings> {
-    return this.writes.run(async () => {
-      const next = sanitizeSettings({ ...this.settings, ...patch });
-      const tempPath = `${this.filePath}.tmp`;
-      await mkdir(dirname(this.filePath), { recursive: true });
-      await writeFile(tempPath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-      await rename(tempPath, this.filePath);
-      this.settings = next;
-      return next;
+  update(patch: Partial<AppSettings>): AppSettings {
+    const next = sanitizeSettings({ ...this.settings, ...patch });
+    runInTransaction(this.db, () => {
+      for (const [key, value] of Object.entries(next)) {
+        this.upsert.run({ key, value: JSON.stringify(value) });
+      }
     });
+    this.settings = next;
+    return next;
+  }
+
+  private readStored(): Record<string, unknown> {
+    const stored: Record<string, unknown> = {};
+    for (const row of this.selectAll.all()) {
+      const key = readString(row, 'key');
+      try {
+        stored[key] = JSON.parse(readString(row, 'value'));
+      } catch (error) {
+        console.warn(`[SettingsStore] setting "${key}" is unreadable, using its default`, error);
+      }
+    }
+    return stored;
   }
 }
 ```
@@ -1793,8 +1981,8 @@ Expected: 全部 pass，0 fail；tsc 无输出。
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/shared/settings.ts src/shared/settings.test.ts src/main/storage/settings-store.ts src/main/storage/settings-store.test.ts
-git commit -m "feat(settings): validated settings persisted under AppData"
+git add src/shared/settings.ts src/shared/settings.test.ts src/main/storage/sqlite-settings-store.ts src/main/storage/sqlite-settings-store.test.ts
+git commit -m "feat(settings): validated settings persisted in SQLite under AppData"
 ```
 
 ---
@@ -2031,7 +2219,7 @@ git commit -m "feat(printing): 60x40 label template and silent driver print adap
     - `print(raw, printerName, { source, force })`
     - `printTest(printerName)`
     - `listPrinters()`
-    - `listJobs(limit)`
+    - `listJobs(query: JobQuery): Promise<JobPage>`
     - `getSettings()`
     - `updateSettings(patch)`
   - `WindowControlsApi`：
@@ -2080,7 +2268,8 @@ Expected: 输出 `wrote resources/icon.png`；`file resources/icon.png` 显示 `
 - [ ] **Step 3: 创建 `src/shared/ipc-contract.ts`**
 
 ```ts
-import type { JobRecord, PreviewResult, PrinterInfo, PrintResult } from '../core/types';
+import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
+import type { JobPage, JobQuery } from './job-history';
 import type { AppSettings } from './settings';
 
 export const IpcChannel = {
@@ -2116,7 +2305,7 @@ export interface LabelFlashApi {
   print(raw: string, printerName: string, options: PrintOptions): Promise<PrintResult>;
   printTest(printerName: string): Promise<PrintResult>;
   listPrinters(): Promise<PrinterInfo[]>;
-  listJobs(limit: number): Promise<JobRecord[]>;
+  listJobs(query: JobQuery): Promise<JobPage>;
   getSettings(): Promise<AppSettings>;
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
 }
@@ -2219,13 +2408,14 @@ export function createTray(iconPath: string, actions: TrayActions): Tray {
 
 ```ts
 import { ipcMain, type BrowserWindow } from 'electron';
-import type { JobStore } from '../core/job-store';
 import type { PrintService } from '../core/print-service';
 import type { PrinterAdapter } from '../core/types';
 import { IpcChannel, type LabelPreview, type PrintOptions, type RendererPrintSource } from '../shared/ipc-contract';
+import { MAX_JOB_PAGE_SIZE, type JobQuery } from '../shared/job-history';
 import { isRecord, type AppSettings } from '../shared/settings';
 import { renderLabelHtml } from './printing/label-template';
-import type { SettingsStore } from './storage/settings-store';
+import type { SqliteJobStore } from './storage/sqlite-job-store';
+import type { SqliteSettingsStore } from './storage/sqlite-settings-store';
 
 const MAX_IPC_STRING_LENGTH = 1_024;
 const RENDERER_PRINT_SOURCES: ReadonlySet<string> = new Set<RendererPrintSource>(['desktop', 'history']);
@@ -2233,10 +2423,10 @@ const RENDERER_PRINT_SOURCES: ReadonlySet<string> = new Set<RendererPrintSource>
 export interface IpcDeps {
   service: PrintService;
   adapter: PrinterAdapter;
-  store: JobStore;
-  settings: SettingsStore;
+  store: SqliteJobStore;
+  settings: SqliteSettingsStore;
   getWindow: () => BrowserWindow | null;
-  onSettingsChanged: (next: AppSettings, previous: AppSettings) => Promise<void>;
+  onSettingsChanged: (next: AppSettings, previous: AppSettings) => void;
 }
 
 /** 渲染进程不可信：所有参数都在这里校验。 */
@@ -2258,15 +2448,15 @@ export function registerIpc(deps: IpcDeps): void {
     deps.service.printTest(requireString(printerName, 'printerName')),
   );
   ipcMain.handle(IpcChannel.ListPrinters, () => deps.adapter.listPrinters());
-  ipcMain.handle(IpcChannel.ListJobs, (_event, limit: unknown) => deps.store.listRecent(requireLimit(limit)));
+  ipcMain.handle(IpcChannel.ListJobs, (_event, query: unknown) => deps.store.listPage(requireJobQuery(query)));
   ipcMain.handle(IpcChannel.GetSettings, () => deps.settings.current);
-  ipcMain.handle(IpcChannel.UpdateSettings, async (_event, patch: unknown) => {
+  ipcMain.handle(IpcChannel.UpdateSettings, (_event, patch: unknown) => {
     if (!isRecord(patch)) {
       throw new Error('Invalid settings patch');
     }
     const previous = deps.settings.current;
-    const next = await deps.settings.update(patch as Partial<AppSettings>);
-    await deps.onSettingsChanged(next, previous);
+    const next = deps.settings.update(patch as Partial<AppSettings>);
+    deps.onSettingsChanged(next, previous);
     return next;
   });
 
@@ -2304,11 +2494,21 @@ function requirePrintOptions(value: unknown): PrintOptions {
   return { source: value['source'] as RendererPrintSource, force: value['force'] };
 }
 
-function requireLimit(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
-    throw new Error('Invalid limit');
+function requireJobQuery(value: unknown): JobQuery {
+  if (!isRecord(value)) {
+    throw new Error('Invalid job query');
   }
-  return value;
+  const { limit, search, before } = value;
+  if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > MAX_JOB_PAGE_SIZE) {
+    throw new Error('Invalid job query limit');
+  }
+  if (search !== undefined && (typeof search !== 'string' || search.length > MAX_IPC_STRING_LENGTH)) {
+    throw new Error('Invalid job query search');
+  }
+  if (before !== undefined && (typeof before !== 'number' || !Number.isInteger(before))) {
+    throw new Error('Invalid job query cursor');
+  }
+  return { limit, search, before };
 }
 ```
 
@@ -2326,13 +2526,15 @@ import { systemClock } from '../core/types';
 import { minutesToMs } from '../shared/settings';
 import { registerIpc } from './ipc';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
-import { JsonlJobStore } from './storage/jsonl-job-store';
-import { SettingsStore } from './storage/settings-store';
+import { openDatabase } from './storage/database';
+import { SqliteJobStore } from './storage/sqlite-job-store';
+import { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import { createTray } from './tray';
 import { createMainWindow } from './window';
 
 const APP_ID = 'com.labelflash.app';
 const DATA_DIR_NAME = 'LabelFlash';
+const DATABASE_FILE_NAME = 'labelflash.db';
 const PRINT_TIMEOUT_MS = 30_000;
 
 let mainWindow: BrowserWindow | null = null;
@@ -2368,9 +2570,10 @@ function applyLaunchAtLogin(enabled: boolean): void {
 
 async function bootstrap(): Promise<void> {
   app.setAppUserModelId(APP_ID);
-  const dataDir = app.getPath('userData');
-  const settings = await SettingsStore.open(join(dataDir, 'settings.json'));
-  const store = await JsonlJobStore.open(join(dataDir, 'jobs.jsonl'), settings.current.historyLimit);
+  const db = openDatabase(join(app.getPath('userData'), DATABASE_FILE_NAME));
+  app.on('will-quit', () => db.close());
+  const settings = new SqliteSettingsStore(db);
+  const store = new SqliteJobStore(db, settings.current.historyLimit);
   const guard = new DedupGuard(systemClock, minutesToMs(settings.current.dedupWindowMinutes));
   const adapter = new ElectronDriverAdapter(() => {
     if (!mainWindow) {
@@ -2386,7 +2589,7 @@ async function bootstrap(): Promise<void> {
     queue: new PrintQueue(PRINT_TIMEOUT_MS),
     createId: randomUUID,
   });
-  await service.restore();
+  service.restore();
 
   registerIpc({
     service,
@@ -2394,10 +2597,10 @@ async function bootstrap(): Promise<void> {
     store,
     settings,
     getWindow: () => mainWindow,
-    onSettingsChanged: async (next, previous) => {
+    onSettingsChanged: (next, previous) => {
       guard.setWindowMs(minutesToMs(next.dedupWindowMinutes));
       if (next.historyLimit !== previous.historyLimit) {
-        await store.setCapacity(next.historyLimit);
+        store.setCapacity(next.historyLimit);
       }
       if (next.launchAtLogin !== previous.launchAtLogin) {
         applyLaunchAtLogin(next.launchAtLogin);
@@ -2440,7 +2643,7 @@ const api: LabelFlashApi = {
   print: (raw, printerName, options) => ipcRenderer.invoke(IpcChannel.Print, raw, printerName, options),
   printTest: (printerName) => ipcRenderer.invoke(IpcChannel.PrintTest, printerName),
   listPrinters: () => ipcRenderer.invoke(IpcChannel.ListPrinters),
-  listJobs: (limit) => ipcRenderer.invoke(IpcChannel.ListJobs, limit),
+  listJobs: (query) => ipcRenderer.invoke(IpcChannel.ListJobs, query),
   getSettings: () => ipcRenderer.invoke(IpcChannel.GetSettings),
   updateSettings: (patch) => ipcRenderer.invoke(IpcChannel.UpdateSettings, patch),
 };
@@ -2577,7 +2780,7 @@ git commit -m "feat(shell): frameless Electron window, tray, typed IPC and prelo
   - 类型：`FeedbackTone`、`StatusTone`、`StatusView`、`FeedbackStatusView`、`ScanActions`、`ScanSnapshot`、`ScanContext`、`ScanView`
   - 描述函数：`describeResult(result, now): FeedbackStatusView`、`describeScan(scan, ctx): ScanView`、`describeJobStatus(job)`、`describeSource(source)`
   - 格式化函数：`formatAgo(at, now)`、`formatWindow(ms)`、`formatDateTime(ms)`
-  - 过滤函数：`filterPrinters(printers, query)`、`filterJobs(jobs, query)`
+  - 过滤函数：`filterPrinters(printers, query)`（打印记录的搜索在 SQL 里做，见 Task 6）
   - 提示音：`playFeedback(tone: FeedbackTone)`
 
 - [ ] **Step 1: 放入得意黑字体（OFL-1.1）**
@@ -2681,8 +2884,7 @@ describe('RepeatFilter', () => {
 
 ```ts
 import { describe, expect, test } from 'bun:test';
-import type { JobRecord } from '../../../core/types';
-import { filterJobs, filterPrinters } from './list-filters';
+import { filterPrinters } from './list-filters';
 
 const PRINTERS = [
   { name: '申通', displayName: '申通' },
@@ -2698,23 +2900,6 @@ describe('filterPrinters', () => {
   test('matches case-insensitively', () => {
     expect(filterPrinters(PRINTERS, 'qr').map((p) => p.name)).toEqual(['Qirui QR-488']);
     expect(filterPrinters(PRINTERS, '申').map((p) => p.name)).toEqual(['申通']);
-  });
-});
-
-describe('filterJobs', () => {
-  const job = (raw: string): JobRecord => ({
-    id: raw,
-    createdAt: 0,
-    raw,
-    printerName: 'P',
-    source: 'desktop',
-    status: 'printed',
-    forced: false,
-  });
-
-  test('matches on the raw code', () => {
-    const jobs = [job('CL5640-TK-图片色-36'), job('AB12-黑-40')];
-    expect(filterJobs(jobs, 'cl5640').map((j) => j.raw)).toEqual(['CL5640-TK-图片色-36']);
   });
 });
 ```
@@ -2884,7 +3069,7 @@ export class RepeatFilter {
 - [ ] **Step 8: 实现 `src/renderer/src/lib/list-filters.ts`**
 
 ```ts
-import type { JobRecord, PrinterInfo } from '../../../core/types';
+import type { PrinterInfo } from '../../../core/types';
 
 export function filterPrinters(printers: PrinterInfo[], query: string): PrinterInfo[] {
   const needle = query.trim().toLowerCase();
@@ -2894,14 +3079,6 @@ export function filterPrinters(printers: PrinterInfo[], query: string): PrinterI
   return printers.filter(
     (printer) => printer.displayName.toLowerCase().includes(needle) || printer.name.toLowerCase().includes(needle),
   );
-}
-
-export function filterJobs(jobs: JobRecord[], query: string): JobRecord[] {
-  const needle = query.trim().toLowerCase();
-  if (needle === '') {
-    return jobs;
-  }
-  return jobs.filter((job) => job.raw.toLowerCase().includes(needle));
 }
 ```
 
@@ -3150,7 +3327,7 @@ git commit -m "feat(ui): design tokens, Smiley Sans font and pure status/filter 
 - Produces：
   - `useSettings()` → `{ settings: AppSettings | null; update(patch): Promise<void> }`
   - `usePrinters()` → `{ printers; isLoading; refresh(); printTest(name) }`
-  - `useJobLog(limit)` → `{ jobs; refresh }`
+  - `useJobLog()` → `{ jobs; total; hasMore; search; setSearch; refresh; loadMore }`
   - `useScanStation({ printerName, autoPrint, onJobRecorded })` → `{ scan: ScanState | null; scanCode(raw); review(raw); reprint(raw); printCurrent(force) }`
   - `ScanState = ScanSnapshot & { seq: number; source: RendererPrintSource }`
   - `useWindowControls()` → `{ isMaximized; minimize; toggleMaximize; close }`
@@ -3219,21 +3396,56 @@ export function usePrinters() {
 - [ ] **Step 3: 创建 `use-job-log.ts`**
 
 ```ts
-import { useCallback, useEffect, useState } from 'react';
-import type { JobRecord } from '../../../core/types';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { JOB_PAGE_SIZE, type JobPage } from '../../../shared/job-history';
 
-export function useJobLog(limit: number) {
-  const [jobs, setJobs] = useState<JobRecord[]>([]);
+const SEARCH_DEBOUNCE_MS = 200;
+const EMPTY_PAGE: JobPage = { jobs: [], nextCursor: null, total: 0 };
 
-  const refresh = useCallback(async () => {
-    setJobs(await window.api.listJobs(limit));
-  }, [limit]);
+/** 打印记录只按页加载（容量可达百万级），搜索交给 SQL。 */
+export function useJobLog() {
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState<JobPage>(EMPTY_PAGE);
+  const searchRef = useRef(search);
+  const requestId = useRef(0);
+
+  const loadFirstPage = useCallback(async (query: string) => {
+    requestId.current += 1;
+    const id = requestId.current;
+    const first = await window.api.listJobs({ limit: JOB_PAGE_SIZE, search: query });
+    if (id === requestId.current) {
+      setPage(first);
+    }
+  }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    searchRef.current = search;
+    const timer = window.setTimeout(() => void loadFirstPage(search), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [search, loadFirstPage]);
 
-  return { jobs, refresh };
+  const refresh = useCallback(() => loadFirstPage(searchRef.current), [loadFirstPage]);
+
+  const loadMore = useCallback(async () => {
+    if (page.nextCursor === null) {
+      return;
+    }
+    const id = requestId.current;
+    const next = await window.api.listJobs({ limit: JOB_PAGE_SIZE, search: searchRef.current, before: page.nextCursor });
+    if (id === requestId.current) {
+      setPage((current) => ({ jobs: [...current.jobs, ...next.jobs], nextCursor: next.nextCursor, total: next.total }));
+    }
+  }, [page.nextCursor]);
+
+  return {
+    jobs: page.jobs,
+    total: page.total,
+    hasMore: page.nextCursor !== null,
+    search,
+    setSearch,
+    refresh,
+    loadMore,
+  };
 }
 ```
 
@@ -3420,7 +3632,7 @@ git commit -m "feat(ui): view-models for scan station, printers, history and win
 实现时严格使用 `tokens.css` 里的 token，不要引入新颜色和字体。
 
 **Files:**
-- Create: `src/renderer/src/components/TitleBar.tsx`, `ScanBar.tsx`, `Ruler.tsx`, `PreviewStage.tsx`, `SidePanel.tsx`, `PrinterList.tsx`, `JobLog.tsx`, `SettingsForm.tsx`
+- Create: `src/renderer/src/components/TitleBar.tsx`, `ScanBar.tsx`, `Ruler.tsx`, `ConfirmButton.tsx`, `PreviewStage.tsx`, `SidePanel.tsx`, `PrinterList.tsx`, `JobLog.tsx`, `SettingsForm.tsx`
 - Create: `src/renderer/src/App.tsx`, `src/renderer/src/styles/app.css`
 - Modify: `src/renderer/src/main.tsx`（替换占位界面）
 
@@ -3627,12 +3839,56 @@ export function Ruler({ orientation, lengthMm }: RulerProps) {
 }
 ```
 
-- [ ] **Step 4: `PreviewStage.tsx`（软尺框住的标签预览 + 状态条）**
+- [ ] **Step 4: `ConfirmButton.tsx`（界面内两步确认，不弹系统对话框）**
+
+```tsx
+import { useEffect, useState } from 'react';
+
+const CONFIRM_WINDOW_MS = 3_000;
+
+interface ConfirmButtonProps {
+  label: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+}
+
+/** 第一次点击进入待确认状态，3 秒内再点才执行；超时自动复原。 */
+export function ConfirmButton({ label, confirmLabel, onConfirm }: ConfirmButtonProps) {
+  const [isArmed, setIsArmed] = useState(false);
+
+  useEffect(() => {
+    if (!isArmed) {
+      return;
+    }
+    const timer = window.setTimeout(() => setIsArmed(false), CONFIRM_WINDOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [isArmed]);
+
+  const handleClick = () => {
+    if (isArmed) {
+      setIsArmed(false);
+      onConfirm();
+    } else {
+      setIsArmed(true);
+    }
+  };
+
+  return (
+    <button type="button" className={`button${isArmed ? ' button--armed' : ''}`} onClick={handleClick}>
+      {isArmed ? confirmLabel : label}
+    </button>
+  );
+}
+```
+
+- [ ] **Step 4b: `PreviewStage.tsx`（软尺框住的标签预览 + 状态条）**
+
 
 ```tsx
 import { LABEL_SIZE_MM } from '../../../shared/label-size';
 import type { ScanView } from '../lib/status-text';
 import type { ScanState } from '../view-models/use-scan-station';
+import { ConfirmButton } from './ConfirmButton';
 import { Ruler } from './Ruler';
 
 interface PreviewStageProps {
@@ -3644,12 +3900,6 @@ interface PreviewStageProps {
 
 export function PreviewStage({ scan, view, onPrint, onForceReprint }: PreviewStageProps) {
   const html = scan?.preview.html ?? null;
-
-  const handleForceReprint = () => {
-    if (scan && window.confirm(`确定再打印一张「${scan.raw}」吗？`)) {
-      onForceReprint();
-    }
-  };
 
   return (
     <section className={`preview-stage tone--${view.status.tone}`} aria-label="标签预览">
@@ -3680,9 +3930,7 @@ export function PreviewStage({ scan, view, onPrint, onForceReprint }: PreviewSta
         </div>
         <div className="status-strip__actions">
           {view.actions.forceReprint && (
-            <button type="button" className="button" onClick={handleForceReprint}>
-              强制补打
-            </button>
+            <ConfirmButton key={scan?.seq} label="强制补打" confirmLabel="再点一次确认补打" onConfirm={onForceReprint} />
           )}
           {view.actions.print && (
             <button type="button" className="button button--primary" onClick={onPrint}>
@@ -3821,24 +4069,38 @@ export function PrinterList({ printers, selected, isLoading, onSelect, onRefresh
 }
 ```
 
-- [ ] **Step 7: `JobLog.tsx`（可回溯、可重打的打印记录）**
+- [ ] **Step 7: `JobLog.tsx`（可回溯、可重打、分页加载的打印记录）**
 
 ```tsx
-import { useMemo, useState } from 'react';
 import type { JobRecord } from '../../../core/types';
-import { filterJobs } from '../lib/list-filters';
 import { describeJobStatus, describeSource, formatDateTime } from '../lib/status-text';
+
+const NUMBER_FORMAT = new Intl.NumberFormat('zh-CN');
 
 interface JobLogProps {
   jobs: JobRecord[];
+  total: number;
   historyLimit: number;
+  search: string;
+  hasMore: boolean;
+  onSearchChange: (search: string) => void;
+  onLoadMore: () => void;
   onReview: (raw: string) => void;
   onReprint: (raw: string) => void;
 }
 
-export function JobLog({ jobs, historyLimit, onReview, onReprint }: JobLogProps) {
-  const [query, setQuery] = useState('');
-  const visible = useMemo(() => filterJobs(jobs, query), [jobs, query]);
+export function JobLog({
+  jobs,
+  total,
+  historyLimit,
+  search,
+  hasMore,
+  onSearchChange,
+  onLoadMore,
+  onReview,
+  onReprint,
+}: JobLogProps) {
+  const isSearching = search.trim() !== '';
 
   return (
     <div className="panel-body">
@@ -3846,16 +4108,16 @@ export function JobLog({ jobs, historyLimit, onReview, onReprint }: JobLogProps)
         <input
           type="search"
           className="text-field"
-          placeholder="按编码搜索"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          placeholder="按编码搜索全部记录"
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
         />
         <span className="job-log__count" title="超出上限后自动删除最早的记录">
-          {jobs.length}/{historyLimit}
+          {NUMBER_FORMAT.format(total)} / {NUMBER_FORMAT.format(historyLimit)}
         </span>
       </div>
       <ol className="scroll-list">
-        {visible.map((job) => {
+        {jobs.map((job) => {
           const status = describeJobStatus(job);
           return (
             <li key={job.id} className="job-row">
@@ -3879,9 +4141,16 @@ export function JobLog({ jobs, historyLimit, onReview, onReprint }: JobLogProps)
             </li>
           );
         })}
+        {hasMore && (
+          <li className="job-log__more">
+            <button type="button" className="button button--small button--quiet" onClick={onLoadMore}>
+              加载更早的记录
+            </button>
+          </li>
+        )}
       </ol>
-      {visible.length === 0 && (
-        <p className="empty">{jobs.length === 0 ? '还没有打印记录。扫一张标签试试' : `没有包含「${query}」的记录`}</p>
+      {jobs.length === 0 && (
+        <p className="empty">{isSearching ? `没有包含「${search.trim()}」的记录` : '还没有打印记录。扫一张标签试试'}</p>
       )}
     </div>
   );
@@ -3914,7 +4183,7 @@ export function SettingsForm({ settings, onChange }: SettingsFormProps) {
       <NumberSetting
         label="打印记录保留"
         unit="条"
-        hint="超出后自动删除最早的记录"
+        hint="超出后自动删除最早的记录；10 万条约占 20 MB 磁盘"
         value={settings.historyLimit}
         min={HISTORY_LIMIT_RANGE.min}
         max={HISTORY_LIMIT_RANGE.max}
@@ -4011,7 +4280,7 @@ export function App() {
   const { settings, update } = useSettings();
   const printers = usePrinters();
   const historyLimit = settings?.historyLimit ?? DEFAULT_SETTINGS.historyLimit;
-  const jobLog = useJobLog(historyLimit);
+  const jobLog = useJobLog();
 
   const printerName = settings?.selectedPrinter ?? null;
   const isPrinterAvailable = printerName !== null && printers.printers.some((printer) => printer.name === printerName);
@@ -4063,7 +4332,17 @@ export function App() {
                 />
               ),
               history: (
-                <JobLog jobs={jobLog.jobs} historyLimit={historyLimit} onReview={station.review} onReprint={station.reprint} />
+                <JobLog
+                  jobs={jobLog.jobs}
+                  total={jobLog.total}
+                  historyLimit={historyLimit}
+                  search={jobLog.search}
+                  hasMore={jobLog.hasMore}
+                  onSearchChange={jobLog.setSearch}
+                  onLoadMore={() => void jobLog.loadMore()}
+                  onReview={station.review}
+                  onReprint={station.reprint}
+                />
               ),
               settings: <SettingsForm settings={settings} onChange={(patch) => void update(patch)} />,
             }}
@@ -4555,6 +4834,13 @@ input {
   border-color: var(--color-rule);
 }
 
+.button--armed,
+.button--armed:hover {
+  border-color: var(--color-warning);
+  background: var(--color-warning);
+  color: var(--color-paper);
+}
+
 .button kbd {
   padding: 0 4px;
   border: 1px solid currentColor;
@@ -4706,6 +4992,11 @@ input {
 }
 
 /* 打印记录 */
+.job-log__more {
+  padding: var(--space-3);
+  text-align: center;
+}
+
 .job-log__count {
   color: var(--color-ink-soft);
   font: 12px var(--font-data);
@@ -4832,7 +5123,7 @@ Run: `bun run dev`，然后逐项检查并截图（`screencapture -x` 或 Claude
 2. 打印机列表：
    - 列出本机所有打印机；输入搜索词能即时过滤；
    - 点选后标题栏的胶囊显示该打印机；
-   - 重启 dev 后选择仍然保留（设置文件在 `~/Library/Application Support/LabelFlash/settings.json`）。
+   - 重启 dev 后选择仍然保留（数据库在 `~/Library/Application Support/LabelFlash/labelflash.db`）。
 3. 扫码框：
    - 始终有焦点；
    - 点完开关、按钮、标签页后，300ms 内焦点回到扫码框；
@@ -4843,10 +5134,10 @@ Run: `bun run dev`，然后逐项检查并截图（`screencapture -x` 或 Claude
    - 状态条显示"待打印"，按 F2 触发打印。
 5. 错误格式：输入 `hello` 回车 → 红色状态条"二维码格式不对"，同时播放长低音。
 6. 打印记录标签页：
-   - 能看到刚才的记录，显示条数 `n/500`；
-   - "预览"会把该标签加载回预览区；"重打"在窗口期内会显示"重复扫码，已拦截" + "强制补打"按钮。
+   - 能看到刚才的记录，显示条数 `n / 100,000`；
+   - "预览"会把该标签加载回预览区；"重打"在窗口期内会显示"重复扫码，已拦截" + "强制补打"按钮；第一次点击变成橙色"再点一次确认补打"，3 秒不点自动复原。
 7. 设置：
-   - 把"打印记录保留"改成 50（回车），记录计数变成 `n/50`；
+   - 把"打印记录保留"改成 50（回车）→ 被纠正为 1000，记录计数显示 `n / 1,000`；
    - 把防重复窗口改成 0 后，同一标签可以连续打印。
 8. 系统开启"减少动态效果"后，预览不再有滑入动画。
 
@@ -4913,9 +5204,9 @@ Expected: 测试全部 pass；生成 `dist\LabelFlash-Setup-0.1.0.exe`。
 
 把结果逐项记录到 `docs/windows-acceptance.md`，每项写"通过 / 未通过 + 现象"：
 
-1. **安装**：安装向导可以选择目录；桌面快捷方式名为"云签速印"；启动后 `%APPDATA%\LabelFlash\` 被创建。
+1. **安装**：安装向导可以选择目录；桌面快捷方式名为"云签速印"；启动后 `%APPDATA%\LabelFlash\labelflash.db`（以及 WAL 的 `-wal`、`-shm` 文件）被创建。
 2. **打印机**：列表显示本机全部打印机（申通、标签、德邦、Qirui QR-488、HPRT N31C …）；搜索 `qr` 只剩 Qirui QR-488。
-3. **持久化**：选中标签机 → 退出程序（托盘 › 退出）→ 重新启动，选择仍然保留；`settings.json` 里的 `selectedPrinter` 与之一致。
+3. **持久化**：选中标签机 → 退出程序（托盘 › 退出）→ 重新启动，选择仍然保留。
 4. **测试页**：对标签机打印测试页，量一下出纸版面是否为 60×40mm、有无缩放或分页。如果被缩放，在"打印机属性 › 首选项"里把纸张设为 60×40mm 后重试，并把驱动设置步骤记录下来。
 5. **扫码枪中文输出**：
    - 扫原样标签（`CL5640-TK-图片色-36`）。如果预览提示格式不对或出现乱码，按扫码枪说明书扫"中文输出 / Windows Unicode（Alt 码）"设置码；
@@ -4925,7 +5216,7 @@ Expected: 测试全部 pass；生成 `dist\LabelFlash-Setup-0.1.0.exe`。
 7. **门限**：10 分钟内再扫同一张 → 橙色"重复扫码，已拦截"，不出纸；点"强制补打"并确认 → 出纸，记录里显示"已补打"。
 8. **重启后门限仍有效**：打印一张 → 退出并重启 → 再扫同一张 → 仍然被拦截。
 9. **手动模式**：关闭自动打印 → 扫码只预览不出纸 → 按 F2 出纸。
-10. **记录回溯**：在打印记录里点"预览"和"重打"都有效；把保留条数设为 50，打印超过 50 张后，最早的记录被淘汰，`jobs.jsonl` 行数不超过 100。
+10. **记录回溯**：在打印记录里点"预览"和"重打"都有效；超过 100 条后底部出现"加载更早的记录"并能继续翻页；搜索能找到第一页以外的旧记录。环形淘汰由单元测试覆盖（Task 6）。
 11. **故障**：关闭标签机电源后扫码 → 30 秒内出现红色"打印失败"及具体提示；开机后点"重试打印"成功。
 12. **托盘**：关闭窗口 → 程序仍在托盘；再次双击桌面图标 → 已有窗口被唤起（单实例）。
 13. **开机自启**：打开开关 → 注销并重新登录 → 程序自动运行。

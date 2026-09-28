@@ -17,7 +17,9 @@ import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { registerIpc } from './ipc';
 import { setupLogging } from './logging';
 import { resolvePrintTemplate } from './print-template';
+import { AlertThrottle } from './printing/alert-throttle';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
+import { createPrinterAlertNotifier } from './printing/printer-alerts';
 import { PrinterStatusMonitor, queryPrinterReadiness } from './printing/printer-status';
 import { denyAllPermissions, hardenAllWebContents } from './security';
 import { openDatabase } from './storage/database';
@@ -101,7 +103,10 @@ async function bootstrap(): Promise<void> {
   await jobs.initialize();
   const templates = new TemplateCatalog(new SqliteTemplateRepository(database, systemClock), randomUUID);
   const guard = new DedupGuard(systemClock, minutesToMs(settings.current.dedupWindowMinutes));
-  const status = new PrinterStatusMonitor(queryPrinterReadiness);
+  const status = new PrinterStatusMonitor(
+    queryPrinterReadiness,
+    createPrinterAlertNotifier(new AlertThrottle(systemClock), showMainWindow),
+  );
   status.start();
   void status.watch(settings.current.selectedPrinter);
   const adapter = new ElectronDriverAdapter(requireWebContents, status, systemClock);

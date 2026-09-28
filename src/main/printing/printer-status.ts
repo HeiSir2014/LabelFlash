@@ -57,6 +57,9 @@ export function queryPrinterReadiness(printerName: string): Promise<PrinterReadi
   });
 }
 
+/** 打印机从「可用 / 未知」变为「不能打印」（或不能打印的原因变了）时通知。 */
+export type NotReadyListener = (printerName: string, detail: string) => void;
+
 /** 后台轮询当前打印机状态；打印时直接读缓存，不增加出纸延迟。 */
 export class PrinterStatusMonitor {
   private readonly readiness = new Map<string, PrinterReadiness>();
@@ -65,6 +68,7 @@ export class PrinterStatusMonitor {
 
   constructor(
     private readonly probe: (printerName: string) => Promise<PrinterReadiness | null>,
+    private readonly onNotReady: NotReadyListener = () => {},
     private readonly intervalMs: number = STATUS_POLL_INTERVAL_MS,
   ) {}
 
@@ -100,10 +104,18 @@ export class PrinterStatusMonitor {
     if (printerName !== this.watched) {
       return;
     }
+    const previous = this.readiness.get(printerName);
     if (result) {
       this.readiness.set(printerName, result);
     } else {
       this.readiness.delete(printerName);
+    }
+    const becameNotReady =
+      result !== null &&
+      !result.ready &&
+      (previous === undefined || previous.ready || previous.detail !== result.detail);
+    if (becameNotReady) {
+      this.onNotReady(printerName, result.detail);
     }
   }
 }

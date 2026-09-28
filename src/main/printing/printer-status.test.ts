@@ -39,4 +39,25 @@ describe('PrinterStatusMonitor', () => {
     expect(monitor.get('A')).toBeNull();
     expect(monitor.get('B')).toEqual({ ready: true });
   });
+
+  test('reports a printer becoming not ready once per change, not on every poll', async () => {
+    const answers: Array<PrinterReadiness | null> = [
+      { ready: true },
+      { ready: false, detail: '缺纸' },
+      { ready: false, detail: '缺纸' },
+      { ready: false, detail: '卡纸' },
+      { ready: true },
+      { ready: false, detail: '缺纸' },
+    ];
+    const alerts: string[] = [];
+    const monitor = new PrinterStatusMonitor(
+      async () => answers.shift() ?? null,
+      (name, detail) => alerts.push(`${name}:${detail}`),
+    );
+    await monitor.watch('A');
+    for (let i = 0; i < 5; i += 1) {
+      await monitor.poll();
+    }
+    expect(alerts).toEqual(['A:缺纸', 'A:卡纸', 'A:缺纸']);
+  });
 });

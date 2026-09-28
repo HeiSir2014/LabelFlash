@@ -1,0 +1,77 @@
+import type { LabelTemplate } from '../core/templates/template-model';
+import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
+import type { JobPage, JobQuery } from './job-history';
+import type { PrinterReadiness } from './printer-readiness';
+import type { AppSettings } from './settings';
+
+export const IpcChannel = {
+  Preview: 'label:preview',
+  PreviewTemplate: 'label:preview-template',
+  Print: 'label:print',
+  PrintTest: 'printer:test',
+  ListPrinters: 'printer:list',
+  PrinterStatus: 'printer:status',
+  ListJobs: 'jobs:list',
+  GetSettings: 'settings:get',
+  UpdateSettings: 'settings:update',
+  ListTemplates: 'templates:list',
+  DuplicateTemplate: 'templates:duplicate',
+  SaveTemplate: 'templates:save',
+  DeleteTemplate: 'templates:delete',
+  GetAppInfo: 'app:info',
+  OpenLogFolder: 'app:open-log-folder',
+  WindowMinimize: 'window:minimize',
+  WindowToggleMaximize: 'window:toggle-maximize',
+  WindowClose: 'window:close',
+  WindowMaximizedChanged: 'window:maximized-changed',
+} as const;
+
+/** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
+export type RendererPrintSource = 'desktop' | 'history';
+
+export interface PrintOptions {
+  source: RendererPrintSource;
+  force: boolean;
+}
+
+export interface LabelPreview {
+  result: PreviewResult;
+  /** 与实际打印相同的标签 HTML；格式错误时为 null。 */
+  html: string | null;
+}
+
+export interface AppInfo {
+  productName: string;
+  brandOwner: string;
+  version: string;
+  dataPath: string;
+  logPath: string;
+}
+
+export interface LabelFlashApi {
+  preview(raw: string): Promise<LabelPreview>;
+  /** 模板编辑时的实时预览：用未保存的草稿模板渲染。 */
+  previewTemplate(raw: string, template: LabelTemplate): Promise<LabelPreview>;
+  print(raw: string, printerName: string, options: PrintOptions): Promise<PrintResult>;
+  printTest(printerName: string): Promise<PrintResult>;
+  listPrinters(): Promise<PrinterInfo[]>;
+  printerStatus(printerName: string): Promise<PrinterReadiness | null>;
+  listJobs(query: JobQuery): Promise<JobPage>;
+  getSettings(): Promise<AppSettings>;
+  updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
+  listTemplates(): Promise<LabelTemplate[]>;
+  duplicateTemplate(sourceId: string): Promise<LabelTemplate>;
+  saveTemplate(template: LabelTemplate): Promise<LabelTemplate>;
+  /** 删除后若它正在使用，自动切回标准模板；返回最新设置。 */
+  deleteTemplate(id: string): Promise<AppSettings>;
+  getAppInfo(): Promise<AppInfo>;
+  openLogFolder(): Promise<void>;
+}
+
+export interface WindowControlsApi {
+  minimize(): void;
+  toggleMaximize(): void;
+  /** 隐藏到托盘，不退出。 */
+  close(): void;
+  onMaximizedChange(listener: (isMaximized: boolean) => void): () => void;
+}

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- CDL-云签速印：墨黑机壳 + 软尺 + 标签纸上的 CDL 字标 -->
+  <rect width="512" height="512" rx="104" fill="#18211E"/>
+  <rect x="56" y="58" width="400" height="74" rx="16" fill="#F2C12E"/>
+  <g stroke="#18211E" stroke-width="8" stroke-linecap="square">
+    <path d="M96 60v42M136 60v24M176 60v24M216 60v42M256 60v24M296 60v24M336 60v42M376 60v24M416 60v24"/>
+  </g>
+  <rect x="78" y="164" width="356" height="276" rx="22" fill="#FBFBF8"/>
+  <g fill="none" stroke="#18211E" stroke-width="30" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M190 226 A 50 58 0 1 0 190 330"/>
+    <path d="M230 214 V 342 H 254 A 54 64 0 0 0 254 214 Z"/>
+    <path d="M346 214 V 342 H 404"/>
+  </g>
+  <rect x="116" y="382" width="280" height="22" rx="6" fill="#F2C12E"/>
+</svg>

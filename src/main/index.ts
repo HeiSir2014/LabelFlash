@@ -223,15 +223,16 @@ async function bootstrap(): Promise<void> {
     app.dock?.setIcon(appIcon);
   }
   const windowStates = new SqliteWindowStateStore(database);
+  const placement = planInitialPlacement(windowStates);
   mainWindow = createMainWindow({
     icon: appIcon,
-    placement: planInitialPlacement(windowStates),
+    placement,
     // 没有托盘图标时照常关闭：藏起来之后就再也叫不回窗口了。
     shouldHideOnClose: () => !isQuitting && tray !== null,
     onHidden: () => tray?.notifyHiddenOnce(),
   });
   // 必须先于下面的 session-end 处理注册：关机时先保存窗口位置，再关闭数据库。
-  trackWindowPlacement(mainWindow, windowStates);
+  trackWindowPlacement(mainWindow, windowStates, placement.bounds);
   // Windows 关机、注销时不会触发 before-quit：放行窗口关闭并关闭数据库，不能阻塞关机。
   mainWindow.on('query-session-end', () => {
     isQuitting = true;

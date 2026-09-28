@@ -1,7 +1,14 @@
 import { type BrowserWindow, type Display, screen } from 'electron';
 import type { SqliteWindowStateStore } from './storage/sqlite-window-state-store';
 import { fitWindowToWorkArea } from './window-bounds';
-import { type DisplaySnapshot, isTitleBarReachable, planWindowPlacement, type WindowPlacement } from './window-state';
+import {
+  type DisplaySnapshot,
+  isTitleBarReachable,
+  measureSizeError,
+  planWindowPlacement,
+  type WindowPlacement,
+  withoutSizeError,
+} from './window-state';
 
 /** 移动、缩放停下这么久才保存：拖动过程中不反复写数据库。 */
 const SAVE_DEBOUNCE_MS = 500;
@@ -28,9 +35,15 @@ export function planInitialPlacement(store: SqliteWindowStateStore): WindowPlace
  * 记住窗口位置，并在显示器变化后把找不到的窗口拉回来。
  * - 移动、缩放、最大化后停下 0.5 秒保存；关闭（包括隐藏到托盘）、关机注销时立即保存。全屏时不保存。
  * - 运行中拔掉显示器或改了分辨率 / 缩放，标题栏已经不在任何屏幕上：移回默认位置。
+ * 必须在窗口刚创建、还没显示时调用：requested 是创建时请求的位置和尺寸，用来量出系统的尺寸误差。
  */
-export function trackWindowPlacement(window: BrowserWindow, store: SqliteWindowStateStore): void {
+export function trackWindowPlacement(
+  window: BrowserWindow,
+  store: SqliteWindowStateStore,
+  requested: WindowPlacement['bounds'],
+): void {
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  const sizeError = measureSizeError(requested, window.getBounds());
 
   const save = () => {
     clearTimeout(saveTimer);
@@ -38,8 +51,9 @@ export function trackWindowPlacement(window: BrowserWindow, store: SqliteWindowS
     if (window.isDestroyed() || window.isFullScreen()) {
       return;
     }
-    const bounds = window.getNormalBounds();
-    const { id, bounds: displayBounds, scaleFactor } = screen.getDisplayMatching(bounds);
+    const normalBounds = window.getNormalBounds();
+    const bounds = withoutSizeError(normalBounds, sizeError);
+    const { id, bounds: displayBounds, scaleFactor } = screen.getDisplayMatching(normalBounds);
     try {
       store.save({ bounds, isMaximized: window.isMaximized(), display: { id, bounds: displayBounds, scaleFactor } });
     } catch (error) {

@@ -63,6 +63,32 @@ export function planWindowPlacement(
   };
 }
 
+/** 创建窗口时系统实际给出的尺寸比请求的尺寸多出多少（DIP）。 */
+export interface SizeError {
+  width: number;
+  height: number;
+}
+
+/**
+ * Windows 小数缩放（例如 150%）下，按某个尺寸创建窗口，实际得到的会多出几个像素（实测 +2×+3）。
+ * 如果把实际尺寸原样保存、下次再按它创建，窗口每次启动都会变大一点。
+ * 所以在创建后立刻量出这个误差，保存时减掉：窗口没被调整过时，保存的就是这次请求的尺寸。
+ */
+export function measureSizeError(requested: Rectangle, created: Rectangle): SizeError {
+  return { width: created.width - requested.width, height: created.height - requested.height };
+}
+
+/** 去掉创建误差后的尺寸，下次按它创建正好得到现在的大小。位置不受影响。 */
+export function withoutSizeError(bounds: Rectangle, error: SizeError): Rectangle {
+  return {
+    x: bounds.x,
+    y: bounds.y,
+    // 保存的尺寸必须为正，否则读回时会被当作损坏而丢弃。
+    width: Math.max(1, bounds.width - error.width),
+    height: Math.max(1, bounds.height - error.height),
+  };
+}
+
 /** 运行中拔掉显示器或改了分辨率后，窗口的标题栏是否还在某块屏幕上。 */
 export function isTitleBarReachable(bounds: Rectangle, displays: readonly DisplaySnapshot[]): boolean {
   const titleBar = { x: bounds.x, y: bounds.y, width: bounds.width, height: TITLE_BAR_HEIGHT };

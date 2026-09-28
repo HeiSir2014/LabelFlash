@@ -3,9 +3,11 @@ import { fitWindowToWorkArea } from './window-bounds';
 import {
   type DisplaySnapshot,
   isTitleBarReachable,
+  measureSizeError,
   parseWindowState,
   planWindowPlacement,
   type SavedWindowState,
+  withoutSizeError,
 } from './window-state';
 
 /** 主屏 1920×1080（任务栏在底部），右边接一块 2560×1440、150% 缩放的副屏。 */
@@ -79,6 +81,36 @@ describe('planWindowPlacement', () => {
     const placement = planWindowPlacement(tooSmall, [PRIMARY, SECONDARY], PRIMARY.workArea);
     expect(placement.bounds.width).toBe(placement.minWidth);
     expect(placement.bounds.height).toBe(placement.minHeight);
+  });
+});
+
+describe('size error at creation', () => {
+  // Windows 150% 缩放实测：请求 1204×778 的无边框窗口，系统给出 1206×781。
+  const requested = { x: 201, y: 151, width: 1204, height: 778 };
+  const created = { x: 201, y: 151, width: 1206, height: 781 };
+  const error = measureSizeError(requested, created);
+
+  test('saves what was requested when the window was left alone, so it does not grow on every restart', () => {
+    expect(withoutSizeError(created, error)).toEqual(requested);
+  });
+
+  test('keeps a size the operator chose once the window is created again', () => {
+    const resized = { x: 300, y: 200, width: 1400, height: 900 };
+    const saved = withoutSizeError(resized, error);
+    expect(saved).toEqual({ x: 300, y: 200, width: 1398, height: 897 });
+    expect({ width: saved.width + error.width, height: saved.height + error.height }).toEqual({
+      width: 1400,
+      height: 900,
+    });
+  });
+
+  test('changes nothing where the system creates the exact size', () => {
+    expect(withoutSizeError(requested, measureSizeError(requested, requested))).toEqual(requested);
+  });
+
+  test('never saves a size that would be rejected when read back', () => {
+    const tiny = withoutSizeError({ x: 0, y: 0, width: 1, height: 1 }, { width: 5, height: 5 });
+    expect(parseWindowState({ bounds: tiny, isMaximized: false, display: fingerprint(PRIMARY) })).not.toBeNull();
   });
 });
 

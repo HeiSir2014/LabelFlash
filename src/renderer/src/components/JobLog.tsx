@@ -54,6 +54,7 @@ export function JobLog({
       <ol className="scroll-list">
         {jobs.map((job) => {
           const status = describeJobStatus(job);
+          const meta = `${formatDateTime(job.createdAt)} · ${describeSource(job.source)} · ${job.printerName}`;
           return (
             <li key={job.id} className="job-row">
               <div className="job-row__main">
@@ -62,8 +63,9 @@ export function JobLog({
                   {firstLine(job.raw)}
                 </span>
               </div>
-              <div className="job-row__meta">
-                {formatDateTime(job.createdAt)} · {describeSource(job.source)} · {job.printerName}
+              {/* 打印机名可能很长，放不下时省略，完整内容在悬停提示里。 */}
+              <div className="job-row__meta" title={meta}>
+                {meta}
               </div>
               {job.status !== 'invalid' && (
                 <div className="job-row__actions">

@@ -244,7 +244,7 @@ function DeliveryTable({ deliveries, endpointName, onRetry, onRefresh }: Deliver
       {deliveries.length === 0 ? (
         <p className="config-empty">还没有发送记录。</p>
       ) : (
-        <div className="data-table data-table--tall">
+        <div className="data-table data-table--tall" data-allow-x-scroll>
           <table aria-label="发送记录">
             <thead>
               <tr>

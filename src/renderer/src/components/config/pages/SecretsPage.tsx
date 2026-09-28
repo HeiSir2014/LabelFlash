@@ -92,8 +92,8 @@ export function SecretsPage({ names, onSave, onDelete }: SecretsPageProps) {
           autoComplete="off"
           onChange={(event) => setValue(event.target.value)}
         />
+        {issue && <p className="form-hint form-hint--error secret-form__issue">{issue}</p>}
         <div className="secret-form__actions">
-          {issue && <p className="form-hint form-hint--error">{issue}</p>}
           <button
             type="button"
             className="button button--primary"

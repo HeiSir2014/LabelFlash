@@ -29,13 +29,15 @@ export function LookupTablesPage({ tables, onImport, onDelete }: LookupTablesPag
         <ul className="config-list">
           {tables.map((table) => {
             const isOpen = table.id === openId;
+            // 列多时放不下，省略后完整内容在悬停提示里。
+            const meta = `${table.rowCount} 行 · 列：${table.columns.join('、')} · 更新于 ${formatDateTime(table.updatedAt)}`;
             return (
               <li key={table.id} className="config-card lookup-card">
                 <div className="lookup-card__head">
                   <div className="lookup-card__text">
                     <strong className="lookup-card__name">{table.name}</strong>
-                    <span className="lookup-card__meta">
-                      {table.rowCount} 行 · 列：{table.columns.join('、')} · 更新于 {formatDateTime(table.updatedAt)}
+                    <span className="lookup-card__meta" title={meta}>
+                      {meta}
                     </span>
                   </div>
                   <button
@@ -76,7 +78,7 @@ function RowsPreview({ name, rows }: { name: string; rows: LookupTableData | nul
     return <p className="config-empty">正在读取…</p>;
   }
   return (
-    <div className="data-table">
+    <div className="data-table" data-allow-x-scroll>
       <table aria-label={`「${name}」前 20 行`}>
         <thead>
           <tr>

@@ -140,8 +140,9 @@ input {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  height: 28px;
   margin-left: var(--space-3);
-  padding: 3px var(--space-3);
+  padding: 0 var(--space-3);
   border: 1px solid rgb(251 251 248 / 0.25);
   border-radius: 999px;
   background: transparent;
@@ -385,6 +386,7 @@ input {
 }
 
 .switch--bare {
+  min-height: 28px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1145,8 +1147,10 @@ input {
   gap: var(--space-1);
 }
 
+/* 点击区域至少 28px 高（视觉验收的最小点击高度） */
 .chip {
-  padding: 2px 8px;
+  min-height: 28px;
+  padding: 0 var(--space-2);
   border: 1px dashed var(--color-rule);
   border-radius: 999px;
   background: #fff;
@@ -1296,9 +1300,9 @@ input {
 }
 
 .voice-cues__level {
-  padding-top: 3px;
   color: var(--color-ink-soft);
   font-size: 12px;
+  line-height: 28px;
 }
 
 .voice-cues__list {
@@ -1311,7 +1315,8 @@ input {
 }
 
 .voice-cues__cue {
-  padding: 2px var(--space-2);
+  min-height: 28px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--color-rule);
   border-radius: var(--radius);
   background: var(--color-paper);
@@ -1399,6 +1404,7 @@ input {
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+  min-height: 28px;
   cursor: pointer;
 }
 
@@ -1518,14 +1524,16 @@ input {
   white-space: nowrap;
 }
 
+/* 白底：失败的红字在灰底上对比度不够 4.5 */
 .rule-tester__result {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   margin: 0;
   padding: var(--space-2);
+  border: 1px solid var(--color-rule);
   border-radius: var(--radius);
-  background: var(--color-housing);
+  background: #fff;
   font-size: 12px;
   word-break: break-all;
 }
@@ -1594,6 +1602,7 @@ input {
   flex: none;
   align-items: center;
   gap: 2px;
+  min-height: 28px;
   font-size: 12px;
 }
 
@@ -1710,16 +1719,14 @@ input {
   font-weight: 600;
 }
 
+.secret-form__issue,
 .secret-form__actions {
-  display: flex;
   grid-column: 2;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
 }
 
-.secret-form__actions .form-hint {
-  flex: 1;
+.secret-form__actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* ── 打印结果通知页 ── */
@@ -1898,7 +1905,7 @@ input {
 }
 
 .config-header__divider {
-  color: var(--color-rule);
+  color: var(--color-ink-soft);
   font-weight: 400;
 }
 
@@ -1926,7 +1933,6 @@ input {
 @keyframes config-pill-flash {
   50% {
     background: var(--color-warning);
-    color: var(--color-paper);
   }
 }
 

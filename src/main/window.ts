@@ -1,12 +1,15 @@
 import { join } from 'node:path';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu, screen } from 'electron';
 import { BRAND } from '../shared/brand';
 import { IpcChannel } from '../shared/ipc-contract';
 import { APP_ENTRY_URL } from './bundle-path';
+import { buildContextMenuTemplate } from './context-menu';
 import { forwardRendererConsole } from './logging';
+import { fitWindowToWorkArea } from './window-bounds';
 
-const WINDOW_BOUNDS = { width: 1280, height: 800, minWidth: 1024, minHeight: 680 } as const;
 const HOUSING_COLOR = '#E4E7E2';
+/** 渲染进程在这段时间内再次崩溃就不再自动重载：同一个问题反复重载只会让车间电脑卡死。 */
+const RENDERER_RELOAD_COOLDOWN_MS = 30_000;
 
 export interface MainWindowOptions {
   icon: string;
@@ -16,8 +19,13 @@ export interface MainWindowOptions {
 
 /** 无系统边框窗口，标题栏由渲染进程自绘。 */
 export function createMainWindow(options: MainWindowOptions): BrowserWindow {
+  // 在鼠标所在的屏幕上打开，并保证整个窗口落在工作区内。
+  const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const { bounds, minWidth, minHeight } = fitWindowToWorkArea(workArea);
   const window = new BrowserWindow({
-    ...WINDOW_BOUNDS,
+    ...bounds,
+    minWidth,
+    minHeight,
     frame: false,
     show: false,
     title: BRAND.productName,
@@ -29,6 +37,8 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       autoplayPolicy: 'no-user-gesture-required',
+      // 编码、颜色、尺码不是英文单词：拼写检查只会画红线，还会去网上下载词典。
+      spellcheck: false,
     },
   });
 
@@ -48,7 +58,26 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
   forwardRendererConsole(webContents);
   // 预览按实物比例显示，禁止缩放。（新窗口、导航、webview 的拦截在 security.ts 里对所有 webContents 统一处理。）
   void webContents.setVisualZoomLevelLimits(1, 1);
+  webContents.on('context-menu', (_event, params) => {
+    const template = buildContextMenuTemplate(params);
+    if (template.length > 0 && !window.isDestroyed()) {
+      Menu.buildFromTemplate(template).popup({ window });
+    }
+  });
+  webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    if (isMainFrame) {
+      console.error(`[window] failed to load ${validatedUrl}: ${errorCode} ${errorDescription}`);
+    }
+  });
+  let lastRendererCrashAt = Number.NEGATIVE_INFINITY;
   webContents.on('render-process-gone', (_event, details) => {
+    const now = Date.now();
+    const isCrashLoop = now - lastRendererCrashAt < RENDERER_RELOAD_COOLDOWN_MS;
+    lastRendererCrashAt = now;
+    if (isCrashLoop) {
+      console.error('[window] renderer process gone again right after a reload, not reloading', details);
+      return;
+    }
     console.error('[window] renderer process gone, reloading', details);
     if (!window.isDestroyed()) {
       webContents.reload();

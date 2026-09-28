@@ -216,6 +216,10 @@ async function bootstrap(): Promise<void> {
   });
   applyLaunchAtLogin(settings.current.launchAtLogin);
 
+  // 未打包运行（开发、E2E）时 macOS 程序坞默认显示 Electron 图标；安装版的图标由打包配置决定。
+  if (process.platform === 'darwin' && !app.isPackaged) {
+    app.dock?.setIcon(appIcon);
+  }
   mainWindow = createMainWindow({
     icon: appIcon,
     // 没有托盘图标时照常关闭：藏起来之后就再也叫不回窗口了。

@@ -1,5 +1,6 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from 'electron';
 import { IpcChannel, type LabelFlashApi, type WindowControlsApi } from '../shared/ipc-contract';
+import { windowChromeFor } from '../shared/window-chrome';
 
 /** 订阅主进程推送：只把数据转给回调，不把 IpcRendererEvent（含 sender）暴露给页面。 */
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
@@ -36,10 +37,12 @@ const api: LabelFlashApi = {
 };
 
 const windowControls: WindowControlsApi = {
+  chrome: windowChromeFor(process.platform),
   minimize: () => ipcRenderer.send(IpcChannel.WindowMinimize),
   toggleMaximize: () => ipcRenderer.send(IpcChannel.WindowToggleMaximize),
   close: () => ipcRenderer.send(IpcChannel.WindowClose),
   onMaximizedChange: (listener) => subscribe(IpcChannel.WindowMaximizedChanged, listener),
+  onFullScreenChange: (listener) => subscribe(IpcChannel.WindowFullScreenChanged, listener),
 };
 
 contextBridge.exposeInMainWorld('api', api);

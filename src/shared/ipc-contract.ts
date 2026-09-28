@@ -6,6 +6,7 @@ import type { PrinterReadiness } from './printer-readiness';
 import type { AppSettings } from './settings';
 import type { UpdateStatus } from './update-status';
 import type { VoiceCue } from './voice';
+import type { WindowChrome } from './window-chrome';
 
 export const IpcChannel = {
   Preview: 'label:preview',
@@ -34,6 +35,7 @@ export const IpcChannel = {
   WindowToggleMaximize: 'window:toggle-maximize',
   WindowClose: 'window:close',
   WindowMaximizedChanged: 'window:maximized-changed',
+  WindowFullScreenChanged: 'window:full-screen-changed',
 } as const;
 
 /** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
@@ -91,9 +93,13 @@ export interface LabelFlashApi {
 }
 
 export interface WindowControlsApi {
+  /** 窗口按钮由系统（macOS 红绿灯）还是界面来画。 */
+  readonly chrome: WindowChrome;
   minimize(): void;
   toggleMaximize(): void;
   /** 隐藏到托盘，不退出。 */
   close(): void;
   onMaximizedChange(listener: (isMaximized: boolean) => void): () => void;
+  /** macOS 全屏时系统隐藏红绿灯，标题栏收回为它让出的位置。 */
+  onFullScreenChange(listener: (isFullScreen: boolean) => void): () => void;
 }

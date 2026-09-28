@@ -2,12 +2,15 @@ import { join } from 'node:path';
 import { app, BrowserWindow, Menu, screen } from 'electron';
 import { BRAND } from '../shared/brand';
 import { IpcChannel } from '../shared/ipc-contract';
+import { windowChromeFor } from '../shared/window-chrome';
 import { APP_ENTRY_URL } from './bundle-path';
 import { buildContextMenuTemplate } from './context-menu';
 import { forwardRendererConsole } from './logging';
 import { fitWindowToWorkArea } from './window-bounds';
 
 const HOUSING_COLOR = '#E4E7E2';
+/** macOS 红绿灯的位置：按钮高约 14px，在 40px 高的自绘标题栏里垂直居中（与 app.css 的 --title-bar-height 一致）。 */
+const MAC_TRAFFIC_LIGHT_POSITION = { x: 14, y: 13 };
 /** 渲染进程在这段时间内再次崩溃就不再自动重载：同一个问题反复重载只会让车间电脑卡死。 */
 const RENDERER_RELOAD_COOLDOWN_MS = 30_000;
 
@@ -22,11 +25,14 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
   // 在鼠标所在的屏幕上打开，并保证整个窗口落在工作区内。
   const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const { bounds, minWidth, minHeight } = fitWindowToWorkArea(workArea);
+  const chrome = windowChromeFor(process.platform);
   const window = new BrowserWindow({
     ...bounds,
     minWidth,
     minHeight,
-    frame: false,
+    ...(chrome === 'mac-traffic-lights'
+      ? { titleBarStyle: 'hidden', trafficLightPosition: MAC_TRAFFIC_LIGHT_POSITION }
+      : { frame: false }),
     show: false,
     title: BRAND.productName,
     icon: options.icon,
@@ -53,6 +59,9 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
   const sendMaximized = () => window.webContents.send(IpcChannel.WindowMaximizedChanged, window.isMaximized());
   window.on('maximize', sendMaximized);
   window.on('unmaximize', sendMaximized);
+  const sendFullScreen = () => window.webContents.send(IpcChannel.WindowFullScreenChanged, window.isFullScreen());
+  window.on('enter-full-screen', sendFullScreen);
+  window.on('leave-full-screen', sendFullScreen);
 
   const { webContents } = window;
   forwardRendererConsole(webContents);

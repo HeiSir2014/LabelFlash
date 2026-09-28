@@ -31,6 +31,8 @@
   --radius: 6px;
 
   --title-bar-height: 40px;
+  /* macOS 红绿灯占用的宽度：左边距 14px + 三个按钮约 52px + 与品牌的间距。 */
+  --traffic-light-inset: 80px;
   --side-width: 380px;
   --feed-duration: 180ms;
 }

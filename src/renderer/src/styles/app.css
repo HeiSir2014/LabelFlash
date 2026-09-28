@@ -58,6 +58,18 @@ input {
   -webkit-app-region: drag;
 }
 
+/*
+ * macOS：左侧是系统红绿灯（主进程把它放在 x=14、在标题栏里垂直居中，三个按钮约宽 52px），
+ * 品牌从红绿灯右边开始；右侧没有自绘窗口按钮，打印机胶囊需要自己的右边距。
+ */
+.title-bar--traffic-lights {
+  padding-left: var(--traffic-light-inset);
+}
+
+.title-bar:has(> .printer-chip:last-child) {
+  padding-right: var(--space-4);
+}
+
 .title-bar__brand {
   display: flex;
   align-items: center;

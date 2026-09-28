@@ -18,17 +18,23 @@
   - 通过类型化 IPC 与界面通信，每个参数都做校验。
 - 渲染层：React，采用 MVVM 结构，纯逻辑 lib → view-model hooks → 组件。预览和打印共用同一份标签 HTML。
 
-**Tech Stack:** Bun 1.4、Electron 44（Node 24.21 / `node:sqlite` / SQLite 3.53.4）、electron-vite 5、Vite 7、React 19、TypeScript 5.9 strict、Biome 2、qrcode、electron-log 5、sharp（仅用于生成图标）、electron-builder 26（NSIS）
+**Tech Stack:** Bun 1.4、Electron 44（Node 24.21 / `node:sqlite` / SQLite 3.53.4）、electron-vite 5、Vite 7、React 19、TypeScript 5.9 strict、Biome 2、qrcode、electron-log 5、electron-updater 6、msedge-tts 2、sharp（仅用于生成图标）、@playwright/test（E2E）、electron-builder 26（NSIS）
 
 **Verified:**
-- 本计划的全部代码块都来自一个已跑通的参考工程。
-- `bun run check`（lint + 两个 tsconfig + {TOTAL_TESTS} 个测试）全部通过，`electron-vite build` 成功。
-- 开发版用 CDP 走过"复制模板 → 编辑 → 保存 → 使用 → 扫码"和"添加常用备注 → 下拉框切换 → 扫码"。
+- 本计划的全部代码都来自一个已跑通的参考工程。
+- `bun run check`（lint + 三个 tsconfig + 186 个单元测试）全部通过；`bun run test:e2e`（Playwright 驱动 Electron）3 个用例通过；`electron-vite build` 成功。
+- 开发版走过"复制模板 → 编辑 → 保存 → 使用 → 扫码"和"添加常用备注 → 下拉框切换 → 扫码"。
+- 语音预热在 Electron 中真实生成 6 段 mp3 缓存。
 - `electron-builder --mac dir` 打包后能启动，fuses 生效。
+
+**v3 修订（最终 review）：**
+- 任务顺序：Task 0–13 → Task 13A–13E（本版新增）→ Task 14。
+- 新增：`app://` 自定义协议、全局 webContents 加固、主 frame 校验、自动更新、E2E、语音播报、打印机异常系统通知。
+- Task 14 的 electron-builder / CI / README 改为发布到 GitHub Releases 的版本。
 
 ## Global Constraints
 
-- Spec：`docs/superpowers/specs/2026-09-28-label-flash-design.md`（v2）。
+- Spec：`docs/superpowers/specs/2026-09-28-label-flash-design.md`（v3）。
 - **品牌与命名**：CDL = 陈大露。产品名 `CDL-云签速印`，ASCII 名 `CDL-LabelFlash`，appId `com.cdl.labelflash`，包名 `cdl-labelflash`，安装包 `CDL-LabelFlash-Setup-${version}.exe`。
 - **数据目录**：`%LOCALAPPDATA%\CDL-LabelFlash`，包含 `labelflash.db`、`logs\main.log`。
 - **纸张**：固定 60×40mm 背胶标签。二维码内容为 `编码-颜色-尺码`，从右往左拆；尺码是文本（S/M/L/XL/XXL/均码/36.5 都合法）。
@@ -36,12 +42,17 @@
 - **打印记录**：环形保留，默认 100,000 条，范围 1,000–1,000,000；插入和裁剪在同一个事务里完成；界面每页 100 条；搜索走 FTS5 trigram。
 - **模板**：结构化数据，所有输入都经过 `sanitizeTemplate`；内置模板只读；预览和打印共用 `renderLabelHtml`。
 - **安全**：
-  - `contextIsolation`、`sandbox` 开启，`nodeIntegration` 关闭。
-  - IPC 只接受主窗口发来的消息，参数全部校验。
-  - 权限请求一律拒绝，fuses 收紧，安装版移除默认菜单。
+  - `contextIsolation`、`sandbox` 开启，`nodeIntegration` 关闭；`app.enableSandbox()` 让所有渲染进程进沙箱。
+  - 界面从 `app://bundle/` 自定义协议加载，不用 `file://`；路径解析拒绝越出打包目录。
+  - 所有 webContents 统一拒绝 `window.open`、跳转和 `<webview>`。
+  - IPC 只接受主窗口**主 frame** 发来的消息，参数全部校验。
+  - 权限请求与权限检查一律拒绝；fuses 收紧（含 `grantFileProtocolExtraPrivileges: false`）；安装版移除默认菜单。
+  - CSP：`default-src 'self'`，`media-src 'self' blob:`（语音播放用）。
   - 标签 HTML 中的文本全部转义。
-- **依赖**：不引入第三方原生运行时模块。运行时依赖只有 `qrcode`、`electron-log`；sharp 只作为开发依赖，用来生成图标。
-- **质量门槛**：每个任务结束时，`bun run lint`、`bun run typecheck`、`bun test` 都必须零错误、零警告。
+- **依赖**：不引入第三方原生运行时模块。运行时依赖只有 `qrcode`、`electron-log`、`electron-updater`、`msedge-tts`；sharp、@playwright/test 只作为开发依赖。
+- **语音**：在线合成（msedge-tts），按 `sha256(音色|语速|文本)` 缓存 mp3 到 `<userData>\voice-cache`；每种结果只播固定短语；语速 -50%～+100%、步长 10%；合成失败退回提示音。
+- **命名**：仓库、代码、文档、提交信息中不出现任何参考产品或竞品名称，统一写「参考产品」；打印机也只写「热敏标签机」，不写品牌。
+- **质量门槛**：每个任务结束时，`bun run lint`、`bun run typecheck`、`bun test` 都必须零错误、零警告；Task 13E 起还要 `bun run test:e2e` 通过。
 - **代码风格**：TS 用 camelCase / PascalCase / UPPER_SNAKE_CASE，不写魔法数字；界面文案用中文；注释只写「为什么」。
 - **Git**：在 `feature/phase1-desktop-client` 分支上开发，每个任务单独提交；最后按 squash 方式合并 PR。提交身份为 `heisir2014 <heisir21@163.com>`；远程仓库 `git@github.com:HeiSir2014/LabelFlash.git`。
 
@@ -49,7 +60,47 @@
 
 ## File Structure
 
-{TREE}
+```
+.github/workflows/ci.yml          CI：check + E2E；非标签打包上传；v* 标签发布到 Releases（Task 14）
+biome.json  bunfig.toml  tsconfig.json  electron.vite.config.ts  package.json  .gitignore   工具链（Task 1、10）
+electron-builder.yml  resources/installer.nsh                                          打包（Task 14）
+playwright.config.ts  e2e/tsconfig.json  e2e/app.e2e.ts                                E2E（Task 13E）
+resources/icon.svg  tray.svg → icon.png  tray*.png    scripts/generate-icons.ts        图标（Task 10）
+src/core/                         纯业务层（不依赖 Electron）
+  types.ts  errors.ts  label-parser.ts  dedup-guard.ts  serial-queue.ts  print-queue.ts
+  job-store.ts  print-service.ts                                                       （Task 1–3、5）
+  templates/  template-model.ts  sanitize-template.ts  builtin-templates.ts  note-text.ts
+              note-override.ts  text-fit.ts  template-catalog.ts                       （Task 4）
+  testing/    fake-clock.ts  fake-printer-adapter.ts  in-memory-job-store.ts
+src/shared/                       主进程与界面共用
+  brand.ts  label-paper.ts  print-timing.ts  printer-readiness.ts  job-history.ts
+  settings.ts  ipc-contract.ts  sample-label.ts                                        （Task 5、8、10）
+  update-status.ts（13B）  voice.ts（13C）
+src/main/
+  storage/    database.ts  migrations.ts  row-readers.ts  sqlite-job-store.ts
+              sqlite-settings-store.ts  sqlite-template-repository.ts                  （Task 6–8）
+  printing/   label-html.ts  printer-status.ts  electron-driver-adapter.ts             （Task 9）
+              alert-throttle.ts  printer-alerts.ts                                     （13D）
+  voice/      voice-clips.ts  edge-synthesizer.ts                                      （13C）
+  bundle-path.ts  app-protocol.ts  security.ts                                         （13A）
+  updater.ts                                                                           （13B）
+  print-template.ts  ipc-validators.ts  ipc.ts  logging.ts  window.ts  tray.ts  index.ts   （Task 10）
+src/preload/index.ts
+src/renderer/
+  index.html  tsconfig.json
+  src/  main.tsx  App.tsx  env.d.ts
+        assets/fonts/  SmileySans-Oblique.woff2  SmileySans-OFL.txt                    （Task 11）
+        styles/        tokens.css  app.css
+        lib/           status-text  notices  printer-chip  list-filters  repeat-filter
+                       note-options  feedback-sound                                    （Task 11）
+                       update-text（13B）  feedback-cues  voice-player（13C）
+        view-models/   use-*.ts                                                        （Task 12；13B/13C 新增两个）
+        components/    TitleBar  ScanBar  PreviewStage  Ruler  PrinterList  SidePanel
+                       JobLog  NoticeBar  TemplatePanel  TemplateEditor  SettingsForm
+                       ConfirmButton  ErrorBoundary  form-controls                     （Task 13）
+                       VoiceSettingsSection（13C）
+docs/  roadmap.md  superpowers/specs/…  superpowers/plans/…  windows-acceptance.md
+```
 
 ---
 
@@ -97,7 +148,7 @@ Expected：`1.4.2` 或更高。
   "name": "cdl-labelflash",
   "productName": "CDL-云签速印",
   "version": "0.1.0",
-  "description": "CDL-云签速印：样衣标签扫码重打（陈大露 CDL 出品）",
+  "description": "CDL-云签速印：样衣标签扫码重打",
   "author": "heisir2014 <heisir21@163.com>",
   "private": true,
   "main": "./out/main/index.js",
@@ -6316,9 +6367,7 @@ export function TitleBar({ printerChip }: TitleBarProps) {
   return (
     <header className="title-bar">
       <div className="title-bar__brand">
-        <span className="brand-mark" title={`${BRAND.owner}（${BRAND.mark}）`}>
-          {BRAND.mark}
-        </span>
+        <span className="brand-mark">{BRAND.mark}</span>
         <span className="title-bar__name">{BRAND.productName.replace(`${BRAND.mark}-`, '')}</span>
       </div>
       <div className={`printer-chip printer-chip--${printerChip.tone}`} title="当前打印机">
@@ -9091,6 +9140,276 @@ git commit -m "feat(ui): frameless scan station with ruler preview, template edi
 
 ---
 
+### Task 13A: 安全加固：app:// 协议、全局 webContents 加固、主 frame 校验
+
+**Files:**
+- Create: `src/main/bundle-path.ts`, `src/main/bundle-path.test.ts`, `src/main/app-protocol.ts`, `src/main/security.ts`
+- Modify: `src/main/window.ts`（安装版加载 `APP_ENTRY_URL`；窗口级 open/navigate 处理移到 security.ts），`src/main/ipc.ts`（`isTrusted`），`src/main/index.ts`（ready 前注册协议、`app.enableSandbox()`、`hardenAllWebContents()`；bootstrap 中 `denyAllPermissions()`、`handleAppScheme(join(__dirname, '../renderer'))`）
+
+**Interfaces:**
+- Produces: `APP_SCHEME = 'app'`、`APP_HOST = 'bundle'`、`APP_ENTRY_URL = 'app://bundle/index.html'`；`resolveBundlePath(rootDir: string, requestUrl: string): string | null`；`registerAppScheme(): void`（ready 前）；`handleAppScheme(rootDir: string): void`；`hardenAllWebContents(): void`（ready 前）；`denyAllPermissions(): void`。
+- 纯函数 `bundle-path.ts` 与引用 `electron` 的 `app-protocol.ts` 分开：`bun test` 里无法导入 `electron` 的 `net`。
+
+- [ ] **Step 1: 写失败的测试 `src/main/bundle-path.test.ts`**
+
+```ts
+import { describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
+import { APP_ENTRY_URL, resolveBundlePath } from './bundle-path';
+
+const ROOT = join('/opt', 'cdl', 'out', 'renderer');
+
+describe('resolveBundlePath', () => {
+  test('maps the entry page and assets inside the renderer bundle', () => {
+    expect(resolveBundlePath(ROOT, APP_ENTRY_URL)).toBe(join(ROOT, 'index.html'));
+    expect(resolveBundlePath(ROOT, 'app://bundle/assets/index-abc.js')).toBe(join(ROOT, 'assets', 'index-abc.js'));
+    expect(resolveBundlePath(ROOT, 'app://bundle/assets/%E5%BE%97%E6%84%8F%E9%BB%91.woff2')).toBe(
+      join(ROOT, 'assets', '得意黑.woff2'),
+    );
+  });
+
+  test('rejects path traversal that survives URL parsing (encoded slashes)', () => {
+    expect(resolveBundlePath(ROOT, 'app://bundle/..%2F..%2Fsecrets.txt')).toBeNull();
+    expect(resolveBundlePath(ROOT, 'app://bundle/assets/..%2F..%2F..%2Fsecrets.txt')).toBeNull();
+    expect(resolveBundlePath(ROOT, 'app://bundle/')).toBeNull();
+  });
+
+  test('dot segments are normalized by the URL parser and stay inside the bundle', () => {
+    expect(resolveBundlePath(ROOT, 'app://bundle/%2e%2e/%2e%2e/secrets.txt')).toBe(join(ROOT, 'secrets.txt'));
+    expect(resolveBundlePath(ROOT, 'app://bundle/../../secrets.txt')).toBe(join(ROOT, 'secrets.txt'));
+  });
+
+  test('rejects other hosts, schemes and malformed URLs', () => {
+    expect(resolveBundlePath(ROOT, 'app://evil/index.html')).toBeNull();
+    expect(resolveBundlePath(ROOT, 'file:///etc/passwd')).toBeNull();
+    expect(resolveBundlePath(ROOT, 'app://bundle/%E0%A4%A')).toBeNull();
+    expect(resolveBundlePath(ROOT, 'not a url')).toBeNull();
+  });
+});
+```
+
+Run: `bun test src/main/bundle-path.test.ts` → FAIL（模块不存在）。
+
+- [ ] **Step 2: 实现 `src/main/bundle-path.ts`**
+
+```ts
+import { isAbsolute, join, normalize, relative } from 'node:path';
+
+/**
+ * 安装版的界面通过自定义协议 app://bundle/ 提供，而不是 file://（Electron 安全清单第 18 条）：
+ * 页面拿不到 file:// 的额外特权，也只能读到渲染进程构建目录里的文件。
+ */
+export const APP_SCHEME = 'app';
+export const APP_HOST = 'bundle';
+export const APP_ENTRY_URL = `${APP_SCHEME}://${APP_HOST}/index.html`;
+
+/** 把 app://bundle/<路径> 映射到 rootDir 内的文件；主机不对、路径越界或编码非法都返回 null。 */
+export function resolveBundlePath(rootDir: string, requestUrl: string): string | null {
+  let pathname: string;
+  try {
+    const url = new URL(requestUrl);
+    if (url.protocol !== `${APP_SCHEME}:` || url.host !== APP_HOST) {
+      return null;
+    }
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    return null;
+  }
+  const target = normalize(join(rootDir, pathname));
+  const relativePath = relative(rootDir, target);
+  if (relativePath === '' || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    return null;
+  }
+  return target;
+}
+```
+
+Run: `bun test src/main/bundle-path.test.ts` → PASS（4 个）。
+
+- [ ] **Step 3: 实现 `src/main/app-protocol.ts` 与 `src/main/security.ts`**
+
+```ts
+// src/main/app-protocol.ts
+import { pathToFileURL } from 'node:url';
+import { net, protocol } from 'electron';
+import { APP_SCHEME, resolveBundlePath } from './bundle-path';
+
+/** 必须在 app ready 之前调用。 */
+export function registerAppScheme(): void {
+  protocol.registerSchemesAsPrivileged([
+    { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  ]);
+}
+
+/** app ready 之后调用：只服务 rootDir（渲染进程构建目录）里的文件。 */
+export function handleAppScheme(rootDir: string): void {
+  protocol.handle(APP_SCHEME, (request) => {
+    const filePath = resolveBundlePath(rootDir, request.url);
+    if (!filePath) {
+      return new Response('Not Found', { status: 404 });
+    }
+    return net.fetch(pathToFileURL(filePath).toString());
+  });
+}
+```
+
+```ts
+// src/main/security.ts
+import { app, session } from 'electron';
+
+/**
+ * 对所有 webContents（主窗口、打印窗口，以及将来新增的任何窗口）统一收紧：
+ * 禁止打开新窗口、禁止页面内导航、禁止挂载 <webview>。必须在 app ready 之前调用。
+ */
+export function hardenAllWebContents(): void {
+  app.on('web-contents-created', (_event, contents) => {
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    contents.on('will-navigate', (event) => event.preventDefault());
+    contents.on('will-attach-webview', (event) => event.preventDefault());
+  });
+}
+
+/** 本应用不需要任何网页权限（摄像头、通知、剪贴板读取……）：请求和检查一律拒绝。 */
+export function denyAllPermissions(): void {
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
+}
+```
+
+- [ ] **Step 4: 接入 window / ipc / index**
+
+- `window.ts`：`loadURL(!app.isPackaged && devServerUrl ? devServerUrl : APP_ENTRY_URL)`，删除窗口级的 `setWindowOpenHandler` / `will-navigate`。
+- `ipc.ts`：
+  ```ts
+  const isTrusted = (event: IpcMainEvent | IpcMainInvokeEvent) =>
+    event.sender === deps.getWindow()?.webContents && event.senderFrame === event.sender.mainFrame;
+  ```
+- `index.ts`：在 `app.setPath('userData', …)` 之后、ready 之前依次调用 `registerAppScheme()`、`app.enableSandbox()`、`hardenAllWebContents()`，并在安装版中 `Menu.setApplicationMenu(null)`；`bootstrap()` 开头调用 `denyAllPermissions()` 和 `handleAppScheme(join(__dirname, '../renderer'))`。
+- `electron-builder.yml` 的 fuses 增加 `grantFileProtocolExtraPrivileges: false`（Task 14）。
+
+- [ ] **Step 5: 验证并提交**
+
+Run: `bun run check && bun run build` → 全部通过。
+```bash
+git add src/main
+git commit -m "security: serve UI over app:// and harden every webContents"
+```
+
+---
+
+### Task 13B: 自动更新（electron-updater + GitHub Releases）
+
+**Files:**
+- Create: `src/shared/update-status.ts`, `src/main/updater.ts`, `src/renderer/src/lib/update-text.ts`, `src/renderer/src/lib/update-text.test.ts`, `src/renderer/src/view-models/use-update-status.ts`
+- Modify: `src/shared/ipc-contract.ts`, `src/preload/index.ts`, `src/main/ipc.ts`, `src/main/index.ts`, `src/renderer/src/App.tsx`, `TitleBar.tsx`, `SettingsForm.tsx`, `app.css`, `package.json`（依赖 `electron-updater`）
+
+**Interfaces:**
+- `UpdateStatus = { state: 'disabled' } | { state: 'idle' } | { state: 'checking' } | { state: 'up-to-date'; checkedAt: number } | { state: 'downloading'; version: string; percent: number } | { state: 'ready'; version: string } | { state: 'error'; message: string }`
+- `class AppUpdater({ onStatus(status), onBeforeInstall() })`：`start()`（只在安装版启用；`autoDownload`、`autoInstallOnAppQuit`；启动 15 秒后检查，之后每 4 小时一次）、`check()`、`install()`（先 `onBeforeInstall()` 把 `isQuitting` 置真，否则关窗会被拦成隐藏到托盘，再 `quitAndInstall()`）、`current`。
+- IPC：`update:status`（invoke）、`update:check`（invoke）、`update:install`（invoke）、`update:status-changed`（主进程推送）。preload 用 `subscribe<T>(channel, listener)`，不把 `IpcRendererEvent` 暴露给页面。
+- `describeUpdate(status): { text: string; canCheck: boolean; isReady: boolean }`。
+- 界面：标题栏在 `ready` 时出现「重启更新 vX」胶囊（ConfirmButton，二次确认）；设置页「关于」显示更新状态和「检查更新」。
+
+- [ ] **Step 1: 写失败的测试 `update-text.test.ts`**（3 个）：开发版（disabled）永远不检查；只有 idle、up-to-date、error 允许手动检查；显示下载进度和 ready 的版本号。
+- [ ] **Step 2: 实现 `update-status.ts`、`update-text.ts`**，测试通过。
+- [ ] **Step 3: 实现 `updater.ts` 并接入 IPC、preload、`index.ts`、TitleBar、SettingsForm。**
+- [ ] **Step 4: 验证并提交**
+
+Run: `bun run check && bun run build`
+```bash
+git add package.json bun.lock src
+git commit -m "feat: background auto-update from GitHub Releases"
+```
+
+---
+
+### Task 13C: 语音确认播报（msedge-tts + 本地缓存 + 可调语速）
+
+**Files:**
+- Create: `src/shared/voice.ts`, `src/main/voice/voice-clips.ts`, `src/main/voice/voice-clips.test.ts`, `src/main/voice/edge-synthesizer.ts`, `src/renderer/src/lib/feedback-cues.ts`, `src/renderer/src/lib/voice-player.ts`, `src/renderer/src/lib/voice.test.ts`, `src/renderer/src/view-models/use-feedback.ts`, `src/renderer/src/components/VoiceSettingsSection.tsx`
+- Modify: `src/shared/settings.ts`（+ 测试）、`src/main/ipc-validators.ts`（+ 测试）、`src/shared/ipc-contract.ts`、`src/preload/index.ts`、`src/main/ipc.ts`、`src/main/index.ts`、`use-scan-station.ts`、`App.tsx`、`SettingsForm.tsx`、`app.css`、`index.html`（CSP `media-src 'self' blob:`）、`package.json`（依赖 `msedge-tts`）
+
+**Interfaces:**
+- `VOICE_CUES = ['printed','duplicate','failed','invalid','noPrinter','scanned']`，文本依次为 打印成功 / 重复扫码 / 打印失败 / 格式错误 / 请选择打印机 / 已扫描。
+- `VOICE_NAMES`：`zh-CN-XiaoxiaoNeural`（默认）、`zh-CN-YunxiNeural`、`zh-CN-XiaoyiNeural`；`VOICE_RATE_RANGE = { min: -50, max: 100, step: 10 }`；`VoiceSettings { enabled; name; ratePercent }`；`isVoiceName`、`isVoiceCue`、`toProsodyRate(20) === '+20%'`。
+- `Settings.voice` 默认 `{ enabled: true, name: 'zh-CN-XiaoxiaoNeural', ratePercent: 0 }`；`sanitizeVoice` 把语速夹到范围内并吸附到 10% 步长。
+- `class VoiceClips(cacheDir, synthesize: (text, voice, ratePercent) => Promise<Uint8Array>)`：
+  - `get(cue, { voice, ratePercent }): Promise<Uint8Array | null>`：文件名 `sha256(voice|rate|text).mp3`；先写临时文件再 rename；同一 key 并发只合成一次；失败返回 null（界面退回提示音）。
+  - `warm(key)`：后台合成全部短语。启动时和语音设置变化时调用。
+- `synthesizeWithEdge(text, voice, ratePercent)`：`OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3`，20 秒超时，结束后 `close()`。
+- IPC `voice:clip`（invoke，参数经 `requireVoiceCue` 校验；音色和语速取主进程当前设置，不信任页面传入）。
+- 渲染层：`describeFeedback(event) → { cue, tone }`；`VoicePlayer({ fetchClip, createUrl, play }).play(cue, settings): Promise<boolean>`，按 `音色|语速|cue` 缓存 Blob URL；`useFeedback(voice) → { announce(event), preview() }`，语音失败时 `playFeedback(tone)`。
+
+- [ ] **Step 1: 写失败的测试**
+  - `voice-clips.test.ts`（5 个）：只合成一次，之后离线也能从缓存文件播放；每种音色和语速各有一份缓存；同一段的并发请求合并；离线且无缓存时返回 null，也不写入缓存；`warm` 对每个短语只合成一次。
+  - `voice.test.ts`（4 个）：每种结果映射到固定短语和兜底提示音；同一音色、语速、短语只取一次，之后从内存重放；取不到时返回 false，调用方退回提示音；之前取不到的短语下次会重试。
+  - `settings.test.ts`：语速吸附与夹取、非法音色回退默认。
+  - `ipc-validators.test.ts`：`requireVoiceCue` 拒绝未知 cue。
+- [ ] **Step 2: 实现 shared / main / renderer 代码**，测试通过。
+- [ ] **Step 3: 接入扫码流程**：`useScanStation({ announce })`，事件 no-printer、internal-error、result、invalid，以及手动模式下的 scanned。
+- [ ] **Step 4: 设置页 `VoiceSettingsSection`**：开关、音色下拉（类名 `voice-settings__select`，避免与备注下拉冲突）、语速滑块（标签「正常 / 快 20% / 慢 10%」）、「试听」按钮。
+- [ ] **Step 5: 验证并提交**
+
+Run: `bun run check && bun run build`；再用 `bun run dev` 启动一次，确认 `<userData>/voice-cache/` 下生成 6 个 mp3（msedge-tts 在 Bun 的 WebSocket 下 TLS 握手失败，所以真实合成只在 Electron 里验证，单元测试注入假合成器）。
+```bash
+git add package.json bun.lock src
+git commit -m "feat: cached voice confirmation after scan and print"
+```
+
+---
+
+### Task 13D: 打印机异常系统通知
+
+**Files:**
+- Create: `src/main/printing/alert-throttle.ts`, `src/main/printing/alert-throttle.test.ts`, `src/main/printing/printer-alerts.ts`
+- Modify: `src/main/printing/printer-status.ts`（+ 测试），`src/main/index.ts`
+
+**Interfaces:**
+- `ALERT_COOLDOWN_MS = 30 * 60_000`，`MAX_ALERTS_PER_KIND_PER_DAY = 2`；`AlertThrottle(clock).shouldNotify(kind: string): boolean`（按本地日期计数）。
+- `type NotReadyListener = (printerName: string, detail: string) => void`；`new PrinterStatusMonitor(probe, onNotReady = () => {}, intervalMs)`：打印机从「可用 / 未知」变为不能打印，或者原因变化时触发。
+- `createPrinterAlertNotifier(throttle, onClick): NotReadyListener`：系统通知「打印机需要处理：{原因}」，点击后回到主窗口。
+
+- [ ] **Step 1: 写失败的测试**
+  - `alert-throttle.test.ts`：30 分钟内同类只提醒一次；不同类互不影响；每天最多 2 次；跨天重新计数。
+  - `printer-status.test.ts`：连续轮询 就绪 → 缺纸 → 缺纸 → 卡纸 → 就绪 → 缺纸，通知序列为 `['A:缺纸', 'A:卡纸', 'A:缺纸']`。
+- [ ] **Step 2: 实现并接入 `index.ts`**：`new PrinterStatusMonitor(queryPrinterReadiness, createPrinterAlertNotifier(new AlertThrottle(systemClock), showMainWindow))`。
+- [ ] **Step 3: 验证并提交**
+
+Run: `bun run check`
+```bash
+git add src/main
+git commit -m "feat: throttled system notification when the printer needs attention"
+```
+
+---
+
+### Task 13E: 端到端测试（Playwright + Electron）
+
+**Files:**
+- Create: `playwright.config.ts`, `e2e/tsconfig.json`, `e2e/app.e2e.ts`
+- Modify: `package.json`（devDependency `@playwright/test`；`typecheck` 加 `e2e/tsconfig.json`；`"test:e2e": "electron-vite build && playwright test"`），`biome.json`（如需），`.gitignore`（`test-results/`、`playwright-report/`），`src/main/index.ts`（未打包时允许 `CDL_LABELFLASH_USER_DATA` 覆盖数据目录，安装版忽略）
+
+**Interfaces:**
+- `playwright.config.ts`：`testDir: 'e2e'`，`testMatch: '**/*.e2e.ts'`，`timeout: 60_000`，`workers: 1`，reporter `list`。
+- 启动辅助：`_electron.launch({ args: [out/main/index.js], env })`。env 取 `process.env` 中非 `undefined` 的值，去掉 `ELECTRON_RENDERER_URL`（界面必须走 `app://`），再加上指向临时目录的 `CDL_LABELFLASH_USER_DATA`；每个用例前后创建、删除这个临时目录。
+
+- [ ] **Step 1: 写 3 个用例**
+  1. 界面从 `app://bundle/index.html` 加载，标题为「CDL-云签速印」。扫 `CL5640-TK-图片色-XXL` 后状态条显示「还没选打印机」，预览的编码为 `CL5640-TK`、尺码为 `XXL`。扫 `hello` 显示「二维码格式不对」。
+  2. 复制模板，命名为「E2E 模板」，保存并使用；添加常用备注「E2E 备注 {日期}」，在备注下拉框（`getByRole('combobox', { name: '备注' })`）选中它，焦点回到扫码框。重启后模板仍是「使用中」，下拉框仍选中该备注，预览里出现备注。
+  3. 页面中 `require`、`process` 都是 `undefined`，只有 `api`；`window.open` 返回 null，窗口数仍为 1。
+- [ ] **Step 2: 运行**
+
+Run: `bun run test:e2e` → 3 passed。
+
+- [ ] **Step 3: 提交**
+
+```bash
+git add playwright.config.ts e2e package.json bun.lock tsconfig.json .gitignore src/main/index.ts
+git commit -m "test: Playwright end-to-end tests against the built Electron app"
+```
+
+---
+
 ### Task 14: 打包、CI、README、Windows 验收、推送与 PR
 
 **Files:**
@@ -9098,12 +9417,12 @@ git commit -m "feat(ui): frameless scan station with ruler preview, template edi
 
 - [ ] **Step 1: 创建 `electron-builder.yml`**
 
-已在 macOS 上用 `--mac dir` 验证过：Bun 的依赖收集能正确打包 `qrcode`、`electron-log`；fuses 生效；字体许可证进入 `resources/licenses/`。
+已在 macOS 上用 `--mac dir` 验证过：Bun 的依赖收集能正确打包全部运行时依赖；fuses 生效；字体许可证进入 `resources/licenses/`。
 
 ```yaml
 appId: com.cdl.labelflash
 productName: CDL-云签速印
-copyright: Copyright © 2026 陈大露 (CDL)
+copyright: Copyright © 2026 CDL
 directories:
   buildResources: resources
   output: dist
@@ -9118,6 +9437,12 @@ asarUnpack:
 extraResources:
   - from: src/renderer/src/assets/fonts/SmileySans-OFL.txt
     to: licenses/SmileySans-OFL.txt
+# 只保留中文和英文的 Chromium 语言包，安装包更小。
+electronLanguages:
+  - zh-CN
+  - en-US
+# 没有第三方原生模块（SQLite 是 Electron 内置的 node:sqlite），不需要重新编译。
+npmRebuild: false
 electronFuses:
   runAsNode: false
   enableCookieEncryption: true
@@ -9125,7 +9450,14 @@ electronFuses:
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
-publish: null
+  # 界面通过 app:// 自定义协议加载，不需要 file:// 的额外特权。
+  grantFileProtocolExtraPrivileges: false
+# 自动更新：electron-updater 从 GitHub Releases 读取 latest.yml。只有 CI 在打 v* 标签时才发布（--publish always）。
+publish:
+  provider: github
+  owner: HeiSir2014
+  repo: LabelFlash
+  releaseType: release
 win:
   target:
     - target: nsis
@@ -9141,6 +9473,8 @@ nsis:
   shortcutName: CDL-云签速印
   uninstallDisplayName: CDL-云签速印
   artifactName: CDL-LabelFlash-Setup-${version}.${ext}
+  installerLanguages:
+    - zh_CN
   include: resources/installer.nsh
 ```
 
@@ -9155,7 +9489,7 @@ nsis:
 
 - [ ] **Step 3: 创建 `.github/workflows/ci.yml`**
 
-在 Windows 上执行 lint + 类型检查 + 测试，然后打包并上传安装包；推送 `v*` 标签时，把安装包附到 Release。
+在 Windows 上执行 lint + 类型检查 + 单元测试 + E2E。非标签构建打包并上传安装包；推送 `v*` 标签时，由 electron-builder 把安装包、`latest.yml` 和 blockmap 发布到 Release，供 electron-updater 自动更新。
 
 ```yaml
 name: CI
@@ -9165,6 +9499,10 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -9176,9 +9514,12 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run check
+      - name: End-to-end tests (Playwright + Electron)
+        run: bun run test:e2e
 
   package:
     needs: check
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -9192,11 +9533,23 @@ jobs:
           name: CDL-LabelFlash-windows
           path: dist/*.exe
           if-no-files-found: error
-      - name: Attach installer to the GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+
+  # 打 v* 标签时发布：electron-builder 上传安装包、latest.yml 和 blockmap，electron-updater 据此自动更新。
+  release:
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
         with:
-          files: dist/*.exe
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run release:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 - [ ] **Step 4: 创建 `README.md`**
@@ -9204,7 +9557,7 @@ jobs:
 ````markdown
 # CDL-云签速印（LabelFlash）
 
-陈大露（CDL）出品的样衣标签重打工具。用扫码枪扫描样衣标签上的二维码（`编码-颜色-尺码`，例如 `CL5640-TK-图片色-XL`），软件会立即按模板生成 60×40mm 标签的预览，并在选中的本机打印机上打印。
+CDL 出品的样衣标签重打工具。用扫码枪扫描样衣标签上的二维码（`编码-颜色-尺码`，例如 `CL5640-TK-图片色-XL`），软件会立即按模板生成 60×40mm 标签的预览，并在选中的本机打印机上打印。
 
 ## 功能
 
@@ -9212,14 +9565,18 @@ jobs:
 - **防重复打印**：同一张标签在设定时间内（默认 10 分钟）只打印一次。重启软件后这个时间窗口依然有效。需要再打一张时，可以用"强制补打"。
 - **打印模板**：
   - 内置 5 套 60×40mm 模板。
-  - 可以复制成自定义模板后自由调整：二维码的位置、尺寸和容错等级，每个字段的显示、前缀、字号、加粗和对齐方式，以及备注文字。
+  - 可以复制成自定义模板后自由调整：二维码的位置、尺寸和容错等级，每个字段的显示、前缀、字号和加粗，按区域统一的对齐方式，以及备注文字。
   - 备注可以放在二维码旁的空白处或底部，支持 `{日期}`、`{时间}`、`{编码}` 等变量。
+  - 扫码框旁的「备注」下拉框可以一键切换常用备注。
 - **打印记录**：
   - 可以回看任意一条记录的预览，也可以重打。
   - 记录按环形方式保留，默认最多 10 万条，超出后自动删除最早的记录。
   - 支持按编码、颜色、尺码全文搜索。
 - **打印机**：本机打印机再多，也可以搜索后选择。选择会保存下来。软件会检测打印机是否离线、缺纸或卡纸。
 - **无边框窗口**：关闭窗口时最小化到托盘，并支持开机自启。
+- **语音确认**：扫码、打印后播报固定短语（打印成功、重复扫码……），音色和语速可调；音频缓存在本机，播放无延迟。
+- **打印机异常提醒**：离线、缺纸、卡纸时弹出系统通知；同类问题 30 分钟内不重复，每天最多 2 次。
+- **自动更新**：从 GitHub Releases 后台下载新版本，标题栏提示后重启即可更新；也可以在设置页手动检查。
 
 ## 数据与日志
 
@@ -9229,6 +9586,7 @@ jobs:
 |---|---|
 | `labelflash.db` | SQLite 数据库（Electron 内置 `node:sqlite`），包含设置、自定义模板和打印记录 |
 | `logs\main.log` | 运行日志，超过 5MB 自动轮转。遇到问题时，把这个文件发给维护人员 |
+| `voice-cache\` | 语音播报的 mp3 缓存，可随时删除，下次会重新生成 |
 
 ## 扫码枪设置
 
@@ -9242,28 +9600,38 @@ jobs:
 bun install
 bun run dev        # 启动开发版
 bun run check      # lint + 类型检查 + 单元测试
+bun run test:e2e   # 构建后用 Playwright 启动 Electron 跑端到端测试
 bun run icons      # 修改 resources/*.svg 后重新生成图标
 bun run dist:win   # 在 Windows 上打 NSIS 安装包，输出到 dist/
 ```
 
-推送到 `main` 或者推送 `v*` 标签时，GitHub Actions 会在 Windows 上跑检查并打包；推送标签时，还会把安装包附加到对应的 Release。
+GitHub Actions 在 Windows 上运行：
+
+- 推送到 `main` 或提交 PR：执行检查和 E2E 测试，并上传安装包产物。
+- 推送 `v*` 标签：electron-builder 把安装包和 `latest.yml` 发布到 GitHub Release，已安装的客户端会自动更新。
+
+发布新版本：
+
+1. 修改 `package.json` 里的 `version`。
+2. 提交后打标签，例如 `git tag v0.2.0 && git push --tags`。
 
 ## 目录结构
 
 ```
 src/core       业务层（纯 TypeScript，不依赖 Electron）：解析、防重门限、打印队列、模板、PrintService
 src/shared     主进程与界面共用：IPC 契约、设置、常量
-src/main       Electron 主进程：SQLite 存储、打印适配器、打印机状态、IPC、窗口、托盘、日志
+src/main       Electron 主进程：app:// 协议、安全加固、SQLite 存储、打印适配器、打印机状态与异常通知、语音缓存、IPC、窗口、托盘、日志、自动更新
 src/preload    contextBridge
 src/renderer   界面（React，MVVM：view-models + components）
-docs/          设计文档与实施计划
+e2e/           Playwright 端到端测试
+docs/          设计文档、实施计划与路线图
 ```
 ````
 
 - [ ] **Step 5: 本地全量检查**
 
-Run: `bun run check && bun run build`
-Expected: Biome 无问题，两个 tsconfig 零错误，全部测试通过，构建成功。
+Run: `bun run check && bun run test:e2e`
+Expected: Biome 无问题，三个 tsconfig 零错误，186 个单元测试和 3 个 E2E 全部通过，构建成功。
 
 - [ ] **Step 6: Commit 并推送，确认 CI 通过**
 
@@ -9273,14 +9641,14 @@ git commit -m "build: NSIS packaging, Windows CI and README"
 git push -u origin feature/phase1-desktop-client
 gh run watch --exit-status
 ```
-Expected: `check` 和 `package` 两个 job 都成功，产物 `CDL-LabelFlash-windows` 里有 `CDL-LabelFlash-Setup-0.1.0.exe`。
+Expected: `check`（含 E2E）和 `package` 两个 job 都成功，产物 `CDL-LabelFlash-windows` 里有 `CDL-LabelFlash-Setup-0.1.0.exe`；`release` job 只在 `v*` 标签时运行。
 
 - [ ] **Step 7: Windows 真机验收**
 
 从 CI 产物下载安装包，或者在 Windows 上执行 `bun install && bun run dist:win`。可以用 xremote 远程操作。把每一项的结果（通过 / 未通过，以及具体现象）记到 `docs/windows-acceptance.md`：
 
 1. **安装**：安装包未签名，SmartScreen 需要点「仍要运行」。可以选择安装目录；桌面快捷方式名是「CDL-云签速印」。启动后，`%LOCALAPPDATA%\CDL-LabelFlash\labelflash.db` 和 `logs\main.log` 都会被创建。
-2. **打印机**：列表显示本机全部打印机（申通、标签、德邦、Qirui QR-488、HPRT N31C…）。搜索 `qr` 只剩 Qirui QR-488。选中标签机后，胶囊显示「就绪」。
+2. **打印机**：列表显示本机全部打印机。用搜索框能按名称过滤到目标热敏标签机；选中后，胶囊显示「就绪」。
 3. **持久化**：选择打印机、切换模板、关闭自动打印，然后从托盘退出，再重新启动，所有选择都保留。
 4. **测试页与版面**：打测试页，量一下是不是 60×40mm、有没有缩放或分页。如果有缩放，在「打印机属性 › 首选项」里把纸张设成 60×40mm，并把设置步骤写进记录。
 5. **扫码枪中文**：扫原标签（`CL5640-TK-图片色-36`）。如果出现乱码或格式错误，按说明书扫「中文输出 / Windows Unicode」设置码，并确认输入法是英文状态。把最终需要的设置写进记录。
@@ -9306,6 +9674,9 @@ Expected: `check` 和 `package` 两个 job 都成功，产物 `CDL-LabelFlash-wi
 20. **高 DPI**：在 125% 和 150% 缩放下，界面和托盘图标都清晰，预览比例正确。
 21. **日志**：「打开日志目录」能打开 `logs\`，`main.log` 里有启动记录和打印失败记录。
 22. **卸载**：卸载后，`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 里没有残留的 `com.cdl.labelflash`。
+23. **语音**：联网首次启动后，`voice-cache\` 下生成 6 个 mp3。扫码、打印后播报对应短语；调节语速后「试听」生效。断网后已缓存的短语照常播报；没有缓存时退回提示音。
+24. **异常通知**：标签机缺纸或断开后，弹出系统通知「打印机需要处理：…」，点击回到主窗口；30 分钟内同类问题不重复弹。
+25. **自动更新**：发布一个更高版本的 `v*` 标签后，已安装的客户端在 15 秒到 4 小时内下载完成，标题栏出现「重启更新」，确认后完成升级，数据保留。
 
 - [ ] **Step 8: 修复验收问题**
 

@@ -1,6 +1,7 @@
 # CDL-云签速印（LabelFlash）— 设计文档
 
-- 日期：2026-09-28（v2：纳入模板系统、品牌、审查结论）
+- 日期：2026-09-28（v3：Electron 安全与打包最终审查、自动更新、E2E、语音播报、打印机异常通知）
+- 路线图：`docs/roadmap.md`
 - 仓库：https://github.com/HeiSir2014/LabelFlash
 - 品牌：CDL = 陈大露；产品名 **CDL-云签速印**，ASCII 名 `CDL-LabelFlash`，appId `com.cdl.labelflash`
 
@@ -10,7 +11,7 @@
 
 | 阶段 | 范围 |
 |---|---|
-| **Phase 1（当前）** | Windows 桌面客户端：扫码枪输入、预览、自动 / 手动打印、防重门限、打印模板（内置 + 自定义）、可回溯的打印记录、打印机管理与状态检测、托盘、开机自启、NSIS 安装包、CI |
+| **Phase 1（当前）** | Windows 桌面客户端：扫码枪输入、预览、自动 / 手动打印、防重门限、打印模板（内置 + 自定义）、备注快速切换、可回溯的打印记录、打印机管理与状态检测、打印机异常通知、语音确认播报、托盘、开机自启、自动更新、NSIS 安装包、CI（含 E2E） |
 | Phase 2 | 手机端：主进程内的 HTTPS 服务、自签证书、token/PIN 认证、手机摄像头扫码 SPA；复用 `PrintService`，不改 `core/` |
 
 **不做（YAGNI）**：
@@ -127,9 +128,12 @@
 ```
 src/core       纯 TS 业务层：label-parser / dedup-guard / serial-queue / print-queue / job-store / print-service
                templates/：template-model / builtin-templates / sanitize-template / note-text / text-fit / template-catalog
-src/shared     主进程与界面共用：brand / label-paper / print-timing / printer-readiness / job-history / settings / ipc-contract / sample-label
-src/main       storage/（database / migrations / row-readers / sqlite-*）、printing/（label-html / printer-status / electron-driver-adapter）
-               ipc-validators / ipc / logging / window / tray / index
+src/shared     主进程与界面共用：brand / label-paper / print-timing / printer-readiness / job-history / settings / ipc-contract / sample-label / update-status / voice
+src/main       storage/（database / migrations / row-readers / sqlite-*）
+               printing/（label-html / printer-status / alert-throttle / printer-alerts / electron-driver-adapter）
+               voice/（voice-clips / edge-synthesizer）
+               bundle-path / app-protocol / security / updater / print-template / ipc-validators / ipc / logging / window / tray / index
+e2e/           Playwright 端到端测试
 src/preload    contextBridge：window.api、window.windowControls
 src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models（hooks）→ components（纯视图）
 ```
@@ -142,17 +146,25 @@ src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models�
 ## 8. 安全（Electron 安全清单）
 
 - **渲染进程隔离**：`contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`；拒绝页面导航和打开新窗口；设置 CSP。
-- **IPC**：只接受主窗口 `webContents` 发来的消息；所有参数先经过 `ipc-validators` 校验，不合法直接抛错。
-- **权限请求**：一律拒绝（`setPermissionRequestHandler`）。
+- **不用 `file://`**（清单第 18 条）：安装版界面通过特权自定义协议 `app://bundle/` 加载。
+  - `protocol.handle` 只提供渲染进程构建目录里的文件；路径解析是纯函数 `resolveBundlePath`，会拒绝越界路径、其他主机和非法编码，并有单元测试。
+  - 配合 fuse `grantFileProtocolExtraPrivileges: false`，收回 `file://` 的额外特权。
+- **全局沙箱**：在 ready 之前调用 `app.enableSandbox()`，主窗口和打印窗口都进入沙箱。
+- **统一加固**：在 `web-contents-created` 事件里，对所有 webContents 拦截新窗口、页面内导航和 `<webview>` 挂载。
+- **IPC**（清单第 17 条）：只接受主窗口**主 frame** 发来的消息；所有参数先经过 `ipc-validators` 校验，不合法直接抛错。
+- **preload**：只暴露类型化 API；事件订阅只把数据交给回调，不把 `IpcRendererEvent` 暴露给页面。
+- **CSP**：`default-src 'self'`；另外允许 `media-src blob:`，用来播放语音确认。
+- **权限**：`setPermissionRequestHandler` 和 `setPermissionCheckHandler` 一律拒绝。
 - **Fuses**：
-  - 关闭：`runAsNode`、`enableNodeOptionsEnvironmentVariable`、`enableNodeCliInspectArguments`
+  - 关闭：`runAsNode`、`enableNodeOptionsEnvironmentVariable`、`enableNodeCliInspectArguments`、`grantFileProtocolExtraPrivileges`
   - 开启：`onlyLoadAppFromAsar`、`enableEmbeddedAsarIntegrityValidation`、`enableCookieEncryption`
 - **菜单**：安装版在 ready 之前移除默认菜单（刷新、开发者工具、缩放快捷键会破坏扫码状态和预览比例），并禁用页面缩放。
 
 ## 9. 界面
 
 - **窗口**：
-  - 无系统边框，标题栏自绘：CDL 品牌标识、产品名、当前打印机状态胶囊、最小化 / 最大化 / 关闭按钮。
+  - 无系统边框，标题栏自绘：CDL 品牌标识、产品名（标题里不出现"陈大露"，只在「关于」里出现）、当前打印机状态胶囊、最小化 / 最大化 / 关闭按钮。
+  - 新版本下载完成后，标题栏出现"新版本 x 已就绪 · 重启更新"，需要点两次确认才会重启。
   - 关闭按钮只隐藏到托盘。第一次隐藏时，Windows 会弹气泡提示"扫码前请先打开窗口"。
 - **扫码条**：扫码框、「备注」下拉框（选完焦点立即回到扫码框）、自动打印开关。
 - **扫码框**：始终保持焦点。
@@ -174,9 +186,9 @@ src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models�
     - 打印记录保留上限，调小时需要确认。
     - 开机自启：登录后自动打开窗口，不隐藏，所以可以直接扫码。
     - 常用备注：添加、删除。
-    - 关于：产品名、版本、出品方（陈大露 CDL）、数据目录，以及"打开日志目录"按钮。
+    - 关于：产品名、版本、出品方（陈大露 CDL）、数据目录、更新状态，以及"检查更新""打开日志目录"两个按钮。
 - **反馈**：
-  - 状态条用颜色、大字和提示音三重反馈。
+  - 状态条用颜色和大字显示结果；同时播报语音确认，语音不可用时改用提示音。详见 §9a。
   - IPC 调用失败时，右下角通知"程序内部错误，已写入日志"，与打印机故障分开显示。
   - 顶层 ErrorBoundary 在界面出错时提供"重新加载界面"按钮。
 - **视觉**：
@@ -186,6 +198,29 @@ src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models�
 - **图标**：由 SVG 源文件生成。
   - 应用图标：软尺加上标签纸上的 CDL 字标。
   - 托盘图标：不带文字的简化版，提供 1x、1.25x、1.5x、2x 四种尺寸。
+
+## 9a. 语音确认播报（TTS）
+
+- **播报内容**：每次扫码或打印后，播报一句**固定**的确认语。
+  - 打印成功 / 重复扫码 / 打印失败 / 格式错误 / 请选择打印机
+  - 已扫描：仅在手动模式下，扫码后等待按 F2 时播报。
+  - 程序内部错误时播报「打印失败」。
+- **合成**：主进程用 `msedge-tts`（微软 Edge 在线神经网络语音）合成 mp3，需要联网。
+  - 可选音色：晓晓、云希、晓伊。
+  - 语速为 -50% 到 +100%，按 10% 分档（SSML prosody rate）。
+  - 单句合成超时为 20 秒。
+- **缓存**：按「音色 + 语速 + 文本」的 sha256 存成 `<数据目录>/voice-cache/<hash>.mp3`，写入时先写临时文件再改名。
+  - 启动时和修改语音设置后，后台依次预热全部播报语，所以扫码时直接读缓存，零延迟。实测首次合成约 7 秒。
+  - 同一句话的并发请求会合并成一次合成。
+  - 缓存有上限：音色数 × 语速档位数 × 播报语条数，只有几 MB，不需要清理。
+- **播放**：渲染进程通过 IPC 取到 mp3，转成 Blob URL 后用 `<audio>` 播放；同一句话在内存中只保留一个 URL。
+- **兜底**：语音关闭、离线且没有缓存、或播放被拒绝时，退回提示音。
+- **测试**：Bun 的 WebSocket 连不上这个服务（TLS 握手失败），而 Electron 44 自带的 Node 可以正常合成。所以单元测试注入假的合成器，线上链路在真实 Electron 里做冒烟验证。
+
+## 9b. 打印机异常通知
+
+- **触发**：`PrinterStatusMonitor` 发现当前打印机从「可用 / 未知」变为「不能打印」（离线、缺纸、卡纸、机盖未关……），或者不能打印的原因变了，就弹出 Windows 系统通知；点击通知回到主窗口。
+- **节流**：同一类问题 30 分钟内不重复提醒，每天最多提醒 2 次，避免误报刷屏。
 
 ## 10. 运维
 
@@ -205,8 +240,18 @@ src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models�
   - 构建：electron-vite 5、Vite 7
   - 语言：TypeScript 5.9 strict，并开启 `noUncheckedIndexedAccess`、`noPropertyAccessFromIndexSignature`
   - lint、格式化、import 排序：Biome 2，要求零警告
-- **打包**：electron-builder 26 生成 NSIS x64 安装包 `CDL-LabelFlash-Setup-${version}.exe`，配置 `publish: null`。已用 `--mac dir` 验证过 Bun 的依赖收集和 fuses 配置。
-- **CI**：GitHub Actions 在 Windows 上执行 `bun run check`（lint + 类型检查 + 测试），然后打包并上传安装包；推送 `v*` 标签时，把安装包附加到 Release。
+- **打包**：electron-builder 26 生成 NSIS x64 安装包 `CDL-LabelFlash-Setup-${version}.exe`。已用 `--mac dir` 验证过 Bun 的依赖收集和 fuses 配置。其他配置：
+  - `electronLanguages` 只保留 zh-CN、en-US。
+  - `npmRebuild: false`：没有第三方原生模块。
+  - NSIS 安装界面为中文。
+- **自动更新**：electron-updater + GitHub Releases（`publish: github`，`releaseType: release`）。
+  - 只在安装版启用：启动 15 秒后第一次检查，之后每 4 小时检查一次，后台下载。
+  - 下载完成后由操作员决定何时重启安装；没有重启的话，退出程序时自动安装。
+  - `quitAndInstall` 之前先放行"关闭即隐藏到托盘"，否则窗口关不掉，更新就装不上。
+- **CI**：GitHub Actions 在 Windows 上运行：
+  - `check`：`bun run check`（lint、3 个 tsconfig 的类型检查、单元测试）和 `bun run test:e2e`。
+  - `package`：非标签推送时打包，并上传安装包产物。
+  - `release`：推送 `v*` 标签时执行 `electron-builder --publish always`，上传安装包、`latest.yml` 和 blockmap。
 - **签名**：安装包暂未签名，Windows 会弹出 SmartScreen 提示；这一点已写进验收说明。
 
 ## 12. 测试
@@ -220,9 +265,15 @@ src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models�
   - 打印记录：环形保留、FTS 搜索、防注入、分页。
   - 设置与模板仓库。
   - 标签 HTML、打印机状态的解析与轮询。
-  - IPC 参数校验。
-  - 界面纯逻辑：状态文案、打印机胶囊、通知中心、过滤、去抖。
+  - IPC 参数校验；`app://` 路径解析（防越界）。
+  - 语音缓存（离线命中、并发合并、按音色和语速分开）；异常通知节流；打印机状态变化检测。
+  - 界面纯逻辑：状态文案、打印机胶囊、通知中心、过滤、去抖、备注下拉框、更新状态、语音反馈映射与播放器。
+- **E2E**（Playwright `_electron`，启动构建产物，用临时数据目录 `CDL_LABELFLASH_USER_DATA`，这个变量只在未打包时生效）：
+  - 界面经 `app://bundle/index.html` 加载，扫码后出预览；格式错误时报错。
+  - 自定义模板和备注选择在重启后仍然保留。
+  - 页面拿不到 `require` 和 `process`，`window.open` 被拦截。
 - **界面验证**：用开发版加 CDP 脚本走一遍"复制模板 → 编辑备注 → 保存并使用 → 扫码"，每一步截图。
+- **语音**：在真实 Electron 里冒烟，启动后 6 句播报都合成并缓存成功。
 - **Windows 真机验收**：清单见实施计划 Task 14。
 
 ## 13. 风险

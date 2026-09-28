@@ -45,8 +45,15 @@ bun run dev        # 启动开发版
 bun run check      # lint + 类型检查 + 单元测试
 bun run test:e2e   # 构建后用 Playwright 启动 Electron 跑端到端测试
 bun run icons      # 修改 resources/*.svg 后重新生成图标
-bun run dist:win   # 在 Windows 上打 NSIS 安装包，输出到 dist/
+bun run installer:skin  # 只生成安装界面的皮肤（调界面时用），输出到 dist/.installer/
+bun run dist:win   # 在 Windows 上打安装包，输出到 dist/
 ```
+
+安装包的界面是自绘的圆形窗口（nsNiuniuSkin 插件，来源和许可见 `resources/installer/plugins/NOTICE.md`）：
+
+- 界面的图片和布局由 `scripts/installer/skin-design.ts` 生成，文案也都在那里。
+- 安装脚本是 `resources/installer/`。
+- `dist:win` 分两段调用 electron-builder。不要直接运行 `electron-builder` 出安装包，那样得到的是默认界面。
 
 GitHub Actions 在 Windows 上运行：
 

@@ -1696,7 +1696,7 @@ import type { LabelJob, PrinterAdapter, PrinterInfo } from '../types';
 
 export class FakePrinterAdapter implements PrinterAdapter {
   readonly printed: Array<{ printerName: string; raw: string; templateId: string }> = [];
-  printers: PrinterInfo[] = [{ name: 'HPRT N31C', displayName: 'HPRT N31C' }];
+  printers: PrinterInfo[] = [{ name: '热敏标签机', displayName: '热敏标签机' }];
   private nextError: unknown = null;
   private gate: Promise<void> | null = null;
 
@@ -1752,7 +1752,7 @@ import type { PrintRequest } from './types';
 
 const WINDOW_MS = 10 * 60_000;
 const RAW = 'CL5640-TK-图片色-XL';
-const PRINTER = 'HPRT N31C';
+const PRINTER = '热敏标签机';
 
 function createHarness(store = new InMemoryJobStore()) {
   const clock = new FakeClock();
@@ -2407,7 +2407,7 @@ function job(n: number, overrides: Partial<JobRecord> = {}): JobRecord {
     id: `job-${n}`,
     createdAt: 1_000 + n,
     raw: `CL${n}-红-XL`,
-    printerName: 'HPRT N31C',
+    printerName: '热敏标签机',
     source: 'desktop',
     status: 'printed',
     forced: false,
@@ -2894,11 +2894,11 @@ describe('SqliteSettingsStore', () => {
 
   test('persists the selected printer across reopen', () => {
     const first = openDatabase(path);
-    new SqliteSettingsStore(first).update({ selectedPrinter: 'Qirui QR-488', autoPrint: false });
+    new SqliteSettingsStore(first).update({ selectedPrinter: '热敏标签机', autoPrint: false });
     first.close();
     const second = openDatabase(path);
     expect(new SqliteSettingsStore(second).current).toMatchObject({
-      selectedPrinter: 'Qirui QR-488',
+      selectedPrinter: '热敏标签机',
       autoPrint: false,
     });
     second.close();
@@ -4900,9 +4900,9 @@ import { describe, expect, test } from 'bun:test';
 import { filterPrinters } from './list-filters';
 
 const PRINTERS = [
-  { name: '申通', displayName: '申通' },
-  { name: 'Qirui QR-488', displayName: 'Qirui QR-488' },
-  { name: 'HPRT N31C', displayName: 'HPRT N31C' },
+  { name: '面单打印机', displayName: '面单打印机' },
+  { name: 'Microsoft Print to PDF', displayName: 'Microsoft Print to PDF' },
+  { name: '热敏标签机', displayName: '热敏标签机' },
 ];
 
 describe('filterPrinters', () => {
@@ -4911,8 +4911,8 @@ describe('filterPrinters', () => {
   });
 
   test('matches case-insensitively', () => {
-    expect(filterPrinters(PRINTERS, 'qr').map((p) => p.name)).toEqual(['Qirui QR-488']);
-    expect(filterPrinters(PRINTERS, '申').map((p) => p.name)).toEqual(['申通']);
+    expect(filterPrinters(PRINTERS, 'pdf').map((p) => p.name)).toEqual(['Microsoft Print to PDF']);
+    expect(filterPrinters(PRINTERS, '面单').map((p) => p.name)).toEqual(['面单打印机']);
   });
 });
 ```
@@ -5130,7 +5130,7 @@ describe('NoticeCenter', () => {
 import { describe, expect, test } from 'bun:test';
 import { describePrinterChip } from './printer-chip';
 
-const base = { printerName: 'HPRT N31C', isLoading: false, isListed: true, readiness: null };
+const base = { printerName: '热敏标签机', isLoading: false, isListed: true, readiness: null };
 
 describe('describePrinterChip', () => {
   test('no printer selected', () => {
@@ -5143,11 +5143,11 @@ describe('describePrinterChip', () => {
   });
 
   test('shows readiness from the status monitor', () => {
-    expect(describePrinterChip(base)).toEqual({ tone: 'unknown', text: 'HPRT N31C' });
+    expect(describePrinterChip(base)).toEqual({ tone: 'unknown', text: '热敏标签机' });
     expect(describePrinterChip({ ...base, readiness: { ready: true } }).tone).toBe('ready');
     expect(describePrinterChip({ ...base, readiness: { ready: false, detail: '缺纸' } })).toEqual({
       tone: 'error',
-      text: 'HPRT N31C（缺纸）',
+      text: '热敏标签机（缺纸）',
     });
   });
 });
@@ -9677,6 +9677,13 @@ Expected: `check`（含 E2E）和 `package` 两个 job 都成功，产物 `CDL-L
 23. **语音**：联网首次启动后，`voice-cache\` 下生成 6 个 mp3。扫码、打印后播报对应短语；调节语速后「试听」生效。断网后已缓存的短语照常播报；没有缓存时退回提示音。
 24. **异常通知**：标签机缺纸或断开后，弹出系统通知「打印机需要处理：…」，点击回到主窗口；30 分钟内同类问题不重复弹。
 25. **自动更新**：发布一个更高版本的 `v*` 标签后，已安装的客户端在 15 秒到 4 小时内下载完成，标题栏出现「重启更新」，确认后完成升级，数据保留。
+26. **驱动纸张**：
+    - 先把驱动默认纸张设成非 60×40（例如出厂默认），打一张，记录是否缩放、跳纸或出空白；再设成 60×40、纸张类型设为间隙纸，打一张对比。结论决定路线图里「驱动纸张检测」的优先级。
+    - 用 `Get-CimInstance Win32_PrinterConfiguration` 读出 `PaperWidth`、`PaperLength`（单位 0.1mm，期望 600、400）和 `HorizontalResolution`（203 或 300），并确认读到的是当前用户的默认值还是全局默认值。
+27. **连续出纸**：驱动纸张为 60×40 时连续打印 20 张，没有累计偏移、空白或跳张；内容不旋转、不裁切。
+28. **浓度与速度**：在驱动首选项里试几组浓度和速度组合，找出二维码清晰、不糊，手机和扫码枪在 5–20cm 距离内都能一次扫出的组合，写进记录。
+29. **状态读数**：分别在缺纸、开盖、拔 USB 线时，记录 `Get-Printer`、`Get-PrintJob`、`Get-PnpDevice` 实际返回什么，作为路线图里任务跟踪和 USB 在位检测的依据。
+30. **USB 与开机**：换一个 USB 口后是否生成新端口、打印机是否变成离线；打印机开机时是否先空走一张白纸。
 
 - [ ] **Step 8: 修复验收问题**
 

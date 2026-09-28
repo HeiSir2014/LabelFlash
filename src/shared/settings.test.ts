@@ -26,8 +26,18 @@ describe('sanitizeSettings', () => {
       dedupWindowMinutes: 30,
       historyLimit: 20_000,
       launchAtLogin: true,
+      voice: { enabled: false, name: 'zh-CN-YunxiNeural', ratePercent: 30 },
     };
     expect(sanitizeSettings(settings)).toEqual(settings);
+  });
+
+  test('sanitizes voice settings and snaps the rate to 10% steps', () => {
+    expect(sanitizeSettings({ voice: { ratePercent: 24 } }).voice.ratePercent).toBe(20);
+    expect(sanitizeSettings({ voice: { ratePercent: 999 } }).voice.ratePercent).toBe(100);
+    expect(sanitizeSettings({ voice: { ratePercent: -999 } }).voice.ratePercent).toBe(-50);
+    expect(sanitizeSettings({ voice: { name: 'en-US-GuyNeural', enabled: 'yes' } }).voice).toEqual(
+      DEFAULT_SETTINGS.voice,
+    );
   });
 
   test('clamps and rounds numbers', () => {

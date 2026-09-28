@@ -1,10 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
 import type { PrintResult } from '../../../core/types';
 import type { LabelPreview, RendererPrintSource } from '../../../shared/ipc-contract';
-import { playFeedback } from '../lib/feedback-sound';
+import type { FeedbackEvent } from '../lib/feedback-cues';
 import { reportError } from '../lib/notices';
 import { RepeatFilter } from '../lib/repeat-filter';
-import { describeResult, type ScanSnapshot } from '../lib/status-text';
+import type { ScanSnapshot } from '../lib/status-text';
 
 const SCAN_REPEAT_INTERVAL_MS = 1_000;
 const NO_PREVIEW: LabelPreview = { result: { status: 'invalid', reason: 'INVALID_FORMAT' }, html: null };
@@ -19,6 +19,8 @@ interface StationOptions {
   printerName: string | null;
   autoPrint: boolean;
   onJobRecorded: () => void;
+  /** 语音确认 / 提示音。 */
+  announce: (event: FeedbackEvent) => void;
 }
 
 interface LoadMode {
@@ -26,7 +28,7 @@ interface LoadMode {
   printNow: boolean;
 }
 
-export function useScanStation({ printerName, autoPrint, onJobRecorded }: StationOptions) {
+export function useScanStation({ printerName, autoPrint, onJobRecorded, announce }: StationOptions) {
   const repeatFilter = useRef(new RepeatFilter(SCAN_REPEAT_INTERVAL_MS));
   const latestSeq = useRef(0);
   const [scan, setScan] = useState<ScanState | null>(null);
@@ -38,7 +40,7 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded }: Statio
   const print = useCallback(
     async (seq: number, raw: string, source: RendererPrintSource, force: boolean) => {
       if (!printerName) {
-        playFeedback('warning');
+        announce({ kind: 'no-printer' });
         return;
       }
       patchIfCurrent(seq, { isPrinting: true, print: null, hasIpcError: false });
@@ -48,15 +50,15 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded }: Statio
       } catch (error) {
         reportError('打印', error);
         patchIfCurrent(seq, { isPrinting: false, hasIpcError: true });
-        playFeedback('error');
+        announce({ kind: 'internal-error' });
         return;
       }
       patchIfCurrent(seq, { isPrinting: false, print: result });
       // 即使界面已切到更新的扫描，也要让操作员听到这一张的结果。
-      playFeedback(describeResult(result, Date.now()).tone);
+      announce({ kind: 'result', result });
       onJobRecorded();
     },
-    [printerName, patchIfCurrent, onJobRecorded],
+    [printerName, patchIfCurrent, onJobRecorded, announce],
   );
 
   const load = useCallback(
@@ -77,15 +79,18 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded }: Statio
         setScan({ seq, raw, preview, source: mode.source, print: null, isPrinting: willPrint, hasIpcError });
       }
       if (!isValid) {
-        playFeedback('error');
+        announce(hasIpcError ? { kind: 'internal-error' } : { kind: 'invalid' });
         return;
       }
       if (mode.printNow) {
-        // 自动模式下每一次扫码都要打印，哪怕界面已被更新的扫描取代；没选打印机时 print 会发出警告音。
+        // 自动模式下每一次扫码都要打印，哪怕界面已被更新的扫描取代；没选打印机时 print 会提醒。
         await print(seq, raw, mode.source, false);
+      } else {
+        // 手动模式：确认扫到了，等操作员核对预览后按 F2。
+        announce({ kind: 'scanned' });
       }
     },
-    [printerName, print],
+    [printerName, print, announce],
   );
 
   const scanCode = useCallback(

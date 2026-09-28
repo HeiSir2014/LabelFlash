@@ -30,6 +30,7 @@ const api: LabelFlashApi = {
   checkForUpdates: () => ipcRenderer.invoke(IpcChannel.CheckForUpdates),
   installUpdate: () => ipcRenderer.invoke(IpcChannel.InstallUpdate),
   onUpdateStatus: (listener) => subscribe(IpcChannel.UpdateStatusChanged, listener),
+  getVoiceClip: (cue) => ipcRenderer.invoke(IpcChannel.VoiceClip, cue),
 };
 
 const windowControls: WindowControlsApi = {

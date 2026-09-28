@@ -10,6 +10,7 @@ import {
 } from '../../../shared/settings';
 import type { UpdateView } from '../lib/update-text';
 import { ConfirmButton } from './ConfirmButton';
+import { VoiceSettingsSection } from './VoiceSettingsSection';
 
 const NUMBER_FORMAT = new Intl.NumberFormat('zh-CN');
 
@@ -21,6 +22,7 @@ interface SettingsFormProps {
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
   onOpenLogFolder: () => void;
   onCheckForUpdates: () => void;
+  onPreviewVoice: () => void;
 }
 
 export function SettingsForm({
@@ -31,6 +33,7 @@ export function SettingsForm({
   onChange,
   onOpenLogFolder,
   onCheckForUpdates,
+  onPreviewVoice,
 }: SettingsFormProps) {
   const [pendingHistoryLimit, setPendingHistoryLimit] = useState<number | null>(null);
   const [newNote, setNewNote] = useState('');
@@ -118,6 +121,12 @@ export function SettingsForm({
         </span>
         <span className="setting__hint">登录 Windows 后自动打开窗口，可以直接扫码</span>
       </label>
+
+      <VoiceSettingsSection
+        voice={settings.voice}
+        onChange={(voice) => void onChange({ voice })}
+        onPreview={onPreviewVoice}
+      />
 
       <section className="note-presets" aria-label="常用备注">
         <h3 className="about__title">常用备注</h3>

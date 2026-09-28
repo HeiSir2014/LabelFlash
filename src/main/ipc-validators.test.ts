@@ -5,6 +5,7 @@ import {
   requirePrintOptions,
   requireString,
   requireTemplateId,
+  requireVoiceCue,
 } from './ipc-validators';
 
 describe('ipc validators', () => {
@@ -37,5 +38,11 @@ describe('ipc validators', () => {
     );
     expect(() => requireTemplateId('../../etc')).toThrow(TypeError);
     expect(() => requireTemplateId('custom:')).toThrow(TypeError);
+  });
+
+  test('requireVoiceCue accepts known cues only', () => {
+    expect(requireVoiceCue('printed')).toBe('printed');
+    expect(() => requireVoiceCue('rm -rf')).toThrow(TypeError);
+    expect(() => requireVoiceCue(1)).toThrow(TypeError);
   });
 });

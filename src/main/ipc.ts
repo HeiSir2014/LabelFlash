@@ -14,6 +14,7 @@ import {
   requireRecord,
   requireString,
   requireTemplateId,
+  requireVoiceCue,
 } from './ipc-validators';
 import { resolvePrintTemplate } from './print-template';
 import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
@@ -22,6 +23,7 @@ import type { PrinterStatusMonitor } from './printing/printer-status';
 import type { SqliteJobStore } from './storage/sqlite-job-store';
 import type { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import type { AppUpdater } from './updater';
+import type { VoiceClips } from './voice/voice-clips';
 
 const DRAFT_TEMPLATE_ID = `${CUSTOM_TEMPLATE_PREFIX}draft`;
 
@@ -34,6 +36,7 @@ export interface IpcDeps {
   status: PrinterStatusMonitor;
   appInfo: AppInfo;
   updater: AppUpdater;
+  voice: VoiceClips;
   getWindow: () => BrowserWindow | null;
   onSettingsChanged: (next: AppSettings, previous: AppSettings) => Promise<void>;
 }
@@ -109,6 +112,11 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
   handle(IpcChannel.InstallUpdate, () => deps.updater.install());
+  handle(IpcChannel.VoiceClip, (cue) => {
+    // 音色和语速取主进程当前设置，不信任页面传入。
+    const { name, ratePercent } = deps.settings.current.voice;
+    return deps.voice.get(requireVoiceCue(cue), { voice: name, ratePercent });
+  });
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());
   on(IpcChannel.WindowToggleMaximize, () => {

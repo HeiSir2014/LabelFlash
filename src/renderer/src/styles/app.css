@@ -1117,6 +1117,43 @@ input {
   cursor: pointer;
 }
 
+/* 设置：语音播报 */
+.voice-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-rule);
+}
+
+.voice-settings__row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.voice-settings__select {
+  height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: #fff;
+  font: inherit;
+}
+
+.voice-settings__rate {
+  width: 100%;
+  accent-color: var(--color-ink);
+}
+
+.voice-settings__rate-value {
+  min-width: 4.5em;
+  font-family: var(--font-data);
+  font-size: 12px;
+  text-align: right;
+}
+
 /* 设置：常用备注 */
 .note-presets {
   display: flex;

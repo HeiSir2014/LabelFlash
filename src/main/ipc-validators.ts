@@ -2,6 +2,7 @@ import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
 import { isRecord } from '../shared/settings';
+import { isVoiceCue, type VoiceCue } from '../shared/voice';
 
 /** 渲染进程不可信：IPC 参数在进入业务层之前逐一校验，不合法直接抛错（fail loudly）。 */
 export const MAX_IPC_STRING_LENGTH = 1_024;
@@ -24,6 +25,13 @@ export function requireRecord(value: unknown, name: string): Record<string, unkn
 export function requireTemplateId(value: unknown): string {
   if (typeof value !== 'string' || !TEMPLATE_ID_PATTERN.test(value)) {
     throw new TypeError('Invalid template id');
+  }
+  return value;
+}
+
+export function requireVoiceCue(value: unknown): VoiceCue {
+  if (!isVoiceCue(value)) {
+    throw new TypeError('Invalid voice cue');
   }
   return value;
 }

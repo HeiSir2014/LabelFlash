@@ -2,6 +2,7 @@ import { MAX_DEDUP_WINDOW_MS } from '../core/dedup-guard';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { DEFAULT_NOTE_OVERRIDE, type NoteOverride } from '../core/templates/note-override';
 import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
+import { DEFAULT_VOICE_NAME, isVoiceName, VOICE_RATE_RANGE, type VoiceSettings } from './voice';
 
 export interface AppSettings {
   selectedPrinter: string | null;
@@ -14,6 +15,8 @@ export interface AppSettings {
   dedupWindowMinutes: number;
   historyLimit: number;
   launchAtLogin: boolean;
+  /** 扫码 / 打印后的语音确认播报。 */
+  voice: VoiceSettings;
 }
 
 export const MS_PER_MINUTE = 60_000;
@@ -31,6 +34,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dedupWindowMinutes: 10,
   historyLimit: 100_000,
   launchAtLogin: false,
+  voice: { enabled: true, name: DEFAULT_VOICE_NAME, ratePercent: 0 },
 };
 
 export function sanitizeSettings(value: unknown): AppSettings {
@@ -54,6 +58,20 @@ export function sanitizeSettings(value: unknown): AppSettings {
       DEFAULT_SETTINGS.historyLimit,
     ),
     launchAtLogin: sanitizeBoolean(input['launchAtLogin'], DEFAULT_SETTINGS.launchAtLogin),
+    voice: sanitizeVoice(input['voice']),
+  };
+}
+
+function sanitizeVoice(value: unknown): VoiceSettings {
+  const input = isRecord(value) ? value : {};
+  const fallback = DEFAULT_SETTINGS.voice;
+  const { min, max, step } = VOICE_RATE_RANGE;
+  const rate = sanitizeInteger(input['ratePercent'], min, max, fallback.ratePercent);
+  return {
+    enabled: sanitizeBoolean(input['enabled'], fallback.enabled),
+    name: isVoiceName(input['name']) ? input['name'] : fallback.name,
+    // 语速按档位取整：同一档位对应同一份缓存音频。
+    ratePercent: Math.round(rate / step) * step,
   };
 }
 

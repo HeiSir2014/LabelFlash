@@ -17,6 +17,7 @@ import { describePrinterChip } from './lib/printer-chip';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
+import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
 import { useNotices } from './view-models/use-notices';
@@ -50,7 +51,13 @@ export function App() {
   });
 
   // 是否能打印由主进程最终判断（找不到打印机会返回 PRINTER_NOT_FOUND），界面只要求选过打印机。
-  const station = useScanStation({ printerName, autoPrint, onJobRecorded: jobLog.refresh });
+  const feedback = useFeedback(settings?.voice ?? DEFAULT_SETTINGS.voice);
+  const station = useScanStation({
+    printerName,
+    autoPrint,
+    onJobRecorded: jobLog.refresh,
+    announce: feedback.announce,
+  });
   const templates = useTemplates({
     activeTemplateId: settings?.activeTemplateId ?? null,
     updateSettings: update,
@@ -194,6 +201,7 @@ export function App() {
                   onChange={changeSettings}
                   onOpenLogFolder={openLogFolder}
                   onCheckForUpdates={updates.check}
+                  onPreviewVoice={feedback.preview}
                 />
               ),
             }}

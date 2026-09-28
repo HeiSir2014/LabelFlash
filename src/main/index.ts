@@ -26,9 +26,12 @@ import { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import { SqliteTemplateRepository } from './storage/sqlite-template-repository';
 import { type AppTray, createTray } from './tray';
 import { AppUpdater } from './updater';
+import { synthesizeWithEdge } from './voice/edge-synthesizer';
+import { VoiceClips } from './voice/voice-clips';
 import { createMainWindow } from './window';
 
 const DATABASE_FILE_NAME = 'labelflash.db';
+const VOICE_CACHE_DIR_NAME = 'voice-cache';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: AppTray | null = null;
@@ -112,6 +115,14 @@ async function bootstrap(): Promise<void> {
     resolveTemplate: () => resolvePrintTemplate(templates, settings.current),
   });
   service.restore();
+  const voice = new VoiceClips(join(dataPath, VOICE_CACHE_DIR_NAME), synthesizeWithEdge);
+  // 后台预热全部播报语：之后扫码时直接播缓存，不等在线合成。
+  const warmVoice = () => {
+    const { enabled, name, ratePercent } = settings.current.voice;
+    if (enabled) {
+      void voice.warm({ voice: name, ratePercent });
+    }
+  };
   const updater = new AppUpdater({
     onStatus: (status) => mainWindow?.webContents.send(IpcChannel.UpdateStatusChanged, status),
     onBeforeInstall: () => {
@@ -134,6 +145,7 @@ async function bootstrap(): Promise<void> {
       logPath,
     },
     updater,
+    voice,
     getWindow: () => mainWindow,
     onSettingsChanged: async (next, previous) => {
       guard.setWindowMs(minutesToMs(next.dedupWindowMinutes));
@@ -142,6 +154,9 @@ async function bootstrap(): Promise<void> {
       }
       if (next.launchAtLogin !== previous.launchAtLogin) {
         applyLaunchAtLogin(next.launchAtLogin);
+      }
+      if (JSON.stringify(next.voice) !== JSON.stringify(previous.voice)) {
+        warmVoice();
       }
       if (next.historyLimit !== previous.historyLimit) {
         await jobs.setCapacity(next.historyLimit);
@@ -165,6 +180,7 @@ async function bootstrap(): Promise<void> {
   });
   tray = createTray(trayIcon, { show: showMainWindow, quit });
   updater.start();
+  warmVoice();
   app.on('will-quit', () => {
     status.stop();
     tray?.destroy();

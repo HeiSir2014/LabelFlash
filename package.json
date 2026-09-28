@@ -9,10 +9,11 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p src/renderer/tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p src/renderer/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "bun test",
+    "test:e2e": "electron-vite build && playwright test",
     "check": "bun run lint && bun run typecheck && bun test",
     "icons": "bun scripts/generate-icons.ts",
     "dist:win": "electron-vite build && electron-builder --win --x64 --publish never"
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
+    "@playwright/test": "^1.63.0",
     "@types/bun": "^1.4.2",
     "@types/node": "^24.0.0",
     "@types/qrcode": "^1.5.6",

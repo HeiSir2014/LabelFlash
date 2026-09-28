@@ -40,8 +40,15 @@ let tray: AppTray | null = null;
 let database: DatabaseSync | null = null;
 let isQuitting = false;
 
+/** 仅开发 / E2E 测试可用：把数据目录指到临时目录，测试之间互不干扰。安装版忽略它。 */
+const USER_DATA_OVERRIDE_ENV = 'CDL_LABELFLASH_USER_DATA';
+
 // 数据、日志、Chromium 缓存都放 %LOCALAPPDATA%\CDL-LabelFlash（本机目录，不进漫游配置）。
-app.setPath('userData', join(process.env['LOCALAPPDATA'] ?? app.getPath('appData'), BRAND.productNameAscii));
+const userDataOverride = app.isPackaged ? undefined : process.env[USER_DATA_OVERRIDE_ENV];
+app.setPath(
+  'userData',
+  userDataOverride ?? join(process.env['LOCALAPPDATA'] ?? app.getPath('appData'), BRAND.productNameAscii),
+);
 
 // 以下都必须在 app ready 之前完成。
 registerAppScheme();

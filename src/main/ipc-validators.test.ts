@@ -7,6 +7,9 @@ import {
   requirePositiveInteger,
   requirePrintOptions,
   requireRaw,
+  requireRuleId,
+  requireRuleIds,
+  requireRuleKind,
   requireString,
   requireTemplateId,
   requireVoiceCue,
@@ -24,6 +27,16 @@ describe('ipc validators', () => {
     const multiLine = 'x\r\n'.repeat(MAX_IPC_STRING_LENGTH);
     expect(requireRaw(multiLine)).toBe(multiLine);
     expect(() => requireRaw('x'.repeat(MAX_RAW_INPUT_LENGTH + 1))).toThrow(TypeError);
+  });
+
+  test('rule ids, id lists and kinds are checked', () => {
+    expect(requireRuleId('custom:abc-1')).toBe('custom:abc-1');
+    expect(() => requireRuleId('other:x')).toThrow(TypeError);
+    expect(requireRuleIds(['builtin:raw', 'custom:a'])).toEqual(['builtin:raw', 'custom:a']);
+    expect(() => requireRuleIds(['builtin:raw', 3])).toThrow(TypeError);
+    expect(() => requireRuleIds(Array.from({ length: 101 }, () => 'custom:a'))).toThrow(TypeError);
+    expect(requireRuleKind('regex')).toBe('regex');
+    expect(() => requireRuleKind('script')).toThrow(TypeError);
   });
 
   test('requirePositiveInteger and requireWebhookId reject anything else', () => {

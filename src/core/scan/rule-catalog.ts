@@ -88,7 +88,7 @@ export class RuleCatalog {
   duplicate(sourceId: string): ScanRule {
     const source = this.get(sourceId);
     if (!source) {
-      throw new RuleError('NOT_FOUND', `Rule ${sourceId} does not exist`);
+      throw new RuleError('NOT_FOUND', '这条规则已经不存在');
     }
     this.assertBelowLimit();
     const copy: ScanRule = {
@@ -148,11 +148,11 @@ export class RuleCatalog {
 
   private requireCustom(id: string): ScanRule {
     if (isBuiltInRuleId(id)) {
-      throw new RuleError('BUILT_IN_READ_ONLY', `Built-in rule ${id} cannot be changed`);
+      throw new RuleError('BUILT_IN_READ_ONLY', '内置规则不能修改，请先复制一份再改');
     }
     const existing = this.get(id);
     if (!existing) {
-      throw new RuleError('NOT_FOUND', `Rule ${id} does not exist`);
+      throw new RuleError('NOT_FOUND', '这条规则已经不存在');
     }
     return existing;
   }

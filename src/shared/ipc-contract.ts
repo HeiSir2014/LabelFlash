@@ -1,10 +1,13 @@
 import type { LookupTableInfo } from '../core/lookup/lookup-model';
 import type { Delivery } from '../core/notify/delivery';
+import type { RuleKind, ScanRule } from '../core/scan/rule-model';
+import type { RuleSetting } from '../core/scan/rule-settings';
 import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
 import type { JobPage, JobQuery } from './job-history';
 import type { PrinterReadiness } from './printer-readiness';
+import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
 import type { UpdateStatus } from './update-status';
 import type { VoiceCue } from './voice';
@@ -26,6 +29,15 @@ export const IpcChannel = {
   DuplicateTemplate: 'templates:duplicate',
   SaveTemplate: 'templates:save',
   DeleteTemplate: 'templates:delete',
+  ListRules: 'rules:list',
+  CreateRule: 'rules:create',
+  DuplicateRule: 'rules:duplicate',
+  SaveRule: 'rules:save',
+  DeleteRule: 'rules:delete',
+  SaveRuleSettings: 'rules:save-settings',
+  TestRule: 'rules:test',
+  ExportRules: 'rules:export',
+  ImportRules: 'rules:import',
   ListLookupTables: 'lookup:list',
   ImportLookupTable: 'lookup:import',
   DeleteLookupTable: 'lookup:delete',
@@ -102,6 +114,19 @@ export interface LabelFlashApi {
   saveTemplate(template: LabelTemplate): Promise<LabelTemplate>;
   /** 删除后若它正在使用，自动切回标准模板；返回最新设置。 */
   deleteTemplate(id: string): Promise<AppSettings>;
+  listRules(): Promise<RuleListing>;
+  createRule(kind: RuleKind): Promise<RuleMutation>;
+  duplicateRule(id: string): Promise<RuleMutation>;
+  saveRule(rule: ScanRule): Promise<RuleMutation>;
+  deleteRule(id: string): Promise<RuleListing>;
+  /** 保存顺序、启用和模板绑定。 */
+  saveRuleSettings(settings: RuleSetting[]): Promise<RuleListing>;
+  /** draft 为正在编辑、还没保存的规则；不传则按本机当前规则识别。 */
+  testRule(raw: string, draft?: ScanRule): Promise<RuleTestResult>;
+  /** 主进程弹出保存对话框。 */
+  exportRules(ids: string[]): Promise<RuleExportResult>;
+  /** 主进程弹出打开对话框。 */
+  importRules(): Promise<RuleImportResult>;
   listLookupTables(): Promise<LookupTableInfo[]>;
   /** 主进程弹出选择文件的对话框；replaceId 不为 null 时替换那张表的内容。 */
   importLookupTable(replaceId: string | null): Promise<LookupImportResult>;

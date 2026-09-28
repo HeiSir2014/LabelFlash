@@ -1,6 +1,7 @@
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
+import { RULE_ID_PATTERN, RULE_KINDS, type RuleKind } from '../core/scan/rule-model';
 import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
@@ -26,6 +27,30 @@ export function requireString(value: unknown, name: string, maxLength = MAX_IPC_
 
 export function requireRaw(value: unknown): string {
   return requireString(value, 'raw', MAX_RAW_INPUT_LENGTH);
+}
+
+/** 一次导出的规则数上限：内置 + 自定义规则总数的余量。 */
+const MAX_RULE_IDS = 100;
+
+export function requireRuleId(value: unknown): string {
+  if (typeof value !== 'string' || !RULE_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid rule id');
+  }
+  return value;
+}
+
+export function requireRuleIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > MAX_RULE_IDS) {
+    throw new TypeError('Invalid rule ids');
+  }
+  return value.map(requireRuleId);
+}
+
+export function requireRuleKind(value: unknown): RuleKind {
+  if (typeof value !== 'string' || !(RULE_KINDS as readonly string[]).includes(value)) {
+    throw new TypeError('Invalid rule kind');
+  }
+  return value as RuleKind;
 }
 
 export function requirePositiveInteger(value: unknown, name: string): number {

@@ -39,6 +39,8 @@ import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { renderLabelHtml } from './printing/label-html';
 import type { PrinterProbeHost } from './printing/printer-probe-host';
 import type { PrinterStatusMonitor } from './printing/printer-status';
+import { registerRuleIpc } from './scan/rule-ipc';
+import type { RuleService } from './scan/rule-service';
 import type { SqliteJobStore } from './storage/sqlite-job-store';
 import { SecretError, type SqliteSecretStore } from './storage/sqlite-secret-store';
 import type { SqliteSettingsStore } from './storage/sqlite-settings-store';
@@ -58,6 +60,7 @@ export interface IpcDeps {
   lookupTables: LookupTables;
   secrets: SqliteSecretStore;
   outbox: WebhookOutbox;
+  rules: RuleService;
   status: PrinterStatusMonitor;
   appInfo: AppInfo;
   updater: AppUpdater;
@@ -96,6 +99,7 @@ export function registerIpc(deps: IpcDeps): void {
       }
     });
   };
+  registerRuleIpc(handle, deps.rules, deps.getWindow);
   const requireKnownPrinter = async (value: unknown): Promise<string> => {
     const printerName = requireString(value, 'printerName');
     if (!(await deps.adapter.hasPrinter(printerName))) {

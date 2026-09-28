@@ -32,6 +32,7 @@ import { createPrinterAlertNotifier } from './printing/printer-alerts';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { createReadinessProbe, PrinterStatusMonitor } from './printing/printer-status';
 import { createHttpStepRunner } from './scan/http-step';
+import { RuleService } from './scan/rule-service';
 import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './scan/sandboxed-regex';
 import { safeStorageCipher } from './secrets/safe-storage-cipher';
 import { denyAllPermissions, hardenAllWebContents } from './security';
@@ -241,6 +242,13 @@ async function bootstrap(): Promise<void> {
     lookupTables,
     secrets,
     outbox,
+    rules: new RuleService({
+      catalog: rules,
+      settings,
+      runRegex,
+      enrich: (scan, steps) => enrich(scan, steps, enrichDeps, new Date()),
+      clock: systemClock,
+    }),
     status,
     appInfo: {
       productName: BRAND.productName,

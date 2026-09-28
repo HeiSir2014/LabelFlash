@@ -15,7 +15,7 @@ export interface PreviewOverride {
   feedKey: string;
 }
 
-interface PreviewStageProps {
+export interface PreviewStageProps {
   /** 预览区顶部的工具条。 */
   toolbar: ReactNode;
   scan: ScanState | null;

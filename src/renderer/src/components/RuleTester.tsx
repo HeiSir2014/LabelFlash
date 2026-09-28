@@ -13,14 +13,19 @@ const INVALID_TEXT = {
 interface RuleTesterProps {
   /** 标题下的说明：试的是保存好的全部规则，还是正在编辑的这一条。 */
   hint: string;
+  /** 要识别的内容：由页面保存，扫码时直接填进来，列表和编辑视图之间保留。 */
+  raw: string;
+  onRawChange: (raw: string) => void;
   /** 需要是稳定引用：它变化时（例如草稿改了）会重新试。 */
   onTest: (raw: string) => Promise<RuleTestResult | null>;
+  /** 窄窗口：一行输入 + 一行结果摘要，点「展开」看完整结果。 */
+  isCompact?: boolean;
 }
 
 /** 试一试：粘贴或扫一段内容，实时显示命中的规则、识别出的字段和每个加工步骤的结果。 */
-export function RuleTester({ hint, onTest }: RuleTesterProps) {
-  const [raw, setRaw] = useState('');
+export function RuleTester({ hint, raw, onRawChange, onTest, isCompact = false }: RuleTesterProps) {
   const [result, setResult] = useState<RuleTestResult | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     if (raw.trim() === '') {
@@ -40,22 +45,66 @@ export function RuleTester({ hint, onTest }: RuleTesterProps) {
     };
   }, [raw, onTest]);
 
+  const input = (
+    <textarea
+      aria-label="要识别的内容"
+      className="text-field text-area rule-tester__input"
+      rows={isCompact ? 1 : 3}
+      value={raw}
+      placeholder="扫码，或粘贴一段内容，可以多行"
+      spellCheck={false}
+      onChange={(event) => onRawChange(event.target.value)}
+    />
+  );
+
+  if (isCompact) {
+    return (
+      <section className="rule-tester rule-tester--compact" aria-label="试一试">
+        <div className="rule-tester__bar">
+          <h2 className="rule-tester__title">试一试</h2>
+          {input}
+          <button
+            type="button"
+            className="button button--small button--quiet"
+            aria-expanded={isExpanded}
+            disabled={result === null}
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            {isExpanded ? '收起' : '展开'}
+          </button>
+        </div>
+        {result &&
+          (isExpanded ? (
+            <TestResultView result={result} />
+          ) : (
+            <p className="rule-tester__summary">{summarize(result)}</p>
+          ))}
+      </section>
+    );
+  }
   return (
-    <section className="form-section rule-tester">
-      <h3 className="form-section__title">试一试</h3>
+    <section className="rule-tester" aria-label="试一试">
+      <h2 className="rule-tester__title">试一试</h2>
       <p className="form-hint">{hint}</p>
-      <textarea
-        aria-label="要识别的内容"
-        className="text-field text-area"
-        rows={3}
-        value={raw}
-        placeholder="粘贴或手动输入一段扫码内容，可以多行"
-        spellCheck={false}
-        onChange={(event) => setRaw(event.target.value)}
-      />
+      {input}
       {result && <TestResultView result={result} />}
     </section>
   );
+}
+
+/** 窄窗口里的一行摘要。 */
+function summarize(result: RuleTestResult): string {
+  switch (result.status) {
+    case 'invalid-rule':
+      return `规则还不完整：${result.issue}`;
+    case 'invalid':
+      return INVALID_TEXT[result.reason];
+    case 'ok': {
+      const failed = result.enriched.traces.filter((trace) => !trace.ok).length;
+      const steps = failed > 0 ? `，${failed} 个步骤失败` : '';
+      return `命中「${result.recognized.ruleName}」：${fieldsSummary(result.enriched.scan.fields) || '没有字段'}${steps}`;
+    }
+  }
 }
 
 function TestResultView({ result }: { result: RuleTestResult }) {

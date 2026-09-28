@@ -1,68 +1,35 @@
 import { useState } from 'react';
 import { type EnrichStep, STEP_KINDS, STEP_LIMITS, type StepKind } from '../../../core/scan/enrich-model';
 import { RULE_LIMITS, type ScanRule } from '../../../core/scan/rule-model';
-import type { RuleTestResult } from '../../../shared/rule-api';
 import { RULE_KIND_HINTS, RULE_KIND_LABELS, STEP_KIND_LABELS, stepSummary } from '../lib/rule-text';
 import { TextInput } from './form-controls';
 import { RuleKindForm } from './RuleKindForm';
-import { RuleTester } from './RuleTester';
 import { newStep, StepForm, type StepFormContext } from './StepForms';
 
 interface RuleEditorProps {
   draft: ScanRule;
-  isDirty: boolean;
-  /** 保存被拒绝的原因（主进程校验）。 */
-  saveIssue: string | null;
   context: StepFormContext;
   onChange: (draft: ScanRule) => void;
-  onTest: (raw: string) => Promise<RuleTestResult | null>;
-  onSave: () => void;
-  onCancel: () => void;
 }
 
-/** 编辑自定义规则：识别方式 + 加工步骤；下方「试一试」用的是正在编辑的草稿。 */
-export function RuleEditor({
-  draft,
-  isDirty,
-  saveIssue,
-  context,
-  onChange,
-  onTest,
-  onSave,
-  onCancel,
-}: RuleEditorProps) {
+/** 自定义规则的编辑表单：识别方式 + 加工步骤（试一试、滚动和保存按钮由页面提供）。 */
+export function RuleEditor({ draft, context, onChange }: RuleEditorProps) {
   return (
-    <div className="template-editor">
-      <div className="template-editor__scroll">
-        <section className="form-section">
-          <h3 className="form-section__title">基本</h3>
-          <TextInput
-            label="规则名称"
-            value={draft.name}
-            maxLength={RULE_LIMITS.nameLength}
-            onChange={(name) => onChange({ ...draft, name })}
-          />
-          <p className="form-hint">
-            {RULE_KIND_LABELS[draft.kind]}：{RULE_KIND_HINTS[draft.kind]}
-          </p>
-        </section>
-        <RuleKindForm rule={draft} onChange={onChange} />
-        <StepList
-          steps={draft.steps}
-          context={context}
-          onChange={(steps) => onChange({ ...draft, steps } as ScanRule)}
+    <div className="rule-form">
+      <section className="form-section">
+        <h3 className="form-section__title">基本</h3>
+        <TextInput
+          label="规则名称"
+          value={draft.name}
+          maxLength={RULE_LIMITS.nameLength}
+          onChange={(name) => onChange({ ...draft, name })}
         />
-        <RuleTester hint="只用正在编辑的这条规则（含加工步骤）识别，保存前就能看到效果。" onTest={onTest} />
-      </div>
-      <div className="template-editor__footer">
-        {saveIssue && <p className="template-editor__issue">{saveIssue}</p>}
-        <button type="button" className="button button--quiet" onClick={onCancel}>
-          {isDirty ? '放弃修改' : '返回列表'}
-        </button>
-        <button type="button" className="button button--primary" onClick={onSave} disabled={!isDirty}>
-          保存规则
-        </button>
-      </div>
+        <p className="form-hint">
+          {RULE_KIND_LABELS[draft.kind]}：{RULE_KIND_HINTS[draft.kind]}
+        </p>
+      </section>
+      <RuleKindForm rule={draft} onChange={onChange} />
+      <StepList steps={draft.steps} context={context} onChange={(steps) => onChange({ ...draft, steps } as ScanRule)} />
     </div>
   );
 }

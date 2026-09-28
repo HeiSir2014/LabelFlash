@@ -23,7 +23,8 @@ export function ConfigCenter({ page, isLeaving, breadcrumb, onNavigate, onClose,
   const focusTitle = useCallback((title: HTMLHeadingElement | null) => title?.focus(), []);
 
   return (
-    <div className={`config-center${isLeaving ? ' config-center--leaving' : ''}`}>
+    // 淡出期间工作台已经恢复：这一层不再接收焦点和点击。
+    <div className={`config-center${isLeaving ? ' config-center--leaving' : ''}`} inert={isLeaving}>
       <div className="config-center__back">
         <button type="button" className="button button--quiet" onClick={onClose}>
           <span aria-hidden="true">←</span> 返回工作台

@@ -32,6 +32,8 @@
   --side-width: 380px;
   --config-nav-width: 184px;
   --config-actions-height: 64px;
+  /* 识别规则页右侧「试一试」的宽度 */
+  --tester-width: 360px;
   --feed-duration: 180ms;
   /* 配置中心进出的时长；改动时同步 view-models/use-app-view.ts 的 CONFIG_TRANSITION_MS。 */
   --config-duration: 160ms;

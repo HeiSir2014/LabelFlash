@@ -41,11 +41,12 @@ interface AppViewOptions {
  * - 任何离开编辑器的动作（切换页面、返回、关闭、快捷键、Esc、跳转链接）都经过 requestLeave：
  *   有未保存的修改时先确认，放弃修改后才执行。
  * - 再次打开时回到上次的页面（本次运行内记住）。
+ * - 关闭时工作台立即恢复（扫码框马上能收码），配置中心只是淡出：淡出期间的 leavingPage 仍是那一页。
  * - Ctrl+,（macOS ⌘,）开关配置中心；Esc 返回上一级（下拉框、带候选的输入框和输入法组字时的 Esc 除外）。
  */
 export function useAppView({ platform, editor }: AppViewOptions) {
   const [view, setView] = useState<AppView>(WORKBENCH);
-  const [isLeaving, setIsLeaving] = useState(false);
+  const [leavingPage, setLeavingPage] = useState<ConfigPage | null>(null);
   const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
   const lastPage = useRef<ConfigPage>(DEFAULT_PAGE);
   const leaveTimer = useRef<number | null>(null);
@@ -60,7 +61,7 @@ export function useAppView({ platform, editor }: AppViewOptions) {
       window.clearTimeout(leaveTimer.current);
       leaveTimer.current = null;
     }
-    setIsLeaving(false);
+    setLeavingPage(null);
   }, []);
 
   useEffect(() => cancelLeaving, [cancelLeaving]);
@@ -98,17 +99,18 @@ export function useAppView({ platform, editor }: AppViewOptions) {
   const close = useCallback(
     () =>
       requestLeave(() => {
-        setIsLeaving(true);
+        cancelLeaving();
+        setLeavingPage(lastPage.current);
+        setView(WORKBENCH);
         leaveTimer.current = window.setTimeout(() => {
           leaveTimer.current = null;
-          setIsLeaving(false);
-          setView(WORKBENCH);
+          setLeavingPage(null);
         }, transitionMs());
       }),
-    [requestLeave],
+    [requestLeave, cancelLeaving],
   );
 
-  const isOpen = view.kind === 'config' && !isLeaving;
+  const isOpen = view.kind === 'config';
   const toggle = useCallback(() => (isOpen ? close() : open()), [isOpen, close, open]);
 
   const back = useCallback(() => {
@@ -157,5 +159,5 @@ export function useAppView({ platform, editor }: AppViewOptions) {
     onContinue: () => setPendingLeave(null),
   };
 
-  return { view, isLeaving, open, close, toggle, back, requestLeave, leaveConfirm };
+  return { view, leavingPage, open, close, toggle, back, requestLeave, leaveConfirm };
 }

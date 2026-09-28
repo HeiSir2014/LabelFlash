@@ -7,13 +7,11 @@ import { ConfigPages } from './components/config/ConfigPages';
 import { ConfirmDialog } from './components/config/ConfirmDialog';
 import { JobLog } from './components/JobLog';
 import { NoticeBar } from './components/NoticeBar';
-import { type PreviewOverride, PreviewStage } from './components/PreviewStage';
+import type { PreviewOverride } from './components/PreviewStage';
 import { PrinterList } from './components/PrinterList';
-import { RulePanel } from './components/RulePanel';
-import { ScanBar } from './components/ScanBar';
-import { SidePanel, type SideTab } from './components/SidePanel';
 import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
+import { Workbench } from './components/workbench/Workbench';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
 import { fieldNameSuggestions } from './lib/field-names';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
@@ -25,11 +23,12 @@ import { isWorkbenchActive } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
-import { NO_EDITOR, useAppView } from './view-models/use-app-view';
+import { type EditorGuard, NO_EDITOR, useAppView } from './view-models/use-app-view';
 import { useDriverPaper } from './view-models/use-driver-paper';
 import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
+import { useMediaQuery } from './view-models/use-media-query';
 import { useNotices } from './view-models/use-notices';
 import { usePrinterStatus } from './view-models/use-printer-status';
 import { usePrinters } from './view-models/use-printers';
@@ -41,6 +40,9 @@ import { useTemplatePreview } from './view-models/use-template-preview';
 import { useTemplates } from './view-models/use-templates';
 import { useUpdateStatus } from './view-models/use-update-status';
 
+/** 与 app.css 里编辑视图改成上下排列的断点一致。 */
+const NARROW_QUERY = '(max-width: 1099px)';
+
 export function App() {
   const { settings, hasLoadError, reload, update, replace } = useSettings();
   const printers = usePrinters();
@@ -49,7 +51,7 @@ export function App() {
   const { notices, dismiss } = useNotices();
   const updates = useUpdateStatus();
   const updateView = describeUpdate(updates.status);
-  const [sideTab, setSideTab] = useState<SideTab>('printers');
+  const isNarrow = useMediaQuery(NARROW_QUERY);
 
   const printerName = settings?.selectedPrinter ?? null;
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
@@ -80,15 +82,20 @@ export function App() {
   });
   // 规则、顺序、模板绑定变了：当前扫码的识别结果和用的模板都可能变，重新预览。
   const rules = useRules({ onRulesChanged: () => void station.refreshPreview() });
+  const [testerRaw, setTesterRaw] = useState('');
 
+  // 开着的编辑器：模板草稿或规则草稿。离开编辑器时一定先关掉它，所以两者不会同时存在。
+  const editor: EditorGuard = templates.draft
+    ? { isEditing: true, isDirty: templates.isDirty, close: templates.cancelEdit }
+    : rules.draft
+      ? { isEditing: true, isDirty: rules.isDirty, close: rules.cancelEdit }
+      : NO_EDITOR;
+  const editingName = templates.draft?.name ?? rules.draft?.name ?? null;
   const platform = platformForChrome(window.windowControls.chrome);
-  // 离开编辑器前检查未保存的修改：模板草稿只在模板页的编辑视图里存在（识别规则在下一步接入）。
-  const appView = useAppView({
-    platform,
-    editor: () =>
-      templates.draft ? { isEditing: true, isDirty: templates.isDirty, close: templates.cancelEdit } : NO_EDITOR,
-  });
+  const appView = useAppView({ platform, editor: () => editor });
   const isWorkbench = isWorkbenchActive(appView.view);
+  // 配置中心显示的页面：打开时是当前页，关闭后淡出期间仍是刚才那一页。
+  const configPage = appView.view.kind === 'config' ? appView.view.page : appView.leavingPage;
 
   // 没有扫码时用示例标签展示当前模板；模板页里预览选中的模板或草稿。
   // 都套用备注下拉框的选择（草稿除外：正在编辑的就是备注本身），看到的就是打出来的样子。
@@ -106,7 +113,6 @@ export function App() {
         feedKey: sampleTemplate.id,
       }
     : null;
-  const previewUsage = describePreviewUsage(station.scan?.preview ?? null, templates.active?.name ?? null);
 
   const isTemplatesPage = appView.view.kind === 'config' && appView.view.page === 'templates';
   const templateSample = useSampleContent(station.scan?.raw ?? null);
@@ -187,7 +193,7 @@ export function App() {
         printerChip={printerChip}
         readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
         config={{
-          isOpen: !isWorkbench && !appView.isLeaving,
+          isOpen: !isWorkbench,
           shortcutLabel: configShortcutLabel(platform),
           onToggle: appView.toggle,
         }}
@@ -208,87 +214,75 @@ export function App() {
           )}
         </div>
       ) : (
-        <main className="workspace" inert={!isWorkbench}>
-          <div className="station">
-            <ScanBar
-              isActive={isWorkbench}
-              autoPrint={autoPrint}
-              lineGapMs={settings?.scanLineGapMs ?? DEFAULT_SETTINGS.scanLineGapMs}
-              note={{ ...noteOptions, onSelect: (value) => void selectNote(value) }}
-              onAutoPrintChange={(next) => void update({ autoPrint: next })}
-              onScan={station.scanCode}
+        <Workbench
+          isActive={isWorkbench}
+          scanBar={{
+            autoPrint,
+            lineGapMs: settings.scanLineGapMs,
+            note: { ...noteOptions, onSelect: (value) => void selectNote(value) },
+            onAutoPrintChange: (next) => void update({ autoPrint: next }),
+            onScan: station.scanCode,
+          }}
+          preview={{
+            toolbar: (
+              <PreviewToolbar
+                templates={templates.templates}
+                activeTemplateId={templates.active?.id ?? null}
+                usage={describePreviewUsage(station.scan?.preview ?? null, templates.active?.name ?? null)}
+                onActivate={(id) => void templates.activate(id)}
+              />
+            ),
+            scan: station.scan,
+            view,
+            override,
+            onPrint: () => station.printCurrent(false),
+            onForceReprint: () => station.printCurrent(true),
+          }}
+          printers={
+            <PrinterList
+              printers={printers.printers}
+              selected={printerName}
+              isLoading={printers.isLoading}
+              paper={{
+                view: describePaperCheck(driverPaper.check),
+                isOpening: driverPaper.isOpening,
+                onOpenPreferences: () => void driverPaper.openPreferences(),
+              }}
+              onSelect={(name) => void update({ selectedPrinter: name })}
+              onRefresh={() => void printers.refresh()}
+              onTestPrint={printTest}
             />
-            <PreviewStage
-              toolbar={
-                <PreviewToolbar
-                  templates={templates.templates}
-                  activeTemplateId={templates.active?.id ?? null}
-                  usage={previewUsage}
-                  onActivate={(id) => void templates.activate(id)}
-                />
-              }
-              scan={station.scan}
-              view={view}
-              override={override}
-              onPrint={() => station.printCurrent(false)}
-              onForceReprint={() => station.printCurrent(true)}
+          }
+          history={
+            <JobLog
+              jobs={jobLog.jobs}
+              total={jobLog.total}
+              historyLimit={historyLimit}
+              search={jobLog.search}
+              hasMore={jobLog.hasMore}
+              isLoadingMore={jobLog.isLoadingMore}
+              onSearchChange={jobLog.setSearch}
+              onLoadMore={() => void jobLog.loadMore()}
+              onReview={station.review}
+              onReprint={station.reprint}
             />
-          </div>
-          <SidePanel
-            active={sideTab}
-            onActiveChange={setSideTab}
-            panels={{
-              printers: (
-                <PrinterList
-                  printers={printers.printers}
-                  selected={printerName}
-                  isLoading={printers.isLoading}
-                  paper={{
-                    view: describePaperCheck(driverPaper.check),
-                    isOpening: driverPaper.isOpening,
-                    onOpenPreferences: () => void driverPaper.openPreferences(),
-                  }}
-                  onSelect={(name) => void update({ selectedPrinter: name })}
-                  onRefresh={() => void printers.refresh()}
-                  onTestPrint={printTest}
-                />
-              ),
-              history: (
-                <JobLog
-                  jobs={jobLog.jobs}
-                  total={jobLog.total}
-                  historyLimit={historyLimit}
-                  search={jobLog.search}
-                  hasMore={jobLog.hasMore}
-                  isLoadingMore={jobLog.isLoadingMore}
-                  onSearchChange={jobLog.setSearch}
-                  onLoadMore={() => void jobLog.loadMore()}
-                  onReview={station.review}
-                  onReprint={station.reprint}
-                />
-              ),
-              rules: <RulePanel rules={rules} templates={templates.templates} />,
-            }}
-          />
-        </main>
+          }
+        />
       )}
-      {settings !== null && appView.view.kind === 'config' && (
+      {settings !== null && configPage !== null && (
         <ConfigCenter
-          page={appView.view.page}
-          isLeaving={appView.isLeaving}
+          page={configPage}
+          isLeaving={appView.view.kind !== 'config'}
           breadcrumb={
-            isTemplatesPage && templates.draft
-              ? {
-                  current: `编辑：${templates.draft.name}`,
-                  onList: () => appView.requestLeave(() => undefined),
-                }
-              : null
+            editingName === null
+              ? null
+              : { current: `编辑：${editingName}`, onList: () => appView.requestLeave(() => undefined) }
           }
           onNavigate={appView.open}
           onClose={appView.close}
         >
           <ConfigPages
-            page={appView.view.page}
+            page={configPage}
             templates={{
               templates: templates.templates,
               activeId: templates.active?.id ?? null,
@@ -307,11 +301,16 @@ export function App() {
               onSave: () => void templates.saveDraft(),
               onCancel: templates.cancelEdit,
             }}
+            rules={{
+              rules,
+              templates: templates.templates,
+              tester: { raw: testerRaw, onRawChange: setTesterRaw },
+              isNarrow,
+            }}
             settings={settings}
             jobTotal={jobLog.total}
             appInfo={appInfo}
             update={updateView}
-            secretNames={rules.secretNames}
             onChange={changeSettings}
             onCheckForUpdates={updates.check}
             onOpenLogFolder={openLogFolder}

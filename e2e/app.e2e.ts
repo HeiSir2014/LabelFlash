@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ElectronApplication, _electron as electron, expect, type Page, test } from '@playwright/test';
@@ -93,24 +93,51 @@ test('takes a burst of lines with Enters in between as one multi-line scan', asy
 
 test('tries content against the rules and prints with the template bound to a rule', async () => {
   const { app, page } = await launch();
-  await page.getByRole('tab', { name: '识别规则' }).click();
-  await page.getByLabel('要识别的内容').first().fill('202609280001');
-  await expect(page.locator('.rule-tester__result').first()).toContainText('命中「纯数字订单号」');
+  // 工作台右侧栏只剩打印机和打印记录。
+  await expect(page.getByRole('tab')).toHaveText(['打印机', '打印记录']);
+
+  await openConfig(page, '识别规则');
+  const tester = page.getByLabel('要识别的内容');
+  const result = page.locator('.rule-tester__result');
+  await tester.fill('202609280001');
+  await expect(result).toContainText('命中「纯数字订单号」');
 
   // 没有规则认得下划线：落到「原样打印」；新建一条下划线分隔的规则后，命中新规则。
-  const tester = page.getByLabel('要识别的内容').first();
   await tester.fill('CL1_红_M');
-  await expect(page.locator('.rule-tester__result').first()).toContainText('命中「原样打印」');
+  await expect(result).toContainText('命中「原样打印」');
   await page.getByRole('button', { name: '新建规则' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('编辑：新规则（分隔符拆分）');
   await page.getByRole('button', { name: '返回列表' }).click();
   await tester.fill('CL1_红_M ');
-  await expect(page.locator('.rule-tester__result').first()).toContainText('命中「新规则（分隔符拆分）」');
+  await expect(result).toContainText('命中「新规则（分隔符拆分）」');
 
   await page.getByLabel('「纯数字订单号」用的模板').selectOption({ label: '样衣标准（二维码在左）' });
+  await page.getByRole('button', { name: '返回工作台' }).click();
   await scan(page, '202609280001');
   await expect(page.locator('.preview-toolbar__usage')).toHaveText(
     '规则：纯数字订单号 · 模板：样衣标准（二维码在左）（规则指定）',
   );
+  await app.close();
+});
+
+test('imports a lookup table and shows its first rows', async () => {
+  const { app, page } = await launch();
+  const csvPath = join(userData, '货架.csv');
+  await writeFile(csvPath, '编码,货架\nCL5640-TK,A-01\nCL5641-TK,A-02\n', 'utf8');
+  // 换掉系统的打开文件对话框：直接选中这个 CSV。
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [path] })) as typeof dialog.showOpenDialog;
+  }, csvPath);
+
+  await openConfig(page, '查找表');
+  await page.getByRole('button', { name: '导入 CSV 表格' }).click();
+  const card = page.locator('.lookup-card', { hasText: '货架' });
+  await expect(card).toContainText('2 行');
+  await card.getByRole('button', { name: '查看前 20 行' }).click();
+  const table = page.getByRole('table', { name: '「货架」前 20 行' });
+  await expect(table.getByRole('columnheader')).toHaveText(['编码', '货架']);
+  await expect(table.getByRole('row')).toHaveCount(3);
+  await expect(table.getByRole('row').nth(1)).toContainText('CL5640-TK');
   await app.close();
 });
 

@@ -1,21 +1,21 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
-export type SideTab = 'printers' | 'rules' | 'history';
+type SideTab = 'printers' | 'history';
 
 const TABS: ReadonlyArray<{ id: SideTab; label: string }> = [
   { id: 'printers', label: '打印机' },
-  { id: 'rules', label: '识别规则' },
   { id: 'history', label: '打印记录' },
 ];
 
-interface SidePanelProps {
-  active: SideTab;
-  onActiveChange: (tab: SideTab) => void;
-  panels: Record<SideTab, ReactNode>;
+interface WorkbenchSideProps {
+  printers: ReactNode;
+  history: ReactNode;
 }
 
-/** 非当前标签页只隐藏不卸载：搜索词、滚动位置、编辑中的模板都会保留。 */
-export function SidePanel({ active, onActiveChange, panels }: SidePanelProps) {
+/** 工作台右侧栏：打印机 | 打印记录。非当前标签只隐藏不卸载，搜索词和滚动位置都保留。 */
+export function WorkbenchSide({ printers, history }: WorkbenchSideProps) {
+  const [active, setActive] = useState<SideTab>('printers');
+  const panels: Record<SideTab, ReactNode> = { printers, history };
   return (
     <aside className="side">
       <div className="tabs" role="tablist">
@@ -28,7 +28,7 @@ export function SidePanel({ active, onActiveChange, panels }: SidePanelProps) {
             aria-selected={active === tab.id}
             aria-controls={`panel-${tab.id}`}
             className="tab"
-            onClick={() => onActiveChange(tab.id)}
+            onClick={() => setActive(tab.id)}
           >
             {tab.label}
           </button>

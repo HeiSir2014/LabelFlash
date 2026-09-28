@@ -3,22 +3,24 @@ import type { AppSettings } from '../../../../shared/settings';
 import type { VoiceCue } from '../../../../shared/voice';
 import type { ConfigPage } from '../../lib/app-view';
 import type { UpdateView } from '../../lib/update-text';
-import { WebhookSettings } from '../WebhookSettings';
 import { AboutPage } from './pages/AboutPage';
 import { GeneralPage } from './pages/GeneralPage';
+import { LookupTablesPage } from './pages/LookupTablesPage';
 import { NotePresetsPage } from './pages/NotePresetsPage';
+import { RulesPage, type RulesPageProps } from './pages/RulesPage';
+import { SecretsPage } from './pages/SecretsPage';
 import { TemplatesPage, type TemplatesPageProps } from './pages/TemplatesPage';
 import { VoicePage } from './pages/VoicePage';
+import { WebhooksPage } from './pages/WebhooksPage';
 
 interface ConfigPagesProps {
   page: ConfigPage;
   templates: TemplatesPageProps;
+  rules: RulesPageProps;
   settings: AppSettings;
   jobTotal: number;
   appInfo: AppInfo | null;
   update: UpdateView;
-  /** 通知签名可选的密钥名称。 */
-  secretNames: readonly string[];
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
   onCheckForUpdates: () => void;
   onOpenLogFolder: () => void;
@@ -30,17 +32,18 @@ interface ConfigPagesProps {
 export function ConfigPages({
   page,
   templates,
+  rules,
   settings,
   jobTotal,
   appInfo,
   update,
-  secretNames,
   onChange,
   onCheckForUpdates,
   onOpenLogFolder,
   onOpenShop,
   onPreviewVoice,
 }: ConfigPagesProps) {
+  const vm = rules.rules;
   switch (page) {
     case 'templates':
       return <TemplatesPage {...templates} />;
@@ -51,15 +54,21 @@ export function ConfigPages({
           onChange={async (notePresets) => (await onChange({ notePresets })) !== null}
         />
       );
+    case 'rules':
+      return <RulesPage {...rules} />;
+    case 'lookup':
+      return (
+        <LookupTablesPage tables={vm.lookupTables} onImport={vm.importLookupTable} onDelete={vm.deleteLookupTable} />
+      );
+    case 'secrets':
+      return <SecretsPage names={vm.secretNames} onSave={vm.setSecret} onDelete={vm.deleteSecret} />;
     case 'webhooks':
       return (
-        <div className="config-page">
-          <WebhookSettings
-            webhooks={settings.webhooks}
-            secretNames={secretNames}
-            onChange={(webhooks) => onChange({ webhooks })}
-          />
-        </div>
+        <WebhooksPage
+          webhooks={settings.webhooks}
+          secretNames={vm.secretNames}
+          onChange={(webhooks) => onChange({ webhooks })}
+        />
       );
     case 'voice':
       return (
@@ -78,10 +87,5 @@ export function ConfigPages({
       );
     case 'about':
       return <AboutPage appInfo={appInfo} onOpenShop={onOpenShop} />;
-    case 'rules':
-    case 'lookup':
-    case 'secrets':
-      // 这三页在下一步迁进配置中心，目前仍在工作台右侧栏。
-      return <p className="config-empty">这一页正在迁移，暂时在工作台右侧栏的「识别规则」里管理。</p>;
   }
 }

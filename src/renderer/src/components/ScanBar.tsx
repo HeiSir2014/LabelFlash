@@ -10,7 +10,7 @@ export interface NoteControl {
   onSelect: (value: string) => void;
 }
 
-interface ScanBarProps {
+export interface ScanBarProps {
   /** 工作台在前台（配置中心没打开）：扫码框的自动回焦规则只在这时生效。 */
   isActive: boolean;
   autoPrint: boolean;

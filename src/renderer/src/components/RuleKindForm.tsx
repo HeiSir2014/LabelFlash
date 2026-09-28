@@ -160,8 +160,7 @@ function KeyValueForm({ rule, onChange }: KindFormProps<KeyValueRule>) {
         </button>
       </fieldset>
       <p className="form-hint">
-        每行按最先出现的分隔符拆成「名称」和「值」；名称和其他写法都不区分大小写。勾了必填的字段都识别到才算匹配，
-        没勾时至少要识别到一个登记的字段。
+        每行按最先出现的分隔符拆成「名称」和「值」；名称和其他写法都不区分大小写。勾了必填的字段都识别到才算匹配，没勾时至少要识别到一个登记的字段。
       </p>
       <Toggle
         label="保留未登记的键"

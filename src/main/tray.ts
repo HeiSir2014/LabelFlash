@@ -23,7 +23,9 @@ export function createTray(iconPath: string, actions: TrayActions): AppTray {
       { label: `退出 ${BRAND.productName}`, click: actions.quit },
     ]),
   );
+  // Windows 上单击就该唤出窗口（右键才是菜单）；习惯双击的人也接住。
   tray.on('click', actions.show);
+  tray.on('double-click', actions.show);
 
   let hasNotified = false;
   return {

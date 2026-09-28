@@ -97,6 +97,13 @@ function applyLaunchAtLogin(enabled: boolean): void {
   }
 }
 
+/** 退出过程中窗口可能已经销毁，此时再推送会抛 Object has been destroyed。 */
+function sendToMainWindow(channel: string, payload: unknown): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload);
+  }
+}
+
 function requireWebContents() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     throw new Error('Main window is not available');
@@ -167,7 +174,7 @@ async function bootstrap(): Promise<void> {
     }
   };
   const updater = new AppUpdater({
-    onStatus: (status) => mainWindow?.webContents.send(IpcChannel.UpdateStatusChanged, status),
+    onStatus: (status) => sendToMainWindow(IpcChannel.UpdateStatusChanged, status),
     onBeforeInstall: () => {
       isQuitting = true;
     },
@@ -211,7 +218,8 @@ async function bootstrap(): Promise<void> {
 
   mainWindow = createMainWindow({
     icon: appIcon,
-    shouldHideOnClose: () => !isQuitting,
+    // 没有托盘图标时照常关闭：藏起来之后就再也叫不回窗口了。
+    shouldHideOnClose: () => !isQuitting && tray !== null,
     onHidden: () => tray?.notifyHiddenOnce(),
   });
   // Windows 关机、注销时不会触发 before-quit：放行窗口关闭并关闭数据库，不能阻塞关机。
@@ -222,7 +230,12 @@ async function bootstrap(): Promise<void> {
     isQuitting = true;
     closeDatabase();
   });
-  tray = createTray(trayIcon, { show: showMainWindow, quit });
+  try {
+    tray = createTray(trayIcon, { show: showMainWindow, quit });
+  } catch (error) {
+    // 托盘只是附加入口：建不起来时照常运行（关窗即退出），不能让整个程序启动失败。
+    console.error('[tray] could not create the tray icon, closing the window will quit', error);
+  }
   updater.start();
   warmVoice();
   app.on('will-quit', () => {

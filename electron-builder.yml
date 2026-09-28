@@ -11,6 +11,8 @@ files:
   - resources/**
   - "!resources/*.svg"
   - "!resources/installer.nsh"
+  # 安装界面（插件、脚本）只在打安装包时用，不进程序本体。
+  - "!resources/installer/**"
   - "!node_modules/**"
   - package.json
 asarUnpack:
@@ -46,6 +48,9 @@ win:
         - x64
   icon: resources/icon.png
   executableName: CDL-LabelFlash
+# 安装界面是自绘的（resources/installer/installer.nsi），由 scripts/installer/build-installer.ts 分两段构建：
+# 第一段用 electron-builder 自带脚本取卸载程序，第二段加上 nsis.script 打出发布的安装包。
+# 所以不要直接运行 electron-builder 出安装包，用 bun run dist:win。
 nsis:
   oneClick: false
   perMachine: false

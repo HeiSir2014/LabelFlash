@@ -18,8 +18,9 @@
     "test:e2e": "electron-vite build && bun run verify:bundle && playwright test",
     "check": "bun run lint && bun run typecheck && bun test",
     "icons": "bun scripts/generate-icons.ts",
-    "dist:win": "electron-vite build && bun run verify:bundle && electron-builder --win --x64 --publish never",
-    "release:win": "electron-vite build && bun run verify:bundle && electron-builder --win --x64 --publish always"
+    "installer:skin": "bun scripts/installer/build-skin.ts",
+    "dist:win": "electron-vite build && bun run verify:bundle && bun scripts/installer/build-installer.ts --publish never",
+    "release:win": "electron-vite build && bun run verify:bundle && bun scripts/installer/build-installer.ts --publish always"
   },
   "dependencies": {
     "electron-log": "^5.4.4",

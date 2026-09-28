@@ -15,6 +15,7 @@ import type { UpdateView } from '../lib/update-text';
 import { useQrImage } from '../view-models/use-qr-image';
 import { ConfirmButton } from './ConfirmButton';
 import { VoiceSettingsSection } from './VoiceSettingsSection';
+import { WebhookSettings } from './WebhookSettings';
 
 const NUMBER_FORMAT = new Intl.NumberFormat('zh-CN');
 
@@ -28,6 +29,8 @@ interface SettingsFormProps {
   onOpenShop: () => void;
   onCheckForUpdates: () => void;
   onPreviewVoice: (cue?: VoiceCue) => void;
+  /** 通知签名可选的密钥名称（在「识别规则」页管理）。 */
+  secretNames: readonly string[];
 }
 
 export function SettingsForm({
@@ -40,6 +43,7 @@ export function SettingsForm({
   onOpenShop,
   onCheckForUpdates,
   onPreviewVoice,
+  secretNames,
 }: SettingsFormProps) {
   const [pendingHistoryLimit, setPendingHistoryLimit] = useState<number | null>(null);
   const [newNote, setNewNote] = useState('');
@@ -142,6 +146,12 @@ export function SettingsForm({
         voice={settings.voice}
         onChange={(voice) => void onChange({ voice })}
         onPreview={onPreviewVoice}
+      />
+
+      <WebhookSettings
+        webhooks={settings.webhooks}
+        secretNames={secretNames}
+        onChange={(webhooks) => onChange({ webhooks })}
       />
 
       <section className="note-presets" aria-label="常用备注">

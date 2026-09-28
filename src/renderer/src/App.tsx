@@ -6,6 +6,7 @@ import { JobLog } from './components/JobLog';
 import { NoticeBar } from './components/NoticeBar';
 import { type PreviewOverride, PreviewStage } from './components/PreviewStage';
 import { PrinterList } from './components/PrinterList';
+import { RulePanel } from './components/RulePanel';
 import { ScanBar } from './components/ScanBar';
 import { SettingsForm } from './components/SettingsForm';
 import { SidePanel, type SideTab } from './components/SidePanel';
@@ -25,6 +26,7 @@ import { useJobLog } from './view-models/use-job-log';
 import { useNotices } from './view-models/use-notices';
 import { usePrinterStatus } from './view-models/use-printer-status';
 import { usePrinters } from './view-models/use-printers';
+import { useRules } from './view-models/use-rules';
 import { useScanStation } from './view-models/use-scan-station';
 import { useSettings } from './view-models/use-settings';
 import { useTemplatePreview } from './view-models/use-template-preview';
@@ -68,6 +70,8 @@ export function App() {
     replaceSettings: replace,
     onActiveTemplateChanged: () => void station.refreshPreview(),
   });
+  // 规则、顺序、模板绑定变了：当前扫码的识别结果和用的模板都可能变，重新预览。
+  const rules = useRules({ onRulesChanged: () => void station.refreshPreview() });
 
   // 编辑模板时预览草稿；悬停在其他模板上时预览它；没有扫码时用示例标签展示当前生效的模板。
   // 三种情况都套用备注下拉框的选择，看到的就是打出来的样子。
@@ -241,8 +245,10 @@ export function App() {
                   onOpenShop={openShop}
                   onCheckForUpdates={updates.check}
                   onPreviewVoice={feedback.preview}
+                  secretNames={rules.secretNames}
                 />
               ),
+              rules: <RulePanel rules={rules} templates={templates.templates} />,
             }}
           />
         </main>

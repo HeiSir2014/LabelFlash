@@ -127,3 +127,108 @@ export function TextInput({ label, value, maxLength, placeholder, onChange }: Te
     </div>
   );
 }
+
+interface SelectFieldProps<T extends string> {
+  label: string;
+  value: T;
+  options: ReadonlyArray<{ value: T; label: string }>;
+  onChange: (value: T) => void;
+}
+
+/** 选项较多时用下拉框（少量选项用 Segmented）。 */
+export function SelectField<T extends string>({ label, value, options, onChange }: SelectFieldProps<T>) {
+  const id = useId();
+  return (
+    <div className="form-row">
+      <label className="form-row__label" htmlFor={id}>
+        {label}
+      </label>
+      <select id={id} className="text-field" value={value} onChange={(event) => onChange(event.target.value as T)}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+interface TextAreaFieldProps {
+  label: string;
+  value: string;
+  maxLength: number;
+  rows?: number;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}
+
+export function TextAreaField({ label, value, maxLength, rows = 3, placeholder, onChange }: TextAreaFieldProps) {
+  const id = useId();
+  return (
+    <div className="form-row form-row--stacked">
+      <label className="form-row__label" htmlFor={id}>
+        {label}
+      </label>
+      <textarea
+        id={id}
+        className="text-field text-area"
+        rows={rows}
+        value={value}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        spellCheck={false}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+interface StringListProps {
+  label: string;
+  values: readonly string[];
+  maxItems: number;
+  maxLength: number;
+  placeholder?: string;
+  onChange: (values: string[]) => void;
+}
+
+/** 有顺序的一组短文本（例如分隔符拆分的字段名）：逐项编辑、增删。 */
+export function StringList({ label, values, maxItems, maxLength, placeholder, onChange }: StringListProps) {
+  const set = (index: number, next: string) => onChange(values.map((value, i) => (i === index ? next : value)));
+  return (
+    <fieldset className="string-list">
+      <legend className="form-row__label">{label}</legend>
+      {values.map((value, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: 按位置编辑的列表，编辑中可能为空或重复，位置即身份
+        <div key={index} className="string-list__row">
+          <span className="string-list__index">{index + 1}</span>
+          <input
+            type="text"
+            className="text-field"
+            aria-label={`${label}第 ${index + 1} 项`}
+            value={value}
+            maxLength={maxLength}
+            placeholder={placeholder}
+            onChange={(event) => set(index, event.target.value)}
+          />
+          <button
+            type="button"
+            className="button button--small button--quiet"
+            onClick={() => onChange(values.filter((_, i) => i !== index))}
+          >
+            删除
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="button button--small"
+        disabled={values.length >= maxItems}
+        onClick={() => onChange([...values, ''])}
+      >
+        添加（{values.length}/{maxItems}）
+      </button>
+    </fieldset>
+  );
+}

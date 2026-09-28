@@ -88,6 +88,18 @@ test('takes a burst of lines with Enters in between as one multi-line scan', asy
   await app.close();
 });
 
+test('tries content against the rules and prints with the template bound to a rule', async () => {
+  const { app, page } = await launch();
+  await page.getByRole('tab', { name: '识别规则' }).click();
+  await page.getByLabel('要识别的内容').first().fill('202609280001');
+  await expect(page.locator('.rule-tester__result').first()).toContainText('命中「纯数字订单号」');
+
+  await page.getByLabel('「纯数字订单号」用的模板').selectOption({ label: '样衣标准（二维码在左）' });
+  await scan(page, '202609280001');
+  await expect(page.locator('.label-badge')).toHaveText('纯数字订单号 · 样衣标准（二维码在左）');
+  await app.close();
+});
+
 test('keeps a saved custom template and the note selection after a restart', async () => {
   const first = await launch();
   const page = first.page;

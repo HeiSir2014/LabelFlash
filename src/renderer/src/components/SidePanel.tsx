@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
 
-export type SideTab = 'printers' | 'templates' | 'history' | 'settings';
+export type SideTab = 'printers' | 'templates' | 'rules' | 'history' | 'settings';
 
 const TABS: ReadonlyArray<{ id: SideTab; label: string }> = [
   { id: 'printers', label: '打印机' },
   { id: 'templates', label: '模板' },
+  { id: 'rules', label: '识别规则' },
   { id: 'history', label: '打印记录' },
   { id: 'settings', label: '设置' },
 ];

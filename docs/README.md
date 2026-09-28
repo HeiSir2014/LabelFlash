@@ -8,6 +8,7 @@
 | [设计：手机扫码打印](superpowers/specs/2026-09-29-mobile-scan-relay-design.md) | 1.1.0：电脑按需连云端中转服务，手机网页扫码、确认后在电脑上打印；会话、端到端加密、协议、部署 |
 | [计划：Phase 1 桌面端](superpowers/plans/2026-09-28-label-flash-phase1-desktop.md) | Phase 1 的实施计划（Task 1–14，含 13A–13J） |
 | [计划：通用识别规则](superpowers/plans/2026-09-28-generic-scan-rules.md) | 通用识别规则的实施计划 |
+| [计划：手机扫码打印](superpowers/plans/2026-09-29-mobile-scan-relay.md) | 中转服务、扫码页、电脑端模块、部署；接入电脑界面等配置中心重构合回后做 |
 | [路线图](roadmap.md) | 功能评级与状态，包括 macOS 适配（打包、状态检测、标签机验证）的进度 |
 | [Windows 验收记录](windows-acceptance.md) | 在 Windows 上的自动化检查和真机验收结果 |
 

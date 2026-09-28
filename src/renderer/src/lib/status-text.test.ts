@@ -38,7 +38,9 @@ describe('formatAgo / formatWindow', () => {
     expect(formatAgo(NOW - 125 * MINUTE, NOW)).toBe('2 小时前');
   });
 
-  test('formats the dedup window', () => {
+  test('formats the dedup window in the largest whole unit', () => {
+    expect(formatWindow(3_000)).toBe('3 秒');
+    expect(formatWindow(90_000)).toBe('90 秒');
     expect(formatWindow(10 * MINUTE)).toBe('10 分钟');
     expect(formatWindow(120 * MINUTE)).toBe('2 小时');
   });
@@ -59,6 +61,11 @@ describe('describeResult', () => {
       NOW,
     );
     expect(printed.detail).toBe('3 分钟前已打印过，10 分钟内同一标签只打一次');
+    const bounced = describeResult(
+      { status: 'duplicate', recent: { state: 'printed', at: NOW - 1_000 }, windowMs: 3_000 },
+      NOW,
+    );
+    expect(bounced.detail).toBe('刚刚已打印过，3 秒内同一标签只打一次');
     const printing = describeResult(
       { status: 'duplicate', recent: { state: 'printing', at: NOW }, windowMs: 10 * MINUTE },
       NOW,

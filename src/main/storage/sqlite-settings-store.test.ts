@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { DEFAULT_SETTINGS, MAX_DEDUP_WINDOW_MINUTES } from '../../shared/settings';
+import { DEFAULT_SETTINGS, MAX_DEDUP_WINDOW_SECONDS } from '../../shared/settings';
 import { openDatabase } from './database';
 import { SqliteSettingsStore } from './sqlite-settings-store';
 import { createTempDir, removeTempDir } from './testing/temp-dir';
@@ -38,8 +38,8 @@ describe('SqliteSettingsStore', () => {
 
   test('sanitizes updates', () => {
     const db = openDatabase(path);
-    expect(new SqliteSettingsStore(db).update({ dedupWindowMinutes: 99_999 }).dedupWindowMinutes).toBe(
-      MAX_DEDUP_WINDOW_MINUTES,
+    expect(new SqliteSettingsStore(db).update({ dedupWindowSeconds: 999_999 }).dedupWindowSeconds).toBe(
+      MAX_DEDUP_WINDOW_SECONDS,
     );
     db.close();
   });

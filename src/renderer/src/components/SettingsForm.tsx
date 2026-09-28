@@ -4,7 +4,7 @@ import type { AppInfo } from '../../../shared/ipc-contract';
 import {
   type AppSettings,
   HISTORY_LIMIT_RANGE,
-  MAX_DEDUP_WINDOW_MINUTES,
+  MAX_DEDUP_WINDOW_SECONDS,
   MAX_NOTE_PRESETS,
   sanitizeNoteText,
 } from '../../../shared/settings';
@@ -62,12 +62,12 @@ export function SettingsForm({
     <div className="settings" data-keep-focus>
       <NumberSetting
         label="防重复打印"
-        unit="分钟"
-        hint="同一标签在这段时间内只打一次；填 0 表示不拦截"
-        value={settings.dedupWindowMinutes}
+        unit="秒"
+        hint="同一标签在这段时间内只打一次，防止扫码枪连按重复出纸；填 0 表示不拦截"
+        value={settings.dedupWindowSeconds}
         min={0}
-        max={MAX_DEDUP_WINDOW_MINUTES}
-        onCommit={async (dedupWindowMinutes) => (await onChange({ dedupWindowMinutes }))?.dedupWindowMinutes ?? null}
+        max={MAX_DEDUP_WINDOW_SECONDS}
+        onCommit={async (dedupWindowSeconds) => (await onChange({ dedupWindowSeconds }))?.dedupWindowSeconds ?? null}
       />
       <NumberSetting
         label="打印记录保留"

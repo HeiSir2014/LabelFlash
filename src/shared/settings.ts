@@ -12,15 +12,16 @@ export interface AppSettings {
   /** 常用备注，供下拉框快速切换。 */
   notePresets: string[];
   autoPrint: boolean;
-  dedupWindowMinutes: number;
+  /** 防重复打印窗口（秒）：同一标签在这段时间内只打一次，主要用来吸收扫码枪连按。0 = 不拦截。 */
+  dedupWindowSeconds: number;
   historyLimit: number;
   launchAtLogin: boolean;
   /** 扫码 / 打印后的语音确认播报。 */
   voice: VoiceSettings;
 }
 
-export const MS_PER_MINUTE = 60_000;
-export const MAX_DEDUP_WINDOW_MINUTES = MAX_DEDUP_WINDOW_MS / MS_PER_MINUTE;
+export const MS_PER_SECOND = 1_000;
+export const MAX_DEDUP_WINDOW_SECONDS = MAX_DEDUP_WINDOW_MS / MS_PER_SECOND;
 export const HISTORY_LIMIT_RANGE = { min: 1_000, max: 1_000_000 } as const;
 const MAX_PRINTER_NAME_LENGTH = 256;
 export const MAX_NOTE_PRESETS = 20;
@@ -31,7 +32,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   noteOverride: DEFAULT_NOTE_OVERRIDE,
   notePresets: [],
   autoPrint: true,
-  dedupWindowMinutes: 10,
+  dedupWindowSeconds: 3,
   historyLimit: 100_000,
   launchAtLogin: false,
   voice: { enabled: true, name: DEFAULT_VOICE_NAME, ratePercent: 0 },
@@ -45,11 +46,12 @@ export function sanitizeSettings(value: unknown): AppSettings {
     noteOverride: sanitizeNoteOverride(input['noteOverride']),
     notePresets: sanitizeNotePresets(input['notePresets']),
     autoPrint: sanitizeBoolean(input['autoPrint'], DEFAULT_SETTINGS.autoPrint),
-    dedupWindowMinutes: sanitizeInteger(
-      input['dedupWindowMinutes'],
+    // 旧版本的 dedupWindowMinutes 不做兼容（软件还没发布过），存着的旧值会被忽略，按默认值处理。
+    dedupWindowSeconds: sanitizeInteger(
+      input['dedupWindowSeconds'],
       0,
-      MAX_DEDUP_WINDOW_MINUTES,
-      DEFAULT_SETTINGS.dedupWindowMinutes,
+      MAX_DEDUP_WINDOW_SECONDS,
+      DEFAULT_SETTINGS.dedupWindowSeconds,
     ),
     historyLimit: sanitizeInteger(
       input['historyLimit'],
@@ -75,8 +77,8 @@ function sanitizeVoice(value: unknown): VoiceSettings {
   };
 }
 
-export function minutesToMs(minutes: number): number {
-  return minutes * MS_PER_MINUTE;
+export function secondsToMs(seconds: number): number {
+  return seconds * MS_PER_SECOND;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

@@ -3,10 +3,8 @@ import type { PrintResult } from '../../../core/types';
 import type { LabelPreview, RendererPrintSource } from '../../../shared/ipc-contract';
 import type { FeedbackEvent } from '../lib/feedback-cues';
 import { reportError } from '../lib/notices';
-import { RepeatFilter } from '../lib/repeat-filter';
 import type { ScanSnapshot } from '../lib/status-text';
 
-const SCAN_REPEAT_INTERVAL_MS = 1_000;
 const NO_PREVIEW: LabelPreview = { result: { status: 'invalid', reason: 'INVALID_FORMAT' }, html: null };
 
 export interface ScanState extends ScanSnapshot {
@@ -29,7 +27,6 @@ interface LoadMode {
 }
 
 export function useScanStation({ printerName, autoPrint, onJobRecorded, announce }: StationOptions) {
-  const repeatFilter = useRef(new RepeatFilter(SCAN_REPEAT_INTERVAL_MS));
   const latestSeq = useRef(0);
   const [scan, setScan] = useState<ScanState | null>(null);
 
@@ -93,10 +90,11 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded, announce
     [printerName, print, announce],
   );
 
+  // 扫码枪连按由主进程的防重复窗口统一拦截（设置里可调，默认 3 秒），拦截结果会显示、播报并记入打印记录。
   const scanCode = useCallback(
     (input: string) => {
       const raw = input.trim();
-      if (raw === '' || !repeatFilter.current.shouldAccept(raw)) {
+      if (raw === '') {
         return;
       }
       void load(raw, { source: 'desktop', printNow: autoPrint });

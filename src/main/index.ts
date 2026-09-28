@@ -12,7 +12,7 @@ import { systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { IpcChannel } from '../shared/ipc-contract';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
-import { minutesToMs } from '../shared/settings';
+import { secondsToMs } from '../shared/settings';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
@@ -142,7 +142,7 @@ async function bootstrap(): Promise<void> {
   const jobs = new SqliteJobStore(database, settings.current.historyLimit);
   await jobs.initialize();
   const templates = new TemplateCatalog(new SqliteTemplateRepository(database, systemClock), randomUUID);
-  const guard = new DedupGuard(systemClock, minutesToMs(settings.current.dedupWindowMinutes));
+  const guard = new DedupGuard(systemClock, secondsToMs(settings.current.dedupWindowSeconds));
   // 打印机状态和驱动纸张都经这一个常驻 PowerShell 查询（只在 Windows 上有）。
   const probeHost =
     process.platform === 'win32'
@@ -199,7 +199,7 @@ async function bootstrap(): Promise<void> {
     probeHost,
     getWindow: () => mainWindow,
     onSettingsChanged: async (next, previous) => {
-      guard.setWindowMs(minutesToMs(next.dedupWindowMinutes));
+      guard.setWindowMs(secondsToMs(next.dedupWindowSeconds));
       if (next.selectedPrinter !== previous.selectedPrinter) {
         void status.watch(next.selectedPrinter);
       }

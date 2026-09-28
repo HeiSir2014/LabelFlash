@@ -3,9 +3,10 @@ import {
   type AppSettings,
   DEFAULT_SETTINGS,
   HISTORY_LIMIT_RANGE,
-  MAX_DEDUP_WINDOW_MINUTES,
+  MAX_DEDUP_WINDOW_SECONDS,
   MAX_NOTE_PRESETS,
   sanitizeSettings,
+  secondsToMs,
 } from './settings';
 
 describe('sanitizeSettings', () => {
@@ -23,7 +24,7 @@ describe('sanitizeSettings', () => {
       noteOverride: { kind: 'text', text: '返修' },
       notePresets: ['返修', '样衣间 {日期}'],
       autoPrint: false,
-      dedupWindowMinutes: 30,
+      dedupWindowSeconds: 30,
       historyLimit: 20_000,
       launchAtLogin: true,
       voice: { enabled: false, name: 'zh-CN-YunxiNeural', ratePercent: 30 },
@@ -40,10 +41,15 @@ describe('sanitizeSettings', () => {
     );
   });
 
+  test('defaults the dedup window to 3 seconds, enough to absorb a double trigger of the scanner', () => {
+    expect(DEFAULT_SETTINGS.dedupWindowSeconds).toBe(3);
+    expect(secondsToMs(DEFAULT_SETTINGS.dedupWindowSeconds)).toBe(3_000);
+  });
+
   test('clamps and rounds numbers', () => {
-    expect(sanitizeSettings({ dedupWindowMinutes: -5 }).dedupWindowMinutes).toBe(0);
-    expect(sanitizeSettings({ dedupWindowMinutes: 99_999 }).dedupWindowMinutes).toBe(MAX_DEDUP_WINDOW_MINUTES);
-    expect(sanitizeSettings({ dedupWindowMinutes: 12.6 }).dedupWindowMinutes).toBe(13);
+    expect(sanitizeSettings({ dedupWindowSeconds: -5 }).dedupWindowSeconds).toBe(0);
+    expect(sanitizeSettings({ dedupWindowSeconds: 999_999 }).dedupWindowSeconds).toBe(MAX_DEDUP_WINDOW_SECONDS);
+    expect(sanitizeSettings({ dedupWindowSeconds: 2.6 }).dedupWindowSeconds).toBe(3);
     expect(sanitizeSettings({ historyLimit: 1 }).historyLimit).toBe(HISTORY_LIMIT_RANGE.min);
     expect(sanitizeSettings({ historyLimit: 1e9 }).historyLimit).toBe(HISTORY_LIMIT_RANGE.max);
   });
@@ -73,7 +79,7 @@ describe('sanitizeSettings', () => {
 
   test('replaces wrong types with defaults', () => {
     expect(
-      sanitizeSettings({ selectedPrinter: '', autoPrint: 'yes', dedupWindowMinutes: Number.NaN, launchAtLogin: 1 }),
+      sanitizeSettings({ selectedPrinter: '', autoPrint: 'yes', dedupWindowSeconds: Number.NaN, launchAtLogin: 1 }),
     ).toEqual(DEFAULT_SETTINGS);
   });
 });

@@ -40,7 +40,9 @@ export interface ScanView {
   actions: ScanActions;
 }
 
-const MS_PER_MINUTE = 60_000;
+const MS_PER_SECOND = 1_000;
+const SECONDS_PER_MINUTE = 60;
+const MS_PER_MINUTE = SECONDS_PER_MINUTE * MS_PER_SECOND;
 const MINUTES_PER_HOUR = 60;
 const NO_ACTIONS: ScanActions = { print: null, forceReprint: false };
 
@@ -84,8 +86,13 @@ export function formatAgo(at: number, now: number): string {
   return `${Math.floor(minutes / MINUTES_PER_HOUR)} 小时前`;
 }
 
+/** 防重复窗口用能整除的最大单位显示：3 秒、90 秒、10 分钟、2 小时。 */
 export function formatWindow(windowMs: number): string {
-  const minutes = Math.round(windowMs / MS_PER_MINUTE);
+  const seconds = Math.round(windowMs / MS_PER_SECOND);
+  if (seconds < SECONDS_PER_MINUTE || seconds % SECONDS_PER_MINUTE !== 0) {
+    return `${seconds} 秒`;
+  }
+  const minutes = seconds / SECONDS_PER_MINUTE;
   if (minutes >= MINUTES_PER_HOUR && minutes % MINUTES_PER_HOUR === 0) {
     return `${minutes / MINUTES_PER_HOUR} 小时`;
   }

@@ -1,0 +1,215 @@
+# 云签速印 (LabelFlash) — 设计文档
+
+- 日期：2026-09-28
+- 状态：待评审
+- 包名：`label-flash`，appId：`com.labelflash.app`
+
+## 1. 目标
+
+Windows PC 上运行的 Electron 桌面程序。它把本机已安装的标签打印机共享到局域网，支持两种入口扫描样衣标签上的二维码，按原样重新生成标签并自动打印：
+
+1. **PC 本地**：用扫码枪在主界面的输入框里扫码，扫码枪自动回车后立即打印。
+2. **手机**：扫描 PC 上显示的二维码，或手动输入局域网地址，打开网页后用摄像头连续扫码打印。
+
+两个入口共享同一套**防重门限**，防止同一张二维码被重复打印。
+
+### 非目标（YAGNI）
+
+- 库位字段（原标签上的 `A-1-2-3`）不打印
+- 可视化模板编辑器、多模板
+- 账号体系、云同步
+- RAW TSPL/ZPL 指令打印（只预留接口，不实现）
+- 普通办公打印机的 A4 排版
+
+## 2. 输入数据
+
+二维码内容示例：`CL5640-TK-图片色-36`（已从样例图片解码确认）。
+
+- 格式：`<编码>-<颜色>-<尺码>`。编码本身可能包含 `-`，所以**从右往左拆**。
+- 解析正则：`^(.+)-([^-]+)-([^-]+)$` → `{ code: "CL5640-TK", color: "图片色", size: "36" }`
+- 校验：先 trim；总长 1–128；三个字段都不能为空；不能包含控制字符。不通过则拒绝打印，并返回 `INVALID_FORMAT`。
+- 去重 key：trim 之后的原始字符串（区分大小写）。
+
+## 3. 打印方案
+
+**采用：打印机驱动 + HTML 渲染。**
+
+隐藏的 `BrowserWindow` 加载标签 HTML（二维码由 `qrcode` 库生成 SVG），然后调用：
+
+```ts
+webContents.print({
+  silent: true,
+  deviceName,
+  pageSize: { width: 60_000, height: 40_000 }, // 单位为微米
+  margins: { marginType: 'none' },
+  printBackground: true,
+});
+```
+
+- 理由：中文字体不用额外处理；任何装了 Windows 驱动的热敏标签机都能用；模板就是 HTML/CSS，方便修改。
+- 扩展：通过 `PrinterAdapter` 接口隔离，以后可以加 `TsplRawAdapter`。
+- 打印机列表来自 `webContents.getPrintersAsync()`。
+
+### 标签模板（60×40mm）
+
+复刻原标签，但去掉库位：
+
+```
+┌──────────────────────────────────┐
+│ ┌────────┐  编码：CL5640-TK       │
+│ │ QR 码  │  颜色：图片色           │
+│ │ ~30mm  │  尺码：36              │
+│ └────────┘                        │
+│ CL5640-TK-图片色-36               │
+└──────────────────────────────────┘
+```
+
+- 二维码内容 = 原始字符串，纠错级别 M。
+- 字体用粗体黑体（`Microsoft YaHei` Bold / `SimHei`），针对 203dpi 热敏打印；只用纯黑，不用灰阶。
+- 所有文本都经过 HTML 转义后再插入模板。
+
+## 4. 架构
+
+```
+src/
+├── core/                  业务层：纯 TS，不依赖 Electron 和 UI，可以直接 bun test
+│   ├── label-parser.ts      解析和校验二维码内容
+│   ├── dedup-guard.ts       时间窗口门限：检查并占位 / 提交 / 释放
+│   ├── print-queue.ts       每台打印机一个串行队列，单任务超时 30s
+│   ├── print-service.ts     对外唯一入口 submit(request) → PrintResult
+│   ├── job-store.ts         JobStore 接口（打印记录 + 去重状态）
+│   └── types.ts
+├── main/                  Electron 主进程
+│   ├── printing/
+│   │   ├── printer-adapter.ts          PrinterAdapter 接口
+│   │   ├── electron-driver-adapter.ts  隐藏窗口渲染并静默打印
+│   │   └── label-template.ts           生成标签 HTML
+│   ├── storage/sqlite-job-store.ts     better-sqlite3 实现
+│   ├── server/                         Fastify HTTPS
+│   │   ├── app.ts / routes.ts / auth.ts
+│   ├── net/
+│   │   ├── lan-address.ts   枚举局域网 IPv4，过滤虚拟网卡
+│   │   └── certificate.ts   自签证书（SAN 包含所有局域网 IP），IP 变化时重新生成
+│   ├── ipc.ts               renderer ↔ PrintService / 配置
+│   ├── settings.ts          配置持久化（userData/settings.json）
+│   └── index.ts
+├── preload/index.ts       contextBridge 暴露类型化 API
+├── renderer/              PC 管理界面（React，MVVM：view-model hooks + 纯视图）
+└── mobile/                手机 SPA（Vite + TS），由 Fastify 静态托管
+```
+
+**依赖方向**：`renderer`、`mobile` 和 `server` 只通过 `PrintService` 使用业务功能；`core` 不引用 Electron、Fastify 或 SQLite。
+
+### 核心接口
+
+```ts
+type PrintSource = 'desktop' | 'mobile';
+
+interface PrintRequest {
+  raw: string;          // 二维码原文
+  printerName: string;
+  source: PrintSource;
+  force?: boolean;      // 强制补打，跳过门限
+}
+
+type PrintResult =
+  | { status: 'printed'; jobId: string; label: LabelData }
+  | { status: 'duplicate'; lastPrintedAt: number; windowMs: number }
+  | { status: 'invalid'; reason: 'INVALID_FORMAT' }
+  | { status: 'failed'; reason: 'PRINTER_NOT_FOUND' | 'PRINT_TIMEOUT' | 'PRINT_ERROR' };
+
+interface PrinterAdapter {
+  listPrinters(): Promise<PrinterInfo[]>;
+  print(printerName: string, label: LabelData): Promise<void>;
+}
+```
+
+## 5. 防重门限
+
+**两层：**
+
+1. **客户端去抖**（只为体验，不作为判定依据）
+   - 手机摄像头：同一个码 3 秒内只提交一次（每帧都可能重复识别）。
+   - PC 输入框：同一个码 1 秒内只提交一次（扫码枪可能连击）。
+2. **服务端门限**（权威判定，位于 `DedupGuard`）
+   - 默认窗口 **10 分钟**，在 PC 设置里可调（范围 0–1440 分钟，0 表示关闭）。
+   - `submit` 按以下顺序**同步执行**：解析 → `tryReserve(key)` → 入队。Node 单线程，所以多台设备同时扫同一个码时只有一个能占位成功，其余都返回 `duplicate`。
+   - key 已占位（正在打印）或上次成功打印距今不到窗口时长，都返回 `duplicate`。
+   - 打印成功：`commit(key, now)` 并持久化。
+   - 打印失败：`release(key)`，允许立即重试。
+   - `force: true`：跳过检查，打印成功后刷新时间戳；日志里标记为强制补打。
+   - 去重状态保存在 SQLite，重启后窗口仍然有效。时钟通过 `Clock` 接口注入，方便测试。
+
+## 6. 数据流
+
+**PC 扫码枪：**
+输入框（常驻焦点，失焦后 300ms 自动拉回）→ 回车 → `window.api.print({ raw, printerName })` → IPC → `PrintService.submit` → 结果 toast + 播放提示音（成功 / 重复 / 失败三种声音）→ 清空输入框。
+
+**手机：**
+打开页面 → 用 token 认证 → 选择打印机（记在 localStorage）→ 摄像头连续扫码（`barcode-detector` polyfill：Android Chrome 走原生 API，iOS 走 zxing-wasm），或在手动输入框提交 → `POST /api/print` → 结果以全屏色块 + 振动 + 声音反馈；如果是 `duplicate`，显示上次打印时间和"强制补打"按钮（需二次确认）。
+
+### HTTP API（仅 HTTPS，默认端口 8443）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/auth` | `{ pin }` → 设置 HttpOnly cookie |
+| GET | `/api/printers` | 返回 PC 端已启用的打印机 |
+| POST | `/api/print` | `{ raw, printerName, force? }` → `PrintResult` |
+| GET | `/api/jobs?limit=20` | 本设备最近的打印记录 |
+
+- 所有请求体都用 JSON Schema 校验（Fastify 内置），`raw` 最长 128。
+- 错误响应不暴露堆栈和内部路径。
+
+## 7. 安全
+
+- 服务监听 `0.0.0.0:8443`，只接受来源为私有网段（RFC1918 + 链路本地地址）的请求。
+- **访问令牌**：启动时生成一个随机 token，嵌入 PC 界面上的二维码 URL（`?t=`），扫码访问会自动认证；手动输入地址的，需要输入 PC 界面上显示的 6 位 PIN。认证成功后写入 HttpOnly + Secure + SameSite=Strict 的 cookie。PC 端可以一键重置 token 和 PIN，让所有已连接设备失效。
+- PIN 连续错误 5 次，锁定该 IP 1 分钟。
+- Electron：`contextIsolation: true`，`nodeIntegration: false`，`sandbox: true`；打印窗口不加载任何远程内容。
+
+## 8. PC 管理界面
+
+- **顶部**：手机访问二维码 + 所有局域网地址 + PIN；服务状态。
+- **主区**：大号扫码输入框 + 当前打印机下拉框 + 最近一次结果的大字反馈。
+- **打印机面板**：列出所有打印机，勾选哪些共享给手机，设置默认打印机，每台都有"打印测试页"。
+- **设置**：门限窗口（分钟）、端口、重置 token/PIN、开机自启。
+- **日志**：最近 200 条（时间、来源、内容、打印机、结果、是否强制），可以按内容搜索。
+
+## 9. 部署（Windows）
+
+- 用 electron-builder 打 NSIS 安装包（x64）。安装时执行 `netsh advfirewall firewall add rule` 放行 8443 入站，卸载时删除。
+- 窗口关闭时最小化到托盘，服务继续运行。
+- 在 electron-builder 的依赖重建流程里为 Electron 重新编译 `better-sqlite3`。
+
+## 10. 技术栈
+
+| 用途 | 选型 |
+|---|---|
+| 包管理 / 测试 | Bun（`bun install`、`bun test`） |
+| 构建 | electron-vite |
+| 打包 | electron-builder（NSIS） |
+| 语言 | TypeScript strict |
+| 服务端 | Fastify + @fastify/static + @fastify/cookie |
+| 存储 | better-sqlite3 |
+| 二维码生成 | qrcode |
+| 手机扫码 | barcode-detector（zxing-wasm polyfill） |
+| 自签证书 | selfsigned |
+| PC 界面 | React |
+
+## 11. 测试
+
+- **单元测试（bun test，`core/`）**：
+  - 解析：正常值、编码含多个 `-`、缺少字段、超长、控制字符、首尾空白
+  - 门限：窗口内拦截、窗口外放行、并发占位只成功一次、失败后释放、force 跳过、窗口为 0 时关闭门限
+  - 打印队列：串行执行、超时、单任务失败不影响后续任务
+- **集成测试**：Fastify `inject` 测路由（认证、参数校验、结果映射），打印部分用 FakePrinterAdapter。
+- **真机验证（Windows + 标签机）**：60×40mm 版面对齐、字迹清晰度、手机扫码到出纸的端到端耗时（目标 < 2s）。
+
+## 12. 风险与首个 Spike
+
+| 风险 | 应对 |
+|---|---|
+| iOS Safari 接受自签证书后，`getUserMedia` 可能仍被禁用 | **第一步做 spike 验证**；如果不行，改为提供"安装本地 CA 描述文件"的引导 |
+| 标签机驱动的默认纸张与 60×40 不一致，导致缩放或分页 | 打印测试页 + 引导用户在驱动里设置纸张；`pageSize` 显式传入 |
+| Windows 防火墙拦截入站 | 安装包自动添加防火墙规则；PC 界面检测到无法访问时给出提示 |
+| 多网卡、虚拟网卡导致二维码地址不对 | 过滤虚拟网卡，并列出全部地址供用户选择 |

@@ -22,7 +22,7 @@
 
 **Verified:**
 - 本计划的全部代码都来自一个已跑通的参考工程。
-- `bun run check`（lint + 三个 tsconfig + 201 个单元测试）全部通过；`bun run test:e2e`（Playwright 驱动 Electron）3 个用例通过；`electron-vite build` 成功。
+- `bun run check`（lint + 三个 tsconfig + 202 个单元测试）全部通过；`bun run test:e2e`（Playwright 驱动 Electron）3 个用例通过；`electron-vite build` 成功。
 - 开发版走过"复制模板 → 编辑 → 保存 → 使用 → 扫码"和"添加常用备注 → 下拉框切换 → 扫码"。
 - 语音预热在 Electron 中真实生成 6 段 mp3 缓存。
 - `electron-builder --mac dir` 打包后能启动，fuses 生效。
@@ -3409,6 +3409,12 @@ describe('renderLabelHtml', () => {
     expect(html).toContain('&lt;b&gt;');
     expect(html).toContain('&lt;img src=x&gt;');
   });
+
+  test('titles the page with the label code so print queues show it instead of the data URL', async () => {
+    expect(await render()).toContain('<title>CL5640-TK-图片色-XL</title>');
+    const escaped = await render(STANDARD_TEMPLATE, { raw: '<b>-红-36', code: '<b>', color: '红', size: '36' });
+    expect(escaped).toContain('<title>&lt;b&gt;-红-36</title>');
+  });
 });
 
 describe('escapeHtml', () => {
@@ -3533,6 +3539,7 @@ export async function renderLabelHtml(job: LabelJob): Promise<string> {
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
+<title>${escapeHtml(label.raw)}</title>
 <style>
   @page { size: ${mm(width)} ${mm(height)}; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -10016,7 +10023,7 @@ export interface DriverPaperProps {
 
 - [ ] **Step 9: 验证并提交**
 
-Run: `bun run check && bun run test:e2e` → 201 个单元测试、3 个 E2E 全部通过。
+Run: `bun run check && bun run test:e2e` → 202 个单元测试、3 个 E2E 全部通过。
 
 真机冒烟：
 - Windows：选中标签机，如果驱动默认纸张不是 60×40，选中行下面出现橙色提示。点「打开打印首选项」，打开的是该打印机的首选项窗口；改成 60×40 并关闭后，提示变为「驱动纸张 60×40mm · 203dpi」。
@@ -10250,7 +10257,7 @@ docs/          设计文档、实施计划与路线图
 - [ ] **Step 5: 本地全量检查**
 
 Run: `bun run check && bun run test:e2e`
-Expected: Biome 无问题，三个 tsconfig 零错误，201 个单元测试和 3 个 E2E 全部通过，构建成功。
+Expected: Biome 无问题，三个 tsconfig 零错误，202 个单元测试和 3 个 E2E 全部通过，构建成功。
 
 - [ ] **Step 6: Commit 并推送，确认 CI 通过**
 

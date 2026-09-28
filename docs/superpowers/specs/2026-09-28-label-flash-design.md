@@ -247,7 +247,9 @@ src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models�
 - **进程异常**：渲染进程崩溃时自动重新加载；窗口无响应时写日志。
 - **关机与注销**：监听 Windows 的 `query-session-end` / `session-end` 事件，放行窗口关闭并关闭数据库，不阻塞关机。
 - **启动失败**：弹出中文提示，并附上日志目录。
-- **开机自启**：用 `setLoginItemSettings({ openAtLogin, name: appId })` 注册。卸载时，NSIS 脚本按同一个值名删除 `HKCU\…\Run` 中的启动项。
+- **开机自启**：默认开启。用 `setLoginItemSettings({ openAtLogin, name: appId })` 注册。卸载时，NSIS 脚本按同一个值名删除 `HKCU\…\Run` 中的启动项。
+  - 安装完成页默认勾选「运行」，程序首次运行就按默认设置注册启动项，所以装完即生效；取消了勾选的话，第一次打开程序时注册。
+  - 只由程序按设置注册，安装脚本不写启动项：自动更新会静默重新运行安装程序，写在安装脚本里就会覆盖用户在设置里关掉的选择。
 
 ## 11. 构建与发布
 

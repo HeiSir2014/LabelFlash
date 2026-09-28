@@ -26,10 +26,15 @@ describe('sanitizeSettings', () => {
       autoPrint: false,
       dedupWindowSeconds: 30,
       historyLimit: 20_000,
-      launchAtLogin: true,
+      launchAtLogin: false,
       voice: { enabled: false, name: 'zh-CN-YunxiNeural', ratePercent: 30 },
     };
     expect(sanitizeSettings(settings)).toEqual(settings);
+  });
+
+  test('starts with the computer by default, so a scan station is ready right after the installer finishes', () => {
+    expect(DEFAULT_SETTINGS.launchAtLogin).toBe(true);
+    expect(sanitizeSettings({}).launchAtLogin).toBe(true);
   });
 
   test('sanitizes voice settings and snaps the rate to 10% steps', () => {

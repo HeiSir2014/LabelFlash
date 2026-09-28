@@ -34,7 +34,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoPrint: true,
   dedupWindowSeconds: 3,
   historyLimit: 100_000,
-  launchAtLogin: false,
+  // 默认开机自启：安装程序结束时会运行一次本程序，首次运行即注册启动项，扫码台开机就能用。
+  // 只由程序按设置注册（不在安装脚本里写），自动更新重新运行安装程序时不会覆盖用户关掉的选择。
+  launchAtLogin: true,
   voice: { enabled: true, name: DEFAULT_VOICE_NAME, ratePercent: 0 },
 };
 

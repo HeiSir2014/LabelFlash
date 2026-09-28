@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { app, type BrowserWindow, dialog, Menu, session } from 'electron';
+import { app, type BrowserWindow, dialog, Menu } from 'electron';
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
@@ -12,11 +12,13 @@ import { systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
 import { minutesToMs } from '../shared/settings';
+import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { registerIpc } from './ipc';
 import { setupLogging } from './logging';
 import { resolvePrintTemplate } from './print-template';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { PrinterStatusMonitor, queryPrinterReadiness } from './printing/printer-status';
+import { denyAllPermissions, hardenAllWebContents } from './security';
 import { openDatabase } from './storage/database';
 import { SqliteJobStore } from './storage/sqlite-job-store';
 import { SqliteSettingsStore } from './storage/sqlite-settings-store';
@@ -34,8 +36,13 @@ let isQuitting = false;
 // 数据、日志、Chromium 缓存都放 %LOCALAPPDATA%\CDL-LabelFlash（本机目录，不进漫游配置）。
 app.setPath('userData', join(process.env['LOCALAPPDATA'] ?? app.getPath('appData'), BRAND.productNameAscii));
 
+// 以下都必须在 app ready 之前完成。
+registerAppScheme();
+// 所有渲染进程（主窗口、打印窗口）一律进沙箱。
+app.enableSandbox();
+hardenAllWebContents();
 if (app.isPackaged) {
-  // 在 ready 之前去掉默认菜单：它的快捷键（刷新、开发者工具、缩放）在安装版里会破坏扫码状态和预览比例。
+  // 去掉默认菜单：它的快捷键（刷新、开发者工具、缩放）在安装版里会破坏扫码状态和预览比例。
   Menu.setApplicationMenu(null);
 }
 
@@ -79,7 +86,8 @@ async function bootstrap(): Promise<void> {
   const logPath = setupLogging();
   console.info(`[app] ${BRAND.productName} ${app.getVersion()} starting`);
   app.setAppUserModelId(BRAND.appId);
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  denyAllPermissions();
+  handleAppScheme(join(__dirname, '../renderer'));
 
   const dataPath = app.getPath('userData');
   database = openDatabase(join(dataPath, DATABASE_FILE_NAME));

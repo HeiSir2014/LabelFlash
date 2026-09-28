@@ -1,5 +1,5 @@
 import { dirname } from 'node:path';
-import { type BrowserWindow, ipcMain, shell, type WebContents } from 'electron';
+import { type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, ipcMain, shell } from 'electron';
 import type { PrintService } from '../core/print-service';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
@@ -36,12 +36,16 @@ export interface IpcDeps {
   onSettingsChanged: (next: AppSettings, previous: AppSettings) => Promise<void>;
 }
 
-/** 渲染进程不可信：只接受主窗口发来的消息，所有参数先校验再进入业务层。 */
+/**
+ * 渲染进程不可信（Electron 安全清单第 17 条）：只接受主窗口主 frame 发来的消息，
+ * 所有参数先校验再进入业务层。
+ */
 export function registerIpc(deps: IpcDeps): void {
-  const isTrusted = (sender: WebContents) => sender === deps.getWindow()?.webContents;
+  const isTrusted = (event: IpcMainEvent | IpcMainInvokeEvent) =>
+    event.sender === deps.getWindow()?.webContents && event.senderFrame === event.sender.mainFrame;
   const handle = (channel: string, listener: (...args: unknown[]) => unknown) => {
     ipcMain.handle(channel, (event, ...args: unknown[]) => {
-      if (!isTrusted(event.sender)) {
+      if (!isTrusted(event)) {
         throw new Error(`Rejected IPC from untrusted sender on ${channel}`);
       }
       return listener(...args);
@@ -49,7 +53,7 @@ export function registerIpc(deps: IpcDeps): void {
   };
   const on = (channel: string, listener: () => void) => {
     ipcMain.on(channel, (event) => {
-      if (isTrusted(event.sender)) {
+      if (isTrusted(event)) {
         listener();
       }
     });

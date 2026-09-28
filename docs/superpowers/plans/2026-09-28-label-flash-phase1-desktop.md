@@ -24,11 +24,11 @@
 - 本计划的全部代码都来自一个已跑通的参考工程。
 - `bun run check`（lint + 三个 tsconfig + 203 个单元测试）全部通过；`bun run test:e2e`（Playwright 驱动 Electron）3 个用例通过；`electron-vite build` 成功。
 - 开发版走过"复制模板 → 编辑 → 保存 → 使用 → 扫码"和"添加常用备注 → 下拉框切换 → 扫码"。
-- 语音预热在 Electron 中真实生成 6 段 mp3 缓存。
+- 语音预热在 Electron 中真实生成全部 mp3 缓存（13C 为 6 句，13I 扩充到 18 句）。
 - `electron-builder --mac dir` 打包后能启动，fuses 生效。
 
 **v3 修订（最终 review）：**
-- 任务顺序：Task 0–13 → Task 13A–13F（本版新增）→ Task 14。
+- 任务顺序：Task 0–13 → Task 13A–13F（本版新增）→ Task 14 → Task 13G–13I（Phase 1 完成后的改进，发布第一个版本之前完成）。
 - 13F 驱动纸张检测来自标签机适配调研：驱动出厂默认纸张不是 60×40 是现场最可能出现的问题。Windows 读取脚本已在 Windows 真机上验证，macOS 读取和提示界面已在接了真实打印机的 Mac 上验证。
 - 新增：`app://` 自定义协议、全局 webContents 加固、主 frame 校验、自动更新、E2E、语音播报、打印机异常系统通知。
 - Task 14 的 electron-builder / CI / README 改为发布到 GitHub Releases 的版本。
@@ -37,9 +37,9 @@
 
 - Spec：`docs/superpowers/specs/2026-09-28-label-flash-design.md`（v3）。
 - **品牌与命名**：CDL = 陈大露。产品名 `CDL-云签速印`，ASCII 名 `CDL-LabelFlash`，appId `com.cdl.labelflash`，包名 `cdl-labelflash`，安装包 `CDL-LabelFlash-Setup-${version}.exe`。
-- **数据目录**：`%LOCALAPPDATA%\CDL-LabelFlash`，包含 `labelflash.db`、`logs\main.log`。
+- **数据目录**：`%LOCALAPPDATA%\CDL-LabelFlash`，包含 `labelflash.db`、`logs\labelflash-YYYY-MM-DD.log`（按天一个文件，保留 14 天）、`voice-cache\`。
 - **纸张**：固定 60×40mm 背胶标签。二维码内容为 `编码-颜色-尺码`，从右往左拆；尺码是文本（S/M/L/XL/XXL/均码/36.5 都合法）。
-- **门限**：窗口默认 10 分钟，范围 0–1440 分钟。超时按已打印处理；确定没有出纸的失败释放占位；force 不跳过正在打印的码。
+- **门限**：窗口按秒，默认 3 秒，范围 0–86400 秒（Task 13H；此前的任务按分钟编写）。超时按已打印处理；确定没有出纸的失败释放占位；force 不跳过正在打印的码；界面不再另外去抖。
 - **打印记录**：环形保留，默认 100,000 条，范围 1,000–1,000,000；插入和裁剪在同一个事务里完成；界面每页 100 条；搜索走 FTS5 trigram。
 - **模板**：结构化数据，所有输入都经过 `sanitizeTemplate`；内置模板只读；预览和打印共用 `renderLabelHtml`。
 - **安全**：
@@ -4080,6 +4080,14 @@ Expected: 本任务 4 pass、0 fail；tsc 无输出；Biome 无问题。此时 `
 
 - [ ] **Step 7: 创建 `src/main/logging.ts`**
 
+> 实施中已按用户要求重新设计日志（提交 `e7e38c1`，以仓库中的 `src/main/logging.ts` 为准）：
+> - 按天命名：`logs/labelflash-YYYY-MM-DD.log`（本地日期）。同一天超过 5MB 时滚动为 `.1` / `.2` / `.3.log`。
+> - 保留最近 14 天，启动和跨天时清理，不动不符合命名的文件。
+> - 每行是纯文本，格式如 `2026-09-28T09:05:12.345+08:00 [info]  [app] …`（ISO 8601，带时区偏移）。
+> - `AppInfo.logPath` 改名为 `logsDir`。
+>
+> 下面是最初的单文件版本，留作对照。
+
 ```ts
 import { join } from 'node:path';
 import { app, crashReporter, type WebContents } from 'electron';
@@ -4786,7 +4794,7 @@ Expected: Biome 无问题；两个 tsconfig 零错误；测试全部通过；构
 - [ ] **Step 24: 执行**
 
 Run: `bun run dev`
-Expected: 出现无边框窗口，显示「CDL-云签速印：外壳已就绪」；托盘出现图标；`<数据目录>/labelflash.db`、`logs/main.log` 被创建（macOS 开发机在 `~/Library/Application Support/CDL-LabelFlash/`）。从托盘「退出」关闭。
+Expected: 出现无边框窗口，显示「CDL-云签速印：外壳已就绪」；托盘出现图标；`<数据目录>/labelflash.db`、`logs/labelflash-<当天日期>.log` 被创建（macOS 开发机在 `~/Library/Application Support/CDL-LabelFlash/`）。从托盘「退出」关闭。
 
 - [ ] **Step 25: Commit**
 
@@ -9137,7 +9145,7 @@ Expected: 全部零错误、测试全部通过、构建成功。
    - 在记录数大于新上限时调小上限：出现删除确认条。
    - 「关于」显示 CDL-云签速印、版本号、陈大露（CDL）和数据目录。
    - 「打开日志目录」能打开 `logs/`。
-11. 在 DevTools 执行 `console.error('x')`：`logs/main.log` 出现 `[renderer] x`。
+11. 在 DevTools 执行 `console.error('x')`：当天的 `logs/labelflash-YYYY-MM-DD.log` 出现 `[renderer] x`。
 12. 系统开启「减少动态效果」后，预览不再有滑入动画。
 
 - [ ] **Step 20: Commit**
@@ -10048,6 +10056,239 @@ git commit -m "feat: warn when the printer driver's default paper is not 60x40"
 
 ---
 
+> **Task 13G–13I** 是 Phase 1 实施完成后用户提出的三项改进。参考实现都在分支 `ref/v3-reference`，逐项对应以下提交：`245de10`（13G）、`7a45ddc`（13H）、`66c3936`（13I）。
+> - 每项都已通过 `bun run check` 和 `bun run test:e2e`，并在接了真实打印机的 Mac 上验证过。
+> - 下面给出新文件的完整代码、接口和测试要点；对已有文件的改动，以对应提交的 diff 为准（`git show <提交> -- <文件>`）。
+
+### Task 13G: 模板悬停预览
+
+鼠标（或键盘焦点）在模板行上停留 1 秒，预览区就用这个模板渲染：有扫码时用当前编码，没有时用示例标签，并套用备注下拉框的选择。预览角标显示「预览 · 模板名 · 点『使用』后才会用于打印」，这一行显示「预览中」。在行之间移动时，保持上一个预览，直到新的一行停满 1 秒。离开列表、切走标签页或进入编辑时，立即恢复。打印始终使用「使用中」的模板。
+
+**Files:**
+- Create: `src/renderer/src/lib/hover-intent.ts`, `src/renderer/src/lib/hover-intent.test.ts`, `src/renderer/src/view-models/use-hover-preview.ts`
+- Modify: `src/renderer/src/components/TemplatePanel.tsx`（列表拆成 `TemplateList` 子组件，卸载时清除预览；新增 `previewId`、`onPreviewChange`；`ul` 上 `onPointerLeave` / `onBlur`（焦点移出列表才算离开），`li` 上 `onPointerEnter` / `onFocus`；徽章「预览中」；说明文字加「鼠标在模板上停留 1 秒即可预览」），`src/renderer/src/App.tsx`（`hoverTemplateId` 状态；`previewTemplate = draft ?? hoverTemplate ?? (scan ? null : effectiveTemplate)`；悬停的是使用中的模板时忽略），`src/renderer/src/styles/app.css`（`.template-row--previewing`、`.badge--preview`，都用虚线），`e2e/app.e2e.ts`（新增悬停用例）
+
+**Interfaces:**
+- `HOVER_PREVIEW_DELAY_MS = 1_000`；`interface IntentTimers { set(callback, ms): number; clear(handle): void }`。
+- `class HoverIntent<T>(delayMs, onChange: (value: T | null) => void, timers)`：
+  - `enter(value)`：停留满 `delayMs` 才上报；进入已在预览的项时不重复上报。
+  - `leave()`：立即上报 `null`，并取消还没触发的计时。
+- `useHoverPreview(onChange): HoverIntent<string>`：组件卸载时调用 `leave()`。
+
+- [ ] **Step 1: 写失败的测试 `hover-intent.test.ts`**（5 个，用手动推进的假计时器）：
+  - 停留满 1 秒才上报。
+  - 一扫而过的行不上报。
+  - 在行之间移动时保留当前预览，满 1 秒后才切换。
+  - 离开列表立即清除，并取消还没触发的预览。
+  - 同一行不重复上报。
+- [ ] **Step 2: 实现 `hover-intent.ts`**
+
+```ts
+/** 指针在模板上停留这么久才预览：一扫而过不会让预览来回跳。 */
+export const HOVER_PREVIEW_DELAY_MS = 1_000;
+
+export interface IntentTimers {
+  set(callback: () => void, ms: number): number;
+  clear(handle: number): void;
+}
+
+/**
+ * 悬停意图：进入某一项后停留满 delayMs 才上报；在项之间移动时保留当前上报的项，
+ * 直到新的一项停留满时间；离开整个列表时立即清除（上报 null）。
+ */
+export class HoverIntent<T> {
+  private timer: number | null = null;
+  private current: T | null = null;
+
+  constructor(
+    private readonly delayMs: number,
+    private readonly onChange: (value: T | null) => void,
+    private readonly timers: IntentTimers,
+  ) {}
+
+  enter(value: T): void {
+    this.cancelPending();
+    if (value === this.current) {
+      return;
+    }
+    this.timer = this.timers.set(() => {
+      this.timer = null;
+      this.current = value;
+      this.onChange(value);
+    }, this.delayMs);
+  }
+
+  leave(): void {
+    this.cancelPending();
+    if (this.current !== null) {
+      this.current = null;
+      this.onChange(null);
+    }
+  }
+
+  private cancelPending(): void {
+    if (this.timer !== null) {
+      this.timers.clear(this.timer);
+      this.timer = null;
+    }
+  }
+}
+```
+
+- [ ] **Step 3: 接入 `use-hover-preview.ts`、`TemplatePanel.tsx`、`App.tsx`、`app.css`**（照 `245de10`）。
+- [ ] **Step 4: E2E 用例**：在「二维码在右」上悬停；0.5 秒时角标仍是「示例 · 标准（二维码在左）」；满 1 秒后变为「预览 · 二维码在右 · 点「使用」后才会用于打印」，这一行显示「预览中」，标签 `body` 带 `layout-qr-right`，「使用中」的模板没变；把鼠标移到扫码框，立即恢复。
+- [ ] **Step 5: 验证并提交**：`bun run check && bun run test:e2e`；`git commit -m "feat(templates): preview a template by resting the pointer on it"`
+
+---
+
+### Task 13H: 防重复窗口改为按秒（默认 3 秒），只保留一道门限
+
+按分钟设置不合理：这个窗口主要用来吸收扫码枪连按。另外，界面层原来有一个 1 秒去抖（`RepeatFilter`），会把重复扫码静默丢掉，既不提示，也不记录，设置里填 0 也关不掉它。本任务把它删掉，所有重复都交给主进程门限处理。
+
+**Files:**
+- Modify: `src/shared/settings.ts`（`dedupWindowSeconds`，默认 3；`MAX_DEDUP_WINDOW_SECONDS = MAX_DEDUP_WINDOW_MS / 1000`；`secondsToMs` 取代 `minutesToMs`），`src/main/index.ts`（两处 `secondsToMs(… .dedupWindowSeconds)`），`src/renderer/src/components/SettingsForm.tsx`（单位「秒」；说明「同一标签在这段时间内只打一次，防止扫码枪连按重复出纸；填 0 表示不拦截」），`src/renderer/src/lib/status-text.ts`（`formatWindow` 按能整除的最大单位显示），`src/renderer/src/view-models/use-scan-station.ts`（去掉 `RepeatFilter`）
+- Delete: `src/renderer/src/lib/repeat-filter.ts`, `src/renderer/src/lib/repeat-filter.test.ts`
+- Tests: `settings.test.ts`（默认 3 秒；夹取与取整）、`sqlite-settings-store.test.ts`、`status-text.test.ts`
+
+```ts
+/** 防重复窗口用能整除的最大单位显示：3 秒、90 秒、10 分钟、2 小时。 */
+export function formatWindow(windowMs: number): string {
+  const seconds = Math.round(windowMs / MS_PER_SECOND);
+  if (seconds < SECONDS_PER_MINUTE || seconds % SECONDS_PER_MINUTE !== 0) {
+    return `${seconds} 秒`;
+  }
+  const minutes = seconds / SECONDS_PER_MINUTE;
+  if (minutes >= MINUTES_PER_HOUR && minutes % MINUTES_PER_HOUR === 0) {
+    return `${minutes / MINUTES_PER_HOUR} 小时`;
+  }
+  return `${minutes} 分钟`;
+}
+```
+
+- 旧的 `dedupWindowMinutes` 不做兼容（软件还没发布过）：存着的旧值会被忽略，按默认值 3 秒处理。
+- [ ] **验证**：`bun run check && bun run test:e2e`。真机：同一个码连扫两次，第二次显示「刚刚已打印过，3 秒内同一标签只打一次」；等 3.5 秒后再扫，正常出纸。已在 Mac 真机上验证，CUPS 正好收到 2 个任务。
+- [ ] **提交**：`git commit -m "feat(dedup): window in seconds, default 3s, one dedup path"`
+
+---
+
+### Task 13I: 语音播报扩充到 18 句，并按级别调度
+
+**Files:**
+- Modify:
+  - `src/shared/printer-readiness.ts`：`PRINTER_ISSUES`；`PrinterReadiness` 未就绪时带 `issue`。
+  - `src/main/printing/printer-status.ts`：每个状态标志同时对应中文说明和问题分类；按优先级取问题分类。
+  - `src/core/errors.ts`：`PrintError` 第三个参数改为 `{ detail?, issue? }`。
+  - `src/core/types.ts`：失败结果带 `issue?`。
+  - `src/main/printing/electron-driver-adapter.ts`：抛错时带上 `issue`。
+  - `src/shared/voice.ts`：18 句文案、`VOICE_LEVELS`、`VOICE_CUE_LEVEL`、`VOICE_LEVEL_LABEL`。
+  - `src/renderer/src/lib/feedback-cues.ts`：`PrintMode`；`cueFeedback`；兜底提示音按级别选。
+  - `src/renderer/src/lib/voice-player.ts`：返回 `Playback | null`。
+  - `src/renderer/src/view-models/use-feedback.ts`：`playAudio` 返回可停止的播放句柄；`VoiceScheduler`；`preview(cue?)`。
+  - `src/renderer/src/view-models/use-scan-station.ts`：结果事件带 `mode`（强制补打 `force`、打印记录重打 `history`、扫码 `scan`）。
+  - `src/renderer/src/App.tsx`：测试页也播报。
+  - `SettingsForm.tsx`、`VoiceSettingsSection.tsx`、`app.css`：「全部播报语」分组列表，逐句试听。
+- Create: `src/renderer/src/lib/voice-scheduler.ts`, `src/renderer/src/lib/voice-scheduler.test.ts`
+- Tests: `printer-status.test.ts`（问题分类）、`print-service.test.ts`（失败结果带 `issue`）、`voice.test.ts`（8 个：打印方式、重复与正在打印、打印机问题、非打印事件、每句都有文案和级别；播放器返回句柄或 null）、`voice-clips.test.ts`（期望值改用 `VOICE_CUE_TEXT.printed`）、`printer-chip.test.ts`
+
+文案（和状态栏用词一致）：
+
+| 级别 | cue → 文案 |
+|---|---|
+| 故障 | paperOut 打印机缺纸 · paperJam 打印机卡纸 · doorOpen 打印机盖没关好 · printerOffline 打印机离线 · printerNotReady 打印机需要处理 · printerNotFound 找不到打印机 · timeout 打印机没有响应，请检查是否出纸 · failed 打印失败 · internalError 程序出错，请重试 |
+| 提醒 | duplicate 重复扫码，已拦截 · stillPrinting 正在打印，请稍候 · invalid 二维码格式不对 · noPrinter 请先选择打印机 |
+| 确认 | printed 已发送打印 · forced 已补打 · reprinted 已重打 · testPrinted 测试页已发送 · scanned 已扫描，按 F2 打印 |
+
+`src/renderer/src/lib/voice-scheduler.ts`：
+
+```ts
+import type { VoiceLevel } from '../../../shared/voice';
+
+/** 一次正在进行的播放。stop() 立即停止，并让 finished 完成。 */
+export interface Playback {
+  stop(): void;
+  finished: Promise<void>;
+}
+
+/** 开始播放一条播报；返回 null 表示没有播出语音（调用方已改用提示音），视为立即结束。 */
+export type StartPlayback<T> = (item: T) => Promise<Playback | null>;
+
+const LEVEL_RANK: Record<VoiceLevel, number> = { confirm: 0, notice: 1, alert: 2 };
+
+interface Current {
+  token: number;
+  level: VoiceLevel;
+  playback: Playback | null;
+}
+
+/**
+ * 播报调度：不排长队，也不一律打断。
+ * - 新播报级别不低于正在播的：停掉旧的，立刻播新的（连续扫码时总是听到最新结果）。
+ * - 级别更低：等当前这句播完再播；等待中的只保留最新一条，不积压过时的播报。
+ * 这样故障提示不会被随后的确认音盖掉，确认音也不会在几秒后才姗姗来迟。
+ */
+export class VoiceScheduler<T> {
+  private current: Current | null = null;
+  private pending: { item: T; level: VoiceLevel } | null = null;
+  private nextToken = 0;
+
+  constructor(private readonly start: StartPlayback<T>) {}
+
+  announce(item: T, level: VoiceLevel): void {
+    if (this.current && LEVEL_RANK[level] < LEVEL_RANK[this.current.level]) {
+      this.pending = { item, level };
+      return;
+    }
+    this.pending = null;
+    this.current?.playback?.stop();
+    void this.run(item, level);
+  }
+
+  private async run(item: T, level: VoiceLevel): Promise<void> {
+    this.nextToken += 1;
+    const token = this.nextToken;
+    const current: Current = { token, level, playback: null };
+    this.current = current;
+    let playback: Playback | null = null;
+    try {
+      playback = await this.start(item);
+    } catch (error) {
+      console.error('[voice] playback failed to start', error);
+    }
+    if (this.current?.token !== token) {
+      // 加载期间已被更新的播报取代：这一句不再播。
+      playback?.stop();
+      return;
+    }
+    current.playback = playback;
+    await playback?.finished.catch(() => undefined);
+    if (this.current?.token !== token) {
+      return;
+    }
+    this.current = null;
+    const next = this.pending;
+    this.pending = null;
+    if (next) {
+      void this.run(next.item, next.level);
+    }
+  }
+}
+```
+
+- [ ] **Step 1: 写失败的测试**
+  - `voice-scheduler.test.ts`（6 个）：
+    - 同级新播报打断旧的。
+    - 更高级别立即打断。
+    - 更低级别等待，只保留最新一条。
+    - 等待中的播报被同级或更高级别打断后丢弃。
+    - 播不出语音的视为立即结束。
+    - 加载完成时已被取代的片段会被停掉。
+  - 其余测试按上面的清单修改。
+- [ ] **Step 2: 实现**（照 `66c3936`）。
+- [ ] **Step 3: 验证**：`bun run check && bun run test:e2e`。真机：启动后 18 个 mp3 全部生成（Mac 上实测约 22 秒）；设置页逐句试听；在「打印机缺纸」播报时点「已扫描」，要等缺纸那句播完才播；在「已发送打印」播报时点「打印机卡纸」，立即打断。
+- [ ] **提交**：`git commit -m "feat(voice): 18 cues by outcome with level-based interruption"`
+
+---
+
 ### Task 14: 打包、CI、README、Windows 验收、推送与 PR
 
 **Files:**
@@ -10134,7 +10375,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     tags: ['v*']
   pull_request:
 
@@ -10200,7 +10441,7 @@ CDL 出品的样衣标签重打工具。用扫码枪扫描样衣标签上的二�
 ## 功能
 
 - **扫码即打**：扫码后自动预览、自动打印；也可以切换成手动模式，预览确认后按 F2 打印。
-- **防重复打印**：同一张标签在设定时间内（默认 10 分钟）只打印一次。重启软件后这个时间窗口依然有效。需要再打一张时，可以用"强制补打"。
+- **防重复打印**：同一张标签在设定时间内（默认 3 秒，可调）只打印一次，防止扫码枪连按重复出纸。拦截时会提示和播报。需要再打一张时，可以用"强制补打"。
 - **打印模板**：
   - 内置 5 套 60×40mm 模板。
   - 可以复制成自定义模板后自由调整：二维码的位置、尺寸和容错等级，每个字段的显示、前缀、字号和加粗，按区域统一的对齐方式，以及备注文字。
@@ -10223,7 +10464,7 @@ CDL 出品的样衣标签重打工具。用扫码枪扫描样衣标签上的二�
 | 路径 | 内容 |
 |---|---|
 | `labelflash.db` | SQLite 数据库（Electron 内置 `node:sqlite`），包含设置、自定义模板和打印记录 |
-| `logs\main.log` | 运行日志，超过 5MB 自动轮转。遇到问题时，把这个文件发给维护人员 |
+| `logs\labelflash-YYYY-MM-DD.log` | 运行日志，每天一个文件，同一天超过 5MB 自动滚动，保留最近 14 天。遇到问题时，把当天的文件发给维护人员 |
 | `voice-cache\` | 语音播报的 mp3 缓存，可随时删除，下次会重新生成 |
 
 ## 扫码枪设置
@@ -10245,7 +10486,7 @@ bun run dist:win   # 在 Windows 上打 NSIS 安装包，输出到 dist/
 
 GitHub Actions 在 Windows 上运行：
 
-- 推送到 `main` 或提交 PR：执行检查和 E2E 测试，并上传安装包产物。
+- 推送到 `master` 或提交 PR：执行检查和 E2E 测试，并上传安装包产物。
 - 推送 `v*` 标签：electron-builder 把安装包和 `latest.yml` 发布到 GitHub Release，已安装的客户端会自动更新。
 
 发布新版本：
@@ -10285,16 +10526,19 @@ Expected: `check`（含 E2E）和 `package` 两个 job 都成功，产物 `CDL-L
 
 从 CI 产物下载安装包，或者在 Windows 上执行 `bun install && bun run dist:win`。可以用 xremote 远程操作。把每一项的结果（通过 / 未通过，以及具体现象）记到 `docs/windows-acceptance.md`：
 
-1. **安装**：安装包未签名，SmartScreen 需要点「仍要运行」。可以选择安装目录；桌面快捷方式名是「CDL-云签速印」。启动后，`%LOCALAPPDATA%\CDL-LabelFlash\labelflash.db` 和 `logs\main.log` 都会被创建。
+1. **安装**：安装包未签名，SmartScreen 需要点「仍要运行」。可以选择安装目录；桌面快捷方式名是「CDL-云签速印」。启动后，`%LOCALAPPDATA%\CDL-LabelFlash\labelflash.db` 和 `logs\labelflash-<当天日期>.log` 都会被创建。
 2. **打印机**：列表显示本机全部打印机。用搜索框能按名称过滤到目标热敏标签机；选中后，胶囊显示「就绪」。
 3. **持久化**：选择打印机、切换模板、关闭自动打印，然后从托盘退出，再重新启动，所有选择都保留。
 4. **测试页与版面**：打测试页，量一下是不是 60×40mm、有没有缩放或分页。如果有缩放，在「打印机属性 › 首选项」里把纸张设成 60×40mm，并把设置步骤写进记录。
 5. **扫码枪中文**：扫原标签（`CL5640-TK-图片色-36`）。如果出现乱码或格式错误，按说明书扫「中文输出 / Windows Unicode」设置码，并确认输入法是英文状态。把最终需要的设置写进记录。
 6. **字母尺码**：用手动输入测试 `CL5640-TK-图片色-XL`、`…-XXL`、`…-均码`，都能正确解析并打印。
-7. **自动打印**：扫码后预览出现并且出纸，状态条变绿「已发送打印」，有短高音；扫码到出纸不超过 2 秒。
-8. **门限**：10 分钟内再扫同一张 → 橙色「重复扫码，已拦截」，不出纸。「强制补打」需要点两次才出纸，记录里显示「已补打」。
-9. **重启后门限仍然有效**：打印一张 → 退出 → 重启 → 再扫同一张，依然被拦截。
-10. **手动模式**：扫码只预览，按 F2 才出纸。窗口期内的码按 F2 会被拦截并提示。
+7. **自动打印**：扫码后预览出现并且出纸，状态条变绿「已发送打印」，播报「已发送打印」；扫码到出纸不超过 2 秒。
+8. **门限**：
+    - 用扫码枪快速连按同一张：只出一张纸，第二次显示橙色「重复扫码，已拦截」，并播报。
+    - 等 3 秒以上再扫：正常出纸。
+    - 「强制补打」需要点两次才出纸，播报「已补打」，记录里显示「已补打」。
+9. **重启后门限仍然有效**：把防重复时间调到 60 秒 → 打印一张 → 退出 → 重启 → 60 秒内再扫同一张，依然被拦截。
+10. **手动模式**：扫码只预览，播报「已扫描，按 F2 打印」，按 F2 才出纸。窗口期内的码按 F2 会被拦截并提示。
 11. **模板**：
     - 复制一套模板，改成二维码在右，加上备注 `样衣间 {日期}`，保存并使用。
     - 实际出纸和预览一致，备注在空白区，日期正确。
@@ -10310,9 +10554,14 @@ Expected: `check`（含 E2E）和 `package` 两个 job 都成功，产物 `CDL-L
 18. **开机自启**：打开开关，注销后重新登录，窗口自动打开并且可以直接扫码。
 19. **关机不阻塞**：程序运行时关机或注销，不会出现「此应用阻止关机」。
 20. **高 DPI**：在 125% 和 150% 缩放下，界面和托盘图标都清晰，预览比例正确。
-21. **日志**：「打开日志目录」能打开 `logs\`，`main.log` 里有启动记录和打印失败记录。
+21. **日志**：「打开日志目录」能打开 `logs\`，当天的 `labelflash-YYYY-MM-DD.log` 里有启动记录和打印失败记录，每行以带时区的时间开头。
 22. **卸载**：卸载后，`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 里没有残留的 `com.cdl.labelflash`。
-23. **语音**：联网首次启动后，`voice-cache\` 下生成 6 个 mp3。扫码、打印后播报对应短语；调节语速后「试听」生效。断网后已缓存的短语照常播报；没有缓存时退回提示音。
+23. **语音**：
+    - 联网首次启动后，`voice-cache\` 下生成 18 个 mp3。
+    - 扫码、打印后播报对应短语；缺纸、开盖、拔线时分别播报「打印机缺纸」「打印机盖没关好」「打印机离线」（以驱动实际报告为准）。
+    - 设置页「全部播报语」逐句可试听；调节语速后「试听」生效。
+    - 故障播报时紧接着扫码：故障那句播完后才播新结果。
+    - 断网后已缓存的短语照常播报；没有缓存时退回提示音。
 24. **异常通知**：标签机缺纸或断开后，弹出系统通知「打印机需要处理：…」，点击回到主窗口；30 分钟内同类问题不重复弹。
 25. **自动更新**：发布一个更高版本的 `v*` 标签后，已安装的客户端在 15 秒到 4 小时内下载完成，标题栏出现「重启更新」，确认后完成升级，数据保留。
 26. **驱动纸张**：
@@ -10334,7 +10583,7 @@ Expected: `check`（含 E2E）和 `package` 两个 job 都成功，产物 `CDL-L
 git add docs/windows-acceptance.md
 git commit -m "docs: Windows acceptance record for phase 1"
 git push
-gh pr create --base main --head feature/phase1-desktop-client \
+gh pr create --base master --head feature/phase1-desktop-client \
   --title "CDL-云签速印 Phase 1：Windows 桌面客户端" \
   --body-file docs/windows-acceptance.md
 ```

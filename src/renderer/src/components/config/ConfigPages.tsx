@@ -5,6 +5,7 @@ import type { UpdateView } from '../../lib/update-text';
 import { AboutPage, type AboutPageProps } from './pages/AboutPage';
 import { GeneralPage } from './pages/GeneralPage';
 import { LookupTablesPage, type LookupTablesPageProps } from './pages/LookupTablesPage';
+import { MobilePage, type MobilePageProps } from './pages/MobilePage';
 import { NotePresetsPage } from './pages/NotePresetsPage';
 import { RulesPage, type RulesPageProps } from './pages/RulesPage';
 import { SecretsPage, type SecretsPageProps } from './pages/SecretsPage';
@@ -28,6 +29,7 @@ interface ConfigPagesProps {
   lookup: LookupTablesPageProps;
   secrets: SecretsPageProps;
   webhooks: Omit<WebhooksPageProps, 'webhooks' | 'onChange' | 'onOpenPage'>;
+  mobile: Pick<MobilePageProps, 'defaultRelayUrl' | 'statusText'>;
   general: GeneralPageExtras;
   about: AboutPageProps;
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
@@ -45,6 +47,7 @@ export function ConfigPages({
   lookup,
   secrets,
   webhooks,
+  mobile,
   general,
   about,
   onChange,
@@ -74,6 +77,14 @@ export function ConfigPages({
           webhooks={settings.webhooks}
           onChange={async (next) => (await onChange({ webhooks: next })) !== null}
           onOpenPage={onOpenPage}
+        />
+      );
+    case 'mobile':
+      return (
+        <MobilePage
+          {...mobile}
+          relayUrl={settings.mobileRelayUrl}
+          onChangeRelayUrl={async (mobileRelayUrl) => (await onChange({ mobileRelayUrl })) !== null}
         />
       );
     case 'voice':

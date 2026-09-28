@@ -6,6 +6,7 @@ import { ConfigCenter } from './components/config/ConfigCenter';
 import { ConfigPages } from './components/config/ConfigPages';
 import { ConfirmDialog } from './components/config/ConfirmDialog';
 import { JobLog } from './components/JobLog';
+import { MOBILE_QR_SIZE_PX, MobileOverlay } from './components/MobileOverlay';
 import { NoticeBar } from './components/NoticeBar';
 import type { PreviewOverride } from './components/PreviewStage';
 import { PrinterList } from './components/PrinterList';
@@ -13,6 +14,7 @@ import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
+import { describeMobileButton, describeMobileOverlay, describeMobileState } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
 import { describePaperCheck } from './lib/paper-text';
@@ -28,9 +30,11 @@ import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
 import { useMediaQuery } from './view-models/use-media-query';
+import { useMobileStation } from './view-models/use-mobile-station';
 import { useNotices } from './view-models/use-notices';
 import { usePrinterStatus } from './view-models/use-printer-status';
 import { usePrinters } from './view-models/use-printers';
+import { useQrImage } from './view-models/use-qr-image';
 import { useRules } from './view-models/use-rules';
 import { useScanStation } from './view-models/use-scan-station';
 import { useSettings } from './view-models/use-settings';
@@ -94,6 +98,21 @@ export function App() {
   });
   const { appView } = config;
   const isWorkbench = isWorkbenchActive(appView.view);
+
+  // 手机扫码：浮层只在工作台上显示；在配置中心里点按钮会先回到工作台（经过未保存修改的确认）。
+  const mobile = useMobileStation({ onJobsChanged: () => void jobLog.refresh() });
+  const mobileQr = useQrImage(mobile.status.state === 'active' ? mobile.status.url : null, MOBILE_QR_SIZE_PX);
+  const isMobileOverlayShown = mobile.isOpen && isWorkbench;
+  const toggleMobile = () => {
+    if (isMobileOverlayShown) {
+      mobile.close();
+      return;
+    }
+    if (!isWorkbench) {
+      appView.close();
+    }
+    mobile.open();
+  };
 
   // 没有扫码时用示例标签展示当前模板，套用备注下拉框的选择：看到的就是打出来的样子。
   const noteOverride = settings?.noteOverride ?? DEFAULT_SETTINGS.noteOverride;
@@ -175,6 +194,7 @@ export function App() {
           shortcutLabel: configShortcutLabel(platform),
           onToggle: appView.toggle,
         }}
+        mobile={{ view: describeMobileButton(mobile.status), isOpen: isMobileOverlayShown, onToggle: toggleMobile }}
         onInstallUpdate={updates.install}
         onOpenShop={openShop}
       />
@@ -299,6 +319,10 @@ export function App() {
                   endpoint ? config.endpointEditor.start(endpoint) : config.endpointEditor.startNew(),
                 ),
             }}
+            mobile={{
+              defaultRelayUrl: appInfo?.defaultRelayUrl ?? null,
+              statusText: describeMobileState(mobile.status),
+            }}
             general={{
               jobTotal: jobLog.total,
               update: updateView,
@@ -311,6 +335,22 @@ export function App() {
             onOpenPage={appView.open}
           />
         </ConfigCenter>
+      )}
+      {isMobileOverlayShown && (
+        <MobileOverlay
+          view={describeMobileOverlay(mobile.status, { hasPrinter: printerName !== null, now: mobile.now })}
+          qrImage={mobileQr}
+          onStart={mobile.start}
+          onStop={mobile.stop}
+          onRegenerate={mobile.regenerate}
+          onRemovePhone={mobile.removePhone}
+          onAllowNewPhones={mobile.allowNewPhones}
+          onOpenPage={(page) => {
+            mobile.close();
+            appView.open(page);
+          }}
+          onClose={mobile.close}
+        />
       )}
       {appView.leaveConfirm && (
         <ConfirmDialog

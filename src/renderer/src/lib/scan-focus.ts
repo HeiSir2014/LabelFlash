@@ -3,12 +3,20 @@ import type { Timers } from './timers';
 /** 工作台上鼠标和键盘都这么久没动，就把焦点还给扫码框。 */
 export const SCAN_FOCUS_IDLE_MS = 10_000;
 
+/**
+ * 标了这个属性的区域（例如「手机扫码」浮层）里，焦点落在按钮上也不拉回扫码框：
+ * 键盘用户要能在里面按 Tab 切换、按回车操作。扫码枪的字符照样切回扫码框，扫码不受影响。
+ */
+export const KEEP_FOCUS_ATTRIBUTE = 'data-keep-focus';
+
 /** 焦点所在的元素，只取判断需要的几项（DOM 元素本身就满足这个形状）。 */
 export interface FocusTarget {
   tagName: string;
   /** input 的 type；其他元素为空串或 undefined。 */
   type?: string;
   isContentEditable: boolean;
+  /** 最近的符合选择器的祖先（含自己）；DOM 元素的 closest。 */
+  closest?(selector: string): unknown;
 }
 
 /** 不接收文字的 input：开关、按钮、滑块、文件选择等，按键是在操作它们，不是在打字。 */
@@ -40,9 +48,16 @@ export function isTypingField(target: FocusTarget | null): boolean {
   return target.tagName === 'TEXTAREA' || target.isContentEditable;
 }
 
-/** 焦点留在这里时不自动拉回扫码框：用户在打字，或者正在下拉框里选。 */
+/** 焦点留在这里时不自动拉回扫码框：用户在打字、正在下拉框里选，或者在标了 KEEP_FOCUS_ATTRIBUTE 的区域里操作。 */
 export function keepsFocus(target: FocusTarget | null): boolean {
-  return isTypingField(target) || target?.tagName === 'SELECT';
+  if (target === null) {
+    return false;
+  }
+  return (
+    isTypingField(target) ||
+    target.tagName === 'SELECT' ||
+    (target.closest?.(`[${KEEP_FOCUS_ATTRIBUTE}]`) ?? null) !== null
+  );
 }
 
 export interface KeyInfo {

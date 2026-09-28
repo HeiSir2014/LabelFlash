@@ -29,6 +29,12 @@ describe('config navigation', () => {
     expect(pageLabel('notes')).toBe('常用备注');
   });
 
+  test('keeps mobile scanning with the other integrations', () => {
+    const integrations = CONFIG_NAV.find((group) => group.label === '集成');
+    expect(integrations?.pages.map((item) => item.page)).toEqual(['webhooks', 'mobile']);
+    expect(pageLabel('mobile')).toBe('手机扫码');
+  });
+
   test('lets only the pages with a fixed preview or tester lay out their own scrolling', () => {
     expect(CONFIG_PAGES.filter(isFillPage)).toEqual(['templates', 'rules']);
   });

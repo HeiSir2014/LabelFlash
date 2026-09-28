@@ -8,6 +8,7 @@ export const CONFIG_PAGES = [
   'lookup',
   'secrets',
   'webhooks',
+  'mobile',
   'voice',
   'general',
   'about',
@@ -35,7 +36,13 @@ export const CONFIG_NAV: readonly NavGroup[] = [
       { page: 'secrets', label: '密钥' },
     ],
   },
-  { label: '集成', pages: [{ page: 'webhooks', label: '打印结果通知' }] },
+  {
+    label: '集成',
+    pages: [
+      { page: 'webhooks', label: '打印结果通知' },
+      { page: 'mobile', label: '手机扫码' },
+    ],
+  },
   {
     label: '系统',
     pages: [

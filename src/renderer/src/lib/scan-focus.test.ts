@@ -35,6 +35,16 @@ describe('keepsFocus', () => {
     expect(keepsFocus(element('BUTTON'))).toBe(false);
     expect(keepsFocus(null)).toBe(false);
   });
+
+  test('keeps focus on buttons inside an area marked to keep it, such as the mobile scan overlay', () => {
+    const inside = {
+      ...element('BUTTON'),
+      closest: (selector: string) => (selector === '[data-keep-focus]' ? {} : null),
+    };
+    const outside = { ...element('BUTTON'), closest: () => null };
+    expect(keepsFocus(inside)).toBe(true);
+    expect(keepsFocus(outside)).toBe(false);
+  });
 });
 
 describe('isScannerCharacter', () => {

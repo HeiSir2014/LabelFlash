@@ -50,7 +50,12 @@
   --dialog-width: 400px;
   /* 叠放层级：配置中心盖住工作台，提示条在配置中心之上；确认框是原生模态，浏览器放在最上层 */
   --layer-config: 5;
+  /* 「手机扫码」浮层只在工作台上显示，盖住工作台，在提示条之下 */
+  --layer-mobile: 6;
   --layer-notice: 10;
+  /* 「手机扫码」浮层：宽度放得下二维码和一行手机描述；二维码边长和 MobileOverlay.tsx 的 MOBILE_QR_SIZE_PX 一致 */
+  --mobile-overlay-width: 320px;
+  --mobile-qr-size: 200px;
   --feed-duration: 180ms;
   /* 配置中心进出的时长：view-models/use-app-view.ts 读取它来等淡出结束。 */
   --config-duration: 160ms;

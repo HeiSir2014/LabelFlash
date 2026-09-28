@@ -1,13 +1,22 @@
 import brandIcon from '../../../../resources/tray.svg';
 import { BRAND } from '../../../shared/brand';
+import type { MobileButtonView } from '../lib/mobile-text';
 import type { PrinterChipView } from '../lib/printer-chip';
 import { useWindowControls } from '../view-models/use-window-controls';
 import { ConfirmButton } from './ConfirmButton';
+import { MOBILE_OVERLAY_ID } from './MobileOverlay';
 
 export interface ConfigButtonProps {
   isOpen: boolean;
   /** 快捷键的显示文字：Windows「Ctrl+,」，macOS「⌘,」。 */
   shortcutLabel: string;
+  onToggle: () => void;
+}
+
+export interface MobileButtonProps {
+  view: MobileButtonView;
+  /** 浮层是否开着。 */
+  isOpen: boolean;
   onToggle: () => void;
 }
 
@@ -18,6 +27,7 @@ interface TitleBarProps {
   /** 新版本已下载时显示的版本号；null 表示没有待安装的更新。 */
   readyUpdateVersion: string | null;
   config: ConfigButtonProps;
+  mobile: MobileButtonProps;
   onInstallUpdate: () => void;
   onOpenShop: () => void;
 }
@@ -27,6 +37,7 @@ export function TitleBar({
   printerChip,
   readyUpdateVersion,
   config,
+  mobile,
   onInstallUpdate,
   onOpenShop,
 }: TitleBarProps) {
@@ -69,6 +80,18 @@ export function TitleBar({
         >
           <GearIcon />
           配置
+        </button>
+        {/* 打开「手机扫码」浮层：状态点表示会话在不在、手机连没连上；详细说明在 title 里。 */}
+        <button
+          type="button"
+          className={`mobile-button mobile-button--${mobile.view.tone}`}
+          aria-expanded={mobile.isOpen}
+          aria-controls={MOBILE_OVERLAY_ID}
+          title={mobile.view.title}
+          onClick={mobile.onToggle}
+        >
+          <span className="mobile-button__dot" aria-hidden="true" />
+          手机扫码
         </button>
         <div className={`printer-chip printer-chip--${printerChip.tone}`} title="当前打印机">
           <span className="printer-chip__dot" aria-hidden="true" />

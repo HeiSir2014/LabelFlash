@@ -24,7 +24,8 @@ export function TitleBar({ version, printerChip, readyUpdateVersion, onInstallUp
       <div className="title-bar__brand">
         <img className="title-bar__logo" src={brandIcon} alt={BRAND.mark} width={28} height={28} draggable={false} />
         <span className="title-bar__title">
-          <span className="title-bar__name">{BRAND.productName.replace(`${BRAND.mark}-`, '')}</span>
+          {/* 产品名必须完整显示「CDL-云签速印」：Logo 里的 CDL 是图形，不能代替名称里的品牌前缀。 */}
+          <span className="title-bar__name">{BRAND.productName}</span>
           {/* 版本号弱化显示：排查问题时一眼能看到，又不抢产品名的视觉层级。系统窗口标题只保留产品名。 */}
           {version && <span className="title-bar__version">v{version}</span>}
         </span>

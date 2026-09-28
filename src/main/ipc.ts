@@ -82,7 +82,8 @@ export function registerIpc(deps: IpcDeps): void {
     }
     return printerName;
   };
-  const activeTemplate = () => resolvePrintTemplate(deps.templates, deps.settings.current);
+  const templateFor = (result: PreviewResult) =>
+    resolvePrintTemplate(deps.templates, deps.settings.current, result.status === 'ok' ? result.scan : null);
   const updateSettings = async (patch: Partial<AppSettings>): Promise<AppSettings> => {
     const previous = deps.settings.current;
     const next = deps.settings.update(patch);
@@ -90,10 +91,14 @@ export function registerIpc(deps: IpcDeps): void {
     return next;
   };
 
-  handle(IpcChannel.Preview, (raw) => renderPreview(deps.service.preview(requireString(raw, 'raw')), activeTemplate()));
+  handle(IpcChannel.Preview, (raw) => {
+    const result = deps.service.preview(requireString(raw, 'raw'));
+    return renderPreview(result, templateFor(result));
+  });
   handle(IpcChannel.PreviewTemplate, (raw, template) => {
-    const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, activeTemplate());
-    return renderPreview(deps.service.preview(requireString(raw, 'raw')), draft);
+    const result = deps.service.preview(requireString(raw, 'raw'));
+    const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, templateFor(result));
+    return renderPreview(result, draft);
   });
   handle(IpcChannel.Print, (raw, printerName, options) =>
     deps.service.submit({
@@ -157,9 +162,10 @@ export function registerIpc(deps: IpcDeps): void {
   on(IpcChannel.WindowClose, () => deps.getWindow()?.close());
 }
 
-async function renderPreview(result: PreviewResult, template: LabelTemplate): Promise<LabelPreview> {
+function renderPreview(result: PreviewResult, template: LabelTemplate): LabelPreview {
   if (result.status !== 'ok') {
-    return { result, html: null };
+    return { result, html: null, templateName: null, qrOmitted: false };
   }
-  return { result, html: await renderLabelHtml({ label: result.label, template, printedAt: Date.now() }) };
+  const { html, qrOmitted } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() });
+  return { result, html, templateName: template.name, qrOmitted };
 }

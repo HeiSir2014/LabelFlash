@@ -23,11 +23,11 @@ import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
 import { useNotices } from './view-models/use-notices';
-import { usePreviewHtml } from './view-models/use-preview-html';
 import { usePrinterStatus } from './view-models/use-printer-status';
 import { usePrinters } from './view-models/use-printers';
 import { useScanStation } from './view-models/use-scan-station';
 import { useSettings } from './view-models/use-settings';
+import { useTemplatePreview } from './view-models/use-template-preview';
 import { useTemplates } from './view-models/use-templates';
 import { useUpdateStatus } from './view-models/use-update-status';
 
@@ -83,13 +83,18 @@ export function App() {
   }, [templates.templates, templates.active, hoverTemplateId, noteOverride]);
   const previewTemplate = templates.draft ?? hoverTemplate ?? (station.scan ? null : effectiveTemplate);
   const previewRaw = station.scan?.preview.result.status === 'ok' ? station.scan.raw : SAMPLE_LABEL_RAW;
-  const overrideHtml = usePreviewHtml(previewRaw, previewTemplate);
+  const overridePreview = useTemplatePreview(previewRaw, previewTemplate);
+  const overrideOf = (badge: string): PreviewOverride => ({
+    html: overridePreview?.html ?? null,
+    qrOmitted: overridePreview?.qrOmitted ?? false,
+    badge,
+  });
   const override: PreviewOverride | null = templates.draft
-    ? { html: overrideHtml, badge: '模板编辑中 · 未保存不会用于打印' }
+    ? overrideOf('模板编辑中 · 未保存不会用于打印')
     : hoverTemplate
-      ? { html: overrideHtml, badge: `预览 · ${hoverTemplate.name} · 点「使用」后才会用于打印` }
+      ? overrideOf(`预览 · ${hoverTemplate.name} · 点「使用」后才会用于打印`)
       : previewTemplate && templates.active
-        ? { html: overrideHtml, badge: `示例 · ${templates.active.name}` }
+        ? overrideOf(`示例 · ${templates.active.name}`)
         : null;
 
   const noteOptions = buildNoteOptions(settings?.notePresets ?? [], noteOverride);

@@ -1,14 +1,6 @@
 import type { PrinterIssue } from '../shared/printer-readiness';
+import type { ScanResult } from './scan/scan-result';
 import type { LabelTemplate } from './templates/template-model';
-
-export interface LabelData {
-  /** 二维码原文（已 trim），同时作为门限的去重 key。 */
-  raw: string;
-  code: string;
-  color: string;
-  /** 尺码是文本：36、36.5、S、M、XL、XXL、3XL、均码都合法。 */
-  size: string;
-}
 
 /** desktop = 扫码枪，history = 从打印记录重打，mobile = 手机（Phase 2）。 */
 export const PRINT_SOURCES = ['desktop', 'history', 'mobile'] as const;
@@ -36,27 +28,30 @@ export interface RecentPrint {
   at: number;
 }
 
+/** INVALID_CONTENT = 空内容、超长或含控制字符；NO_MATCHING_RULE = 内容合法，但没有一条启用的规则能识别。 */
+export type InvalidReason = 'INVALID_CONTENT' | 'NO_MATCHING_RULE';
+
 export type PrintResult =
-  | { status: 'printed'; jobId: string; label: LabelData }
+  | { status: 'printed'; jobId: string; scan: ScanResult }
   | { status: 'duplicate'; recent: RecentPrint; windowMs: number }
-  | { status: 'invalid'; reason: 'INVALID_FORMAT' }
+  | { status: 'invalid'; reason: InvalidReason }
   | { status: 'failed'; reason: PrintFailureReason; detail?: string; issue?: PrinterIssue };
 
 export type PrintStatus = PrintResult['status'];
 export const PRINT_STATUSES = ['printed', 'duplicate', 'invalid', 'failed'] as const satisfies readonly PrintStatus[];
 
 export type PreviewResult =
-  | { status: 'ok'; label: LabelData; recent: RecentPrint | null }
-  | { status: 'invalid'; reason: 'INVALID_FORMAT' };
+  | { status: 'ok'; scan: ScanResult; recent: RecentPrint | null }
+  | { status: 'invalid'; reason: InvalidReason };
 
 export interface PrinterInfo {
   name: string;
   displayName: string;
 }
 
-/** 一次打印的完整输入：标签数据 + 模板 + 打印时间（备注里的 {日期}/{时间} 用它）。 */
+/** 一次打印的完整输入：识别结果 + 模板 + 打印时间（备注里的 {日期}/{时间} 用它）。 */
 export interface LabelJob {
-  label: LabelData;
+  scan: ScanResult;
   template: LabelTemplate;
   printedAt: number;
 }

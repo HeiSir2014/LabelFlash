@@ -43,7 +43,7 @@ export class ElectronDriverAdapter implements PrinterAdapter {
         issue: readiness.issue,
       });
     }
-    const html = await renderLabelHtml(job);
+    const { html } = renderLabelHtml(job);
     signal.throwIfAborted();
     const printWindow = new BrowserWindow({
       show: false,

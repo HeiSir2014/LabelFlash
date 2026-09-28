@@ -1,4 +1,13 @@
-import type { JobRecord, PrintFailureReason, PrintResult, PrintSource, RecentPrint } from '../../../core/types';
+import { MAX_RAW_LENGTH } from '../../../core/scan/normalize-raw';
+import { joinLines } from '../../../core/templates/label-content';
+import type {
+  InvalidReason,
+  JobRecord,
+  PrintFailureReason,
+  PrintResult,
+  PrintSource,
+  RecentPrint,
+} from '../../../core/types';
 import type { LabelPreview } from '../../../shared/ipc-contract';
 import { PRINT_TIMEOUT_SECONDS } from '../../../shared/print-timing';
 
@@ -46,7 +55,20 @@ const MS_PER_MINUTE = SECONDS_PER_MINUTE * MS_PER_SECOND;
 const MINUTES_PER_HOUR = 60;
 const NO_ACTIONS: ScanActions = { print: null, forceReprint: false };
 
-const FORMAT_HINT = '应为「编码-颜色-尺码」，例如 CL5640-TK-图片色-XL。出现乱码时，检查扫码枪是否开启中文输出';
+const INVALID_VIEWS: Record<InvalidReason, FeedbackStatusView> = {
+  INVALID_CONTENT: {
+    tone: 'error',
+    title: '扫码内容无法识别',
+    detail: `内容为空、超过 ${MAX_RAW_LENGTH} 个字符或含有不可见字符。出现乱码时，检查扫码枪是否开启中文输出`,
+  },
+  NO_MATCHING_RULE: {
+    tone: 'error',
+    title: '没有匹配的识别规则',
+    detail: '在「识别规则」里启用「原样打印」，或新建一条能识别这种内容的规则',
+  },
+};
+/** 已打印时的详情最多列出几个字段值。 */
+const PRINTED_DETAIL_FIELDS = 3;
 
 const FAILURE_TITLES: Record<PrintFailureReason, string> = {
   PRINTER_NOT_FOUND: '找不到打印机',
@@ -126,7 +148,10 @@ export function describeResult(result: PrintResult, now: number): FeedbackStatus
       return {
         tone: 'success',
         title: '已发送打印',
-        detail: `${result.label.code} · ${result.label.color} · ${result.label.size}`,
+        detail: result.scan.fields
+          .slice(0, PRINTED_DETAIL_FIELDS)
+          .map((field) => joinLines(field.value))
+          .join(' · '),
       };
     case 'duplicate':
       return {
@@ -135,7 +160,7 @@ export function describeResult(result: PrintResult, now: number): FeedbackStatus
         detail: `${describeRecent(result.recent, now)}，${formatWindow(result.windowMs)}内同一标签只打一次`,
       };
     case 'invalid':
-      return { tone: 'error', title: '二维码格式不对', detail: FORMAT_HINT };
+      return INVALID_VIEWS[result.reason];
     case 'failed':
       return {
         tone: 'error',
@@ -216,7 +241,7 @@ export function describeJobStatus(job: JobRecord): { tone: FeedbackTone; text: s
     case 'duplicate':
       return { tone: 'warning', text: '已拦截' };
     case 'invalid':
-      return { tone: 'error', text: '格式不对' };
+      return { tone: 'error', text: '无法识别' };
     case 'failed':
       return { tone: 'error', text: job.failureReason ? `失败：${FAILURE_SHORT[job.failureReason]}` : '失败' };
   }

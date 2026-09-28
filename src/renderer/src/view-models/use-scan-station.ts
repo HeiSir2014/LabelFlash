@@ -5,7 +5,12 @@ import type { FeedbackEvent, PrintMode } from '../lib/feedback-cues';
 import { reportError } from '../lib/notices';
 import type { ScanSnapshot } from '../lib/status-text';
 
-const NO_PREVIEW: LabelPreview = { result: { status: 'invalid', reason: 'INVALID_FORMAT' }, html: null };
+const NO_PREVIEW: LabelPreview = {
+  result: { status: 'invalid', reason: 'INVALID_CONTENT' },
+  html: null,
+  templateName: null,
+  qrOmitted: false,
+};
 
 export interface ScanState extends ScanSnapshot {
   /** 递增序号：旧扫描的异步结果不能覆盖新扫描的界面。 */

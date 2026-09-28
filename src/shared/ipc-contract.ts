@@ -49,8 +49,12 @@ export interface PrintOptions {
 
 export interface LabelPreview {
   result: PreviewResult;
-  /** 与实际打印相同的标签 HTML；格式错误时为 null。 */
+  /** 与实际打印相同的标签 HTML；识别不了时为 null。 */
   html: string | null;
+  /** 这次用的模板（规则绑定的模板或当前模板）；识别不了时为 null。 */
+  templateName: string | null;
+  /** 内容太长，二维码放不下被省略了。 */
+  qrOmitted: boolean;
 }
 
 export interface AppInfo {

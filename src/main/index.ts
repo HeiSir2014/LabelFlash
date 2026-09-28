@@ -7,6 +7,8 @@ import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
 import { PrintQueue } from '../core/print-queue';
 import { PrintService } from '../core/print-service';
+import { recognize } from '../core/scan/recognize';
+import { RuleCatalog } from '../core/scan/rule-catalog';
 import { TemplateCatalog } from '../core/templates/template-catalog';
 import { systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
@@ -18,15 +20,17 @@ import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback
 import { registerIpc } from './ipc';
 import { LOGS_DIR_NAME } from './log-files';
 import { setupLogging } from './logging';
-import { resolvePrintTemplate } from './print-template';
+import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { createReadinessProbe, PrinterStatusMonitor } from './printing/printer-status';
+import { createSandboxedRegexRunner } from './scan/sandboxed-regex';
 import { denyAllPermissions, hardenAllWebContents } from './security';
 import { openDatabase } from './storage/database';
 import { SqliteJobStore } from './storage/sqlite-job-store';
+import { SqliteScanRuleRepository } from './storage/sqlite-scan-rule-repository';
 import { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import { SqliteTemplateRepository } from './storage/sqlite-template-repository';
 import { SqliteWindowStateStore } from './storage/sqlite-window-state-store';
@@ -144,6 +148,8 @@ async function bootstrap(): Promise<void> {
   const jobs = new SqliteJobStore(database, settings.current.historyLimit);
   await jobs.initialize();
   const templates = new TemplateCatalog(new SqliteTemplateRepository(database, systemClock), randomUUID);
+  const rules = new RuleCatalog(new SqliteScanRuleRepository(database, systemClock), randomUUID);
+  const runRegex = createSandboxedRegexRunner();
   const guard = new DedupGuard(systemClock, secondsToMs(settings.current.dedupWindowSeconds));
   // 打印机状态和驱动纸张都经这一个常驻 PowerShell 查询（只在 Windows 上有）。
   const probeHost =
@@ -164,7 +170,8 @@ async function bootstrap(): Promise<void> {
     clock: systemClock,
     queue: new PrintQueue(PRINT_TIMEOUT_MS),
     createId: randomUUID,
-    resolveTemplate: () => resolvePrintTemplate(templates, settings.current),
+    recognize: (raw) => recognize(raw, activeRules(rules, settings.current), runRegex),
+    resolveTemplate: (scan) => resolvePrintTemplate(templates, settings.current, scan),
   });
   service.restore();
   const voice = new VoiceClips(join(dataPath, VOICE_CACHE_DIR_NAME), synthesizeWithEdge);

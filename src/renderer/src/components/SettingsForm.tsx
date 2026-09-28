@@ -138,7 +138,7 @@ export function SettingsForm({
         <h3 className="about__title">常用备注</h3>
         <p className="setting__hint">
           在扫码框旁的「备注」下拉框里一键切换，会替换当前模板的备注文字（位置和字号仍按模板）。支持变量：
-          {NOTE_VARIABLES.join(' ')}
+          {NOTE_VARIABLES.join(' ')}，以及 {'{字段名}'}（例如 {'{订单号}'}）
         </p>
         <ul className="note-presets__list">
           {settings.notePresets.map((text) => (

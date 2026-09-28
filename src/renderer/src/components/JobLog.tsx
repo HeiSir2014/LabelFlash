@@ -1,6 +1,12 @@
 import type { JobRecord } from '../../../core/types';
 import { describeJobStatus, describeSource, formatDateTime } from '../lib/status-text';
 
+/** 多行内容在列表里只显示第一行，完整内容放在悬停提示里。 */
+function firstLine(raw: string): string {
+  const [first = '', ...rest] = raw.split('\n');
+  return rest.length > 0 ? `${first} …` : first;
+}
+
 const NUMBER_FORMAT = new Intl.NumberFormat('zh-CN');
 
 interface JobLogProps {
@@ -51,7 +57,9 @@ export function JobLog({
             <li key={job.id} className="job-row">
               <div className="job-row__main">
                 <span className={`job-row__status tone--${status.tone}`}>{status.text}</span>
-                <span className="job-row__raw">{job.raw}</span>
+                <span className="job-row__raw" title={job.raw}>
+                  {firstLine(job.raw)}
+                </span>
               </div>
               <div className="job-row__meta">
                 {formatDateTime(job.createdAt)} · {describeSource(job.source)} · {job.printerName}

@@ -1,31 +1,59 @@
 import { describe, expect, test } from 'bun:test';
-import { MAX_RAW_LENGTH } from '../../core/label-parser';
-import { BUILT_IN_TEMPLATES, STANDARD_TEMPLATE } from '../../core/templates/builtin-templates';
-import type { LabelTemplate } from '../../core/templates/template-model';
+import type { ScanResult } from '../../core/scan/scan-result';
+import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from '../../core/templates/builtin-templates';
+import type { FieldSlot, LabelTemplate } from '../../core/templates/template-model';
 import { escapeHtml, renderLabelHtml } from './label-html';
 
-const LABEL = { raw: 'CL5640-TK-图片色-XL', code: 'CL5640-TK', color: '图片色', size: 'XL' };
+const GARMENT: ScanResult = {
+  raw: 'CL5640-TK-图片色-XL',
+  ruleId: 'builtin:dash-three',
+  ruleName: '横杠三段（编码-颜色-尺码）',
+  fields: [
+    { name: '编码', value: 'CL5640-TK' },
+    { name: '颜色', value: '图片色' },
+    { name: '尺码', value: 'XL' },
+  ],
+};
+const KEY_VALUE: ScanResult = {
+  raw: '订单号：A001\n收件人：张三',
+  ruleId: 'builtin:key-value',
+  ruleName: '多行键值',
+  fields: [
+    { name: '订单号', value: 'A001' },
+    { name: '收件人', value: '张三' },
+  ],
+};
 const PRINTED_AT = new Date(2026, 8, 28, 9, 5).getTime();
 
-function render(template: LabelTemplate = STANDARD_TEMPLATE, label = LABEL) {
-  return renderLabelHtml({ label, template, printedAt: PRINTED_AT });
+function render(template: LabelTemplate = STANDARD_TEMPLATE, scan = GARMENT): string {
+  return renderLabelHtml({ scan, template, printedAt: PRINTED_AT }).html;
 }
 
-function withChanges(changes: (template: LabelTemplate) => void): LabelTemplate {
-  const template = structuredClone(STANDARD_TEMPLATE);
+function withChanges(changes: (template: LabelTemplate) => void, base = STANDARD_TEMPLATE): LabelTemplate {
+  const template = structuredClone(base);
   changes(template);
   return template;
 }
 
-/** 取出二维码旁网格里每个值单元格的对齐方式。 */
+function slot(template: LabelTemplate, field: string): FieldSlot {
+  const found = template.fieldsArea.slots.find((candidate) => candidate.field === field);
+  if (!found) throw new Error(`slot ${field} missing`);
+  return found;
+}
+
+/** 取出字段区每个值单元格的对齐方式。 */
 function valueAligns(html: string): string[] {
-  return [...html.matchAll(/class="value value-\w+" style="[^"]*text-align:(\w+)"/g)].map((match) => match[1] ?? '');
+  return [...html.matchAll(/class="value" style="[^"]*text-align:(\w+)"/g)].map((match) => match[1] ?? '');
+}
+
+function valueSizes(html: string): number[] {
+  return [...html.matchAll(/class="value" style="font-size:([\d.]+)mm/g)].map((match) => Number(match[1]));
 }
 
 describe('renderLabelHtml', () => {
-  test('renders the standard label like the original tag (without the shelf location)', async () => {
-    const html = await render();
-    expect(html).toContain('>编码：</span><span class="value value-code"');
+  test('renders the garment label like the original tag (without the shelf location)', () => {
+    const html = render();
+    expect(html).toContain('>编码：</span><span class="value"');
     expect(html).toContain('>CL5640-TK</span>');
     expect(html).toContain('>图片色</span>');
     expect(html).toContain('>XL</span>');
@@ -35,57 +63,131 @@ describe('renderLabelHtml', () => {
     expect(html).toContain('class="layout-qr-left"');
   });
 
-  test('lays side fields out as a prefix/value grid so values always line up', async () => {
-    const html = await render(
+  test('the generic template lists every recognised field with its name', () => {
+    const html = render(GENERIC_TEMPLATE, KEY_VALUE);
+    expect(html).toContain('>订单号：</span><span class="value"');
+    expect(html).toContain('>收件人：</span>');
+    expect(html).toContain('>订单号：A001 / 收件人：张三</p>');
+  });
+
+  test('uses the separator set in the template, or none', () => {
+    const dash = withChanges((t) => {
+      t.fieldsArea.all.separator = ' - ';
+    }, GENERIC_TEMPLATE);
+    expect(render(dash, KEY_VALUE)).toContain('>订单号 - </span>');
+    const none = withChanges((t) => {
+      t.fieldsArea.all.separator = '';
+    }, GENERIC_TEMPLATE);
+    expect(render(none, KEY_VALUE)).toContain('>订单号</span>');
+  });
+
+  test('stacks the name above the value when arranged vertically', () => {
+    const stacked = BUILT_IN_TEMPLATES.find((t) => t.fieldsArea.arrangement === 'stacked');
+    if (!stacked) throw new Error('stacked template missing');
+    const html = render(stacked, KEY_VALUE);
+    expect(html).toContain('class="fields fields--stacked"');
+    expect(html).toMatch(/<div class="field"><span class="prefix" style="[^"]*font-weight:400[^"]*">订单号<\/span>/);
+    expect(html).toContain('>A001</span></div>');
+  });
+
+  test('gives every row the same size in the all-fields mode', () => {
+    const scan: ScanResult = {
+      ...KEY_VALUE,
+      fields: [
+        { name: '订单号', value: 'A20260928-000000001' },
+        { name: '款号', value: 'CL5640' },
+      ],
+    };
+    const sizes = valueSizes(render(GENERIC_TEMPLATE, scan));
+    expect(sizes).toHaveLength(2);
+    expect(sizes[0]).toBe(sizes[1]);
+  });
+
+  test('does not print a numeric order number twice', () => {
+    const order: ScanResult = {
+      raw: '202609280001',
+      ruleId: 'builtin:digits-order',
+      ruleName: '纯数字订单号',
+      fields: [{ name: '订单号', value: '202609280001' }],
+    };
+    const html = render(GENERIC_TEMPLATE, order);
+    expect(html).toContain('>202609280001</span>');
+    expect(html).not.toContain('class="bottom-line"');
+  });
+
+  test('keeps line breaks inside multi-line values', () => {
+    const scan: ScanResult = { ...GARMENT, raw: '一号楼\n三单元', fields: [{ name: '地址', value: '一号楼\n三单元' }] };
+    const html = render(GENERIC_TEMPLATE, scan);
+    expect(html).toContain('.value, .note { white-space: pre-line; }');
+    expect(html).toContain('>一号楼\n三单元</span>');
+  });
+
+  test('lays fields out as a prefix/value grid so values always line up', () => {
+    const html = render(
       withChanges((t) => {
-        t.fields.code.prefix = '款号：';
-        t.fields.size.prefix = 'Size ';
+        slot(t, '编码').prefix = '款号：';
+        slot(t, '尺码').prefix = 'Size ';
       }),
     );
     expect(html).toContain('grid-template-columns: max-content minmax(0, 1fr)');
-    expect(html).toContain('<span class="prefix prefix-code"');
-    expect(html).toContain('<span class="prefix prefix-size"');
+    expect(html).toContain('>款号：</span>');
+    expect(html).toContain('>Size </span>');
     expect(valueAligns(html)).toEqual(['left', 'left', 'left']);
   });
 
-  test('applies one alignment per area: every side value shares it, the bottom row has its own', async () => {
-    const html = await render(
+  test('applies one alignment per area: every side value shares it, the bottom row has its own', () => {
+    const html = render(
       withChanges((t) => {
         t.sideAlign = 'right';
         t.bottomAlign = 'center';
       }),
     );
     expect(valueAligns(html)).toEqual(['right', 'right', 'right']);
-    expect(html).toMatch(/class="field field-raw" style="[^"]*text-align:center"/);
+    expect(html).toMatch(/class="bottom-line" style="[^"]*text-align:center"/);
   });
 
-  test('keeps side values aligned whether or not a note is shown', async () => {
-    const withNote = await render(
+  test('keeps side values aligned whether or not a note is shown', () => {
+    const withNote = render(
       withChanges((t) => {
         t.note = { ...t.note, visible: true, text: '返修' };
       }),
     );
-    const withoutNote = await render();
-    expect(valueAligns(withNote)).toEqual(valueAligns(withoutNote));
+    expect(valueAligns(withNote)).toEqual(valueAligns(render()));
   });
 
-  test('mirrors the layout when the QR code is on the right', async () => {
+  test('mirrors the layout when the QR code is on the right', () => {
     const qrRight = BUILT_IN_TEMPLATES.find((t) => t.layout === 'qr-right');
     if (!qrRight) throw new Error('qr-right template missing');
-    const html = await render(qrRight);
-    expect(html).toContain('size: 60mm 40mm');
-    expect(html).toContain('class="layout-qr-right"');
+    expect(render(qrRight)).toContain('class="layout-qr-right"');
   });
 
-  test('shrinks a 128-character code so it is not clipped', async () => {
-    const code = 'C'.repeat(MAX_RAW_LENGTH - '-红-XL'.length);
-    const html = await render(STANDARD_TEMPLATE, { raw: `${code}-红-XL`, code, color: '红', size: 'XL' });
-    const rawSize = /class="field field-raw" style="font-size:([\d.]+)mm/.exec(html)?.[1];
-    expect(Number(rawSize)).toBeLessThan(STANDARD_TEMPLATE.fields.raw.fontSizeMm);
+  test('shrinks a long code so it is not clipped', () => {
+    const code = 'C'.repeat(120);
+    const scan: ScanResult = {
+      ...GARMENT,
+      raw: `${code}-红-XL`,
+      fields: [
+        { name: '编码', value: code },
+        { name: '颜色', value: '红' },
+        { name: '尺码', value: 'XL' },
+      ],
+    };
+    const bottomSize = /class="bottom-line" style="font-size:([\d.]+)mm/.exec(render(STANDARD_TEMPLATE, scan))?.[1];
+    expect(Number(bottomSize)).toBeLessThan(STANDARD_TEMPLATE.bottom.fontSizeMm);
   });
 
-  test('skips an empty note', async () => {
-    const html = await render(
+  test('shrinks the field rows when they do not fit the height of the label', () => {
+    const fields = Array.from({ length: 6 }, (_, index) => ({
+      name: `字段${index + 1}`,
+      value: '内容比较长的一行文字',
+    }));
+    const sizes = valueSizes(render(GENERIC_TEMPLATE, { ...GARMENT, fields }));
+    expect(sizes).toHaveLength(6);
+    expect(Math.max(...sizes)).toBeLessThan(GENERIC_TEMPLATE.fieldsArea.all.fontSizeMm);
+  });
+
+  test('skips an empty note', () => {
+    const html = render(
       withChanges((t) => {
         t.note = { ...t.note, visible: true, text: '   ' };
       }),
@@ -93,38 +195,35 @@ describe('renderLabelHtml', () => {
     expect(html).not.toContain('class="note"');
   });
 
-  test('omits the QR code and hidden fields', async () => {
-    const html = await render(
+  test('omits the QR code and the bottom line when hidden', () => {
+    const html = render(
       withChanges((t) => {
         t.qr.visible = false;
-        t.fields.color.visible = false;
+        t.bottom.visible = false;
       }),
     );
     expect(html).not.toContain('<svg');
-    expect(html).not.toContain('颜色：');
-    expect(valueAligns(html)).toHaveLength(2);
+    expect(html).not.toContain('class="bottom-line"');
   });
 
-  test('applies per-field font size and weight', async () => {
-    const html = await render(
+  test('applies per-field font size and weight', () => {
+    const html = render(
       withChanges((t) => {
-        t.fields.size = { ...t.fields.size, fontSizeMm: 4.5, bold: false };
+        Object.assign(slot(t, '尺码'), { fontSizeMm: 4.5, bold: false });
       }),
     );
-    expect(html).toContain(
-      '<span class="value value-size" style="font-size:4.5mm;font-weight:400;text-align:left">XL</span>',
-    );
+    expect(html).toContain('<span class="value" style="font-size:4.5mm;font-weight:400;text-align:left">XL</span>');
   });
 
-  test('places the note beside the QR code or at the bottom, with variables expanded', async () => {
-    const beside = await render(
+  test('places the note beside the QR code or at the bottom, with variables expanded', () => {
+    const beside = render(
       withChanges((t) => {
-        t.note = { ...t.note, visible: true, text: '备注 {日期}', placement: 'beside-qr' };
+        t.note = { ...t.note, visible: true, text: '备注 {日期} {颜色}', placement: 'beside-qr' };
       }),
     );
-    expect(beside).toMatch(/<div class="side">.*备注 2026-09-28<\/p>\s*<\/div>/s);
+    expect(beside).toMatch(/<div class="side">.*备注 2026-09-28 图片色<\/p>\s*<\/div>/s);
 
-    const bottom = await render(
+    const bottom = render(
       withChanges((t) => {
         t.note = { ...t.note, visible: true, text: '底部备注', placement: 'bottom' };
       }),
@@ -132,13 +231,22 @@ describe('renderLabelHtml', () => {
     expect(bottom).toMatch(/<div class="bottom">.*底部备注<\/p><\/div>/s);
   });
 
-  test('escapes markup in label data, prefixes and notes', async () => {
-    const html = await render(
+  test('escapes markup in scanned content, prefixes and notes', () => {
+    const scan: ScanResult = {
+      ...GARMENT,
+      raw: '<b>-"红"-&36',
+      fields: [
+        { name: '编码', value: '<b>' },
+        { name: '颜色', value: '"红"' },
+        { name: '尺码', value: '&36' },
+      ],
+    };
+    const html = render(
       withChanges((t) => {
-        t.fields.code.prefix = '<i>';
+        slot(t, '编码').prefix = '<i>';
         t.note = { ...t.note, visible: true, text: '<img src=x>' };
       }),
-      { raw: '<b>-"红"-&36', code: '<b>', color: '"红"', size: '&36' },
+      scan,
     );
     expect(html).not.toContain('<b>');
     expect(html).not.toContain('<i>');
@@ -148,12 +256,43 @@ describe('renderLabelHtml', () => {
   });
 });
 
+describe('QR code', () => {
+  test('encodes what the template asks for', () => {
+    const plain = renderLabelHtml({ scan: GARMENT, template: STANDARD_TEMPLATE, printedAt: PRINTED_AT });
+    const byField = renderLabelHtml({
+      scan: GARMENT,
+      template: withChanges((t) => {
+        t.qr.content = { kind: 'field', field: '编码' };
+      }),
+      printedAt: PRINTED_AT,
+    });
+    expect(byField.html).not.toBe(plain.html);
+    expect(byField.qrOmitted).toBe(false);
+  });
+
+  test('centres the dot-aligned code inside the box the template reserves', () => {
+    const html = render();
+    expect(html).toContain(`width: ${STANDARD_TEMPLATE.qr.sizeMm}mm; height: ${STANDARD_TEMPLATE.qr.sizeMm}mm;`);
+    const size = Number(/class="qr__code" style="width:([\d.]+)mm/.exec(html)?.[1]);
+    expect(size).toBeGreaterThan(0);
+    expect(size).toBeLessThanOrEqual(STANDARD_TEMPLATE.qr.sizeMm);
+  });
+
+  test('leaves the QR code out when even the lowest error correction cannot make it scannable', () => {
+    const long = '码'.repeat(600);
+    const scan: ScanResult = { ...GARMENT, raw: long, fields: [{ name: '内容', value: long }] };
+    const omitted = renderLabelHtml({ scan, template: STANDARD_TEMPLATE, printedAt: PRINTED_AT });
+    expect(omitted.qrOmitted).toBe(true);
+    expect(omitted.html).not.toContain('<svg');
+  });
+});
+
 describe('print job name', () => {
   // 没有 <title> 时 Chromium 用整段 data: 地址当打印任务名，打印队列里无法辨认，也无法按任务名跟踪。
-  test('titles the page with the escaped label code', async () => {
-    expect(await render()).toContain('<title>CL5640-TK-图片色-XL</title>');
-    const html = await render(STANDARD_TEMPLATE, { raw: '<b>-红-36', code: '<b>', color: '红', size: '36' });
-    expect(html).toContain('<title>&lt;b&gt;-红-36</title>');
+  test('titles the page with the escaped content on one line', () => {
+    expect(render()).toContain('<title>CL5640-TK-图片色-XL</title>');
+    const scan: ScanResult = { ...GARMENT, raw: '<b>\n第二行' };
+    expect(render(STANDARD_TEMPLATE, scan)).toContain('<title>&lt;b&gt; / 第二行</title>');
   });
 });
 

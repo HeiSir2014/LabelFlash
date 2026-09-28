@@ -1,25 +1,20 @@
 import { type DedupGuard, MAX_DEDUP_WINDOW_MS } from './dedup-guard';
 import { type PrintFailure, toPrintFailure } from './errors';
 import type { JobStore } from './job-store';
-import { MAX_RAW_LENGTH, parseLabel } from './label-parser';
 import type { PrintQueue } from './print-queue';
+import { MAX_RAW_LENGTH, normalizeRaw } from './scan/normalize-raw';
+import type { ScanResult } from './scan/scan-result';
 import type { LabelTemplate } from './templates/template-model';
-import type {
-  Clock,
-  JobRecord,
-  LabelData,
-  LabelJob,
-  PreviewResult,
-  PrinterAdapter,
-  PrintRequest,
-  PrintResult,
-} from './types';
+import type { Clock, JobRecord, LabelJob, PreviewResult, PrinterAdapter, PrintRequest, PrintResult } from './types';
 
-export const TEST_LABEL: LabelData = {
-  raw: 'TEST-0001-测试色-XL',
-  code: 'TEST-0001',
-  color: '测试色',
-  size: 'XL',
+export const TEST_RAW = 'TEST-0001-测试色-XL';
+
+/** 所有识别规则都关掉时，测试页仍然要能打：整段内容作为一个字段。 */
+const TEST_FALLBACK_SCAN: ScanResult = {
+  raw: TEST_RAW,
+  ruleId: 'builtin:test',
+  ruleName: '测试页',
+  fields: [{ name: '内容', value: TEST_RAW }],
 };
 
 export interface PrintServiceDeps {
@@ -29,9 +24,13 @@ export interface PrintServiceDeps {
   queue: PrintQueue;
   clock: Clock;
   createId: () => string;
-  /** 当前启用的模板；每次打印时读取，切换模板立即生效。 */
-  resolveTemplate: () => LabelTemplate;
+  /** 按本机当前启用的规则识别；每次调用都读取最新规则，改规则立即生效。 */
+  recognize: (raw: string) => ScanResult | null;
+  /** 本次识别结果用的模板（规则绑定的模板或当前模板）；每次打印时读取，切换模板立即生效。 */
+  resolveTemplate: (scan: ScanResult) => LabelTemplate;
 }
+
+type Recognition = { ok: true; scan: ScanResult } | { ok: false; result: Extract<PrintResult, { status: 'invalid' }> };
 
 /** 所有入口（扫码枪、记录重打、Phase 2 的手机）的唯一业务入口。 */
 export class PrintService {
@@ -46,23 +45,25 @@ export class PrintService {
   }
 
   preview(raw: string): PreviewResult {
-    const label = parseLabel(raw);
-    if (!label) {
-      return { status: 'invalid', reason: 'INVALID_FORMAT' };
+    const recognition = this.recognize(raw);
+    if (!recognition.ok) {
+      return recognition.result;
     }
-    return { status: 'ok', label, recent: this.deps.guard.peek(label.raw) };
+    const { scan } = recognition;
+    return { status: 'ok', scan, recent: this.deps.guard.peek(scan.raw) };
   }
 
   async submit(request: PrintRequest): Promise<PrintResult> {
     const id = this.deps.createId();
-    const label = parseLabel(request.raw);
-    if (!label) {
+    const recognition = this.recognize(request.raw);
+    if (!recognition.ok) {
       const truncated = request.raw.trim().slice(0, MAX_RAW_LENGTH);
-      return this.finish(id, request, truncated, { status: 'invalid', reason: 'INVALID_FORMAT' });
+      return this.finish(id, request, truncated, recognition.result);
     }
-    const reservation = this.deps.guard.tryReserve(label.raw, request.force === true);
+    const { scan } = recognition;
+    const reservation = this.deps.guard.tryReserve(scan.raw, request.force === true);
     if (!reservation.ok) {
-      return this.finish(id, request, label.raw, {
+      return this.finish(id, request, scan.raw, {
         status: 'duplicate',
         recent: reservation.recent,
         windowMs: this.deps.guard.windowMs,
@@ -70,37 +71,47 @@ export class PrintService {
     }
     try {
       await this.deps.queue.enqueue(request.printerName, (signal) =>
-        this.deps.adapter.print(request.printerName, this.createJob(label), signal),
+        this.deps.adapter.print(request.printerName, this.createJob(scan), signal),
       );
     } catch (error) {
       console.error('[PrintService] print failed', error);
       const failure = toPrintFailure(error);
       if (failure.reason === 'PRINT_TIMEOUT') {
         // 超时说明结果不确定（可能已出纸或仍在排队）：按已打印处理，避免重扫出第二张；确认没出纸再强制补打。
-        this.deps.guard.commit(label.raw);
+        this.deps.guard.commit(scan.raw);
       } else {
-        this.deps.guard.release(label.raw);
+        this.deps.guard.release(scan.raw);
       }
-      return this.finish(id, request, label.raw, failed(failure));
+      return this.finish(id, request, scan.raw, failed(failure));
     }
-    this.deps.guard.commit(label.raw);
-    return this.finish(id, request, label.raw, { status: 'printed', jobId: id, label });
+    this.deps.guard.commit(scan.raw);
+    return this.finish(id, request, scan.raw, { status: 'printed', jobId: id, scan });
   }
 
+  /** 测试页同样按规则识别、按规则绑定的模板打印，所见即所得。 */
   async printTest(printerName: string): Promise<PrintResult> {
+    const scan = this.deps.recognize(TEST_RAW) ?? TEST_FALLBACK_SCAN;
     try {
       await this.deps.queue.enqueue(printerName, (signal) =>
-        this.deps.adapter.print(printerName, this.createJob(TEST_LABEL), signal),
+        this.deps.adapter.print(printerName, this.createJob(scan), signal),
       );
-      return { status: 'printed', jobId: 'test', label: TEST_LABEL };
+      return { status: 'printed', jobId: 'test', scan };
     } catch (error) {
       console.error('[PrintService] test print failed', error);
       return failed(toPrintFailure(error));
     }
   }
 
-  private createJob(label: LabelData): LabelJob {
-    return { label, template: this.deps.resolveTemplate(), printedAt: this.deps.clock.now() };
+  private recognize(raw: string): Recognition {
+    if (normalizeRaw(raw) === null) {
+      return { ok: false, result: { status: 'invalid', reason: 'INVALID_CONTENT' } };
+    }
+    const scan = this.deps.recognize(raw);
+    return scan ? { ok: true, scan } : { ok: false, result: { status: 'invalid', reason: 'NO_MATCHING_RULE' } };
+  }
+
+  private createJob(scan: ScanResult): LabelJob {
+    return { scan, template: this.deps.resolveTemplate(scan), printedAt: this.deps.clock.now() };
   }
 
   private finish(id: string, request: PrintRequest, raw: string, result: PrintResult): PrintResult {

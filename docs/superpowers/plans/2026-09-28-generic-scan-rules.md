@@ -157,6 +157,8 @@
 
 ### Task 4: 通用模板
 
+> 执行说明：模板模型一改，`LabelJob`、打印服务和状态文案必须同时改才能编译，Task 4 与 Task 5 合并为一次提交；模板编辑器的字段区、二维码内容来源也随之提前完成（Task 8 只剩「识别规则」页）。执行中按需求追加了字段排列（横向 / 垂直）、可配置分隔符、按点阵对齐的二维码排布和新的文字排版算法，见规格 §4。
+
 **Files:**
 - Modify: `src/core/templates/template-model.ts`, `sanitize-template.ts`, `builtin-templates.ts`, `note-text.ts`, `note-override.ts`（如需）, `src/main/printing/label-html.ts`
 - Test: `src/core/templates/templates.test.ts`, `src/main/printing/label-html.test.ts`

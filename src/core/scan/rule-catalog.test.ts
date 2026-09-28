@@ -1,24 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { InMemoryRuleRepository } from '../testing/in-memory-repositories';
 import { BUILT_IN_RULES } from './builtin-rules';
-import { RuleCatalog, RuleError, type RuleRepository } from './rule-catalog';
+import { RuleCatalog, RuleError } from './rule-catalog';
 import { RULE_KINDS, RULE_LIMITS, type ScanRule } from './rule-model';
 import { isRuleIssue, sanitizeRule } from './sanitize-rule';
-
-class InMemoryRuleRepository implements RuleRepository {
-  readonly rules = new Map<string, ScanRule>();
-
-  listCustom(): ScanRule[] {
-    return [...this.rules.values()];
-  }
-
-  save(rule: ScanRule): void {
-    this.rules.set(rule.id, rule);
-  }
-
-  remove(id: string): void {
-    this.rules.delete(id);
-  }
-}
 
 function setup() {
   const repository = new InMemoryRuleRepository();

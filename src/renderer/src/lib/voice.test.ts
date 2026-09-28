@@ -5,7 +5,12 @@ import { VOICE_CUE_LEVEL, VOICE_CUE_TEXT, VOICE_CUES, type VoiceCue, type VoiceS
 import { cueFeedback, describeFeedback, type PrintMode } from './feedback-cues';
 import { VoicePlayer } from './voice-player';
 
-const LABEL = { raw: 'CL5640-TK-图片色-XL', code: 'CL5640-TK', color: '图片色', size: 'XL' };
+const SCAN = {
+  raw: '202609280001',
+  ruleId: 'builtin:digits-order',
+  ruleName: '纯数字订单号',
+  fields: [{ name: '订单号', value: '202609280001' }],
+};
 const VOICE: VoiceSettings = { enabled: true, name: 'zh-CN-XiaoxiaoNeural', ratePercent: 20 };
 
 function fakePlayer(clip: Uint8Array | null = new Uint8Array([1, 2, 3])) {
@@ -37,7 +42,7 @@ function fakePlayer(clip: Uint8Array | null = new Uint8Array([1, 2, 3])) {
 }
 
 describe('describeFeedback', () => {
-  const printed: PrintResult = { status: 'printed', jobId: 'j', label: LABEL };
+  const printed: PrintResult = { status: 'printed', jobId: 'j', scan: SCAN };
   const failed = (reason: PrintFailureReason, issue?: PrinterIssue): PrintResult =>
     issue ? { status: 'failed', reason, detail: '…', issue } : { status: 'failed', reason };
   const cueOf = (result: PrintResult, mode: PrintMode = 'scan') =>

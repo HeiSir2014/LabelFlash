@@ -26,6 +26,7 @@ export const IpcChannel = {
   DeleteTemplate: 'templates:delete',
   GetAppInfo: 'app:info',
   OpenLogFolder: 'app:open-log-folder',
+  OpenShop: 'app:open-shop',
   GetUpdateStatus: 'update:status',
   CheckForUpdates: 'update:check',
   InstallUpdate: 'update:install',
@@ -83,6 +84,8 @@ export interface LabelFlashApi {
   deleteTemplate(id: string): Promise<AppSettings>;
   getAppInfo(): Promise<AppInfo>;
   openLogFolder(): Promise<void>;
+  /** 用系统浏览器打开出品方店铺（地址是主进程里的常量，页面不能指定网址）。 */
+  openShop(): Promise<void>;
   getUpdateStatus(): Promise<UpdateStatus>;
   checkForUpdates(): Promise<void>;
   /** 仅在新版本已下载（ready）时有效：重启并安装。 */

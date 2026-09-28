@@ -5,4 +5,9 @@ export const BRAND = {
   productName: 'CDL-云签速印',
   productNameAscii: 'CDL-LabelFlash',
   appId: 'com.cdl.labelflash',
+  /** 出品方的淘宝店铺：显示在标题栏和「关于」里，点击用系统浏览器打开。 */
+  shop: {
+    name: 'CDLCOUTURE极简女装',
+    url: 'https://m.tb.cn/h.8wFoJTZnJAhPpdP',
+  },
 } as const;

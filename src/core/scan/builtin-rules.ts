@@ -53,7 +53,7 @@ export const BUILT_IN_RULES: readonly ScanRule[] = [
   },
 ];
 
-/** 内置规则默认绑定的模板：样衣标签沿用 v0.1.0 的标准样式，其余用当前模板。 */
+/** 内置规则默认绑定的模板：样衣标签沿用原来的标准样式，其余用当前模板。 */
 export const DEFAULT_RULE_TEMPLATE_BINDINGS: Readonly<Record<string, string>> = {
   [DASH_THREE_RULE_ID]: 'builtin:standard',
 };

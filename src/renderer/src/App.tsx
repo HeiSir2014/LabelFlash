@@ -127,6 +127,10 @@ export function App() {
     return result;
   };
 
+  const openShop = () => {
+    window.api.openShop().catch((error: unknown) => reportError('打开店铺', error));
+  };
+
   const openLogFolder = () => {
     window.api.openLogFolder().catch((error: unknown) => reportError('打开日志目录', error));
   };
@@ -138,6 +142,7 @@ export function App() {
         printerChip={printerChip}
         readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
         onInstallUpdate={updates.install}
+        onOpenShop={openShop}
       />
       {settings === null ? (
         <div className="loading">
@@ -227,6 +232,7 @@ export function App() {
                   update={updateView}
                   onChange={changeSettings}
                   onOpenLogFolder={openLogFolder}
+                  onOpenShop={openShop}
                   onCheckForUpdates={updates.check}
                   onPreviewVoice={feedback.preview}
                 />

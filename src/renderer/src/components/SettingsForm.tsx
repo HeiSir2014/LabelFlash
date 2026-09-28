@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NOTE_VARIABLES } from '../../../core/templates/note-text';
+import { BRAND } from '../../../shared/brand';
 import type { AppInfo } from '../../../shared/ipc-contract';
 import {
   type AppSettings,
@@ -22,6 +23,7 @@ interface SettingsFormProps {
   update: UpdateView;
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
   onOpenLogFolder: () => void;
+  onOpenShop: () => void;
   onCheckForUpdates: () => void;
   onPreviewVoice: (cue?: VoiceCue) => void;
 }
@@ -33,6 +35,7 @@ export function SettingsForm({
   update,
   onChange,
   onOpenLogFolder,
+  onOpenShop,
   onCheckForUpdates,
   onPreviewVoice,
 }: SettingsFormProps) {
@@ -172,6 +175,13 @@ export function SettingsForm({
             </dd>
             <dt>出品</dt>
             <dd>{appInfo.brandOwner}（CDL）</dd>
+            <dt>店铺</dt>
+            <dd>
+              <button type="button" className="link-button" onClick={onOpenShop}>
+                {BRAND.shop.name}
+              </button>
+              <span className="about__path about__url">{BRAND.shop.url}</span>
+            </dd>
             <dt>数据目录</dt>
             <dd className="about__path">{appInfo.dataPath}</dd>
           </dl>

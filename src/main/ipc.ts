@@ -5,6 +5,7 @@ import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
 import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult } from '../core/types';
+import { BRAND } from '../shared/brand';
 import { checkDriverPaper } from '../shared/driver-paper';
 import { type AppInfo, IpcChannel, type LabelPreview } from '../shared/ipc-contract';
 import type { AppSettings } from '../shared/settings';
@@ -133,6 +134,8 @@ export function registerIpc(deps: IpcDeps): void {
       throw new Error(error);
     }
   });
+  // 只打开固定的店铺地址：页面的新窗口和跳转一律被拦截（security.ts），外链只能走这里。
+  handle(IpcChannel.OpenShop, () => shell.openExternal(BRAND.shop.url));
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
   handle(IpcChannel.InstallUpdate, () => deps.updater.install());

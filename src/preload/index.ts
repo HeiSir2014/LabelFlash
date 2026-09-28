@@ -29,6 +29,7 @@ const api: LabelFlashApi = {
   deleteTemplate: (id) => ipcRenderer.invoke(IpcChannel.DeleteTemplate, id),
   getAppInfo: () => ipcRenderer.invoke(IpcChannel.GetAppInfo),
   openLogFolder: () => ipcRenderer.invoke(IpcChannel.OpenLogFolder),
+  openShop: () => ipcRenderer.invoke(IpcChannel.OpenShop),
   getUpdateStatus: () => ipcRenderer.invoke(IpcChannel.GetUpdateStatus),
   checkForUpdates: () => ipcRenderer.invoke(IpcChannel.CheckForUpdates),
   installUpdate: () => ipcRenderer.invoke(IpcChannel.InstallUpdate),

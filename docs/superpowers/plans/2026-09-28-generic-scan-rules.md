@@ -114,11 +114,11 @@
 
 - [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): rule recognisers with a sandboxed regex runner`
 
-### Task 3: 规则目录、本机规则设置、迁移 v2
+### Task 3: 规则目录、本机规则设置、规则表
 
 **Files:**
 - Create: `src/core/scan/rule-catalog.ts`, `src/core/scan/rule-settings.ts`, `src/main/storage/sqlite-scan-rule-repository.ts`
-- Modify: `src/main/storage/migrations.ts`（追加 v2）、`src/shared/settings.ts`（新增 `ruleSettings`、`scanLineGapMs`，`activeTemplateId` 默认值改为 `builtin:generic`）
+- Modify: `src/main/storage/migrations.ts`（`scan_rules` 写进初始 schema，不追加迁移）、`src/shared/settings.ts`（新增 `ruleSettings`、`scanLineGapMs`，`activeTemplateId` 默认值改为 `builtin:generic`）
 - Test: `src/core/scan/rule-catalog.test.ts`, `src/core/scan/rule-settings.test.ts`, `src/main/storage/sqlite-scan-rule-repository.test.ts`, `src/shared/settings.test.ts`
 
 **Interfaces:**
@@ -138,7 +138,7 @@
 - 设置：
   - `sanitizeSettings` 里校验 `ruleSettings` 的每一项，要求 id 符合格式、不重复，最多 60 项。
   - `scanLineGapMs` 夹到 20–500。
-- 迁移 v2：`CREATE TABLE scan_rules (id TEXT PRIMARY KEY, body TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL) STRICT;`
+- 初始 schema 里加上（1.0.1 前没有发布过，不做迁移，开发机删掉旧数据库即可）：`CREATE TABLE scan_rules (id TEXT PRIMARY KEY, body TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL) STRICT;`
 
 **测试要点:**
 - 目录：

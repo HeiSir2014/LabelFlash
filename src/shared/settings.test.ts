@@ -5,6 +5,7 @@ import {
   HISTORY_LIMIT_RANGE,
   MAX_DEDUP_WINDOW_SECONDS,
   MAX_NOTE_PRESETS,
+  SCAN_LINE_GAP_RANGE,
   sanitizeSettings,
   secondsToMs,
 } from './settings';
@@ -28,8 +29,25 @@ describe('sanitizeSettings', () => {
       historyLimit: 20_000,
       launchAtLogin: false,
       voice: { enabled: false, name: 'zh-CN-YunxiNeural', ratePercent: 30 },
+      ruleSettings: [
+        { id: 'custom:a1', enabled: true, templateId: 'custom:3f2c-9a' },
+        { id: 'builtin:raw', enabled: false, templateId: null },
+      ],
+      scanLineGapMs: 120,
     };
     expect(sanitizeSettings(settings)).toEqual(settings);
+  });
+
+  test('starts with every built-in scan rule enabled and an 80ms gap for multi-line scans', () => {
+    expect(DEFAULT_SETTINGS.ruleSettings.map((setting) => setting.id)).toEqual([
+      'builtin:dash-three',
+      'builtin:digits-order',
+      'builtin:key-value',
+      'builtin:raw',
+    ]);
+    expect(DEFAULT_SETTINGS.scanLineGapMs).toBe(80);
+    expect(sanitizeSettings({ scanLineGapMs: 1 }).scanLineGapMs).toBe(SCAN_LINE_GAP_RANGE.min);
+    expect(sanitizeSettings({ scanLineGapMs: 99_999 }).scanLineGapMs).toBe(SCAN_LINE_GAP_RANGE.max);
   });
 
   test('starts with the computer by default, so a scan station is ready right after the installer finishes', () => {

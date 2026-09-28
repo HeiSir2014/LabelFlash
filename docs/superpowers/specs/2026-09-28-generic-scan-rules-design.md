@@ -143,10 +143,10 @@ interface FieldsArea {
 
 ## 5. 存储
 
-- **规则表**：迁移 v2 新增 `scan_rules`（id、body、created_at、updated_at，STRICT），和 `templates` 表的写法一致。
+- **规则表**：`scan_rules`（id、body、created_at、updated_at，STRICT）直接写进初始 schema，和 `templates` 表的写法一致；不加迁移。
 - **设置**：新增 `ruleSettings`、`scanLineGapMs`；`activeTemplateId` 的默认值改为 `builtin:generic`。
 - **打印记录**：只记原始内容，表结构不变；重打时按当前规则重新识别；全文搜索照常对原始内容建索引。
-- **不做兼容**：1.0.1 发布前还没有外部用户，开发期间的自定义模板结构不做兼容，读取时按新结构校验，缺失的部分取默认值。
+- **不做兼容、不做迁移**：1.0.1 是第一个发布版本，之前没有任何用户数据。开发期间的数据库和设置一律不兼容：开发机删掉旧的数据目录（Windows `%LOCALAPPDATA%\CDL-LabelFlash`，macOS `~/Library/Application Support/CDL-LabelFlash`）重新生成即可。
 
 ## 6. 界面
 
@@ -180,7 +180,7 @@ interface FieldsArea {
   - 二维码内容来源和回退。
   - 备注变量。
   - 设置里的 `ruleSettings` 合并。
-  - 迁移 v2。
+  - 自定义规则的存取（初始 schema 里的 `scan_rules` 表）。
 - **E2E 测试**：
   - 纯数字订单号用通用模板预览。
   - 用键盘在一次连续输入里打出多行键值（中间夹着回车），识别为一次扫码。

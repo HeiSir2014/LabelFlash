@@ -16,7 +16,8 @@ export class SqliteTemplateRepository implements TemplateRepository {
     db: DatabaseSync,
     private readonly clock: Clock,
   ) {
-    this.selectAll = db.prepare('SELECT id, body FROM templates ORDER BY created_at, id');
+    // rowid 是插入顺序（upsert 不会改它），同一毫秒里建的模板也能按创建顺序排。
+    this.selectAll = db.prepare('SELECT id, body FROM templates ORDER BY created_at, rowid');
     this.upsert = db.prepare(`
       INSERT INTO templates (id, body, created_at, updated_at) VALUES (:id, :body, :now, :now)
       ON CONFLICT (id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at`);

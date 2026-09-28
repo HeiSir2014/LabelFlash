@@ -20,7 +20,7 @@ describe('openDatabase', () => {
   test('migrates a fresh database to the latest schema', () => {
     const db = openDatabase(':memory:');
     expect(userVersion(db)).toBe(MIGRATIONS.length);
-    expect(tableNames(db)).toEqual(['jobs', 'jobs_search', 'settings', 'templates']);
+    expect(tableNames(db)).toEqual(['jobs', 'jobs_search', 'scan_rules', 'settings', 'templates']);
     db.close();
   });
 });

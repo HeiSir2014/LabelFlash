@@ -1,6 +1,7 @@
 /**
  * Schema 迁移：按顺序执行，数组下标 + 1 就是 PRAGMA user_version。
- * 已发布的迁移不能修改，只能在末尾追加。
+ * 1.0.1 是第一个发布版本，发布前只有这一份初始 schema，表结构直接改在这里（开发机删掉旧数据库即可）；
+ * 发布之后已发布的迁移不能修改，只能在末尾追加。
  */
 export const MIGRATIONS: readonly string[] = [
   `
@@ -36,6 +37,14 @@ export const MIGRATIONS: readonly string[] = [
   ) STRICT;
 
   CREATE TABLE templates (
+    id         TEXT    PRIMARY KEY,
+    body       TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  ) STRICT;
+
+  -- 自定义识别规则：写法和 templates 一致，body 是 JSON，读出时重新校验。
+  CREATE TABLE scan_rules (
     id         TEXT    PRIMARY KEY,
     body       TEXT    NOT NULL,
     created_at INTEGER NOT NULL,

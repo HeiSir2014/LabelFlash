@@ -67,7 +67,7 @@
   - `regex`：语法错误、没有命名分组、标志非法、超过 300 字符、命名分组不是合法字段名，都被拒绝。
 - 内置规则全部能通过 `sanitizeRule` 校验。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): raw normalisation, rule model and validation`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): raw normalisation, rule model and validation`（fab39e3）
 
 ### Task 2: 识别器与带超时的正则执行
 
@@ -112,7 +112,7 @@
 - 正则：命名分组对应到字段。
 - 正则超时：`^(a+)+$` 配 40 个 a 加一个 `!`，返回 null，并调用了 `warn`。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): rule recognisers with a sandboxed regex runner`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): rule recognisers with a sandboxed regex runner`（1fadaa5）
 
 ### Task 3: 规则目录、本机规则设置、规则表
 
@@ -153,7 +153,7 @@
 - 仓库：重新打开数据库后规则仍在；数据库版本变为 2。
 - 设置：默认值、夹取、非法项被丢弃。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): rule catalog, per-machine rule settings and scan_rules table`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): rule catalog, per-machine rule settings and scan_rules table`（afb2903）
 
 ### Task 4: 通用模板
 
@@ -186,7 +186,7 @@
 - 备注变量：字段、完整内容、规则名能展开，未知变量原样保留。
 - 标签 HTML：全部转义；多行的值带 `white-space: pre-line`。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(templates): generic all-fields template and configurable QR content`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 与 Task 5 合并提交 `feat(templates): generic templates and printing from recognised scans`（0f0f4b0）
 
 ### Task 5: 打印服务、IPC 预览与界面状态文案切换到 ScanResult
 
@@ -205,7 +205,7 @@
 - 多行内容同样按规范化后的原始内容去重。
 - 全部规则都不匹配时，结果为 invalid。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check && bun run test:e2e` → 提交 `refactor(print): print from recognised scans with rule-bound templates`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check && bun run test:e2e` → 与 Task 4 合并提交（0f0f4b0）
 
 ### Task 5A: 加工步骤核心（文本拼接、正则替换）与打印服务接入
 
@@ -222,7 +222,7 @@
 
 **测试要点:** 步骤按顺序执行、后一步能用前一步的输出；同名覆盖保持位置；正则替换不匹配输出原值、超时输出原值；非法步骤逐项报中文原因；拦下时不打印、记录失败；预览同样执行加工。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): processing steps that derive new fields from a scan`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): processing steps that derive new fields from a scan`（b92a380）
 
 ### Task 5B: 查找表
 
@@ -233,7 +233,7 @@
 
 **测试要点:** 引号与转义、字段内换行、BOM、空行；列名重复或为空拒绝；超过行数 / 列数 / 大小拒绝；精确匹配、去空白、忽略大小写；替换表格保留 id。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(lookup): local lookup tables imported from CSV`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(lookup): local lookup tables imported from CSV`（ed576f4）
 
 ### Task 5C: HTTP 查询与密钥
 
@@ -244,7 +244,7 @@
 
 **测试要点:** 超时、非 2xx、非 JSON、超过 256KB、取不到值 → 按 `onError` 处理；缓存命中不再请求；只允许 http/https；密钥替换进请求头但不进日志和错误信息；URL 变量编码、JSON 请求体变量转义。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): HTTP lookups with cached results and encrypted secrets`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): HTTP lookups with cached results and encrypted secrets`（6c9b5fb）
 
 ### Task 5D: 打印结果通知（webhook）
 
@@ -256,7 +256,7 @@
 
 **测试要点:** 只为勾选的事件入队；测试页不入队；签名可被接收方验证；2xx 成功、5xx/429/超时重试、其他 4xx 不重试；退避时间表；24 小时放弃；重启后继续；同一接口按顺序；密钥不进日志；发送记录上限。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(notify): signed print result webhooks with a durable retry queue`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(notify): signed print result webhooks with a durable retry queue`（e19d0fc）
 
 ### Task 6: 规则 IPC 与导入导出文件
 
@@ -275,7 +275,7 @@
   - `rules:import`：主进程弹打开对话框，返回 `{ imported: number; skipped: { index; issue }[]; httpHosts: string[] }`；含 HTTP 步骤的规则导入后默认停用。
 - 规则的顺序、启用和模板绑定，经 `settings:update` 的 `ruleSettings` 保存，由主进程校验。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): rule IPC with JSON import and export`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): rule IPC with JSON import and export`（ccb4a38）
 
 ### Task 7: 多行扫码
 
@@ -298,7 +298,7 @@
 - 连续两个回车，保留一个空行。
 - 修改等待时间后立即生效。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check && bun run test:e2e` → 提交 `feat(scan): assemble multi-line scans from the scanner's keystroke bursts`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check && bun run test:e2e` → 提交 `feat(scan): assemble multi-line scans from the scanner's keystroke bursts`（c0b8a34）
 
 ### Task 8: 「识别规则」页与模板编辑器
 
@@ -309,7 +309,7 @@
 **测试要点:**
 - `rule-text`：规则类型的中文名、规则摘要（例如「分隔符 - · 编码 / 颜色 / 尺码」）、识别结果的字段摘要。
 
-- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check && bun run test:e2e` → 截图检查 → 提交 `feat(ui): scan rules panel and generic template editing`
+- [x] 写测试 → 失败 → 实现 → 通过 → `bun run check && bun run test:e2e` → 截图检查 → 提交 `feat(ui): scan rules panel, processing steps, lookup tables, secrets and webhooks`（9b21749，修正 1df4705）
 
 ### Task 9: E2E、文档与真机验证
 
@@ -324,4 +324,8 @@
 
 **真机:** 在 Mac 上用 EPSON 真打一张：多行键值标签和纯数字订单号标签各一张，检查排版和二维码内容。
 
-- [ ] `bun run check && bun run test:e2e` → 提交 `test(e2e): generic scan rules end to end` 和 `docs: generic scan rules`
+- [x] `bun run check && bun run test:e2e`：E2E 7 个用例覆盖以上 4 点（1df4705）。
+- [x] Mac 真机：
+  - 集成：真实 Electron 里 HTTP 查询走 net.fetch、密钥存 macOS 钥匙串，查询结果进入字段；打印结果通知签名可被接收方验证，后台送达。
+  - 打印：EPSON 真打多行键值、纯数字订单号各一张，CUPS 任务均为 completed。
+- [x] 文档：README、路线图、Phase 1 规格指向本规格。

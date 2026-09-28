@@ -22,6 +22,8 @@
 
 ## 2. 输入数据
 
+> 1.0.1 起，识别改为可配置的识别规则，并加入加工步骤、通用模板、多行扫码和打印结果通知，见 [通用识别规则与通用模板](2026-09-28-generic-scan-rules-design.md)。本节描述的「编码-颜色-尺码」格式成为内置规则「横杠三段」，校验长度上限改为 1000 字符。
+
 - **格式**：二维码内容为 `编码-颜色-尺码`，例如 `CL5640-TK-图片色-XL`（已从样例图片解码确认）。
 - **拆分规则**：编码本身可能含 `-`，所以从右往左拆，正则为 `^(.+)-([^-]+)-([^-]+)$`。
 - **尺码是文本**：`36`、`36.5`、`S`、`M`、`L`、`XL`、`XXL`、`3XL`、`均码` 都合法。
@@ -132,7 +134,8 @@
 ## 7. 架构
 
 ```
-src/core       纯 TS 业务层：label-parser / dedup-guard / serial-queue / print-queue / job-store / print-service
+src/core       纯 TS 业务层：dedup-guard / serial-queue / print-queue / job-store / print-service
+               scan/（识别规则、加工步骤，1.0.1 起取代 label-parser）、lookup/、notify/
                templates/：template-model / builtin-templates / sanitize-template / note-text / text-fit / template-catalog
 src/shared     主进程与界面共用：brand / label-paper / print-timing / printer-readiness / job-history / settings / ipc-contract / sample-label / update-status / voice
 src/main       storage/（database / migrations / row-readers / sqlite-*）

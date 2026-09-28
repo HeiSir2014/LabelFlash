@@ -13,10 +13,12 @@ import { TemplatePanel } from './components/TemplatePanel';
 import { TitleBar } from './components/TitleBar';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
+import { describePaperCheck } from './lib/paper-text';
 import { describePrinterChip } from './lib/printer-chip';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
+import { useDriverPaper } from './view-models/use-driver-paper';
 import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
@@ -43,12 +45,14 @@ export function App() {
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
   const historyLimit = settings?.historyLimit ?? DEFAULT_SETTINGS.historyLimit;
   const readiness = usePrinterStatus(printerName);
+  const isPrinterListed = printers.printers.some((printer) => printer.name === printerName);
   const printerChip = describePrinterChip({
     printerName,
     isLoading: printers.isLoading,
-    isListed: printers.printers.some((printer) => printer.name === printerName),
+    isListed: isPrinterListed,
     readiness,
   });
+  const driverPaper = useDriverPaper(printerName, isPrinterListed);
 
   // 是否能打印由主进程最终判断（找不到打印机会返回 PRINTER_NOT_FOUND），界面只要求选过打印机。
   const feedback = useFeedback(settings?.voice ?? DEFAULT_SETTINGS.voice);
@@ -158,6 +162,11 @@ export function App() {
                   printers={printers.printers}
                   selected={printerName}
                   isLoading={printers.isLoading}
+                  paper={{
+                    view: describePaperCheck(driverPaper.check),
+                    isOpening: driverPaper.isOpening,
+                    onOpenPreferences: () => void driverPaper.openPreferences(),
+                  }}
                   onSelect={(name) => void update({ selectedPrinter: name })}
                   onRefresh={() => void printers.refresh()}
                   onTestPrint={printers.printTest}

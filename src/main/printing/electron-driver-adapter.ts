@@ -33,7 +33,7 @@ export class ElectronDriverAdapter implements PrinterAdapter {
   }
 
   async print(printerName: string, job: LabelJob, signal: AbortSignal): Promise<void> {
-    if (!(await this.knownPrinters()).some((printer) => printer.name === printerName)) {
+    if (!(await this.hasPrinter(printerName))) {
       throw new PrintError('PRINTER_NOT_FOUND', `Printer not found: ${printerName}`);
     }
     const readiness = this.status.get(printerName);
@@ -60,6 +60,11 @@ export class ElectronDriverAdapter implements PrinterAdapter {
       signal.removeEventListener('abort', destroy);
       destroy();
     }
+  }
+
+  /** 渲染进程传来的打印机名在交给系统命令之前，必须是系统里真实存在的打印机。 */
+  async hasPrinter(printerName: string): Promise<boolean> {
+    return (await this.knownPrinters()).some((printer) => printer.name === printerName);
   }
 
   private async knownPrinters(): Promise<PrinterInfo[]> {

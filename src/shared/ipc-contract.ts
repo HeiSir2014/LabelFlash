@@ -1,5 +1,6 @@
 import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
+import type { PaperCheck } from './driver-paper';
 import type { JobPage, JobQuery } from './job-history';
 import type { PrinterReadiness } from './printer-readiness';
 import type { AppSettings } from './settings';
@@ -13,6 +14,8 @@ export const IpcChannel = {
   PrintTest: 'printer:test',
   ListPrinters: 'printer:list',
   PrinterStatus: 'printer:status',
+  CheckDriverPaper: 'printer:driver-paper',
+  OpenPrinterPreferences: 'printer:open-preferences',
   ListJobs: 'jobs:list',
   GetSettings: 'settings:get',
   UpdateSettings: 'settings:update',
@@ -63,6 +66,10 @@ export interface LabelFlashApi {
   printTest(printerName: string): Promise<PrintResult>;
   listPrinters(): Promise<PrinterInfo[]>;
   printerStatus(printerName: string): Promise<PrinterReadiness | null>;
+  /** 驱动默认纸张是否为 60×40（每次调用都重新读取驱动设置）。 */
+  checkDriverPaper(printerName: string): Promise<PaperCheck>;
+  /** 打开驱动的「打印首选项」窗口；窗口关闭后才完成。 */
+  openPrinterPreferences(printerName: string): Promise<void>;
   listJobs(query: JobQuery): Promise<JobPage>;
   getSettings(): Promise<AppSettings>;
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;

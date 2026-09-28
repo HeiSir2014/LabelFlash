@@ -1,18 +1,35 @@
 import { useMemo, useState } from 'react';
 import type { PrinterInfo, PrintResult } from '../../../core/types';
 import { filterPrinters } from '../lib/list-filters';
+import type { PaperCheckView } from '../lib/paper-text';
 import { describeResult } from '../lib/status-text';
+
+/** 当前打印机的驱动纸张检测结果（只显示在选中的那一行）。 */
+export interface DriverPaperProps {
+  view: PaperCheckView | null;
+  isOpening: boolean;
+  onOpenPreferences: () => void;
+}
 
 interface PrinterListProps {
   printers: PrinterInfo[];
   selected: string | null;
   isLoading: boolean;
+  paper: DriverPaperProps;
   onSelect: (printerName: string) => void;
   onRefresh: () => void;
   onTestPrint: (printerName: string) => Promise<PrintResult | null>;
 }
 
-export function PrinterList({ printers, selected, isLoading, onSelect, onRefresh, onTestPrint }: PrinterListProps) {
+export function PrinterList({
+  printers,
+  selected,
+  isLoading,
+  paper,
+  onSelect,
+  onRefresh,
+  onTestPrint,
+}: PrinterListProps) {
   const [query, setQuery] = useState('');
   const [testMessages, setTestMessages] = useState<Record<string, string>>({});
   const visible = useMemo(() => filterPrinters(printers, query), [printers, query]);
@@ -67,6 +84,20 @@ export function PrinterList({ printers, selected, isLoading, onSelect, onRefresh
                 测试页
               </button>
               {testMessages[printer.name] && <p className="printer-row__message">{testMessages[printer.name]}</p>}
+              {isSelected && paper.view?.tone === 'ok' && <p className="printer-row__message">{paper.view.text}</p>}
+              {isSelected && paper.view?.tone === 'warning' && (
+                <div className="paper-warning" role="alert">
+                  <p className="paper-warning__text">{paper.view.text}</p>
+                  <button
+                    type="button"
+                    className="button button--small"
+                    onClick={paper.onOpenPreferences}
+                    disabled={paper.isOpening}
+                  >
+                    {paper.isOpening ? '打印首选项已打开…' : '打开打印首选项'}
+                  </button>
+                </div>
+              )}
             </li>
           );
         })}

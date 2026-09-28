@@ -684,6 +684,27 @@ input {
   font-size: 12px;
 }
 
+/* 驱动默认纸张不是 60×40：贴在选中的打印机下面，附处理按钮 */
+.paper-warning {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius);
+  background: var(--color-warning-wash);
+}
+
+.paper-warning__text {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .badge--quiet {
   background: var(--color-housing);
   color: var(--color-ink-soft);

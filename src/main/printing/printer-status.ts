@@ -21,7 +21,7 @@ const NOT_READY_STATUS: Readonly<Record<string, string>> = {
 
 const PROBE_TIMEOUT_MS = 3_000;
 /** 打印机名通过环境变量传入，不拼接进命令行，避免注入。 */
-const PRINTER_NAME_ENV = 'CDL_PRINTER_NAME';
+export const PRINTER_NAME_ENV = 'CDL_PRINTER_NAME';
 const PROBE_SCRIPT = `(Get-Printer -Name $env:${PRINTER_NAME_ENV} -ErrorAction Stop).PrinterStatus.ToString()`;
 
 export const STATUS_POLL_INTERVAL_MS = PRINTER_STATUS_POLL_MS;

@@ -6,6 +6,7 @@ import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
 import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult } from '../core/types';
+import { checkDriverPaper } from '../shared/driver-paper';
 import { type AppInfo, IpcChannel, type LabelPreview } from '../shared/ipc-contract';
 import type { AppSettings } from '../shared/settings';
 import {
@@ -17,6 +18,7 @@ import {
   requireVoiceCue,
 } from './ipc-validators';
 import { resolvePrintTemplate } from './print-template';
+import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
 import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { renderLabelHtml } from './printing/label-html';
 import type { PrinterStatusMonitor } from './printing/printer-status';
@@ -63,6 +65,13 @@ export function registerIpc(deps: IpcDeps): void {
       }
     });
   };
+  const requireKnownPrinter = async (value: unknown): Promise<string> => {
+    const printerName = requireString(value, 'printerName');
+    if (!(await deps.adapter.hasPrinter(printerName))) {
+      throw new Error(`Printer not found: ${printerName}`);
+    }
+    return printerName;
+  };
   const activeTemplate = () => resolvePrintTemplate(deps.templates, deps.settings.current);
   const updateSettings = async (patch: Partial<AppSettings>): Promise<AppSettings> => {
     const previous = deps.settings.current;
@@ -86,6 +95,12 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.PrintTest, (printerName) => deps.service.printTest(requireString(printerName, 'printerName')));
   handle(IpcChannel.ListPrinters, () => deps.adapter.listPrinters());
   handle(IpcChannel.PrinterStatus, (printerName) => deps.status.get(requireString(printerName, 'printerName')));
+  handle(IpcChannel.CheckDriverPaper, async (printerName) =>
+    checkDriverPaper(await queryDriverPaper(await requireKnownPrinter(printerName))),
+  );
+  handle(IpcChannel.OpenPrinterPreferences, async (printerName) =>
+    openPrinterPreferences(await requireKnownPrinter(printerName)),
+  );
   handle(IpcChannel.ListJobs, (query) => deps.jobs.listPage(requireJobQuery(query)));
   handle(IpcChannel.GetSettings, () => deps.settings.current);
   handle(IpcChannel.UpdateSettings, (patch) => updateSettings(requireRecord(patch, 'settings patch')));

@@ -1,9 +1,13 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ElectronApplication, _electron as electron, expect, type Page, test } from '@playwright/test';
 
-const MAIN_ENTRY = join(__dirname, '..', 'out', 'main', 'index.js');
+/**
+ * 以项目根目录启动：Electron 读 package.json 的 main 找到构建产物，app.getVersion() 才是软件版本。
+ * 直接传 out/main/index.js 时找不到 package.json，拿到的是 Electron 自己的版本号。
+ */
+const APP_ROOT = join(__dirname, '..');
 /** 与 src/main/index.ts 中的 USER_DATA_OVERRIDE_ENV 一致：只在未打包时生效。 */
 const USER_DATA_ENV = 'CDL_LABELFLASH_USER_DATA';
 
@@ -25,7 +29,7 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page }> {
       env[key] = value;
     }
   }
-  const app = await electron.launch({ args: [MAIN_ENTRY], env });
+  const app = await electron.launch({ args: [APP_ROOT], env });
   const page = await app.firstWindow();
   await expect(page.locator('.scan-bar__input')).toBeVisible();
   return { app, page };
@@ -40,6 +44,8 @@ test('loads the UI over app:// and previews a scanned label', async () => {
   const { app, page } = await launch();
   await expect(page).toHaveTitle('CDL-云签速印');
   expect(page.url()).toBe('app://bundle/index.html');
+  const { version } = JSON.parse(await readFile(join(APP_ROOT, 'package.json'), 'utf8')) as { version: string };
+  await expect(page.locator('.title-bar__version')).toHaveText(`v${version}`);
 
   await scan(page, 'CL5640-TK-图片色-XXL');
   await expect(page.locator('.status-strip__title')).toHaveText('还没选打印机');

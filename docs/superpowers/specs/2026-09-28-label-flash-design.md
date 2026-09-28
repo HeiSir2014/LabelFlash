@@ -88,7 +88,8 @@ src/
 │   ├── dedup-guard.ts       时间窗口门限：peek / 检查并占位 / 提交 / 释放
 │   ├── serial-queue.ts      Promise 串行队列
 │   ├── print-queue.ts       每台打印机一个串行队列，单任务超时 30s
-│   ├── job-store.ts         JobStore 接口 + 内存实现
+│   ├── ring-buffer.ts       固定容量环形缓冲区
+│   ├── job-store.ts         JobStore 接口 + 内存实现（均基于 RingBuffer）
 │   └── print-service.ts     对外唯一入口：preview(raw) / submit(request) / printTest(printer)
 ├── shared/                主进程与界面共用：IPC 契约、设置类型与校验
 ├── main/                  Electron 主进程
@@ -109,7 +110,7 @@ src/
 ### 核心接口
 
 ```ts
-type PrintSource = 'desktop' | 'mobile';
+type PrintSource = 'desktop' | 'history' | 'mobile'; // history = 从打印记录重打
 
 interface PrintRequest {
   raw: string;          // 二维码原文
@@ -189,12 +190,16 @@ interface PrinterAdapter {
 - **预览区**：标签按实物比例渲染（60×40mm），状态条显示本次结果；手动模式下有"打印"按钮。
 - **打印机列表**：本机打印机可能很多（申通、标签、德邦、Qirui QR-488、HPRT N31C …）。列表支持搜索过滤、滚动；点选即设为当前打印机；每项有"打印测试页"；当前打印机不在系统里时显示警示。
 - **设置**：门限窗口（分钟）、开机自启。（Phase 2 再加：端口、重置 token/PIN、手机访问二维码）
-- **打印记录**：最近 200 条（时间、来源、内容、打印机、结果），可以按内容搜索。
+- **打印记录（可回溯）**：按时间倒序显示（时间、来源、内容、打印机、结果），可以按内容搜索。每条记录有两个操作：
+  - "预览"：把这条标签重新加载到预览区。
+  - "重打"：预览并立即打印，同样经过门限；被拦截时可以强制补打。来源记为"记录重打"。
+- **环形池**：打印记录用固定容量的环形缓冲区（`RingBuffer`）保存。容量可在设置里调整，默认 500 条，范围 50–5000，超出后自动淘汰最旧的记录。`jobs.jsonl` 行数超过容量 2 倍时，重写文件，只保留环形池里的记录。
+  - 注意：重启后的门限回放只能覆盖环形池里还保留的记录。
 
 ### 持久化
 
 `userData` 显式设为 `%APPDATA%\LabelFlash`（英文路径，避开中文目录问题）：
-- `settings.json`：`selectedPrinter`、`autoPrint`、`dedupWindowMinutes`、`launchAtLogin`
+- `settings.json`：`selectedPrinter`、`autoPrint`、`dedupWindowMinutes`、`historyLimit`、`launchAtLogin`
 - `jobs.jsonl`：打印记录
 
 ### 视觉方向

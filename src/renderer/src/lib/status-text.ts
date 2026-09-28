@@ -8,9 +8,13 @@ import type {
   PrintSource,
   RecentPrint,
 } from '../../../core/types';
+import { formatWindow } from '../../../shared/duration-text';
 import type { LabelPreview } from '../../../shared/ipc-contract';
 import { PRINT_TIMEOUT_SECONDS } from '../../../shared/print-timing';
 import type { ConfigPage } from './app-view';
+
+/** 防重复窗口的说法和手机扫码页共用一份（见 src/shared/duration-text.ts）。 */
+export { formatWindow };
 
 export type FeedbackTone = 'success' | 'warning' | 'error';
 export type StatusTone = FeedbackTone | 'idle' | 'pending';
@@ -115,19 +119,6 @@ export function formatAgo(at: number, now: number): string {
     return `${minutes} 分钟前`;
   }
   return `${Math.floor(minutes / MINUTES_PER_HOUR)} 小时前`;
-}
-
-/** 防重复窗口用能整除的最大单位显示：3 秒、90 秒、10 分钟、2 小时。 */
-export function formatWindow(windowMs: number): string {
-  const seconds = Math.round(windowMs / MS_PER_SECOND);
-  if (seconds < SECONDS_PER_MINUTE || seconds % SECONDS_PER_MINUTE !== 0) {
-    return `${seconds} 秒`;
-  }
-  const minutes = seconds / SECONDS_PER_MINUTE;
-  if (minutes >= MINUTES_PER_HOUR && minutes % MINUTES_PER_HOUR === 0) {
-    return `${minutes / MINUTES_PER_HOUR} 小时`;
-  }
-  return `${minutes} 分钟`;
 }
 
 export function formatDateTime(ms: number): string {

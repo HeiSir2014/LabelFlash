@@ -1,10 +1,9 @@
-import type { PrintFailureReason, PrintResult } from '../../../core/types';
-import type { PrinterIssue } from '../../../shared/printer-readiness';
+import type { PrintResult } from '../../../core/types';
+import { type PrintMode, printResultCue } from '../../../shared/print-cues';
 import { VOICE_CUE_LEVEL, type VoiceCue, type VoiceLevel } from '../../../shared/voice';
 import type { FeedbackTone } from './status-text';
 
-/** 这次打印是怎么发起的：扫码、强制补打、从打印记录重打、打测试页。 */
-export type PrintMode = 'scan' | 'force' | 'history' | 'test';
+export type { PrintMode };
 
 /** 需要给操作员反馈（语音或提示音）的时刻。 */
 export type FeedbackEvent =
@@ -29,21 +28,6 @@ const LEVEL_TONE: Record<VoiceLevel, FeedbackTone> = {
   alert: 'error',
 };
 
-const PRINTED_CUE: Record<PrintMode, VoiceCue> = {
-  scan: 'printed',
-  force: 'forced',
-  history: 'reprinted',
-  test: 'testPrinted',
-};
-
-const ISSUE_CUE: Record<PrinterIssue, VoiceCue> = {
-  paperOut: 'paperOut',
-  paperJam: 'paperJam',
-  doorOpen: 'doorOpen',
-  offline: 'printerOffline',
-  other: 'printerNotReady',
-};
-
 export function describeFeedback(event: FeedbackEvent): FeedbackCue {
   return cueFeedback(cueFor(event));
 }
@@ -56,7 +40,8 @@ export function cueFeedback(cue: VoiceCue): FeedbackCue {
 function cueFor(event: FeedbackEvent): VoiceCue {
   switch (event.kind) {
     case 'result':
-      return resultCue(event.result, event.mode);
+      // 打印结果对应哪句话和手机扫码页共用一份（src/shared/print-cues.ts），两边说法一致。
+      return printResultCue(event.result, event.mode);
     case 'invalid':
       return 'invalid';
     case 'no-printer':
@@ -67,34 +52,5 @@ function cueFor(event: FeedbackEvent): VoiceCue {
       return 'scanned';
     case 'internal-error':
       return 'internalError';
-  }
-}
-
-function resultCue(result: PrintResult, mode: PrintMode): VoiceCue {
-  switch (result.status) {
-    case 'printed':
-      return PRINTED_CUE[mode];
-    case 'duplicate':
-      return result.recent.state === 'printing' ? 'stillPrinting' : 'duplicate';
-    case 'invalid':
-      return 'invalid';
-    case 'failed':
-      return failureCue(result.reason, result.issue);
-  }
-}
-
-function failureCue(reason: PrintFailureReason, issue: PrinterIssue | undefined): VoiceCue {
-  switch (reason) {
-    case 'PRINTER_NOT_READY':
-      // 没有分类（例如结果不是来自状态查询）时按「需要处理」播报。
-      return ISSUE_CUE[issue ?? 'other'];
-    case 'PRINTER_NOT_FOUND':
-      return 'printerNotFound';
-    case 'PRINT_TIMEOUT':
-      return 'timeout';
-    case 'PRINT_ERROR':
-      return 'failed';
-    case 'LOOKUP_FAILED':
-      return 'lookupFailed';
   }
 }

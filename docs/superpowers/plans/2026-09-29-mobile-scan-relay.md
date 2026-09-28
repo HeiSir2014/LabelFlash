@@ -796,31 +796,61 @@ export class MobileHost {
 
 ## 阶段 5：接入电脑（基于配置中心的分支）
 
-在 `feature/mobile-desktop` 上做：它从 `feature/config-center` 拉出，合入 `feature/phase1-desktop-client` 上的手机扫码提交。做完合回，随 1.0.1 发布。先按配置中心的新结构把本阶段细化成任务，再实施。已确定的内容：
+在 `feature/mobile-desktop` 上做：它从 `feature/config-center` 拉出，合入 `feature/phase1-desktop-client` 上的手机扫码提交。做完合回，随 1.0.1 发布。每个任务一个提交，都通过 `bun run check`；改了界面或主进程的再跑 `bun run test:e2e`。
 
-1. **主进程**：
-   - 设置项 `mobileRelayUrl`（`src/shared/settings.ts`，清洗用 `sanitizeRelayUrl`）；
-   - `electron.vite.config.ts` 用 `define` 注入 `CDL_LABELFLASH_DEFAULT_RELAY_URL`；CI 的发布作业从 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL` 读取；
-   - `src/main/mobile/mobile-station.ts` 创建 `MobileHost`，接上 `PrintService.submit`（`source: 'mobile'`）、`toPhonePrintResult`、设置里的 `selectedPrinter`、打印机显示名；设置里的打印机变了时调用 `printerChanged()`；
-   - 程序退出时 `stop('quit')`；每 5 秒 `tick()`。
-2. **IPC**（都加在 `ipc-contract.ts`、`ipc.ts`、preload 的末尾）：
-   - `mobile:start` / `mobile:stop` / `mobile:status` / `mobile:remove-phone` / `mobile:set-join-locked`，以及推送 `mobile:status-changed`；
-   - `ipc-validators.ts` 校验；preload 暴露；
-   - 主进程用 `qrcode` 生成二维码 SVG 的 data URL，随状态返回。
-3. **界面**（设计 7.3）：
-   - 标题栏「配置」和打印机之间加「手机扫码」按钮和状态点；非模态浮层显示各状态，Esc 关闭后焦点回到扫码框；
-   - 二维码有效期倒计时，过期后「重新生成」；手机列表带「移除」，暂停加入时带「允许新手机加入」；
-   - 地址或打印机没设置时，给出去配置的链接（`PageLink` / `StatusView.link`）；
-   - 配置中心「集成」分组加「手机扫码」页：中转地址、「恢复默认」、当前状态；
-   - 1024×680 和 1280×800 各截图核对；
-   - 收到手机打印的结果后刷新打印记录；
-   - `feedback-cues.ts` 改用 `src/shared/print-cues.ts`。
-4. **E2E**：Electron 连本机中转服务，脚本手机扫码 → 打印记录出现来源「手机」的一条（打印机用 E2E 现有的假打印方式）。
-5. **文档**：
-   - README：功能、中转地址（官方安装包默认用 yterm.cn 上的中转服务，可以在设置里换成自己部署的）、「电脑要能直接访问中转服务的 443 端口，不支持系统代理」、内容端到端加密；
-   - `src/main/CLAUDE.md`、`src/renderer/CLAUDE.md`：新模块和约束；
-   - 设计文档里和实现不一致的地方同步改掉。
-6. **验收**：Windows 150% 缩放和 macOS 各走一遍，真机出纸；官方中转服务部署好，安装包的默认地址能连上。版本号保持 1.0.1。
+### Task 16: 用词和时长共用一份
+
+- 界面的 `lib/feedback-cues.ts` 改用 `src/shared/print-cues.ts` 的 `printResultCue` 和 `PrintMode`，删掉重复的对应关系；
+- `lib/status-text.ts` 的 `formatWindow` 改用 `src/shared/duration-text.ts`；
+- 测试：现有的 `voice.test.ts`、`status-text.test.ts` 不改断言，照样通过。
+
+### Task 17: 中转地址设置与构建默认值
+
+- `sanitizeRelayUrl` 移到 `src/shared/relay-url.ts`（设置和主进程共用），`relay-endpoint.ts` 引用它；
+- 设置项 `mobileRelayUrl: string | null`，默认 null，按 `sanitizeRelayUrl` 清洗；
+- `electron.vite.config.ts` 给主进程 `define` 构建默认值 `CDL_LABELFLASH_DEFAULT_RELAY_URL`（环境变量没设时为空）；`AppInfo` 加 `defaultRelayUrl`，界面据此显示「恢复默认」；
+- 测试：设置清洗（合法、非法、去掉查询串、补结尾 `/`）。
+
+### Task 18: 主进程接线（mobile-station）
+
+- `src/main/mobile/mobile-station.ts`（不 import electron，依赖注入，`bun test`）：
+  - `start()`：地址（设置优先、构建默认值兜底）没有时返回 `failed: not-configured`；否则按当前地址创建 `MobileHost` 并开始；
+  - 打印：`PrintService.submit({ raw, printerName, source: 'mobile', force })` → `toPhonePrintResult`；
+  - 当前打印机：设置里的 `selectedPrinter` 在打印机列表里的显示名，不在列表里时显示名就是系统名；
+  - 设置变化：打印机变了 → `printerChanged()`；中转地址变了 → 结束当前会话（下次开始连新地址）；
+  - 每 5 秒 `tick()`；退出时 `stop('quit')`；状态变化推给界面。
+- `index.ts` 创建它并接到设置变化和退出流程。
+- 测试：没有地址、地址切换、打印机显示名、打印结果换算、退出时结束。
+
+### Task 19: IPC
+
+- `mobile:start` / `mobile:stop` / `mobile:status` / `mobile:remove-phone` / `mobile:set-join-locked`，推送 `mobile:status-changed`；都加在 `ipc-contract.ts`、`ipc.ts`、preload 的末尾；
+- `ipc-validators.ts` 加 `requireMobilePhoneId`（16 字节随机数格式）和 `requireBoolean`，补测试；
+- 二维码在界面里用现有的 `useQrImage` 本机生成（和「关于」页的店铺二维码同一个做法），主进程不生成图片。
+
+### Task 20: 界面
+
+- `lib/mobile-text.ts`（纯函数，测试）：状态 → 按钮的状态点、浮层的标题和说明、有效期倒计时的文字、手机列表的文字、去配置的链接；
+- `lib/scan-focus.ts`：浮层标记 `data-keep-focus`，焦点在里面时不自动拉回扫码框（扫码枪的字符照样进扫码框）；`returnFocusToScanBox()` 让关闭浮层后焦点立即回到扫码框；补测试；
+- `view-models/use-mobile-station.ts`：在 App 里创建，跟随主进程推送；手机打印有结果时刷新打印记录；
+- 组件：标题栏「配置」和打印机之间的「手机扫码」按钮（状态点）；非模态浮层 `MobileOverlay`（不用 `showModal`，Esc 关闭）；配置中心「集成」分组的「手机扫码」页 `MobilePage`（中转地址失焦或回车保存、恢复默认、当前状态）；
+- 1024×680 和 1280×800 各截图核对。
+
+### Task 21: E2E
+
+- 构建中转服务，子进程启动 `relay/dist/server.js`（本机端口），设置里填本机地址；
+- 用手机端的 `PhoneSession`（Node 自带 WebSocket 和 WebCrypto）加入、提交；打印用 `stubPrinting`；
+- 断言：浮层显示二维码和手机；打印记录出现来源「手机」的一条；Esc 关闭浮层后焦点回到扫码框；配置中心「手机扫码」页能改地址和恢复默认。
+
+### Task 22: CI 与文档
+
+- CI：`dist:win` 和 `release:win` 从 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL` 注入默认地址；release 作业先确认标签所在的提交在 `master` 上，不在就失败（需求方已同意）；
+- README：功能、中转地址（官方安装包默认用 yterm.cn 上的中转服务，可以换成自己部署的）、「电脑要能直接访问中转服务的 443 端口，不支持系统代理」、内容端到端加密；
+- `src/main/CLAUDE.md`、`src/renderer/CLAUDE.md`（顺带改掉配置中心会话指出的几处过时说法）、设计文档同步。
+
+### Task 23: 验收
+
+- Windows 150% 缩放和 macOS 各走一遍；真手机经官方中转服务在热敏标签机上出纸；安装包的默认地址能连上。结果写进 `docs/windows-acceptance.md`。版本号保持 1.0.1。
 
 ## 自查
 

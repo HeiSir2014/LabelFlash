@@ -26,6 +26,7 @@ describe('openDatabase', () => {
       'lookup_rows',
       'lookup_tables',
       'scan_rules',
+      'secrets',
       'settings',
       'templates',
     ]);

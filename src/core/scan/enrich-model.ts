@@ -103,5 +103,19 @@ export const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 /** 请求头里引用本机密钥：{密钥:名称}。 */
 export const SECRET_REFERENCE_PATTERN = /\{密钥:([^{}\n]{1,30})\}/g;
 
+export const SECRET_LIMITS = { nameLength: 30, valueLength: 4_096 } as const;
+
+/** 密钥名称：1–30 个字符，不含花括号和控制字符，首尾没有空白（要能写进 {密钥:名称}）。 */
+export function isValidSecretName(name: string): boolean {
+  return (
+    name.length > 0 && name.length <= SECRET_LIMITS.nameLength && name === name.trim() && !/[{}\p{Cc}]/u.test(name)
+  );
+}
+
+/** 密钥内容会放进请求头：不能为空、不能换行。 */
+export function isValidSecretValue(value: string): boolean {
+  return value.length > 0 && value.length <= SECRET_LIMITS.valueLength && !/[\r\n]/.test(value);
+}
+
 /** 正则替换执行器：返回替换后的文本，超时返回 null。主进程注入隔离实现。 */
 export type RegexReplacer = (pattern: string, flags: string, input: string, replacement: string) => string | null;

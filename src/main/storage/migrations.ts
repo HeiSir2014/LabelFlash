@@ -67,5 +67,12 @@ export const MIGRATIONS: readonly string[] = [
     cells     TEXT    NOT NULL,
     PRIMARY KEY (table_id, row_index)
   ) STRICT, WITHOUT ROWID;
+
+  -- 密钥（HTTP 查询的令牌、通知的签名密钥）：value 是系统加密（safeStorage）后的字节。
+  CREATE TABLE secrets (
+    name       TEXT    PRIMARY KEY,
+    value      BLOB    NOT NULL,
+    updated_at INTEGER NOT NULL
+  ) STRICT;
   `,
 ];

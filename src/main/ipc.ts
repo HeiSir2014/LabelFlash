@@ -8,6 +8,7 @@ import {
   shell,
 } from 'electron';
 import type { PrintService } from '../core/print-service';
+import { SECRET_LIMITS } from '../core/scan/enrich-model';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
@@ -36,6 +37,7 @@ import { renderLabelHtml } from './printing/label-html';
 import type { PrinterProbeHost } from './printing/printer-probe-host';
 import type { PrinterStatusMonitor } from './printing/printer-status';
 import type { SqliteJobStore } from './storage/sqlite-job-store';
+import { SecretError, type SqliteSecretStore } from './storage/sqlite-secret-store';
 import type { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import type { AppUpdater } from './updater';
 import type { VoiceClips } from './voice/voice-clips';
@@ -49,6 +51,7 @@ export interface IpcDeps {
   settings: SqliteSettingsStore;
   templates: TemplateCatalog;
   lookupTables: LookupTables;
+  secrets: SqliteSecretStore;
   status: PrinterStatusMonitor;
   appInfo: AppInfo;
   updater: AppUpdater;
@@ -163,6 +166,20 @@ export function registerIpc(deps: IpcDeps): void {
     return deps.lookupTables.importFile(path, tableId);
   });
   handle(IpcChannel.DeleteLookupTable, (id) => deps.lookupTables.remove(requireLookupTableId(id)));
+  handle(IpcChannel.ListSecrets, () => deps.secrets.names());
+  handle(IpcChannel.SetSecret, (name, value) => {
+    try {
+      const secretValue = requireString(value, 'secret value', SECRET_LIMITS.valueLength);
+      deps.secrets.set(requireString(name, 'secret name'), secretValue);
+      return { ok: true };
+    } catch (error) {
+      if (error instanceof SecretError) {
+        return { ok: false, issue: error.message };
+      }
+      throw error;
+    }
+  });
+  handle(IpcChannel.DeleteSecret, (name) => deps.secrets.remove(requireString(name, 'secret name')));
   handle(IpcChannel.GetAppInfo, () => deps.appInfo);
   handle(IpcChannel.OpenLogFolder, async () => {
     const error = await shell.openPath(deps.appInfo.logsDir);

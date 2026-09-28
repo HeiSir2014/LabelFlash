@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { app, type BrowserWindow, dialog, Menu } from 'electron';
+import { app, type BrowserWindow, dialog, Menu, net } from 'electron';
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
@@ -28,12 +28,15 @@ import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { createReadinessProbe, PrinterStatusMonitor } from './printing/printer-status';
+import { createHttpStepRunner } from './scan/http-step';
 import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './scan/sandboxed-regex';
+import { safeStorageCipher } from './secrets/safe-storage-cipher';
 import { denyAllPermissions, hardenAllWebContents } from './security';
 import { openDatabase } from './storage/database';
 import { SqliteJobStore } from './storage/sqlite-job-store';
 import { SqliteLookupStore } from './storage/sqlite-lookup-store';
 import { SqliteScanRuleRepository } from './storage/sqlite-scan-rule-repository';
+import { SqliteSecretStore } from './storage/sqlite-secret-store';
 import { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import { SqliteTemplateRepository } from './storage/sqlite-template-repository';
 import { SqliteWindowStateStore } from './storage/sqlite-window-state-store';
@@ -154,11 +157,16 @@ async function bootstrap(): Promise<void> {
   const rules = new RuleCatalog(new SqliteScanRuleRepository(database, systemClock), randomUUID);
   const runRegex = createSandboxedRegexRunner();
   const lookupTables = new LookupTables(new SqliteLookupStore(database, systemClock), randomUUID);
+  const secrets = new SqliteSecretStore(database, safeStorageCipher, systemClock);
   const enrichDeps: EnrichDeps = {
     replace: createSandboxedRegexReplacer(),
     lookup: (tableId, keyColumn, key, ignoreCase) => lookupTables.find(tableId, keyColumn, key, ignoreCase),
-    // HTTP 查询在下一个任务接入。
-    http: async () => ({ ok: false, detail: 'HTTP 查询还没有接入' }),
+    http: createHttpStepRunner({
+      fetch: (url, init) => net.fetch(url, init),
+      secret: (name) => secrets.get(name),
+      now: () => systemClock.now(),
+      userAgent: `CDL-LabelFlash/${app.getVersion()}`,
+    }),
     now: () => performance.now(),
   };
   const guard = new DedupGuard(systemClock, secondsToMs(settings.current.dedupWindowSeconds));
@@ -208,6 +216,7 @@ async function bootstrap(): Promise<void> {
     settings,
     templates,
     lookupTables,
+    secrets,
     status,
     appInfo: {
       productName: BRAND.productName,

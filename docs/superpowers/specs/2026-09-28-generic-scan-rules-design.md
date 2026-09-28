@@ -230,7 +230,8 @@ interface FieldsArea {
 - **设置**：新增 `ruleSettings`、`scanLineGapMs`；`activeTemplateId` 的默认值改为 `builtin:generic`。
 - **打印记录**：只记原始内容；重打时按当前规则重新识别和加工；全文搜索照常对原始内容建索引。失败原因新增 `LOOKUP_FAILED`（HTTP 查询失败且设为拦下）。
 - **查找表**：`lookup_tables`（id、name、columns JSON、row_count、created_at、updated_at）和 `lookup_rows`（table_id、key_column 值的规范化键、row JSON），在键上建索引，直接写进初始 schema。
-- **密钥**：设置里另存 `secrets`（名称 → `safeStorage` 加密后的 base64），渲染层只能看到名称。
+- **密钥**：独立的 `secrets` 表（name、value = `safeStorage` 加密后的字节、updated_at），不放进设置——设置会整份发给界面，密文也不该出现在渲染进程。渲染层只能看到名称；系统加密不可用时拒绝保存。HTTP 查询和打印结果通知的签名密钥共用这张表。
+- **HTTP 请求**：用 Electron 的 `net.fetch`（Chromium 网络栈），自动使用系统代理设置。
 - **不做兼容、不做迁移**：1.0.1 是第一个发布版本，之前没有任何用户数据。开发期间的数据库和设置一律不兼容：开发机删掉旧的数据目录（Windows `%LOCALAPPDATA%\CDL-LabelFlash`，macOS `~/Library/Application Support/CDL-LabelFlash`）重新生成即可。
 
 ## 6. 界面

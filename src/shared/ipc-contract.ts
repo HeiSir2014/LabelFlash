@@ -28,6 +28,9 @@ export const IpcChannel = {
   ListLookupTables: 'lookup:list',
   ImportLookupTable: 'lookup:import',
   DeleteLookupTable: 'lookup:delete',
+  ListSecrets: 'secrets:list',
+  SetSecret: 'secrets:set',
+  DeleteSecret: 'secrets:delete',
   GetAppInfo: 'app:info',
   OpenLogFolder: 'app:open-log-folder',
   OpenShop: 'app:open-shop',
@@ -99,6 +102,11 @@ export interface LabelFlashApi {
   /** 主进程弹出选择文件的对话框；replaceId 不为 null 时替换那张表的内容。 */
   importLookupTable(replaceId: string | null): Promise<LookupImportResult>;
   deleteLookupTable(id: string): Promise<void>;
+  /** 只返回密钥名称；内容写进去以后界面上再也看不到。 */
+  listSecrets(): Promise<string[]>;
+  /** 新增或替换；名称或内容不合法、系统加密不可用时返回原因。 */
+  setSecret(name: string, value: string): Promise<{ ok: true } | { ok: false; issue: string }>;
+  deleteSecret(name: string): Promise<void>;
   getAppInfo(): Promise<AppInfo>;
   openLogFolder(): Promise<void>;
   /** 用系统浏览器打开出品方店铺（地址是主进程里的常量，页面不能指定网址）。 */

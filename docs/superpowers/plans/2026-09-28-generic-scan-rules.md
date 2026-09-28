@@ -246,6 +246,17 @@
 
 - [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): HTTP lookups with cached results and encrypted secrets`
 
+### Task 5D: 打印结果通知（webhook）
+
+**Files:**
+- Create: `src/core/notify/webhook-model.ts`（接口配置、事件、上限、退避表）、`src/core/notify/webhook-event.ts`（由打印结果生成请求体）、`src/core/notify/delivery-schedule.ts`（下次重试时间、是否放弃）、`src/main/notify/webhook-sender.ts`（签名、发送、超时）、`src/main/notify/webhook-outbox.ts`（后台发送循环）、`src/main/storage/sqlite-webhook-store.ts`
+- Modify: `migrations.ts`（初始 schema 加 `webhook_deliveries`）、`settings.ts`（`webhooks`）、`print-service.ts`（`onResult` 回调，记录写入后触发）、IPC（接口增删改、测试、发送记录、立即重试）、设置页界面
+- Test: `webhook-event.test.ts`、`delivery-schedule.test.ts`、`webhook-sender.test.ts`（`Bun.serve` 验证签名）、`sqlite-webhook-store.test.ts`、`webhook-outbox.test.ts`（假时钟）
+
+**测试要点:** 只为勾选的事件入队；测试页不入队；签名可被接收方验证；2xx 成功、5xx/429/超时重试、其他 4xx 不重试；退避时间表；24 小时放弃；重启后继续；同一接口按顺序；密钥不进日志；发送记录上限。
+
+- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(notify): signed print result webhooks with a durable retry queue`
+
 ### Task 6: 规则 IPC 与导入导出文件
 
 **Files:**

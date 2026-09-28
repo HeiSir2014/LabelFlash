@@ -13,7 +13,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { buildRelay, relayVersion } from './build';
+import { buildRelay, DIRTY_SUFFIX, relayVersion } from './build';
 
 export const CONTAINER_NAME = 'labelflash-relay';
 const IMAGE_NAME = 'labelflash-relay';
@@ -27,8 +27,12 @@ const LOG_MAX_SIZE = '5m';
 const LOG_MAX_FILES = 2;
 /** 新容器启动后，健康检查最多等这么久。 */
 const HEALTH_WAIT_SECONDS = 20;
+/** 对外健康检查一次最多等这么久：反向代理和容器都在，正常不到一秒。 */
+const HEALTH_REQUEST_TIMEOUT_MS = 10_000;
 /** ssh 主机名只允许字母、数字、点、横线、下划线：它会出现在命令行里，不能夹带参数或命令。 */
 const SSH_HOST_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** docker 标签的格式（最长 128 个字符）；它也是服务器上的目录名，同样不能夹带命令。 */
+const DOCKER_TAG_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/;
 
 const ROOT = resolve(import.meta.dir, '../..');
 
@@ -53,9 +57,33 @@ export function readDeployTarget(env: Record<string, string | undefined>): Deplo
   return { ssh, publicOrigin: read('RELAY_PUBLIC_ORIGIN'), healthUrl: read('RELAY_HEALTH_URL') };
 }
 
-/** 构建版本（例如 1.1.0+abc1234）→ docker 标签（不允许 +）。 */
+/** 构建版本（例如 1.0.1+abc1234）→ docker 标签（不允许 +）。标签会出现在服务器的命令行和目录名里，格式不对就报错。 */
 export function imageTag(version: string): string {
-  return version.replaceAll('+', '-');
+  const tag = version.replaceAll('+', '-');
+  if (!DOCKER_TAG_PATTERN.test(tag)) {
+    throw new Error(`版本号「${version}」不能用作镜像标签`);
+  }
+  return tag;
+}
+
+/**
+ * 能不能发布这个版本：
+ * - 工作区有没提交的改动（版本号带 .dirty）时不发：这样的版本号对不上任何提交，出了问题查不到代码；
+ * - 服务器上正在运行的就是这个版本时不发：同一个标签会覆盖掉旧镜像，健康检查失败时就没有可以换回的版本了。
+ */
+export function assertDeployable(version: string, runningTag: string | null): void {
+  if (version.endsWith(DIRTY_SUFFIX)) {
+    throw new Error('工作区有没提交的改动：先提交，再发布');
+  }
+  if (runningTag === imageTag(version)) {
+    throw new Error(`服务器上已经在运行 ${runningTag}：提交新的改动后再发布`);
+  }
+}
+
+/** 服务器上记的当前版本；读不到或格式不对（被手动改过）时为 null，这次部署失败就没有可以换回的版本。 */
+export function parseRunningTag(text: string): string | null {
+  const tag = text.trim();
+  return DOCKER_TAG_PATTERN.test(tag) ? tag : null;
 }
 
 export function dockerRunArgs(tag: string, publicOrigin: string): string[] {
@@ -117,16 +145,22 @@ function shellQuote(value: string): string {
 }
 
 async function checkPublicHealth(url: string, version: string): Promise<void> {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(HEALTH_REQUEST_TIMEOUT_MS) });
+  // 反向代理出错时回的是 HTML 错误页：先看状态码，别把它当 JSON 解析。
+  if (!response.ok) {
+    throw new Error(`对外的健康检查失败：HTTP ${response.status}`);
+  }
   const health = (await response.json()) as { ok?: boolean; version?: string };
-  if (!response.ok || health.ok !== true || health.version !== version) {
-    throw new Error(`对外的健康检查不对：${response.status} ${JSON.stringify(health)}，期望版本 ${version}`);
+  if (health.ok !== true || health.version !== version) {
+    throw new Error(`对外的健康检查不对：${JSON.stringify(health)}，期望版本 ${version}`);
   }
 }
 
 export async function deploy(target: DeployTarget): Promise<void> {
   const version = await relayVersion();
   const tag = imageTag(version);
+  const previous = parseRunningTag(await remote(target, `cat ${REMOTE_DIR}/current 2>/dev/null || true`));
+  assertDeployable(version, previous);
   const workDir = await mkdtemp(join(tmpdir(), 'relay-deploy-'));
   try {
     const stage = join(workDir, 'stage');
@@ -140,7 +174,6 @@ export async function deploy(target: DeployTarget): Promise<void> {
     await run(['scp', '-o', 'BatchMode=yes', '-q', archive, `${target.ssh}:${dir}/relay.tgz`], workDir);
     console.log(`uploaded ${tag}`);
 
-    const previous = await remote(target, `cat ${REMOTE_DIR}/current 2>/dev/null || true`);
     await remote(target, `cd ${dir} && tar -xzf relay.tgz && docker build --quiet --tag ${IMAGE_NAME}:${tag} .`);
     const runArgs = (runTag: string) => dockerRunArgs(runTag, target.publicOrigin).map(shellQuote).join(' ');
     await remote(target, `docker rm --force ${CONTAINER_NAME} >/dev/null 2>&1 || true; docker ${runArgs(tag)}`);

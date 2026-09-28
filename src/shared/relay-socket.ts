@@ -4,15 +4,23 @@
  */
 import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, RECONNECT_DELAYS_MS } from './mobile-protocol';
 
-/** 浏览器 WebSocket 和 Node 24 的全局 WebSocket 都满足的最小接口。 */
+/**
+ * 浏览器 WebSocket 和 Node 24 的全局 WebSocket 都满足的最小接口。
+ * 两边的事件类型各不相同，处理函数的参数写成 never 才能都放进来；RelaySocket 设置处理函数时再注明它读什么
+ * （只读 message 事件的 data）。
+ */
 export interface SocketLike {
   readonly readyState: number;
   send(data: string): void;
   close(code?: number, reason?: string): void;
-  onopen: ((event: unknown) => void) | null;
-  onmessage: ((event: { data: unknown }) => void) | null;
-  onclose: ((event: unknown) => void) | null;
-  onerror: ((event: unknown) => void) | null;
+  onopen: ((event: never) => void) | null;
+  onmessage: ((event: never) => void) | null;
+  onclose: ((event: never) => void) | null;
+  onerror: ((event: never) => void) | null;
+}
+
+interface MessageEventLike {
+  data: unknown;
 }
 
 export interface SocketTimers {
@@ -96,7 +104,7 @@ export class RelaySocket {
         this.options.onOpen();
       }
     };
-    socket.onmessage = (event) => {
+    socket.onmessage = (event: MessageEventLike) => {
       if (socket !== this.socket) {
         return;
       }

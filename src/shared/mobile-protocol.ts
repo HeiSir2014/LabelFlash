@@ -15,7 +15,7 @@ export const ID_BYTES = 16;
 export const KEY_BYTES = 32;
 /** AES-GCM 的 IV：12 字节，base64url 后 16 个字符。 */
 export const IV_BYTES = 12;
-/** 单帧上限：最长的内容是 30 个字段的预览，远小于这个值；中转服务按它设置 maxPayloadLength。 */
+/** 单帧上限：最长的内容是一次打印请求（原文最多 4000 字符）或结果里的字段摘要，远小于这个值；中转服务按它设置 maxPayloadLength。 */
 export const MAX_FRAME_BYTES = 64 * 1024;
 /** 心跳间隔：远小于 nginx 的 proxy_read_timeout（120 秒）和移动网络 NAT 常见的 60 秒空闲回收。 */
 export const HEARTBEAT_INTERVAL_MS = 25_000;
@@ -25,10 +25,18 @@ export const HEARTBEAT_TIMEOUT_MS = 10_000;
 export const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
 /** 连接后必须在这段时间内发出第一帧（open / join），否则中转服务断开它。 */
 export const FIRST_FRAME_TIMEOUT_MS = 10_000;
-/** 电脑断线后中转服务保留会话的时间：够电脑换网络或中转服务重启后重连。 */
+/**
+ * 电脑断线后会话的宽限期：够电脑换网络或中转服务重启后重连。
+ * 中转服务按它保留断线电脑的会话；中转服务重启后状态已丢，被接纳过的手机收到 not-found 时，也按同一个宽限期等电脑回来。
+ */
 export const DESKTOP_GRACE_MS = 120_000;
-/** 被接纳过的手机收到 not-found 后继续重试的时间：中转服务重启时手机可能比电脑先连上。 */
-export const RESUME_RETRY_MS = 30_000;
+/** 手机提交的任务多久没收到 accepted 就用同一个任务号重发（幂等，不会多打）。 */
+export const JOB_ACK_TIMEOUT_MS = 10_000;
+/**
+ * 一部手机同时在电脑上排队、还没出结果的任务上限：扫码比打印快时让手机先等一等（背压），
+ * 10 张足够连续扫一小批，又不至于在打印机出问题时积压太多。
+ */
+export const MAX_PENDING_JOBS = 10;
 /** 手机的简短描述（例如「iPhone · 微信」）只用于电脑上显示，超出截断。 */
 export const MAX_DEVICE_LENGTH = 40;
 /**
@@ -79,46 +87,51 @@ export type RelayToPhone =
   | { t: 'pong' }
   | { t: 'error'; code: RelayErrorCode };
 
+export const REFUSAL_REASONS = ['rate-limited', 'too-many-pending'] as const;
+/** 任务没被接受（也就没有执行）的原因：稍后可以用同一个任务号重发。 */
+export type RefusalReason = (typeof REFUSAL_REASONS)[number];
+
+/** 手机 → 电脑。 */
 export type PhoneMessage =
+  /** 认领或恢复会话；token 是之前 welcome 给的令牌，第一次为 null。 */
   | { type: 'hello'; token: string | null; device: string }
-  | { type: 'preview'; nonce: string; id: number; raw: string }
-  | { type: 'print'; nonce: string; id: number; raw: string; force: boolean };
+  /**
+   * 提交一个打印任务。
+   * - job：手机生成的随机任务号，也是幂等键。同一个任务号电脑只执行一次，重发只会拿到已有的进度或结果。
+   *   断线重连后，手机把还没结果的任务原样重发，不会丢，也不会多打。
+   * - nonce、seq：防重放。nonce 是本次连接的 welcome 给的，seq 在本次连接内严格递增。
+   * - force：强制补打（跳过防重复窗口）。补打是一个新任务，有自己的任务号。
+   */
+  | { type: 'submit'; nonce: string; seq: number; job: string; raw: string; force: boolean };
 
 export interface PhoneField {
   name: string;
   value: string;
 }
 
-export type PhonePreview =
-  | {
-      status: 'ok';
-      ruleName: string;
-      templateName: string;
-      fields: PhoneField[];
-      /** 字段数或字段值超过上限被截断了。 */
-      truncated: boolean;
-      recent: RecentPrint | null;
-      windowMs: number;
-      /** 设为「拦下不打印」的查询失败了：打印会被拦下，这里是原因。 */
-      lookupFailure: string | null;
-    }
-  | { status: 'invalid'; reason: InvalidReason };
-
 export type PhonePrintResult =
-  | { status: 'printed' }
+  /** 打印成功时带上识别结果的摘要，手机上能看到打的是哪一张。 */
+  | { status: 'printed'; ruleName: string; fields: PhoneField[] }
   | { status: 'duplicate'; recent: RecentPrint; windowMs: number }
   | { status: 'invalid'; reason: InvalidReason }
   | { status: 'failed'; reason: PrintFailureReason; detail: string | null; issue: PrinterIssue | null }
   /** 电脑上还没有选打印机。 */
   | { status: 'no-printer' };
 
+/** 电脑 → 手机。 */
 export type DesktopMessage =
+  /** 认领或恢复成功：令牌、本次连接的 nonce、当前打印机（没选时为 null）。 */
   | { type: 'welcome'; token: string; nonce: string; printer: string | null }
-  | { type: 'rejected' }
-  | { type: 'preview'; id: number; result: PhonePreview }
-  | { type: 'print'; id: number; result: PhonePrintResult }
-  | { type: 'busy'; id: number }
-  | { type: 'rate-limited'; id: number };
+  /** 会话已被别的手机占用。 */
+  | { type: 'taken' }
+  /** 电脑上选的打印机变了。 */
+  | { type: 'printer'; printer: string | null }
+  /** 任务已收到，排队打印。 */
+  | { type: 'accepted'; job: string }
+  /** 任务的最终结果。 */
+  | { type: 'result'; job: string; result: PhonePrintResult }
+  /** 任务没被接受。 */
+  | { type: 'refused'; job: string; reason: RefusalReason };
 
 const INVALID_REASONS: readonly InvalidReason[] = ['INVALID_CONTENT', 'NO_MATCHING_RULE'];
 const RECENT_STATES: readonly RecentPrint['state'][] = ['printing', 'printed'];
@@ -237,16 +250,18 @@ export function parsePhoneMessage(value: unknown): PhoneMessage | null {
       }
       return { type: 'hello', token, device: device.slice(0, MAX_DEVICE_LENGTH) };
     }
-    case 'preview': {
-      const { nonce, id, raw } = value;
-      return isRandomId(nonce) && isRequestId(id) && isRequestRaw(raw) ? { type: 'preview', nonce, id, raw } : null;
-    }
-    case 'print': {
-      const { nonce, id, raw, force } = value;
-      if (!isRandomId(nonce) || !isRequestId(id) || !isRequestRaw(raw) || typeof force !== 'boolean') {
+    case 'submit': {
+      const { nonce, seq, job, raw, force } = value;
+      if (
+        !isRandomId(nonce) ||
+        !isSequence(seq) ||
+        !isRandomId(job) ||
+        !isRequestRaw(raw) ||
+        typeof force !== 'boolean'
+      ) {
         return null;
       }
-      return { type: 'print', nonce, id, raw, force };
+      return { type: 'submit', nonce, seq, job, raw, force };
     }
     default:
       return null;
@@ -265,19 +280,21 @@ export function parseDesktopMessage(value: unknown): DesktopMessage | null {
       }
       return { type: 'welcome', token, nonce, printer };
     }
-    case 'rejected':
-      return { type: 'rejected' };
-    case 'preview': {
-      const result = readPreview(value['result']);
-      return isRequestId(value['id']) && result ? { type: 'preview', id: value['id'], result } : null;
-    }
-    case 'print': {
+    case 'taken':
+      return { type: 'taken' };
+    case 'printer':
+      return isStringOrNull(value['printer']) ? { type: 'printer', printer: value['printer'] } : null;
+    case 'accepted':
+      return isRandomId(value['job']) ? { type: 'accepted', job: value['job'] } : null;
+    case 'result': {
+      const { job } = value;
       const result = readPrintResult(value['result']);
-      return isRequestId(value['id']) && result ? { type: 'print', id: value['id'], result } : null;
+      return isRandomId(job) && result ? { type: 'result', job, result } : null;
     }
-    case 'busy':
-    case 'rate-limited':
-      return isRequestId(value['id']) ? { type: value['type'], id: value['id'] } : null;
+    case 'refused': {
+      const { job, reason } = value;
+      return isRandomId(job) && isOneOf(reason, REFUSAL_REASONS) ? { type: 'refused', job, reason } : null;
+    }
     default:
       return null;
   }
@@ -293,40 +310,16 @@ export function parsePhoneFragment(hash: string): { session: string; key: string
   return rest.length === 0 && isRandomId(session) && isSessionKey(key) ? { session, key } : null;
 }
 
-function readPreview(value: unknown): PhonePreview | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  if (value['status'] === 'invalid') {
-    return isOneOf(value['reason'], INVALID_REASONS) ? { status: 'invalid', reason: value['reason'] } : null;
-  }
-  if (value['status'] !== 'ok') {
-    return null;
-  }
-  const { ruleName, templateName, truncated, windowMs, lookupFailure } = value;
-  const fields = readFields(value['fields']);
-  const recent = value['recent'] === null ? null : readRecent(value['recent']);
-  if (
-    typeof ruleName !== 'string' ||
-    typeof templateName !== 'string' ||
-    fields === null ||
-    typeof truncated !== 'boolean' ||
-    recent === undefined ||
-    !isDuration(windowMs) ||
-    !isStringOrNull(lookupFailure)
-  ) {
-    return null;
-  }
-  return { status: 'ok', ruleName, templateName, fields, truncated, recent, windowMs, lookupFailure };
-}
-
 function readPrintResult(value: unknown): PhonePrintResult | null {
   if (!isRecord(value)) {
     return null;
   }
   switch (value['status']) {
-    case 'printed':
-      return { status: 'printed' };
+    case 'printed': {
+      const { ruleName } = value;
+      const fields = readFields(value['fields']);
+      return typeof ruleName === 'string' && fields ? { status: 'printed', ruleName, fields } : null;
+    }
     case 'no-printer':
       return { status: 'no-printer' };
     case 'duplicate': {
@@ -365,10 +358,9 @@ function readFields(value: unknown): PhoneField[] | null {
   return fields;
 }
 
-/** 不合法时返回 undefined（和合法的 null 区分开）。 */
-function readRecent(value: unknown): RecentPrint | undefined {
+function readRecent(value: unknown): RecentPrint | null {
   if (!isRecord(value) || !isOneOf(value['state'], RECENT_STATES) || !Number.isFinite(value['at'])) {
-    return undefined;
+    return null;
   }
   return { state: value['state'], at: value['at'] as number };
 }
@@ -404,7 +396,8 @@ function isVersion(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
-function isRequestId(value: unknown): value is number {
+/** 本次连接内的消息序号：从 1 开始的安全整数。 */
+function isSequence(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) > 0;
 }
 

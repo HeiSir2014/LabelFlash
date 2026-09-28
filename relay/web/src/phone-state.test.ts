@@ -1,25 +1,27 @@
 import { describe, expect, test } from 'bun:test';
-import type { PhonePreview, PhonePrintResult } from '../../../src/shared/mobile-protocol';
-import { initialPhoneState, type PhoneEvent, type PhoneState, reducePhone } from './phone-state';
+import { MAX_PENDING_JOBS, type PhonePrintResult } from '../../../src/shared/mobile-protocol';
+import {
+  canSubmit,
+  initialPhoneState,
+  JOB_HISTORY,
+  type PhoneEvent,
+  type PhoneState,
+  reducePhone,
+} from './phone-state';
 
 const RAW = 'CL5640-TK-图片色-XL';
-const OK_PREVIEW: PhonePreview = {
-  status: 'ok',
+const PRINTED: PhonePrintResult = {
+  status: 'printed',
   ruleName: '横杠三段',
-  templateName: '标准',
   fields: [{ name: '编码', value: 'CL5640' }],
-  truncated: false,
-  recent: null,
-  windowMs: 3_000,
-  lookupFailure: null,
 };
-const PRINTED: PhonePrintResult = { status: 'printed' };
 
 function run(events: PhoneEvent[], start: PhoneState = initialPhoneState(true)): PhoneState {
   return events.reduce(reducePhone, start);
 }
 
 const welcomed: PhoneEvent = { type: 'welcomed', printer: '热敏标签机' };
+const submitted = (job: string, raw = RAW, force = false): PhoneEvent => ({ type: 'submitted', job, raw, force });
 
 describe('reducePhone', () => {
   test('starts without a link or connecting', () => {
@@ -31,96 +33,43 @@ describe('reducePhone', () => {
     expect(run([welcomed])).toMatchObject({ screen: 'scanning', link: 'online', printer: '热敏标签机' });
   });
 
-  test('checks a decoded code, then asks to confirm', () => {
-    const state = run([welcomed, { type: 'decoded', raw: RAW }]);
-    expect(state).toMatchObject({ screen: 'checking', raw: RAW });
-    expect(reducePhone(state, { type: 'preview-result', result: OK_PREVIEW })).toMatchObject({
-      screen: 'confirm',
-      preview: OK_PREVIEW,
-    });
+  test('follows the desktop printer', () => {
+    expect(run([welcomed, { type: 'printer', printer: null }]).printer).toBeNull();
   });
 
-  test('prints after confirmation and shows the result', () => {
-    const state = run([
-      welcomed,
-      { type: 'decoded', raw: RAW },
-      { type: 'preview-result', result: OK_PREVIEW },
-      { type: 'print-requested', force: false },
+  test('lists a scanned job first, then tracks it to its result', () => {
+    let state = run([welcomed, submitted('a'), submitted('b')]);
+    expect(state.jobs.map((job) => [job.id, job.status])).toEqual([
+      ['b', 'sending'],
+      ['a', 'sending'],
     ]);
-    expect(state.screen).toBe('printing');
-    expect(reducePhone(state, { type: 'print-result', result: PRINTED })).toMatchObject({
-      screen: 'result',
-      result: { kind: 'print', result: PRINTED, forced: false },
-    });
+    state = reducePhone(state, { type: 'accepted', job: 'a' });
+    expect(state.jobs[1]?.status).toBe('queued');
+    state = reducePhone(state, { type: 'result', job: 'a', result: PRINTED });
+    expect(state.jobs[1]).toMatchObject({ status: 'done', result: PRINTED });
   });
 
-  test('shows an unreadable code as a result', () => {
-    const state = run([
-      welcomed,
-      { type: 'decoded', raw: RAW },
-      { type: 'preview-result', result: { status: 'invalid', reason: 'NO_MATCHING_RULE' } },
-    ]);
-    expect(state).toMatchObject({ screen: 'result', result: { kind: 'invalid', reason: 'NO_MATCHING_RULE' } });
+  test('marks a refused job', () => {
+    const state = run([welcomed, submitted('a'), { type: 'refused', job: 'a', reason: 'rate-limited' }]);
+    expect(state.jobs[0]).toMatchObject({ status: 'refused', refusal: 'rate-limited' });
   });
 
-  test('goes back to scanning and forgets the last code', () => {
-    const state = run([
-      welcomed,
-      { type: 'decoded', raw: RAW },
-      { type: 'preview-result', result: OK_PREVIEW },
-      { type: 'rescan' },
-    ]);
-    expect(state).toMatchObject({ screen: 'scanning', raw: null, preview: null, result: null });
+  test('keeps only the most recent jobs', () => {
+    const events = Array.from({ length: JOB_HISTORY + 5 }, (_, index) => submitted(`job${index}`));
+    const state = run([welcomed, ...events]);
+    expect(state.jobs).toHaveLength(JOB_HISTORY);
+    expect(state.jobs[0]?.id).toBe(`job${JOB_HISTORY + 4}`);
   });
 
-  test('retries a failed print from the result screen', () => {
-    const failed: PhonePrintResult = { status: 'no-printer' };
-    const state = run([
-      welcomed,
-      { type: 'decoded', raw: RAW },
-      { type: 'preview-result', result: OK_PREVIEW },
-      { type: 'print-requested', force: false },
-      { type: 'print-result', result: failed },
-      { type: 'print-requested', force: true },
-    ]);
-    expect(state).toMatchObject({ screen: 'printing', raw: RAW, forced: true });
+  test('ignores updates for jobs it no longer lists', () => {
+    const state = run([welcomed, submitted('a')]);
+    expect(reducePhone(state, { type: 'result', job: 'gone', result: PRINTED })).toBe(state);
   });
 
-  test('ignores codes decoded while busy', () => {
-    const printing = run([
-      welcomed,
-      { type: 'decoded', raw: RAW },
-      { type: 'preview-result', result: OK_PREVIEW },
-      { type: 'print-requested', force: false },
-    ]);
-    expect(reducePhone(printing, { type: 'decoded', raw: 'OTHER' })).toBe(printing);
-  });
-
-  test('ignores codes decoded while the desktop is offline', () => {
-    const offline = run([welcomed, { type: 'link', link: 'desktop-offline' }]);
-    expect(reducePhone(offline, { type: 'decoded', raw: RAW })).toBe(offline);
-  });
-
-  test('returns to the previous step with a notice when a request fails', () => {
-    const checking = run([welcomed, { type: 'decoded', raw: RAW }]);
-    const afterPreview = reducePhone(checking, { type: 'request-failed', reason: 'timeout' });
-    expect(afterPreview.screen).toBe('scanning');
-    expect(afterPreview.notice).not.toBeNull();
-
-    const printing = run([
-      welcomed,
-      { type: 'decoded', raw: RAW },
-      { type: 'preview-result', result: OK_PREVIEW },
-      { type: 'print-requested', force: false },
-    ]);
-    const afterPrint = reducePhone(printing, { type: 'request-failed', reason: 'busy' });
-    expect(afterPrint).toMatchObject({ screen: 'confirm', preview: OK_PREVIEW });
-    expect(afterPrint.notice).not.toBeNull();
-  });
-
-  test('tracks the link separately from the scan flow', () => {
-    const state = run([welcomed, { type: 'decoded', raw: RAW }, { type: 'link', link: 'reconnecting' }]);
-    expect(state).toMatchObject({ screen: 'checking', link: 'reconnecting' });
+  test('tracks the link separately from the jobs', () => {
+    const state = run([welcomed, submitted('a'), { type: 'link', link: 'reconnecting' }]);
+    expect(state).toMatchObject({ screen: 'scanning', link: 'reconnecting' });
+    expect(state.jobs[0]?.status).toBe('sending');
   });
 
   test('ends for good', () => {
@@ -133,5 +82,24 @@ describe('reducePhone', () => {
 
   test('remembers whether the camera works', () => {
     expect(run([welcomed, { type: 'camera', camera: 'unavailable' }]).camera).toBe('unavailable');
+  });
+});
+
+describe('canSubmit', () => {
+  test('allows scanning while the session is active, even offline', () => {
+    expect(canSubmit(run([welcomed]))).toBe(true);
+    expect(canSubmit(run([welcomed, { type: 'link', link: 'desktop-offline' }]))).toBe(true);
+  });
+
+  test('refuses before the first welcome and after the end', () => {
+    expect(canSubmit(initialPhoneState(true))).toBe(false);
+    expect(canSubmit(run([welcomed, { type: 'ended', reason: 'stopped' }]))).toBe(false);
+  });
+
+  test('holds scanning while too many jobs wait for their result', () => {
+    const pending = Array.from({ length: MAX_PENDING_JOBS }, (_, index) => submitted(`job${index}`));
+    const full = run([welcomed, ...pending]);
+    expect(canSubmit(full)).toBe(false);
+    expect(canSubmit(reducePhone(full, { type: 'result', job: 'job0', result: PRINTED }))).toBe(true);
   });
 });

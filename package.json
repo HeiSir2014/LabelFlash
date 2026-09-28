@@ -20,6 +20,8 @@
     "icons": "bun scripts/generate-icons.ts",
     "installer:skin": "bun scripts/installer/build-skin.ts",
     "dist:win": "electron-vite build && bun run verify:bundle && bun scripts/installer/build-installer.ts --publish never",
+    "relay:build": "bun scripts/relay/build.ts",
+    "relay:dev": "bun scripts/relay/dev.ts",
     "release:win": "electron-vite build && bun run verify:bundle && bun scripts/installer/build-installer.ts --publish always"
   },
   "dependencies": {
@@ -44,7 +46,8 @@
     "react-dom": "^19.3.0",
     "sharp": "0.35.5",
     "typescript": "^5.9.3",
-    "vite": "^7.3.6"
+    "vite": "^7.3.6",
+    "zxing-wasm": "3.1.4"
   },
   "repository": {
     "type": "git",

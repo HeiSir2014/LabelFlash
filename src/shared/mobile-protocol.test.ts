@@ -6,6 +6,7 @@ import {
   type DesktopMessage,
   MAX_DEVICE_LENGTH,
   MOBILE_PROTOCOL_VERSION,
+  type PhoneMessage,
   type PhonePrintResult,
   parseDesktopFrame,
   parseDesktopMessage,
@@ -21,6 +22,7 @@ import {
 const SESSION = 'AbCdEfGhIjKlMnOpQrSt_-';
 const SECRET = 'zyxwvutsrqponmlkjihg01';
 const KEY = 'K'.repeat(43);
+const JOB = 'JobJobJobJobJobJobJob0';
 const BODY = { iv: 'aaaaaaaaaaaaaaaa', ct: 'bbbb-_cc' };
 
 const json = (value: unknown) => JSON.stringify(value);
@@ -141,77 +143,67 @@ describe('parsePhoneMessage', () => {
     expect(parsePhoneMessage({ type: 'hello', token: 'abc', device: 'x' })).toBeNull();
   });
 
-  test('accepts preview and print requests', () => {
-    expect(parsePhoneMessage({ type: 'preview', nonce: SECRET, id: 1, raw: 'CL5640-TK-图片色-XL' })).toEqual({
-      type: 'preview',
-      nonce: SECRET,
-      id: 1,
-      raw: 'CL5640-TK-图片色-XL',
-    });
-    expect(parsePhoneMessage({ type: 'print', nonce: SECRET, id: 2, raw: 'A', force: true })).toEqual({
-      type: 'print',
-      nonce: SECRET,
-      id: 2,
-      raw: 'A',
-      force: true,
-    });
+  const submit: PhoneMessage = {
+    type: 'submit',
+    nonce: SECRET,
+    seq: 1,
+    job: JOB,
+    raw: 'CL5640-TK-图片色-XL',
+    force: false,
+  };
+
+  test('accepts a job submission', () => {
+    expect(parsePhoneMessage(submit)).toEqual(submit);
   });
 
-  test('rejects request ids that are not positive safe integers', () => {
-    for (const id of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '1']) {
-      expect(parsePhoneMessage({ type: 'preview', nonce: SECRET, id, raw: 'A' })).toBeNull();
+  test('rejects sequence numbers that are not positive safe integers', () => {
+    for (const seq of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '1']) {
+      expect(parsePhoneMessage({ ...submit, seq })).toBeNull();
     }
   });
 
-  test('rejects raw content that is far beyond what printing accepts', () => {
-    const raw = 'x'.repeat(MAX_RAW_LENGTH * 4 + 1);
-    expect(parsePhoneMessage({ type: 'preview', nonce: SECRET, id: 1, raw })).toBeNull();
+  test('rejects a malformed job id', () => {
+    expect(parsePhoneMessage({ ...submit, job: 'job-1' })).toBeNull();
   });
 
-  test('rejects a print request without a boolean force flag', () => {
-    expect(parsePhoneMessage({ type: 'print', nonce: SECRET, id: 1, raw: 'A', force: 'yes' })).toBeNull();
-    expect(parsePhoneMessage({ type: 'print', nonce: SECRET, id: 1, raw: 'A' })).toBeNull();
+  test('rejects raw content that is far beyond what printing accepts', () => {
+    expect(parsePhoneMessage({ ...submit, raw: 'x'.repeat(MAX_RAW_LENGTH * 4 + 1) })).toBeNull();
+  });
+
+  test('rejects a submission without a boolean force flag', () => {
+    expect(parsePhoneMessage({ ...submit, force: 'yes' })).toBeNull();
+    const { force: _force, ...withoutForce } = submit;
+    expect(parsePhoneMessage(withoutForce)).toBeNull();
   });
 });
 
 describe('parseDesktopMessage', () => {
   const recent = { state: 'printed', at: 1_000 } as const;
 
-  test('accepts welcome and rejected', () => {
-    const welcome: DesktopMessage = { type: 'welcome', token: SECRET, nonce: SESSION, printer: '热敏标签机' };
-    expect(parseDesktopMessage(welcome)).toEqual(welcome);
-    const noPrinter: DesktopMessage = { type: 'welcome', token: SECRET, nonce: SESSION, printer: null };
-    expect(parseDesktopMessage(noPrinter)).toEqual(noPrinter);
-    expect(parseDesktopMessage({ type: 'rejected' })).toEqual({ type: 'rejected' });
+  test('accepts the session messages', () => {
+    const messages: DesktopMessage[] = [
+      { type: 'welcome', token: SECRET, nonce: SESSION, printer: '热敏标签机' },
+      { type: 'welcome', token: SECRET, nonce: SESSION, printer: null },
+      { type: 'taken' },
+      { type: 'printer', printer: '热敏标签机' },
+      { type: 'printer', printer: null },
+    ];
+    for (const message of messages) {
+      expect(parseDesktopMessage(message)).toEqual(message);
+    }
   });
 
-  test('accepts ok and invalid previews', () => {
-    const ok: DesktopMessage = {
-      type: 'preview',
-      id: 3,
-      result: {
-        status: 'ok',
-        ruleName: '横杠三段',
-        templateName: '标准',
-        fields: [{ name: '编码', value: 'CL5640' }],
-        truncated: false,
-        recent,
-        windowMs: 3_000,
-        lookupFailure: null,
-      },
-    };
-    expect(parseDesktopMessage(ok)).toEqual(ok);
-    const invalid: DesktopMessage = {
-      type: 'preview',
-      id: 4,
-      result: { status: 'invalid', reason: 'NO_MATCHING_RULE' },
-    };
-    expect(parseDesktopMessage(invalid)).toEqual(invalid);
+  test('accepts job acknowledgements and refusals', () => {
+    expect(parseDesktopMessage({ type: 'accepted', job: JOB })).toEqual({ type: 'accepted', job: JOB });
+    for (const reason of ['rate-limited', 'too-many-pending'] as const) {
+      expect(parseDesktopMessage({ type: 'refused', job: JOB, reason })).toEqual({ type: 'refused', job: JOB, reason });
+    }
+    expect(parseDesktopMessage({ type: 'refused', job: JOB, reason: 'busy' })).toBeNull();
   });
 
-  test('accepts every print result', () => {
+  test('accepts every job result', () => {
     const results: PhonePrintResult[] = [
-      { status: 'printed' },
+      { status: 'printed', ruleName: '横杠三段', fields: [{ name: '编码', value: 'CL5640' }] },
       { status: 'duplicate', recent, windowMs: 3_000 },
       { status: 'invalid', reason: 'INVALID_CONTENT' },
       { status: 'failed', reason: 'PRINTER_NOT_READY', detail: '缺纸', issue: 'paperOut' },
@@ -219,18 +211,19 @@ describe('parseDesktopMessage', () => {
       { status: 'no-printer' },
     ];
     for (const result of results) {
-      expect(parseDesktopMessage({ type: 'print', id: 5, result })).toEqual({ type: 'print', id: 5, result });
+      expect(parseDesktopMessage({ type: 'result', job: JOB, result })).toEqual({ type: 'result', job: JOB, result });
     }
+  });
+
+  test('rejects a printed result without its summary', () => {
+    expect(parseDesktopMessage({ type: 'result', job: JOB, result: { status: 'printed' } })).toBeNull();
+    const badField = { status: 'printed', ruleName: '横杠三段', fields: [{ name: '编码' }] };
+    expect(parseDesktopMessage({ type: 'result', job: JOB, result: badField })).toBeNull();
   });
 
   test('rejects a failure with an unknown reason', () => {
     const result = { status: 'failed', reason: 'ON_FIRE', detail: null, issue: null };
-    expect(parseDesktopMessage({ type: 'print', id: 5, result })).toBeNull();
-  });
-
-  test('accepts busy and rate-limited replies', () => {
-    expect(parseDesktopMessage({ type: 'busy', id: 6 })).toEqual({ type: 'busy', id: 6 });
-    expect(parseDesktopMessage({ type: 'rate-limited', id: 7 })).toEqual({ type: 'rate-limited', id: 7 });
+    expect(parseDesktopMessage({ type: 'result', job: JOB, result })).toBeNull();
   });
 });
 

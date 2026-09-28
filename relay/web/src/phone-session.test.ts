@@ -1,25 +1,27 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { importSessionKey, openMessage, randomId, randomKey, sealMessage } from '../../../src/shared/mobile-crypto';
 import {
+  DESKTOP_GRACE_MS,
   type DesktopMessage,
+  JOB_ACK_TIMEOUT_MS,
   MOBILE_PROTOCOL_VERSION,
-  RESUME_RETRY_MS,
+  type PhonePrintResult,
   type SealedBody,
 } from '../../../src/shared/mobile-protocol';
 import { FakeSocket, FakeTimers } from '../../../src/shared/testing/fake-socket';
-import { PhoneSession, REQUEST_TIMEOUT_MS } from './phone-session';
-import type { PhoneEvent } from './phone-state';
+import { PhoneSession, type SessionEvent } from './phone-session';
 import { createTokenStore, type TokenStore } from './token-store';
 
 const URL = 'wss://relay.example.com/labelflash/ws/phone';
 const SESSION = randomId();
 const RAW = 'CL5640-TK-图片色-XL';
 const WAIT_LIMIT_MS = 2_000;
+const PRINTED: PhonePrintResult = { status: 'printed', ruleName: '横杠三段', fields: [] };
 
 let key: CryptoKey;
 let timers: FakeTimers;
 let sockets: FakeSocket[];
-let events: PhoneEvent[];
+let events: SessionEvent[];
 let tokens: TokenStore;
 let phone: PhoneSession;
 
@@ -50,33 +52,44 @@ function sentBodies(): SealedBody[] {
 }
 
 /** 手机在当前连接上发出的内层消息（解密后）。 */
-function sentMessages(): Promise<unknown[]> {
-  return Promise.all(sentBodies().map((body) => openMessage(key, 'p2d', SESSION, body)));
+function sentMessages(): Promise<Record<string, unknown>[]> {
+  return Promise.all(
+    sentBodies().map(async (body) => (await openMessage(key, 'p2d', SESSION, body)) as Record<string, unknown>),
+  );
 }
 
-/** 执行 action，等手机多发出一条加密消息。 */
-async function expectSend(action: () => void): Promise<void> {
-  const before = sentBodies().length;
+async function submits(): Promise<Record<string, unknown>[]> {
+  return (await sentMessages()).filter((message) => message['type'] === 'submit');
+}
+
+/** 执行 action，等手机在当前连接上一共发出 count 条加密消息。 */
+async function expectSent(count: number, action: () => void = () => {}): Promise<void> {
   action();
-  await waitFor(() => sentBodies().length > before, 'an outgoing message');
+  await waitFor(() => sentBodies().length >= count, `${count} outgoing messages`);
 }
 
-/** 执行 action，等页面多收到一个事件。 */
+/** 执行 action，等多收到一个事件。 */
 async function expectEvent(action: () => void | Promise<void>): Promise<void> {
   const before = events.length;
   await action();
-  await waitFor(() => events.length > before, 'a page event');
+  await waitFor(() => events.length > before, 'a session event');
 }
 
 async function fromDesktop(message: DesktopMessage): Promise<void> {
   socket().receive(JSON.stringify({ t: 'recv', body: await sealMessage(key, 'd2p', SESSION, message) }));
 }
 
-async function connectAndWelcome(token = randomId(), nonce = randomId()): Promise<{ token: string; nonce: string }> {
+async function welcome(nonce = randomId()): Promise<string> {
   socket().open();
-  await expectSend(() => socket().receive('{"t":"online"}'));
-  await expectEvent(() => fromDesktop({ type: 'welcome', token, nonce, printer: '热敏标签机' }));
-  return { token, nonce };
+  await expectSent(1, () => socket().receive('{"t":"online"}'));
+  await expectEvent(() => fromDesktop({ type: 'welcome', token: randomId(), nonce, printer: '热敏标签机' }));
+  return nonce;
+}
+
+async function reconnect(): Promise<string> {
+  socket().drop();
+  timers.advance(1_000);
+  return welcome();
 }
 
 beforeEach(async () => {
@@ -103,81 +116,130 @@ beforeEach(async () => {
   phone.start();
 });
 
-describe('PhoneSession', () => {
+describe('PhoneSession: joining', () => {
   test('joins the session, then says hello once the desktop is online', async () => {
     socket().open();
     expect(socket().frames()).toEqual([{ t: 'join', v: MOBILE_PROTOCOL_VERSION, session: SESSION }]);
-    await expectSend(() => socket().receive('{"t":"online"}'));
+    await expectSent(1, () => socket().receive('{"t":"online"}'));
     expect(await sentMessages()).toEqual([{ type: 'hello', token: null, device: 'iPhone · 微信' }]);
   });
 
   test('keeps the token and reports the printer on welcome', async () => {
-    const { token } = await connectAndWelcome();
+    const token = randomId();
+    socket().open();
+    await expectSent(1, () => socket().receive('{"t":"online"}'));
+    await expectEvent(() => fromDesktop({ type: 'welcome', token, nonce: randomId(), printer: '热敏标签机' }));
     expect(tokens.get(SESSION)).toBe(token);
     expect(events).toContainEqual({ type: 'welcomed', printer: '热敏标签机' });
   });
 
   test('says hello with the saved token after reconnecting', async () => {
-    const { token } = await connectAndWelcome();
+    await welcome();
+    const token = tokens.get(SESSION);
     socket().drop();
     timers.advance(1_000);
     socket().open();
-    await expectSend(() => socket().receive('{"t":"online"}'));
+    await expectSent(1, () => socket().receive('{"t":"online"}'));
     expect(await sentMessages()).toEqual([{ type: 'hello', token, device: 'iPhone · 微信' }]);
   });
 
-  test('sends requests with the nonce and increasing ids, and matches the replies', async () => {
-    const { nonce } = await connectAndWelcome();
-    await expectSend(() => phone.preview(RAW));
-    expect((await sentMessages()).at(-1)).toEqual({ type: 'preview', nonce, id: 1, raw: RAW });
-    await expectEvent(() =>
-      fromDesktop({ type: 'preview', id: 1, result: { status: 'invalid', reason: 'NO_MATCHING_RULE' } }),
-    );
-    expect(events.at(-1)).toEqual({
-      type: 'preview-result',
-      result: { status: 'invalid', reason: 'NO_MATCHING_RULE' },
-    });
-    await expectSend(() => phone.print(RAW, true));
-    expect((await sentMessages()).at(-1)).toEqual({ type: 'print', nonce, id: 2, raw: RAW, force: true });
+  test('passes on printer changes', async () => {
+    await welcome();
+    await expectEvent(() => fromDesktop({ type: 'printer', printer: null }));
+    expect(events.at(-1)).toEqual({ type: 'printer', printer: null });
+  });
+});
+
+describe('PhoneSession: jobs', () => {
+  test('submits jobs with the connection nonce, increasing sequence numbers and fresh job ids', async () => {
+    const nonce = await welcome();
+    const first = phone.submit(RAW, false);
+    const second = phone.submit(RAW, true);
+    await expectSent(3);
+    expect(await submits()).toEqual([
+      { type: 'submit', nonce, seq: 1, job: first, raw: RAW, force: false },
+      { type: 'submit', nonce, seq: 2, job: second, raw: RAW, force: true },
+    ]);
+    expect(first).not.toBe(second);
   });
 
-  test('ignores a reply to another request', async () => {
-    await connectAndWelcome();
-    await expectSend(() => phone.print(RAW, false));
-    const before = events.length;
-    // 消息按收到的顺序处理：后一条的事件到了，前一条一定已经处理过。
-    await fromDesktop({ type: 'print', id: 99, result: { status: 'printed' } });
-    await expectEvent(() => fromDesktop({ type: 'busy', id: 1 }));
-    expect(events.slice(before)).toEqual([{ type: 'request-failed', reason: 'busy' }]);
+  test('reports acknowledgements, results and refusals', async () => {
+    await welcome();
+    const job = phone.submit(RAW, false);
+    await expectSent(2);
+    await expectEvent(() => fromDesktop({ type: 'accepted', job }));
+    await expectEvent(() => fromDesktop({ type: 'result', job, result: PRINTED }));
+    const refusedJob = phone.submit(RAW, false);
+    await expectSent(3);
+    await expectEvent(() => fromDesktop({ type: 'refused', job: refusedJob, reason: 'too-many-pending' }));
+    expect(events.slice(-3)).toEqual([
+      { type: 'accepted', job },
+      { type: 'result', job, result: PRINTED },
+      { type: 'refused', job: refusedJob, reason: 'too-many-pending' },
+    ]);
   });
 
-  test('gives up on a request without a reply', async () => {
-    await connectAndWelcome();
-    await expectSend(() => phone.print(RAW, false));
-    // 连接本身保持活着（每秒都有帧），只是电脑一直不回复这个请求。
-    for (let elapsed = 0; elapsed < REQUEST_TIMEOUT_MS; elapsed += 1_000) {
+  test('holds jobs scanned while offline and sends them once welcomed', async () => {
+    const job = phone.submit(RAW, false);
+    const nonce = await welcome();
+    await expectSent(2);
+    expect(await submits()).toEqual([{ type: 'submit', nonce, seq: 1, job, raw: RAW, force: false }]);
+  });
+
+  test('resends unfinished jobs with the same id after reconnecting, and forgets finished ones', async () => {
+    await welcome();
+    const finished = phone.submit(RAW, false);
+    const unfinished = phone.submit('OTHER', false);
+    await expectSent(3);
+    await expectEvent(() => fromDesktop({ type: 'accepted', job: unfinished }));
+    await expectEvent(() => fromDesktop({ type: 'result', job: finished, result: PRINTED }));
+    const nonce = await reconnect();
+    await expectSent(2);
+    expect(await submits()).toEqual([{ type: 'submit', nonce, seq: 1, job: unfinished, raw: 'OTHER', force: false }]);
+  });
+
+  test('resends a job that was not acknowledged in time', async () => {
+    await welcome();
+    const job = phone.submit(RAW, false);
+    await expectSent(2);
+    // 连接本身保持活着，只是这条没有回音。
+    for (let elapsed = 0; elapsed < JOB_ACK_TIMEOUT_MS; elapsed += 1_000) {
       timers.advance(1_000);
       socket().receive('{"t":"pong"}');
     }
-    expect(events.at(-1)).toEqual({ type: 'request-failed', reason: 'timeout' });
-    expect(sockets).toHaveLength(1);
+    await expectSent(3);
+    expect((await submits()).map((message) => message['job'])).toEqual([job, job]);
   });
 
-  test('passes on busy and rate-limited replies', async () => {
-    await connectAndWelcome();
-    await expectSend(() => phone.print(RAW, false));
-    await expectEvent(() => fromDesktop({ type: 'rate-limited', id: 1 }));
-    expect(events.at(-1)).toEqual({ type: 'request-failed', reason: 'rate-limited' });
+  test('stops resending once the job is acknowledged', async () => {
+    await welcome();
+    const job = phone.submit(RAW, false);
+    await expectSent(2);
+    await expectEvent(() => fromDesktop({ type: 'accepted', job }));
+    for (let elapsed = 0; elapsed < 3 * JOB_ACK_TIMEOUT_MS; elapsed += 1_000) {
+      timers.advance(1_000);
+      socket().receive('{"t":"pong"}');
+    }
+    await Bun.sleep(20);
+    expect(await submits()).toHaveLength(1);
   });
 
-  test('fails the pending request and reports the outage when the link drops', async () => {
-    await connectAndWelcome();
-    await expectSend(() => phone.preview(RAW));
+  test('ignores results for jobs it does not know', async () => {
+    await welcome();
+    const before = events.length;
+    await fromDesktop({ type: 'result', job: randomId(), result: PRINTED });
+    await expectEvent(() => fromDesktop({ type: 'printer', printer: 'X' }));
+    expect(events.slice(before)).toEqual([{ type: 'printer', printer: 'X' }]);
+  });
+});
+
+describe('PhoneSession: link and session end', () => {
+  test('reports a dropped link without losing jobs', async () => {
+    await welcome();
+    phone.submit(RAW, false);
+    await expectSent(2);
     socket().drop();
-    expect(events.slice(-2)).toEqual([
-      { type: 'request-failed', reason: 'timeout' },
-      { type: 'link', link: 'reconnecting' },
-    ]);
+    expect(events.at(-1)).toEqual({ type: 'link', link: 'reconnecting' });
   });
 
   test('reports a desktop that stepped away', async () => {
@@ -188,13 +250,13 @@ describe('PhoneSession', () => {
 
   test('reports a session taken by another phone', async () => {
     socket().open();
-    await expectSend(() => socket().receive('{"t":"online"}'));
-    await expectEvent(() => fromDesktop({ type: 'rejected' }));
+    await expectSent(1, () => socket().receive('{"t":"online"}'));
+    await expectEvent(() => fromDesktop({ type: 'taken' }));
     expect(events.at(-1)).toEqual({ type: 'taken' });
   });
 
   test('reports the end of the session', async () => {
-    await connectAndWelcome();
+    await welcome();
     await expectEvent(() => socket().receive('{"t":"ended","reason":"stopped"}'));
     expect(events.at(-1)).toEqual({ type: 'ended', reason: 'stopped' });
   });
@@ -205,13 +267,12 @@ describe('PhoneSession', () => {
     expect(events.at(-1)).toEqual({ type: 'not-found' });
   });
 
-  test('keeps retrying a welcomed session for a while after the relay forgot it', async () => {
-    await connectAndWelcome();
+  test('waits for the desktop through the grace period when the relay forgot the session', async () => {
+    await welcome();
     socket().receive('{"t":"not-found"}');
-    // 中转服务回复 not-found 后会关掉连接。
     await expectEvent(() => socket().drop());
-    expect(events).not.toContainEqual({ type: 'not-found' });
-    timers.advance(RESUME_RETRY_MS);
+    expect(events.at(-1)).toEqual({ type: 'link', link: 'reconnecting' });
+    timers.advance(DESKTOP_GRACE_MS);
     socket().open();
     await expectEvent(() => socket().receive('{"t":"not-found"}'));
     expect(events.at(-1)).toEqual({ type: 'not-found' });

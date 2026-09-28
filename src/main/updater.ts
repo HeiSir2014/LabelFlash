@@ -2,6 +2,7 @@ import { app } from 'electron';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateStatus } from '../shared/update-status';
+import { applyUpdateClientSettings } from './update-settings';
 
 /** 启动后稍等再检查，不拖慢启动；之后定期检查（车间电脑常常整天不关）。 */
 const FIRST_CHECK_DELAY_MS = 15_000;
@@ -32,8 +33,7 @@ export class AppUpdater {
       return;
     }
     autoUpdater.logger = log;
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
+    applyUpdateClientSettings(autoUpdater);
     autoUpdater.on('checking-for-update', () => this.setStatus({ state: 'checking' }));
     autoUpdater.on('update-not-available', () => this.setStatus({ state: 'up-to-date', checkedAt: Date.now() }));
     autoUpdater.on('update-available', (info) => {

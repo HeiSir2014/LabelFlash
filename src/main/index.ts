@@ -14,6 +14,7 @@ import { IpcChannel } from '../shared/ipc-contract';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
 import { minutesToMs } from '../shared/settings';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
+import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
 import { setupLogging } from './logging';
 import { resolvePrintTemplate } from './print-template';
@@ -55,6 +56,11 @@ registerAppScheme();
 // 所有渲染进程（主窗口、打印窗口）一律进沙箱。
 app.enableSandbox();
 hardenAllWebContents();
+// 上次 GPU 进程崩溃后会带着这个参数重启（见 gpu-fallback.ts），关闭硬件加速必须在 ready 之前。
+const isSoftwareRendering = process.argv.includes(SOFTWARE_RENDERING_SWITCH);
+if (isSoftwareRendering) {
+  app.disableHardwareAcceleration();
+}
 if (app.isPackaged) {
   // 去掉默认菜单：它的快捷键（刷新、开发者工具、缩放）在安装版里会破坏扫码状态和预览比例。
   Menu.setApplicationMenu(null);
@@ -99,6 +105,24 @@ function requireWebContents() {
 async function bootstrap(): Promise<void> {
   const logPath = setupLogging();
   console.info(`[app] ${BRAND.productName} ${app.getVersion()} starting`);
+  console.info(`[gpu] rendering mode: ${isSoftwareRendering ? 'software' : 'hardware'}`);
+  const onGpuGone = createGpuCrashHandler({
+    isSoftwareRendering,
+    args: process.argv.slice(1),
+    canRelaunch: () => !isQuitting,
+    relaunch: (args) => app.relaunch({ args }),
+    quit,
+    warn: (message) => console.warn(message),
+  });
+  app.on('child-process-gone', (_event, details) => {
+    const summary = `[process] ${details.type} process gone: ${details.reason} (exit ${details.exitCode})`;
+    if (details.reason === 'clean-exit') {
+      console.info(summary);
+    } else {
+      console.error(summary);
+    }
+    onGpuGone(details);
+  });
   app.setAppUserModelId(BRAND.appId);
   denyAllPermissions();
   handleAppScheme(join(__dirname, '../renderer'));

@@ -10,7 +10,7 @@
 |---|---|
 | `bun run lint`（Biome） | 通过，零问题 |
 | `bun run typecheck`（主进程、渲染层、E2E 三个 tsconfig） | 通过，零错误 |
-| `bun test` | 223 个单元测试全部通过；带文件数据库的测试连续 20 轮无偶发失败 |
+| `bun test` | 243 个单元测试全部通过；带文件数据库的测试连续 20 轮无偶发失败 |
 | `bun run test:e2e`（Playwright 驱动构建版 Electron） | 3 个用例全部通过 |
 | `bun run dist:win` | 生成 `dist/CDL-LabelFlash-Setup-0.1.0.exe`（约 105 MB）；`win-unpacked` 从 asar 启动，界面走 `app://bundle/index.html` |
 
@@ -62,6 +62,15 @@
   - 驱动打印在中止时结束挂起的打印回调。
   - Edge 语音合成超时后接住被放弃的合成结果，不产生未处理的 rejection。
   - `app://` 路径拒绝解码后的反斜杠和 NUL。
+- 计划完成后的加固：
+  - 窗口按显示器工作区确定大小和最小尺寸，小屏、高缩放下不会跑出屏幕。
+  - 输入框有右键「剪切 / 复制 / 粘贴 / 全选」，并关闭拼写检查。
+  - GPU 进程崩溃时自动以软件渲染重启一次（已用 CDP 触发 GPU 崩溃实测）。
+  - 渲染进程短时间内反复崩溃时不再无限重载。
+  - IPC 处理失败时，在主进程日志里记下通道名和堆栈。
+  - 拦截重定向，CSP 增加 `object-src` / `base-uri` / `form-action` 限制。
+  - 日志按天命名为 `labelflash-<日期>.log`，纯文本，时间带时区，保留 14 天。
+  - 安装依赖时即下载 Electron 二进制，CI 的 E2E 不再在测试里下载。
 - `src/main/storage/testing/temp-dir.ts` 只供测试使用：Bun on Windows 的 `node:sqlite` 在 `close()` 后仍占用数据库文件（[oven-sh/bun#40001](https://github.com/oven-sh/bun/issues/40001)），删除测试临时目录前需要强制 GC 并重试。产品运行在 Electron 自带的 `node:sqlite` 上，不受影响。
 
 ## 已知限制

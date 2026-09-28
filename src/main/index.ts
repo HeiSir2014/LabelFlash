@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { app, type BrowserWindow, dialog, Menu, net } from 'electron';
@@ -22,6 +23,8 @@ import { registerIpc } from './ipc';
 import { LOGS_DIR_NAME } from './log-files';
 import { setupLogging } from './logging';
 import { LookupTables } from './lookup/lookup-tables';
+import { WebhookOutbox } from './notify/webhook-outbox';
+import { createWebhookSender } from './notify/webhook-sender';
 import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
@@ -39,6 +42,7 @@ import { SqliteScanRuleRepository } from './storage/sqlite-scan-rule-repository'
 import { SqliteSecretStore } from './storage/sqlite-secret-store';
 import { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import { SqliteTemplateRepository } from './storage/sqlite-template-repository';
+import { SqliteWebhookStore } from './storage/sqlite-webhook-store';
 import { SqliteWindowStateStore } from './storage/sqlite-window-state-store';
 import { type AppTray, createTray } from './tray';
 import { AppUpdater } from './updater';
@@ -158,6 +162,7 @@ async function bootstrap(): Promise<void> {
   const runRegex = createSandboxedRegexRunner();
   const lookupTables = new LookupTables(new SqliteLookupStore(database, systemClock), randomUUID);
   const secrets = new SqliteSecretStore(database, safeStorageCipher, systemClock);
+  const userAgent = `CDL-LabelFlash/${app.getVersion()}`;
   const enrichDeps: EnrichDeps = {
     replace: createSandboxedRegexReplacer(),
     lookup: (tableId, keyColumn, key, ignoreCase) => lookupTables.find(tableId, keyColumn, key, ignoreCase),
@@ -165,7 +170,7 @@ async function bootstrap(): Promise<void> {
       fetch: (url, init) => net.fetch(url, init),
       secret: (name) => secrets.get(name),
       now: () => systemClock.now(),
-      userAgent: `CDL-LabelFlash/${app.getVersion()}`,
+      userAgent,
     }),
     now: () => performance.now(),
   };
@@ -182,6 +187,23 @@ async function bootstrap(): Promise<void> {
   status.start();
   void status.watch(settings.current.selectedPrinter);
   const adapter = new ElectronDriverAdapter(requireWebContents, status, systemClock);
+  const outbox = new WebhookOutbox({
+    store: new SqliteWebhookStore(database),
+    send: createWebhookSender({
+      fetch: (url, init) => net.fetch(url, init),
+      secret: (name) => secrets.get(name),
+      now: () => systemClock.now(),
+      userAgent,
+    }),
+    endpoints: () => settings.current.webhooks,
+    clock: systemClock,
+    station: { name: hostname(), app: app.getVersion() },
+    createId: randomUUID,
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => clearTimeout(timer);
+    },
+  });
   const service = new PrintService({
     adapter,
     store: jobs,
@@ -192,6 +214,7 @@ async function bootstrap(): Promise<void> {
     recognize: (raw) => recognize(raw, activeRules(rules, settings.current), runRegex),
     enrich: (scan) => enrich(scan, rules.get(scan.ruleId)?.steps ?? [], enrichDeps, new Date()),
     resolveTemplate: (scan) => resolvePrintTemplate(templates, settings.current, scan),
+    onRecorded: (job, scan) => outbox.enqueueResult(job, scan),
   });
   service.restore();
   const voice = new VoiceClips(join(dataPath, VOICE_CACHE_DIR_NAME), synthesizeWithEdge);
@@ -217,6 +240,7 @@ async function bootstrap(): Promise<void> {
     templates,
     lookupTables,
     secrets,
+    outbox,
     status,
     appInfo: {
       productName: BRAND.productName,
@@ -243,8 +267,12 @@ async function bootstrap(): Promise<void> {
       if (next.historyLimit !== previous.historyLimit) {
         await jobs.setCapacity(next.historyLimit);
       }
+      if (JSON.stringify(next.webhooks) !== JSON.stringify(previous.webhooks)) {
+        outbox.endpointsChanged();
+      }
     },
   });
+  outbox.start();
   applyLaunchAtLogin(settings.current.launchAtLogin);
 
   // 未打包运行（开发、E2E）时 macOS 程序坞默认显示 Electron 图标；安装版的图标由打包配置决定。
@@ -279,6 +307,7 @@ async function bootstrap(): Promise<void> {
   updater.start();
   warmVoice();
   app.on('will-quit', () => {
+    outbox.stop();
     status.stop();
     probeHost?.dispose();
     tray?.destroy();

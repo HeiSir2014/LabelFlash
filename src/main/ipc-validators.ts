@@ -1,3 +1,4 @@
+import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
@@ -25,6 +26,20 @@ export function requireString(value: unknown, name: string, maxLength = MAX_IPC_
 
 export function requireRaw(value: unknown): string {
   return requireString(value, 'raw', MAX_RAW_INPUT_LENGTH);
+}
+
+export function requirePositiveInteger(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+    throw new TypeError(`Invalid ${name}`);
+  }
+  return value as number;
+}
+
+export function requireWebhookId(value: unknown): string {
+  if (typeof value !== 'string' || !WEBHOOK_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid webhook id');
+  }
+  return value;
 }
 
 export function requireLookupTableId(value: unknown): string {

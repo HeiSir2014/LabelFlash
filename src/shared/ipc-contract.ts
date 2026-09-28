@@ -1,4 +1,5 @@
 import type { LookupTableInfo } from '../core/lookup/lookup-model';
+import type { Delivery } from '../core/notify/delivery';
 import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
@@ -31,6 +32,9 @@ export const IpcChannel = {
   ListSecrets: 'secrets:list',
   SetSecret: 'secrets:set',
   DeleteSecret: 'secrets:delete',
+  ListWebhookDeliveries: 'webhooks:deliveries',
+  RetryWebhookDelivery: 'webhooks:retry',
+  SendTestWebhook: 'webhooks:test',
   GetAppInfo: 'app:info',
   OpenLogFolder: 'app:open-log-folder',
   OpenShop: 'app:open-shop',
@@ -107,6 +111,12 @@ export interface LabelFlashApi {
   /** 新增或替换；名称或内容不合法、系统加密不可用时返回原因。 */
   setSecret(name: string, value: string): Promise<{ ok: true } | { ok: false; issue: string }>;
   deleteSecret(name: string): Promise<void>;
+  /** 最近的通知发送记录（新的在前）。接口本身在设置的 webhooks 里增删改。 */
+  listWebhookDeliveries(): Promise<Delivery[]>;
+  /** 失败或正在等待重试的通知立即重发；已送达的返回 false。 */
+  retryWebhookDelivery(id: number): Promise<boolean>;
+  /** 给这个接口发一条测试事件；接口不存在时返回 false。 */
+  sendTestWebhook(endpointId: string): Promise<boolean>;
   getAppInfo(): Promise<AppInfo>;
   openLogFolder(): Promise<void>;
   /** 用系统浏览器打开出品方店铺（地址是主进程里的常量，页面不能指定网址）。 */

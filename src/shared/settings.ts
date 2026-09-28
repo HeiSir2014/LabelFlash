@@ -1,4 +1,5 @@
 import { MAX_DEDUP_WINDOW_MS } from '../core/dedup-guard';
+import { sanitizeWebhooks, type WebhookEndpoint } from '../core/notify/webhook-model';
 import { defaultRuleSettings, type RuleSetting, sanitizeRuleSettings } from '../core/scan/rule-settings';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { DEFAULT_NOTE_OVERRIDE, type NoteOverride } from '../core/templates/note-override';
@@ -23,6 +24,8 @@ export interface AppSettings {
   ruleSettings: RuleSetting[];
   /** 多行扫码：回车 / Tab 之后这么久没有新字符才算一次扫码结束（毫秒）。 */
   scanLineGapMs: number;
+  /** 打印结果通知的接口（签名密钥只存名称，内容在密钥表里）。 */
+  webhooks: WebhookEndpoint[];
 }
 
 export const MS_PER_SECOND = 1_000;
@@ -47,6 +50,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   voice: { enabled: true, name: DEFAULT_VOICE_NAME, ratePercent: 0 },
   ruleSettings: defaultRuleSettings(),
   scanLineGapMs: SCAN_LINE_GAP_RANGE.default,
+  webhooks: [],
 };
 
 export function sanitizeSettings(value: unknown): AppSettings {
@@ -78,6 +82,7 @@ export function sanitizeSettings(value: unknown): AppSettings {
       SCAN_LINE_GAP_RANGE.max,
       DEFAULT_SETTINGS.scanLineGapMs,
     ),
+    webhooks: sanitizeWebhooks(input['webhooks']),
   };
 }
 

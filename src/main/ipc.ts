@@ -22,14 +22,17 @@ import { logFailures } from './ipc-errors';
 import {
   requireJobQuery,
   requireLookupTableId,
+  requirePositiveInteger,
   requirePrintOptions,
   requireRaw,
   requireRecord,
   requireString,
   requireTemplateId,
   requireVoiceCue,
+  requireWebhookId,
 } from './ipc-validators';
 import type { LookupTables } from './lookup/lookup-tables';
+import type { WebhookOutbox } from './notify/webhook-outbox';
 import { resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
 import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
@@ -43,6 +46,8 @@ import type { AppUpdater } from './updater';
 import type { VoiceClips } from './voice/voice-clips';
 
 const DRAFT_TEMPLATE_ID = `${CUSTOM_TEMPLATE_PREFIX}draft`;
+/** 设置页显示的通知发送记录条数。 */
+const RECENT_DELIVERIES = 100;
 
 export interface IpcDeps {
   service: PrintService;
@@ -52,6 +57,7 @@ export interface IpcDeps {
   templates: TemplateCatalog;
   lookupTables: LookupTables;
   secrets: SqliteSecretStore;
+  outbox: WebhookOutbox;
   status: PrinterStatusMonitor;
   appInfo: AppInfo;
   updater: AppUpdater;
@@ -180,6 +186,9 @@ export function registerIpc(deps: IpcDeps): void {
     }
   });
   handle(IpcChannel.DeleteSecret, (name) => deps.secrets.remove(requireString(name, 'secret name')));
+  handle(IpcChannel.ListWebhookDeliveries, () => deps.outbox.recent(RECENT_DELIVERIES));
+  handle(IpcChannel.RetryWebhookDelivery, (id) => deps.outbox.retryNow(requirePositiveInteger(id, 'delivery id')));
+  handle(IpcChannel.SendTestWebhook, (endpointId) => deps.outbox.sendTest(requireWebhookId(endpointId)));
   handle(IpcChannel.GetAppInfo, () => deps.appInfo);
   handle(IpcChannel.OpenLogFolder, async () => {
     const error = await shell.openPath(deps.appInfo.logsDir);

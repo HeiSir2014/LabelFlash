@@ -34,6 +34,16 @@ describe('sanitizeSettings', () => {
         { id: 'builtin:raw', enabled: false, templateId: null },
       ],
       scanLineGapMs: 120,
+      webhooks: [
+        {
+          id: 'w1',
+          name: 'ERP',
+          url: 'https://erp.example.com/hooks',
+          secretName: 'ERP 签名',
+          events: ['printed'],
+          enabled: true,
+        },
+      ],
     };
     expect(sanitizeSettings(settings)).toEqual(settings);
   });

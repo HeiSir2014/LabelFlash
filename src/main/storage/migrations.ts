@@ -74,5 +74,23 @@ export const MIGRATIONS: readonly string[] = [
     value      BLOB    NOT NULL,
     updated_at INTEGER NOT NULL
   ) STRICT;
+
+  -- 打印结果通知的发送队列兼发送记录：pending 的按 next_attempt_at 发送，重启后继续。
+  CREATE TABLE webhook_deliveries (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint_id     TEXT    NOT NULL,
+    event_id        TEXT    NOT NULL,
+    event           TEXT    NOT NULL,
+    payload         TEXT    NOT NULL,
+    state           TEXT    NOT NULL CHECK (state IN ('pending', 'delivered', 'failed')),
+    attempts        INTEGER NOT NULL,
+    last_status     INTEGER,
+    last_error      TEXT,
+    created_at      INTEGER NOT NULL,
+    next_attempt_at INTEGER,
+    updated_at      INTEGER NOT NULL
+  ) STRICT;
+
+  CREATE INDEX webhook_deliveries_pending ON webhook_deliveries (endpoint_id, id) WHERE state = 'pending';
   `,
 ];

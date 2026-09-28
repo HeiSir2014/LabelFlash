@@ -250,7 +250,8 @@
 
 **Files:**
 - Create: `src/core/notify/webhook-model.ts`（接口配置、事件、上限、退避表）、`src/core/notify/webhook-event.ts`（由打印结果生成请求体）、`src/core/notify/delivery-schedule.ts`（下次重试时间、是否放弃）、`src/main/notify/webhook-sender.ts`（签名、发送、超时）、`src/main/notify/webhook-outbox.ts`（后台发送循环）、`src/main/storage/sqlite-webhook-store.ts`
-- Modify: `migrations.ts`（初始 schema 加 `webhook_deliveries`）、`settings.ts`（`webhooks`）、`print-service.ts`（`onResult` 回调，记录写入后触发）、IPC（接口增删改、测试、发送记录、立即重试）、设置页界面
+- Modify: `migrations.ts`（初始 schema 加 `webhook_deliveries`）、`settings.ts`（`webhooks`）、`print-service.ts`（`onRecorded` 回调，记录写入后触发）、IPC（测试、发送记录、立即重试；接口本身经 `settings:update` 保存）
+- 设置页界面并入 Task 8，和「识别规则」页、查找表、密钥的界面一起做。
 - Test: `webhook-event.test.ts`、`delivery-schedule.test.ts`、`webhook-sender.test.ts`（`Bun.serve` 验证签名）、`sqlite-webhook-store.test.ts`、`webhook-outbox.test.ts`（假时钟）
 
 **测试要点:** 只为勾选的事件入队；测试页不入队；签名可被接收方验证；2xx 成功、5xx/429/超时重试、其他 4xx 不重试；退避时间表；24 小时放弃；重启后继续；同一接口按顺序；密钥不进日志；发送记录上限。
@@ -301,7 +302,7 @@
 ### Task 8: 「识别规则」页与模板编辑器
 
 **Files:**
-- Create: `src/renderer/src/components/RulePanel.tsx`, `RuleEditor.tsx`, `StepEditor.tsx`（四种加工步骤的表单）, `RuleTester.tsx`, `LookupTables.tsx`, `SecretList.tsx`, `src/renderer/src/view-models/use-rules.ts`, `src/renderer/src/lib/rule-text.ts`（+ test）
+- Create: `src/renderer/src/components/RulePanel.tsx`, `RuleEditor.tsx`, `StepEditor.tsx`（四种加工步骤的表单）, `RuleTester.tsx`, `LookupTables.tsx`, `SecretList.tsx`, `WebhookSettings.tsx`（接口列表、编辑、发送测试、发送记录、立即重试）, `src/renderer/src/view-models/use-rules.ts`, `src/renderer/src/lib/rule-text.ts`（+ test）
 - Modify: `SidePanel.tsx`（新增第 5 个标签页「识别规则」）、`App.tsx`、`app.css`（模板编辑器的字段区与二维码内容来源已在 Task 4 完成）
 
 **测试要点:**

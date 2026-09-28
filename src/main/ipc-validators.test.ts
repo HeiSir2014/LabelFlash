@@ -4,11 +4,13 @@ import {
   MAX_RAW_INPUT_LENGTH,
   requireJobQuery,
   requireLookupTableId,
+  requirePositiveInteger,
   requirePrintOptions,
   requireRaw,
   requireString,
   requireTemplateId,
   requireVoiceCue,
+  requireWebhookId,
 } from './ipc-validators';
 
 describe('ipc validators', () => {
@@ -22,6 +24,15 @@ describe('ipc validators', () => {
     const multiLine = 'x\r\n'.repeat(MAX_IPC_STRING_LENGTH);
     expect(requireRaw(multiLine)).toBe(multiLine);
     expect(() => requireRaw('x'.repeat(MAX_RAW_INPUT_LENGTH + 1))).toThrow(TypeError);
+  });
+
+  test('requirePositiveInteger and requireWebhookId reject anything else', () => {
+    expect(requirePositiveInteger(3, 'id')).toBe(3);
+    for (const bad of [0, -1, 1.5, '3', null]) {
+      expect(() => requirePositiveInteger(bad, 'id')).toThrow(TypeError);
+    }
+    expect(requireWebhookId('w-1')).toBe('w-1');
+    expect(() => requireWebhookId('a/b')).toThrow(TypeError);
   });
 
   test('requireLookupTableId accepts generated ids only', () => {

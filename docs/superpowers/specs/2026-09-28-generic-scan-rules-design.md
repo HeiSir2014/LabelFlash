@@ -135,7 +135,7 @@ interface ScanResult {
   {
     "id": "打印记录 id（事件编号，接收方靠它去重）",
     "event": "printed",
-    "occurredAt": "2026-09-28T09:05:00.000+08:00",
+    "occurredAt": "2026-09-28T01:05:00.000Z",
     "raw": "原始内容",
     "rule": { "id": "builtin:dash-three", "name": "横杠三段（编码-颜色-尺码）" },
     "fields": { "编码": "CL5640-TK", "颜色": "图片色", "尺码": "XL" },

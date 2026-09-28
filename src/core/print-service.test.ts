@@ -14,7 +14,7 @@ import type { LabelTemplate } from './templates/template-model';
 import { FAKE_CLOCK_START, FakeClock } from './testing/fake-clock';
 import { FakePrinterAdapter } from './testing/fake-printer-adapter';
 import { InMemoryJobStore } from './testing/in-memory-job-store';
-import type { PrintRequest } from './types';
+import type { JobRecord, PrintRequest } from './types';
 
 const WINDOW_MS = 10 * 60_000;
 const RAW = 'CL5640-TK-图片色-XL';
@@ -39,6 +39,7 @@ function createHarness(store = new InMemoryJobStore()) {
   let template: LabelTemplate = STANDARD_TEMPLATE;
   let rules: readonly ScanRule[] = BUILT_IN_RULES;
   const templateRequests: ScanResult[] = [];
+  const recorded: Array<{ job: JobRecord; scan: ScanResult | null }> = [];
   let enrichScan: (scan: ScanResult) => Promise<EnrichResult> = async (scan) => ({ scan, traces: [], blocked: null });
   let nextId = 0;
   const service = new PrintService({
@@ -54,6 +55,7 @@ function createHarness(store = new InMemoryJobStore()) {
       templateRequests.push(scan);
       return template;
     },
+    onRecorded: (job, scan) => recorded.push({ job, scan }),
   });
   const useTemplate = (next: LabelTemplate) => {
     template = next;
@@ -64,7 +66,7 @@ function createHarness(store = new InMemoryJobStore()) {
   const useEnrich = (next: (scan: ScanResult) => Promise<EnrichResult>) => {
     enrichScan = next;
   };
-  return { clock, adapter, store, service, useTemplate, useRules, useEnrich, templateRequests };
+  return { clock, adapter, store, service, useTemplate, useRules, useEnrich, templateRequests, recorded };
 }
 
 const withShelf = async (scan: ScanResult): Promise<EnrichResult> => ({
@@ -285,6 +287,19 @@ describe('PrintService processing steps', () => {
       throw new Error('boom');
     });
     expect((await service.submit(request())).status).toBe('printed');
+  });
+
+  test('reports every recorded result with the scan it was based on, but not the test page', async () => {
+    const { service, useEnrich, recorded } = createHarness();
+    useEnrich(withShelf);
+    await service.submit(request());
+    await service.submit(request());
+    await service.submit(request({ raw: '   ' }));
+    await service.printTest(PRINTER);
+    expect(recorded.map(({ job }) => job.status)).toEqual(['printed', 'duplicate', 'invalid']);
+    expect(recorded[0]?.scan?.fields.at(-1)).toEqual({ name: '货架号', value: 'A-01' });
+    expect(recorded[1]?.scan?.raw).toBe(RAW);
+    expect(recorded[2]?.scan).toBeNull();
   });
 
   test('the test page skips the steps', async () => {

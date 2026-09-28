@@ -29,6 +29,7 @@ describe('openDatabase', () => {
       'secrets',
       'settings',
       'templates',
+      'webhook_deliveries',
     ]);
     db.close();
   });

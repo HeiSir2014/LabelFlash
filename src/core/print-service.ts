@@ -31,6 +31,8 @@ export interface PrintServiceDeps {
   enrich: (scan: ScanResult) => Promise<EnrichResult>;
   /** 本次识别结果用的模板（规则绑定的模板或当前模板）；每次打印时读取，切换模板立即生效。 */
   resolveTemplate: (scan: ScanResult) => LabelTemplate;
+  /** 每条打印记录写入后调用（打印结果通知在这里入队）；实现不能抛错、不能阻塞。测试页不调用。 */
+  onRecorded?: (job: JobRecord, scan: ScanResult | null) => void;
 }
 
 type Recognition = { ok: true; scan: ScanResult } | { ok: false; result: Extract<PrintResult, { status: 'invalid' }> };
@@ -68,26 +70,24 @@ export class PrintService {
     const recognition = this.recognize(request.raw);
     if (!recognition.ok) {
       const truncated = request.raw.trim().slice(0, MAX_RAW_LENGTH);
-      return this.finish(id, request, truncated, recognition.result);
+      return this.finish(id, request, truncated, recognition.result, null);
     }
     const { raw } = recognition.scan;
     // 先占住防重复窗口再加工：HTTP 查询要花时间，扫码枪连按的第二下必须在这里就被拦下。
     const reservation = this.deps.guard.tryReserve(raw, request.force === true);
     if (!reservation.ok) {
-      return this.finish(id, request, raw, {
+      const duplicate: PrintResult = {
         status: 'duplicate',
         recent: reservation.recent,
         windowMs: this.deps.guard.windowMs,
-      });
+      };
+      return this.finish(id, request, raw, duplicate, recognition.scan);
     }
     const enriched = await this.enrich(recognition.scan);
     if (enriched.blocked) {
       this.deps.guard.release(raw);
-      return this.finish(id, request, raw, {
-        status: 'failed',
-        reason: 'LOOKUP_FAILED',
-        detail: enriched.blocked.detail,
-      });
+      const lookupFailed: PrintResult = { status: 'failed', reason: 'LOOKUP_FAILED', detail: enriched.blocked.detail };
+      return this.finish(id, request, raw, lookupFailed, enriched.scan);
     }
     const { scan } = enriched;
     try {
@@ -103,10 +103,10 @@ export class PrintService {
       } else {
         this.deps.guard.release(scan.raw);
       }
-      return this.finish(id, request, scan.raw, failed(failure));
+      return this.finish(id, request, scan.raw, failed(failure), scan);
     }
     this.deps.guard.commit(scan.raw);
-    return this.finish(id, request, scan.raw, { status: 'printed', jobId: id, scan });
+    return this.finish(id, request, scan.raw, { status: 'printed', jobId: id, scan }, scan);
   }
 
   /**
@@ -148,7 +148,14 @@ export class PrintService {
     return { scan, template: this.deps.resolveTemplate(scan), printedAt: this.deps.clock.now() };
   }
 
-  private finish(id: string, request: PrintRequest, raw: string, result: PrintResult): PrintResult {
+  /** 写打印记录，并通知订阅者（打印结果通知）；scan 是当时的识别结果，识别不了时为 null。 */
+  private finish(
+    id: string,
+    request: PrintRequest,
+    raw: string,
+    result: PrintResult,
+    scan: ScanResult | null,
+  ): PrintResult {
     const job: JobRecord = {
       id,
       createdAt: this.deps.clock.now(),
@@ -167,6 +174,7 @@ export class PrintService {
       // 以打印机为准：记录写失败不能把已出纸的任务报成失败，否则操作员会重复打印。
       console.error('[PrintService] failed to record job', error);
     }
+    this.deps.onRecorded?.(job, scan);
     return result;
   }
 }

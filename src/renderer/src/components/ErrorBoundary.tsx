@@ -28,7 +28,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       <div className="crash-screen" role="alert">
         <h1>界面出错了</h1>
         <p>错误已写入日志。打印记录和设置不受影响。</p>
-        <button type="button" className="button button--primary" onClick={() => window.location.reload()}>
+        <button type="button" className="button button--primary button--large" onClick={() => window.location.reload()}>
           重新加载界面
         </button>
       </div>

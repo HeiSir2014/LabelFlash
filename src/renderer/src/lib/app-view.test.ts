@@ -6,6 +6,7 @@ import {
   configShortcutLabel,
   isConfigShortcut,
   pageLabel,
+  platformForChrome,
   type ShortcutKey,
   WORKBENCH,
 } from './app-view';
@@ -45,5 +46,10 @@ describe('config shortcut', () => {
     expect(isConfigShortcut(key(), 'other')).toBe(false);
     expect(configShortcutLabel('mac')).toBe('⌘,');
     expect(configShortcutLabel('other')).toBe('Ctrl+,');
+  });
+
+  test('follows the window chrome the main process chose for this platform', () => {
+    expect(platformForChrome('mac-traffic-lights')).toBe('mac');
+    expect(platformForChrome('custom-buttons')).toBe('other');
   });
 });

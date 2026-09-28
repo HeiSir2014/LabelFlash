@@ -30,11 +30,21 @@
   /* macOS 红绿灯占用的宽度：左边距 14px + 三个按钮约 52px + 与品牌的间距。 */
   --traffic-light-inset: 80px;
   --side-width: 380px;
+  --config-nav-width: 184px;
   --feed-duration: 180ms;
+  /* 配置中心进出的时长；改动时同步 view-models/use-app-view.ts 的 CONFIG_TRANSITION_MS。 */
+  --config-duration: 160ms;
+}
+
+@media (max-width: 1199px) {
+  :root {
+    --config-nav-width: 160px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
     --feed-duration: 0ms;
+    --config-duration: 0ms;
   }
 }

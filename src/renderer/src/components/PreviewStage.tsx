@@ -57,7 +57,7 @@ export function PreviewStage({ toolbar, scan, view, override, onPrint, onForceRe
             />
           )}
           {view.actions.print && (
-            <button type="button" className="button button--primary" onClick={onPrint}>
+            <button type="button" className="button button--primary button--large" onClick={onPrint}>
               {view.actions.print === 'retry' ? '重试打印' : '打印'}
               <kbd>F2</kbd>
             </button>

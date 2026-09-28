@@ -2,25 +2,30 @@ import { useMemo, useState } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
+import { ConfigCenter } from './components/config/ConfigCenter';
+import { ConfigPages } from './components/config/ConfigPages';
+import { ConfirmDialog } from './components/config/ConfirmDialog';
 import { JobLog } from './components/JobLog';
 import { NoticeBar } from './components/NoticeBar';
 import { type PreviewOverride, PreviewStage } from './components/PreviewStage';
 import { PrinterList } from './components/PrinterList';
 import { RulePanel } from './components/RulePanel';
 import { ScanBar } from './components/ScanBar';
-import { SettingsForm } from './components/SettingsForm';
 import { SidePanel, type SideTab } from './components/SidePanel';
 import { TemplatePanel } from './components/TemplatePanel';
 import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
+import { configShortcutLabel, platformForChrome } from './lib/app-view';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
 import { describePaperCheck } from './lib/paper-text';
 import { describePreviewUsage, type PreviewUsage } from './lib/preview-usage';
 import { describePrinterChip } from './lib/printer-chip';
+import { isWorkbenchActive } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
+import { NO_EDITOR, useAppView } from './view-models/use-app-view';
 import { useDriverPaper } from './view-models/use-driver-paper';
 import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
@@ -44,6 +49,10 @@ export function App() {
   const updates = useUpdateStatus();
   const updateView = describeUpdate(updates.status);
   const [sideTab, setSideTab] = useState<SideTab>('printers');
+  const platform = platformForChrome(window.windowControls.chrome);
+  // 模板和规则的编辑器在后续步骤迁进配置中心后接入未保存确认。
+  const appView = useAppView({ platform, editor: () => NO_EDITOR });
+  const isWorkbench = isWorkbenchActive(appView.view);
 
   const printerName = settings?.selectedPrinter ?? null;
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
@@ -107,7 +116,7 @@ export function App() {
   const selectNote = async (value: string) => {
     const selection = resolveNoteSelection(value, settings?.notePresets ?? []);
     if (selection === 'manage') {
-      setSideTab('settings');
+      appView.open('notes');
       return;
     }
     if (selection && (await update({ noteOverride: selection }))) {
@@ -122,11 +131,16 @@ export function App() {
     queryingRaw: station.queryingRaw,
   });
 
-  useHotkey('F2', () => {
-    if (view.actions.print) {
-      station.printCurrent(false);
-    }
-  });
+  // F2 监听在 window 上，工作台的 inert 拦不住：配置中心打开时显式停用，配置中永远不打印。
+  useHotkey(
+    'F2',
+    () => {
+      if (view.actions.print) {
+        station.printCurrent(false);
+      }
+    },
+    { enabled: isWorkbench },
+  );
 
   const changeSettings = async (patch: Partial<AppSettings>) => {
     const next = await update(patch);
@@ -157,6 +171,11 @@ export function App() {
         version={appInfo?.version ?? null}
         printerChip={printerChip}
         readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
+        config={{
+          isOpen: !isWorkbench && !appView.isLeaving,
+          shortcutLabel: configShortcutLabel(platform),
+          onToggle: appView.toggle,
+        }}
         onInstallUpdate={updates.install}
         onOpenShop={openShop}
       />
@@ -165,7 +184,7 @@ export function App() {
           {hasLoadError ? (
             <>
               <p>读取设置失败，详情已写入日志。</p>
-              <button type="button" className="button button--primary" onClick={() => void reload()}>
+              <button type="button" className="button button--primary button--large" onClick={() => void reload()}>
                 重试
               </button>
             </>
@@ -174,9 +193,10 @@ export function App() {
           )}
         </div>
       ) : (
-        <main className="workspace">
+        <main className="workspace" inert={!isWorkbench}>
           <div className="station">
             <ScanBar
+              isActive={isWorkbench}
               autoPrint={autoPrint}
               lineGapMs={settings?.scanLineGapMs ?? DEFAULT_SETTINGS.scanLineGapMs}
               note={{ ...noteOptions, onSelect: (value) => void selectNote(value) }}
@@ -249,24 +269,43 @@ export function App() {
                   onReprint={station.reprint}
                 />
               ),
-              settings: (
-                <SettingsForm
-                  settings={settings}
-                  jobTotal={jobLog.total}
-                  appInfo={appInfo}
-                  update={updateView}
-                  onChange={changeSettings}
-                  onOpenLogFolder={openLogFolder}
-                  onOpenShop={openShop}
-                  onCheckForUpdates={updates.check}
-                  onPreviewVoice={feedback.preview}
-                  secretNames={rules.secretNames}
-                />
-              ),
               rules: <RulePanel rules={rules} templates={templates.templates} />,
             }}
           />
         </main>
+      )}
+      {settings !== null && appView.view.kind === 'config' && (
+        <ConfigCenter
+          page={appView.view.page}
+          isLeaving={appView.isLeaving}
+          breadcrumb={null}
+          onNavigate={appView.open}
+          onClose={appView.close}
+        >
+          <ConfigPages
+            page={appView.view.page}
+            settings={settings}
+            jobTotal={jobLog.total}
+            appInfo={appInfo}
+            update={updateView}
+            secretNames={rules.secretNames}
+            onChange={changeSettings}
+            onCheckForUpdates={updates.check}
+            onOpenLogFolder={openLogFolder}
+            onOpenShop={openShop}
+            onPreviewVoice={feedback.preview}
+          />
+        </ConfigCenter>
+      )}
+      {appView.leaveConfirm && (
+        <ConfirmDialog
+          title="有未保存的修改"
+          message="离开后这些修改会丢失。"
+          confirmLabel="放弃修改"
+          cancelLabel="继续编辑"
+          onConfirm={appView.leaveConfirm.onDiscard}
+          onCancel={appView.leaveConfirm.onContinue}
+        />
       )}
       <NoticeBar notices={notices} onDismiss={dismiss} />
     </div>

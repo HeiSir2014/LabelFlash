@@ -4,17 +4,32 @@ import type { PrinterChipView } from '../lib/printer-chip';
 import { useWindowControls } from '../view-models/use-window-controls';
 import { ConfirmButton } from './ConfirmButton';
 
+export interface ConfigButtonProps {
+  isOpen: boolean;
+  /** 快捷键的显示文字：Windows「Ctrl+,」，macOS「⌘,」。 */
+  shortcutLabel: string;
+  onToggle: () => void;
+}
+
 interface TitleBarProps {
   /** 当前版本号（如 1.0.1）；读取到之前为 null，不显示。 */
   version: string | null;
   printerChip: PrinterChipView;
   /** 新版本已下载时显示的版本号；null 表示没有待安装的更新。 */
   readyUpdateVersion: string | null;
+  config: ConfigButtonProps;
   onInstallUpdate: () => void;
   onOpenShop: () => void;
 }
 
-export function TitleBar({ version, printerChip, readyUpdateVersion, onInstallUpdate, onOpenShop }: TitleBarProps) {
+export function TitleBar({
+  version,
+  printerChip,
+  readyUpdateVersion,
+  config,
+  onInstallUpdate,
+  onOpenShop,
+}: TitleBarProps) {
   const { chrome, isMaximized, isFullScreen, minimize, toggleMaximize, close } = useWindowControls();
   const hasTrafficLights = chrome === 'mac-traffic-lights';
   // 全屏时系统隐藏红绿灯，标题栏不再为它留位置。
@@ -35,17 +50,29 @@ export function TitleBar({ version, printerChip, readyUpdateVersion, onInstallUp
           <span className="title-bar__shop-name">{BRAND.shop.name}</span>
         </button>
       </div>
-      {readyUpdateVersion && (
-        <ConfirmButton
-          className="update-pill"
-          label={`新版本 ${readyUpdateVersion} 已就绪 · 重启更新`}
-          confirmLabel="再点一次：立即重启并更新"
-          onConfirm={onInstallUpdate}
-        />
-      )}
-      <div className={`printer-chip printer-chip--${printerChip.tone}`} title="当前打印机">
-        <span className="printer-chip__dot" aria-hidden="true" />
-        <span className="printer-chip__name">{printerChip.text}</span>
+      <div className="title-bar__actions">
+        {readyUpdateVersion && (
+          <ConfirmButton
+            className="update-pill"
+            label={`新版本 ${readyUpdateVersion} 已就绪 · 重启更新`}
+            confirmLabel="再点一次：立即重启并更新"
+            onConfirm={onInstallUpdate}
+          />
+        )}
+        <button
+          type="button"
+          className="config-button"
+          aria-pressed={config.isOpen}
+          title={`${config.isOpen ? '返回工作台' : '打开配置'}（${config.shortcutLabel}）`}
+          onClick={config.onToggle}
+        >
+          <GearIcon />
+          {config.isOpen ? '配置中' : '配置'}
+        </button>
+        <div className={`printer-chip printer-chip--${printerChip.tone}`} title="当前打印机">
+          <span className="printer-chip__dot" aria-hidden="true" />
+          <span className="printer-chip__name">{printerChip.text}</span>
+        </div>
       </div>
       {!hasTrafficLights && (
         <WindowButtons
@@ -56,6 +83,16 @@ export function TitleBar({ version, printerChip, readyUpdateVersion, onInstallUp
         />
       )}
     </header>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg className="config-button__icon" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.25" />
+      <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" />
+      <circle cx="8" cy="8" r="4.5" />
+    </svg>
   );
 }
 

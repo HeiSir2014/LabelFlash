@@ -29,6 +29,7 @@ input {
 }
 
 .app {
+  position: relative;
   display: grid;
   grid-template-rows: var(--title-bar-height) minmax(0, 1fr);
   height: 100%;
@@ -67,8 +68,17 @@ input {
   padding-left: var(--traffic-light-inset);
 }
 
-.title-bar:has(> .printer-chip:last-child) {
+.title-bar:has(> .title-bar__actions:last-child) {
   padding-right: var(--space-4);
+}
+
+/* 右侧一组：更新胶囊、「配置」按钮、打印机胶囊，高度一致 */
+.title-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-left: auto;
 }
 
 .title-bar__brand {
@@ -79,8 +89,8 @@ input {
 
 /* 新版本已下载：标题栏里的可点击提示（必须排除在拖拽区域之外才能点击） */
 .update-pill {
-  margin-left: var(--space-4);
-  padding: 2px var(--space-3);
+  height: 28px;
+  padding: 0 var(--space-3);
   border: 0;
   border-radius: 999px;
   background: var(--color-tape);
@@ -169,12 +179,49 @@ input {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   max-width: 420px;
-  margin-left: auto;
-  padding: 2px var(--space-3);
+  height: 28px;
+  padding: 0 var(--space-3);
   border: 1px solid rgb(251 251 248 / 0.25);
   border-radius: 999px;
   font-size: 12px;
+}
+
+/* 「配置」按钮：与打印机胶囊同高、同描边；配置中心打开时显示按下 */
+.config-button {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid rgb(251 251 248 / 0.25);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.config-button:hover {
+  border-color: var(--color-tape);
+}
+
+.config-button[aria-pressed="true"] {
+  border-color: var(--color-tape);
+  background: var(--color-tape);
+  color: var(--color-ink);
+}
+
+.config-button__icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.4;
 }
 
 .printer-chip__name {
@@ -677,15 +724,19 @@ input {
 }
 
 .button--primary {
-  height: 44px;
-  padding: 0 var(--space-5);
   background: var(--color-ink);
   color: var(--color-paper);
-  font-size: 16px;
 }
 
 .button--primary:hover {
   background: #2a3531;
+}
+
+/* 工作台的打印按钮这类要在远处一眼看到的主操作 */
+.button--large {
+  height: 44px;
+  padding: 0 var(--space-5);
+  font-size: 16px;
 }
 
 .button--small {
@@ -942,36 +993,6 @@ input {
   grid-row: 1 / span 2;
   align-items: center;
   gap: var(--space-1);
-}
-
-/* 设置 */
-.settings {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  padding: var(--space-4);
-  overflow-y: auto;
-}
-
-.setting {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
-}
-
-.setting__label {
-  font-weight: 600;
-}
-
-.setting__control {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.setting__unit {
-  color: var(--color-ink-soft);
 }
 
 .setting__hint {
@@ -1240,76 +1261,11 @@ input {
   gap: var(--space-2);
 }
 
-.about {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-rule);
-}
-
 .about__title {
   margin: 0;
   font-family: var(--font-display);
   font-size: 15px;
   font-weight: var(--font-display-weight);
-}
-
-.about__list {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
-  margin: 0;
-  font-size: 13px;
-}
-
-.about__list dt {
-  color: var(--color-ink-soft);
-}
-
-.about__list dd {
-  margin: 0;
-}
-
-.about__path {
-  font-family: var(--font-data);
-  font-size: 12px;
-  word-break: break-all;
-  user-select: text;
-}
-
-.about__url {
-  display: block;
-  color: var(--color-ink-soft);
-}
-
-/* 店铺二维码：白底加留白，手机在各种光线下都容易扫 */
-.about__qr {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  margin: var(--space-2) 0 0;
-  padding: var(--space-2);
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius);
-  background: #fff;
-}
-
-.about__qr img {
-  display: block;
-  image-rendering: pixelated;
-}
-
-.about__qr figcaption {
-  color: var(--color-ink-soft);
-  font-size: 12px;
-}
-
-.about__actions {
-  display: flex;
-  gap: var(--space-2);
 }
 
 /* 通知 */
@@ -1399,37 +1355,21 @@ input {
   cursor: pointer;
 }
 
-/* 设置：语音播报 */
-.voice-settings {
+/* 语音播报页：语速滑块、数值和试听排成一行 */
+.voice-rate {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-rule);
-}
-
-.voice-settings__row {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
+  max-width: 480px;
 }
 
-.voice-settings__select {
-  height: 32px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius);
-  background: #fff;
-  font: inherit;
-}
-
-.voice-settings__rate {
-  width: 100%;
+.voice-rate__slider {
+  flex: 1;
+  min-width: 0;
   accent-color: var(--color-ink);
 }
 
-.voice-settings__rate-value {
+.voice-rate__value {
   min-width: 4.5em;
   font-family: var(--font-data);
   font-size: 12px;
@@ -1437,12 +1377,6 @@ input {
 }
 
 /* 全部播报语：按级别分组，每句可点击试听 */
-.voice-cues summary {
-  color: var(--color-ink-soft);
-  font-size: 12px;
-  cursor: pointer;
-}
-
 .voice-cues__group {
   display: grid;
   grid-template-columns: 3em minmax(0, 1fr);
@@ -1485,39 +1419,12 @@ input {
   cursor: default;
 }
 
-/* 设置：常用备注 */
+/* 打印结果通知（后续步骤改成独立页面的样式） */
 .note-presets {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: var(--space-2);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-rule);
-}
-
-.note-presets__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.note-presets__item {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border-radius: var(--radius);
-  background: var(--color-housing);
-}
-
-.note-presets__text {
-  flex: 1;
-  min-width: 0;
-  white-space: pre-line;
-  word-break: break-all;
 }
 
 .note-presets .button {
@@ -1765,4 +1672,409 @@ input {
 
 .delivery-state--failed {
   background: var(--color-error-wash);
+}
+
+/* ── 配置中心：铺满标题栏以下；工作台留在下面，设为 inert ── */
+.config-center {
+  position: absolute;
+  z-index: 5;
+  inset: var(--title-bar-height) 0 0 0;
+  display: grid;
+  grid-template-areas:
+    "back header"
+    "nav content";
+  grid-template-columns: var(--config-nav-width) minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr);
+  background: var(--color-housing);
+  animation: config-enter var(--config-duration) ease-out;
+}
+
+.config-center--leaving {
+  animation: config-leave var(--config-duration) ease-in forwards;
+}
+
+@keyframes config-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes config-leave {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.config-center__back {
+  display: flex;
+  grid-area: back;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border-right: 1px solid var(--color-rule);
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-paper);
+}
+
+.config-header {
+  display: flex;
+  grid-area: header;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-paper);
+}
+
+.config-header__title {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: var(--font-display-weight);
+  white-space: nowrap;
+}
+
+/* 标题只是焦点的落脚点（读屏软件从这里读起），不是可操作的控件，不画焦点框。 */
+.config-header__title:focus {
+  outline: none;
+}
+
+.config-header__crumb {
+  color: var(--color-ink-soft);
+  font-weight: inherit;
+}
+
+.config-header__divider {
+  color: var(--color-rule);
+  font-weight: 400;
+}
+
+.config-header__current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.config-pill {
+  flex: none;
+  padding: 2px var(--space-3);
+  border-radius: 999px;
+  background: var(--color-warning-wash);
+  color: var(--color-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.config-nav {
+  grid-area: nav;
+  padding-bottom: var(--space-4);
+  overflow-y: auto;
+  border-right: 1px solid var(--color-rule);
+  background: var(--color-paper);
+}
+
+.config-nav__heading {
+  margin: var(--space-4) 0 var(--space-1);
+  padding-left: var(--space-4);
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+.config-nav__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 左边 4px 竖条与「使用中」模板的标记一致；文字始终从 --space-5 开始 */
+.config-nav__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--space-3) 0 calc(var(--space-5) - 4px);
+  border: 0;
+  border-left: 4px solid transparent;
+  background: transparent;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.config-nav__item:hover {
+  background: var(--color-housing);
+}
+
+.config-nav__item[aria-current="page"] {
+  border-left-color: var(--color-tape);
+  background: var(--color-tape-wash);
+  font-weight: 600;
+}
+
+.config-content {
+  grid-area: content;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-5);
+  overflow-y: auto;
+}
+
+.config-content__inner {
+  max-width: 1200px;
+}
+
+/* ── 配置页的通用样式 ── */
+.config-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.config-page__intro {
+  max-width: 720px;
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 13px;
+}
+
+.config-card {
+  padding: var(--space-4);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+}
+
+.config-card__title {
+  display: block;
+  margin: 0 0 var(--space-2);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.config-card__text {
+  margin: 0;
+  font-size: 13px;
+}
+
+.config-code {
+  padding: 0 var(--space-1);
+  border-radius: 3px;
+  background: var(--color-housing);
+  font-family: var(--font-data);
+  font-size: 12px;
+}
+
+.config-empty {
+  margin: 0;
+  color: var(--color-ink-soft);
+}
+
+.config-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.select-field {
+  min-width: 200px;
+  height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: #fff;
+  font: inherit;
+}
+
+/* 一项设置：左边 120px 标签，右边控件，控件下方是说明 */
+.setting-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-3) 0;
+}
+
+.setting-row:first-child {
+  padding-top: 0;
+}
+
+.setting-row:last-child {
+  padding-bottom: 0;
+}
+
+.setting-row + .setting-row {
+  border-top: 1px solid var(--color-housing);
+}
+
+.setting-row__label {
+  font-weight: 600;
+}
+
+.setting-row__control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.setting-row__hint {
+  grid-column: 2;
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+.setting-row__inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.setting-row__unit {
+  color: var(--color-ink-soft);
+}
+
+.config-card .confirm-row {
+  margin-bottom: var(--space-3);
+}
+
+/* 常用备注 */
+.note-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.note-card__text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+.note-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.note-form .config-card__title {
+  margin-bottom: 0;
+}
+
+.note-form .text-area {
+  flex: none;
+}
+
+.note-form__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 关于 */
+.about-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.about-card__list {
+  display: grid;
+  grid-template-columns: 5em minmax(0, 1fr);
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+}
+
+.about-card__list dt {
+  color: var(--color-ink-soft);
+}
+
+.about-card__list dd {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  margin: 0;
+}
+
+.about-card__path {
+  font-family: var(--font-data);
+  font-size: 12px;
+  word-break: break-all;
+  user-select: text;
+}
+
+/* 店铺二维码：白底加留白，手机在各种光线下都容易扫 */
+.about-card__qr {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.about-card__qr img {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.about-card__qr figcaption {
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+/* ── 应用内确认框 ── */
+.dialog-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: color-mix(in srgb, var(--color-ink) 45%, transparent);
+}
+
+.dialog {
+  width: 400px;
+  max-width: 100%;
+  padding: var(--space-5);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--color-ink) 30%, transparent);
+}
+
+.dialog__title {
+  margin: 0 0 var(--space-2);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.dialog__message {
+  margin: 0 0 var(--space-5);
+  color: var(--color-ink-soft);
+}
+
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }

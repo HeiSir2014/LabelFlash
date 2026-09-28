@@ -21,14 +21,21 @@ function isTextEntry(element: Element | null): boolean {
  * - 窗口在前台、鼠标和键盘都 10 秒没动：回到扫码框（设置、模板编辑里也一样，已填的内容不会丢）。
  * - 窗口重新获得焦点、焦点不在输入框：回到扫码框。
  * 自动回焦只移动焦点，不改动框里的内容和选区；全选只在操作员双击扫码框时发生。
+ *
+ * isActive 为 false（配置中心打开）时以上规则全部停用：管理员在填表，焦点留在他放的位置。
+ * 重新变为 true（回到工作台）时焦点立即回到扫码框。
  */
-export function useScanFocus(): RefObject<HTMLTextAreaElement | null> {
+export function useScanFocus(isActive: boolean): RefObject<HTMLTextAreaElement | null> {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+    let isDisposed = false;
     // focus() 会恢复输入框上次的选区（不会全选），所以自动回焦不会让下一次扫码覆盖掉已有内容。
     const focusScanInput = () => {
-      if (document.activeElement !== inputRef.current) {
+      if (!isDisposed && document.activeElement !== inputRef.current) {
         inputRef.current?.focus();
       }
     };
@@ -76,6 +83,7 @@ export function useScanFocus(): RefObject<HTMLTextAreaElement | null> {
     document.addEventListener('focusout', onFocusOut);
     window.addEventListener('focus', onWindowFocus);
     return () => {
+      isDisposed = true;
       idle.dispose();
       for (const type of ACTIVITY_EVENTS) {
         document.removeEventListener(type, onActivity, { capture: true });
@@ -84,7 +92,7 @@ export function useScanFocus(): RefObject<HTMLTextAreaElement | null> {
       document.removeEventListener('focusout', onFocusOut);
       window.removeEventListener('focus', onWindowFocus);
     };
-  }, []);
+  }, [isActive]);
 
   return inputRef;
 }

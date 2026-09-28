@@ -1,3 +1,5 @@
+import type { WindowChrome } from '../../../shared/window-chrome';
+
 /** 配置中心的页面，顺序就是导航顺序。 */
 export const CONFIG_PAGES = [
   'templates',
@@ -66,6 +68,11 @@ export function backStep(view: AppView, isEditing: boolean): BackStep {
 }
 
 export type Platform = 'mac' | 'other';
+
+/** 按主进程选的窗口样式判断平台：有系统红绿灯的就是 macOS。 */
+export function platformForChrome(chrome: WindowChrome): Platform {
+  return chrome === 'mac-traffic-lights' ? 'mac' : 'other';
+}
 
 export interface ShortcutKey {
   key: string;

@@ -11,6 +11,8 @@ export interface NoteControl {
 }
 
 interface ScanBarProps {
+  /** 工作台在前台（配置中心没打开）：扫码框的自动回焦规则只在这时生效。 */
+  isActive: boolean;
   autoPrint: boolean;
   /** 多行扫码：回车 / Tab 之后等这么久没有新字符，才算一次扫码结束。 */
   lineGapMs: number;
@@ -19,8 +21,8 @@ interface ScanBarProps {
   onScan: (raw: string) => void;
 }
 
-export function ScanBar({ autoPrint, lineGapMs, note, onAutoPrintChange, onScan }: ScanBarProps) {
-  const inputRef = useScanFocus();
+export function ScanBar({ isActive, autoPrint, lineGapMs, note, onAutoPrintChange, onScan }: ScanBarProps) {
+  const inputRef = useScanFocus(isActive);
   const [value, setValue] = useState('');
   // 计时器回调里要读到最新的内容和回调，用 ref 保存。
   const valueRef = useRef('');

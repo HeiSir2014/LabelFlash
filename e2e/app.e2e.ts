@@ -134,9 +134,13 @@ test('keeps a saved custom template and the note selection after a restart', asy
   await customRow.getByRole('button', { name: '使用' }).click();
   await expect(customRow).toContainText('使用中');
 
-  await page.getByRole('tab', { name: '设置' }).click();
-  await page.locator('.note-presets textarea').fill('E2E 备注 {日期}');
+  // 备注下拉框的「管理常用备注…」打开配置中心的「常用备注」页。
+  await page.getByRole('combobox', { name: '备注' }).selectOption({ label: '管理常用备注…' });
+  await expect(page.getByRole('heading', { level: 1, name: '常用备注' })).toBeVisible();
+  await page.getByLabel('新的常用备注').fill('E2E 备注 {日期}');
   await page.getByRole('button', { name: /添加常用备注/ }).click();
+  await expect(page.locator('.note-card')).toHaveText(['E2E 备注 {日期}删除']);
+  await page.getByRole('button', { name: '返回工作台' }).click();
   await page.getByRole('combobox', { name: '备注' }).selectOption({ label: 'E2E 备注 {日期}' });
   await expect(page.locator('.scan-bar__input')).toBeFocused();
   await first.app.close();
@@ -201,6 +205,75 @@ test('keeps the scan box ready without touching its selection', async () => {
   // 只有在扫码框里双击才全选：编码里有「-」，默认双击只会选中其中一截。
   await input.dblclick();
   expect(await selection()).toEqual([0, 'ABC-RED-XL'.length]);
+  await app.close();
+});
+
+test('opens the config center over the workbench and comes back to the scan box', async () => {
+  const { app, page } = await launch();
+  const workspaceInert = page.locator('.workspace[inert]');
+  await page.getByRole('button', { name: '配置', exact: true }).click();
+
+  // 默认打开「模板」页，焦点在页标题；工作台不可聚焦，标题栏按钮显示按下。
+  await expect(page.getByRole('heading', { level: 1, name: '模板' })).toBeFocused();
+  await expect(page.getByRole('button', { name: '配置中', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(workspaceInert).toHaveCount(1);
+  await expect(page.getByText('配置中不打印')).toBeVisible();
+  const nav = page.getByRole('navigation', { name: '配置' });
+  await expect(nav.getByRole('button', { name: '模板', exact: true })).toHaveAttribute('aria-current', 'page');
+
+  // Esc 回工作台，焦点回扫码框。
+  await nav.getByRole('button', { name: '通用' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '通用' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.config-center')).toHaveCount(0);
+  await expect(workspaceInert).toHaveCount(0);
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+
+  // 快捷键开关配置中心，再次打开时回到上次的页面。
+  const shortcut = process.platform === 'darwin' ? 'Meta+Comma' : 'Control+Comma';
+  await page.keyboard.press(shortcut);
+  await expect(page.getByRole('heading', { level: 1, name: '通用' })).toBeFocused();
+  await page.keyboard.press(shortcut);
+  await expect(page.locator('.config-center')).toHaveCount(0);
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await app.close();
+});
+
+test('never prints from the config center, even with F2', async () => {
+  const { app, page } = await launch();
+  // 换掉主进程的打印处理：只计数，不碰真实打印机。
+  await app.evaluate(({ ipcMain }) => {
+    const calls = { count: 0 };
+    (globalThis as { e2ePrintCalls?: typeof calls }).e2ePrintCalls = calls;
+    ipcMain.removeHandler('label:print');
+    ipcMain.handle('label:print', () => {
+      calls.count += 1;
+      return { status: 'failed', reason: 'PRINT_ERROR' };
+    });
+  });
+  const printCalls = () =>
+    app.evaluate(() => (globalThis as { e2ePrintCalls?: { count: number } }).e2ePrintCalls?.count ?? -1);
+  await page.evaluate(() =>
+    (window as unknown as { api: { updateSettings(patch: object): Promise<unknown> } }).api.updateSettings({
+      selectedPrinter: 'E2E 打印机',
+      autoPrint: false,
+    }),
+  );
+  await page.reload();
+  await scan(page, 'CL5640-TK-图片色-XL');
+  await expect(page.locator('.status-strip__title')).toHaveText('待打印');
+
+  await page.getByRole('button', { name: '配置', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '模板' })).toBeFocused();
+  await page.keyboard.press('F2');
+  await page.waitForTimeout(500);
+  expect(await printCalls()).toBe(0);
+
+  // 对照：回到工作台后 F2 照常打印。
+  await page.getByRole('button', { name: '返回工作台' }).click();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await page.keyboard.press('F2');
+  await expect.poll(printCalls).toBe(1);
   await app.close();
 });
 

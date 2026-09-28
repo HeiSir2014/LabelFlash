@@ -1,266 +1,235 @@
-# 云签速印 (LabelFlash) — 设计文档
+# CDL-云签速印（LabelFlash）— 设计文档
 
-- 日期：2026-09-28
-- 状态：待评审
-- 包名：`label-flash`，appId：`com.labelflash.app`
+- 日期：2026-09-28（v2：纳入模板系统、品牌、审查结论）
+- 仓库：https://github.com/HeiSir2014/LabelFlash
+- 品牌：CDL = 陈大露；产品名 **CDL-云签速印**，ASCII 名 `CDL-LabelFlash`，appId `com.cdl.labelflash`
 
-## 1. 目标
+## 1. 目标与分期
 
-Windows PC 上运行的 Electron 桌面程序。它把本机已安装的标签打印机共享到局域网，支持两种入口扫描样衣标签上的二维码，按原样重新生成标签并自动打印：
-
-1. **PC 本地**：用扫码枪在主界面的输入框里扫码，扫码枪自动回车后立即打印。
-2. **手机**：扫描 PC 上显示的二维码，或手动输入局域网地址，打开网页后用摄像头连续扫码打印。
-
-两个入口共享同一套**防重门限**，防止同一张二维码被重复打印。
-
-### 分期
+在 Windows PC 上运行的桌面程序：用扫码枪扫样衣标签上的二维码，立即按模板生成 **60×40mm 背胶热敏标签** 的预览，并在本机选中的打印机上打印。
 
 | 阶段 | 范围 |
 |---|---|
-| **Phase 1（当前）** | Windows 本地客户端：扫码枪输入 → 解析 → 门限 → 静默打印；打印机管理、门限设置、打印日志、托盘常驻、NSIS 安装包。涉及 §2–§5、§8（不含手机访问区）、§9（不含防火墙规则）、§11 |
-| Phase 2 | 手机端：HTTPS 服务、自签证书、token/PIN 认证、手机扫码 SPA。涉及 §6 手机部分、§7、§12 的 iOS spike |
+| **Phase 1（当前）** | Windows 桌面客户端：扫码枪输入、预览、自动 / 手动打印、防重门限、打印模板（内置 + 自定义）、可回溯的打印记录、打印机管理与状态检测、托盘、开机自启、NSIS 安装包、CI |
+| Phase 2 | 手机端：主进程内的 HTTPS 服务、自签证书、token/PIN 认证、手机摄像头扫码 SPA；复用 `PrintService`，不改 `core/` |
 
-Phase 1 仍然按 `PrintService` 边界来设计，Phase 2 只需要新增 `server/`、`net/`、`mobile/`，不改 `core/`。
-
-### 非目标（YAGNI）
-
-- 库位字段（原标签上的 `A-1-2-3`）不打印
-- 可视化模板编辑器、多模板
+**不做（YAGNI）**：
+- 库位字段
+- 60×40 以外的纸张
 - 账号体系、云同步
-- RAW TSPL/ZPL 指令打印（只预留接口，不实现）
-- 普通办公打印机的 A4 排版
+- RAW TSPL/ZPL 指令打印（`PrinterAdapter` 接口已留好，以后可以加）
 
 ## 2. 输入数据
 
-二维码内容示例：`CL5640-TK-图片色-36`（已从样例图片解码确认）。
+- **格式**：二维码内容为 `编码-颜色-尺码`，例如 `CL5640-TK-图片色-XL`（已从样例图片解码确认）。
+- **拆分规则**：编码本身可能含 `-`，所以从右往左拆，正则为 `^(.+)-([^-]+)-([^-]+)$`。
+- **尺码是文本**：`36`、`36.5`、`S`、`M`、`L`、`XL`、`XXL`、`3XL`、`均码` 都合法。
+- **校验**：trim 后长度 1–128；三个字段都不能为空；不能含控制字符。
+- **去重 key**：trim 后的原文。
 
-- 格式：`<编码>-<颜色>-<尺码>`。编码本身可能包含 `-`，所以**从右往左拆**。
-- 解析正则：`^(.+)-([^-]+)-([^-]+)$` → `{ code: "CL5640-TK", color: "图片色", size: "36" }`
-- 校验：先 trim；总长 1–128；三个字段都不能为空；不能包含控制字符。不通过则拒绝打印，并返回 `INVALID_FORMAT`。
-- 去重 key：trim 之后的原始字符串（区分大小写）。
+## 3. 打印
 
-## 3. 打印方案
+- **方式**：打印机驱动加 HTML 渲染。
+  1. 隐藏的 `BrowserWindow`（禁用 JS、开启 sandbox）加载标签 HTML。
+  2. 调用 `webContents.print({ silent, deviceName, pageSize: 60×40mm })`。
+- **打印前检查**：
+  - 打印机列表缓存 5 秒；打印机不在列表里时返回 `PRINTER_NOT_FOUND`。
+  - 打印机状态：Windows 上后台每 5 秒用 `Get-Printer` 查一次当前打印机。打印机名通过环境变量传入，避免命令注入。打印时只读缓存，不增加出纸延迟。
+  - 离线、缺纸、卡纸、机盖未关等状态返回 `PRINTER_NOT_READY`，并附中文原因。
+  - 状态查询失败时视为"未知"，不阻止打印。
+- **超时**：单张 30 秒。
+  - 超时后通过 `AbortSignal` 通知适配器销毁打印窗口。
+  - 超时意味着结果不确定（可能已出纸，也可能仍在排队），所以按"已打印"记入门限。
+  - 确认没出纸时，再用"强制补打"。
+- **文案**：驱动回调成功只代表任务进入了系统打印队列，所以界面显示"已发送打印"，而不是"已打印"。
 
-**采用：打印机驱动 + HTML 渲染。**
+## 4. 标签模板
 
-隐藏的 `BrowserWindow` 加载标签 HTML（二维码由 `qrcode` 库生成 SVG），然后调用：
+模板是结构化数据，不是任意 HTML，可以校验，也可以持久化。预览和打印共用同一个 `renderLabelHtml(job)`。
 
-```ts
-webContents.print({
-  silent: true,
-  deviceName,
-  pageSize: { width: 60_000, height: 40_000 }, // 单位为微米
-  margins: { marginType: 'none' },
-  printBackground: true,
-});
-```
+- **纸张**：固定 60×40mm，模板只能配置边距（0–6mm）。
+- **布局**：二维码在左或在右。
+- **二维码**：可设置是否显示、边长（10mm 到纸高减去上下边距）、容错等级 L/M/Q/H。
+- **字段**：编码、颜色、尺码排在二维码旁；完整编码排在底部。每个字段可以设置：
+  - 是否显示
+  - 前缀（最多 16 字）
+  - 字号（1.5–8mm）
+  - 是否加粗
+- **对齐（按区域统一设置，不逐字段设置）**：
+  - `sideAlign`：二维码旁的字段和旁边的备注共用一种对齐方式。
+  - `bottomAlign`：底部的完整编码和底部备注共用一种对齐方式。
+  - 二维码旁的字段排成「前缀列 + 值列」的网格（`grid-template-columns: max-content 1fr`，按基线对齐），`sideAlign` 作用在值列上。这样无论前缀长短、字号大小、有没有备注，同一列的值始终对齐；右对齐时是「前缀靠左、值靠右」的标签式排版。
+- **备注**：
+  - 文本最多 200 字，可以多行。
+  - 位置可选"二维码旁空白处"或"底部整行"。
+  - 字号、加粗的设置方式与字段相同；对齐方式跟随所在区域。
+  - 支持变量 `{编码}`、`{颜色}`、`{尺码}`、`{完整编码}`、`{日期}`、`{时间}`，按打印时间展开；不认识的变量原样保留。
+- **长文本**：按字宽估算，放不下时自动缩小字号（不低于 1.5mm），保证 128 字符的编码也不会被裁掉。
+- **内置模板**（只读，随程序发布）：
+  1. 标准（二维码在左）：复刻原标签，去掉库位
+  2. 二维码在右
+  3. 大二维码 + 日期备注
+  4. 小二维码 + 底部备注
+  5. 精简（无前缀）
+- **自定义模板**：
+  - 从任意模板复制后编辑，存在 SQLite 里。
+  - 当前使用的模板 ID 存在设置里。
+  - 删除正在使用的模板时，自动切回标准模板。
+- **编辑体验**：编辑时预览区实时显示草稿，用最近一次扫的码，没有就用示例码。保存后才会用于打印。
+- **快速切换备注**：扫码框旁有「备注」下拉框，选项依次为：
+  - 模板备注（默认）
+  - 不打印备注
+  - 常用备注（设置页里管理，最多 20 条，每条不超过 200 字，支持变量）
+  - 管理常用备注…（跳到设置页）
 
-- 理由：中文字体不用额外处理；任何装了 Windows 驱动的热敏标签机都能用；模板就是 HTML/CSS，方便修改。
-- 扩展：通过 `PrinterAdapter` 接口隔离，以后可以加 `TsplRawAdapter`。
-- 打印机列表来自 `webContents.getPrintersAsync()`。
-
-### 标签模板（60×40mm）
-
-复刻原标签，但去掉库位：
-
-```
-┌──────────────────────────────────┐
-│ ┌────────┐  编码：CL5640-TK       │
-│ │ QR 码  │  颜色：图片色           │
-│ │ ~30mm  │  尺码：36              │
-│ └────────┘                        │
-│ CL5640-TK-图片色-36               │
-└──────────────────────────────────┘
-```
-
-- 二维码内容 = 原始字符串，纠错级别 M。
-- 字体用粗体黑体（`Microsoft YaHei` Bold / `SimHei`），针对 203dpi 热敏打印；只用纯黑，不用灰阶。
-- 所有文本都经过 HTML 转义后再插入模板。
-
-## 4. 架构
-
-```
-src/
-├── core/                  业务层：纯 TS，不依赖 Electron 和 UI，可以直接 bun test
-│   ├── types.ts             LabelData / PrintRequest / PrintResult / PrinterAdapter / Clock …
-│   ├── errors.ts            PrintError（带失败原因）
-│   ├── label-parser.ts      解析和校验二维码内容
-│   ├── dedup-guard.ts       时间窗口门限：peek / 检查并占位 / 提交 / 释放
-│   ├── serial-queue.ts      Promise 串行队列
-│   ├── print-queue.ts       每台打印机一个串行队列，单任务超时 30s
-│   ├── job-store.ts         JobStore 接口（同步）
-│   └── print-service.ts     对外唯一入口：preview(raw) / submit(request) / printTest(printer)
-├── shared/                主进程与界面共用：IPC 契约、设置类型与校验
-├── main/                  Electron 主进程
-│   ├── printing/
-│   │   ├── label-template.ts           生成标签 HTML（打印和预览共用）
-│   │   └── electron-driver-adapter.ts  隐藏窗口渲染并静默打印
-│   ├── storage/database.ts             node:sqlite 打开数据库、pragma、user_version 迁移、事务
-│   ├── storage/migrations.ts           只追加的 schema 迁移列表
-│   ├── storage/sqlite-job-store.ts     打印记录（环形保留）
-│   ├── storage/sqlite-settings-store.ts 设置（key/JSON value）
-│   ├── window.ts / tray.ts / ipc.ts / index.ts
-│   ├── server/ net/                    （Phase 2）HTTPS 服务、局域网地址、自签证书
-├── preload/index.ts       contextBridge 暴露类型化 API
-├── renderer/              PC 界面（React，MVVM：view-model hooks + 纯视图）
-└── mobile/                （Phase 2）手机 SPA
-```
-
-**依赖方向**：`renderer`、`mobile` 和 `server` 只通过 `PrintService` 使用业务功能；`core` 不引用 Electron、Fastify 或 Node 文件系统。
-
-### 核心接口
-
-```ts
-type PrintSource = 'desktop' | 'history' | 'mobile'; // history = 从打印记录重打
-
-interface PrintRequest {
-  raw: string;          // 二维码原文
-  printerName: string;
-  source: PrintSource;
-  force?: boolean;      // 强制补打，跳过门限
-}
-
-type PrintResult =
-  | { status: 'printed'; jobId: string; label: LabelData }
-  | { status: 'duplicate'; lastPrintedAt: number; windowMs: number }
-  | { status: 'invalid'; reason: 'INVALID_FORMAT' }
-  | { status: 'failed'; reason: 'PRINTER_NOT_FOUND' | 'PRINT_TIMEOUT' | 'PRINT_ERROR' };
-
-type PreviewResult =
-  | { status: 'ok'; label: LabelData; lastPrintedAt: number | null } // lastPrintedAt 非空表示在门限窗口内
-  | { status: 'invalid'; reason: 'INVALID_FORMAT' };
-
-interface PrinterAdapter {
-  listPrinters(): Promise<PrinterInfo[]>;
-  print(printerName: string, label: LabelData): Promise<void>;
-}
-```
+  选择一条常用备注时，只替换当前模板的备注文字，备注的位置、字号、对齐仍按模板（`applyNoteOverride`）。选择会持久化；打印、扫码预览、示例预览都立即生效；编辑模板草稿时不受影响。如果选中的备注后来从常用备注里删掉了，它仍然保持生效，下拉框里标注「已不在常用备注」。
+- **安全**：所有文本转义后才进入 HTML；样式值只来自校验过的数值和枚举。
 
 ## 5. 防重门限
 
-**两层：**
+1. **客户端去抖**：同一个码 1 秒内只提交一次，过滤扫码枪连击。
+2. **服务端门限**（`DedupGuard`，以它为准）：
+   - **窗口**：默认 10 分钟，范围 0–1440 分钟，0 表示关闭。
+   - **并发**："检查并占位"是同步执行的，多个入口同时扫同一个码时，只有一个能占位成功。
+   - **状态**：区分"正在打印"（`printing`）和"窗口期内已打印"（`printed`）。
+   - **强制补打**：`force` 可以跳过已打印的窗口，但不能跳过正在打印的同一个码。
+   - **打印结果的处理**：
+     - 成功：记为已打印。
+     - 超时：结果不确定，同样记为已打印。
+     - 确定没有出纸的失败（找不到打印机、打印机未就绪、驱动报错）：释放占位，可以立即重试。
+   - **重启恢复**：启动时从 `jobs` 表回放最近 24 小时里每个码最后一次成功打印的时间，所以重启后窗口仍然有效。
+3. **手动模式**：窗口期内的码仍然可以按 F2 提交，由门限拦截并提示；界面另外提供"强制补打"按钮。
 
-1. **客户端去抖**（只为体验，不作为判定依据）
-   - 手机摄像头：同一个码 3 秒内只提交一次（每帧都可能重复识别）。
-   - PC 输入框：同一个码 1 秒内只提交一次（扫码枪可能连击）。
-2. **服务端门限**（权威判定，位于 `DedupGuard`）
-   - 默认窗口 **10 分钟**，在 PC 设置里可调（范围 0–1440 分钟，0 表示关闭）。
-   - `submit` 按以下顺序**同步执行**：解析 → `tryReserve(key)` → 入队。Node 单线程，所以多台设备同时扫同一个码时只有一个能占位成功，其余都返回 `duplicate`。
-   - key 已占位（正在打印）或上次成功打印距今不到窗口时长，都返回 `duplicate`。
-   - 打印成功：`commit(key, now)` 并持久化。
-   - 打印失败：`release(key)`，允许立即重试。
-   - `force: true`：跳过检查，打印成功后刷新时间戳；日志里标记为强制补打。
-   - 启动时从 `jobs` 表回放最近 24 小时每个码的最后一次成功打印，重启后窗口仍然有效。时钟通过 `Clock` 接口注入，方便测试。
-   - `peek(key)` 只读查询，供预览显示"窗口内已打印过"的提示，不占位。
+## 6. 存储（Electron 内置 `node:sqlite`）
 
-## 6. 数据流
+- **数据目录**：`%LOCALAPPDATA%\CDL-LabelFlash`（本机目录，不进漫游配置）。
+  - 数据库：`labelflash.db`
+  - 日志：`logs\main.log`
+- **连接参数**：`journal_mode = WAL`、`synchronous = NORMAL`、`foreign_keys = ON`、`busy_timeout = 5000`。
+- **迁移**：
+  - `MIGRATIONS` 数组只追加、不修改，`PRAGMA user_version` 记录版本号。
+  - 每个迁移在独立事务中执行。
+  - 数据库版本比程序新时拒绝启动，并给出中文提示。
+- **表**：
+  - `jobs`（STRICT）：`seq` 为自增主键；枚举字段用 CHECK 约束；另有一个 `status = 'printed'` 的部分索引，供门限回放使用。
+  - `jobs_search`：FTS5 trigram 外部内容表，用触发器与 `jobs` 同步。3 个字符及以上的子串搜索走索引，中文也适用；更短的搜索词退回到转义后的 `LIKE`。
+  - `settings`（STRICT）：key 对应 JSON value，读取时经过 `sanitizeSettings`。保存的内容包括：当前打印机、当前模板、备注选择 `noteOverride`、常用备注 `notePresets`、自动打印、门限、记录上限、开机自启。
+  - `templates`（STRICT）：id 对应 JSON body，读取时经过 `sanitizeTemplate`。
+- **环形保留**：`jobs` 只保留最新 N 条。N 默认 100,000，范围 1,000–1,000,000；10 万条约 20 MB。
+  - **插入时**：在同一个事务里执行 `DELETE … WHERE seq <= :lastSeq - :capacity`。走主键，开销与容量无关。
+  - **调小容量时**：分批删除，每批 1 万行，批与批之间让出主线程；界面上需要二次确认。
+  - **总数**：在内存中维护，不每次都 `COUNT(*)`。
+- **界面加载**：打印记录用 keyset 分页，每页 100 条，从不整表加载。
+- **测试**：Bun 1.4 同样实现了 `node:sqlite`，存储层直接用 `bun test` 测试。
 
-**PC 扫码枪：**
-输入框（常驻焦点，焦点落到空白处 300ms 后自动拉回）→ 回车 → 清空输入框 → `window.api.preview(raw)` → **立即显示标签预览**（与实际打印同一份 HTML）：
-- **自动打印（勾选）**：预览出来的同时调用 `window.api.print(raw, printer)`，结果以状态条 + 提示音反馈（成功 / 重复 / 失败三种声音）。
-- **手动打印（不勾选）**：只预览；如果门限窗口内已经打印过，预览上会显示"x 分钟前已打印"。操作员点"打印"按钮（或按 F2）才提交；提交时仍然经过门限。
-- 两种模式下，`duplicate` 结果都提供"强制补打"：界面内确认（第一次点击变为"再点一次确认补打"，3 秒内再点才执行），不弹系统对话框。
-- 自动/手动的选择持久化到设置。
+## 7. 架构
 
-**手机：**
-打开页面 → 用 token 认证 → 选择打印机（记在 localStorage）→ 摄像头连续扫码（`barcode-detector` polyfill：Android Chrome 走原生 API，iOS 走 zxing-wasm），或在手动输入框提交 → `POST /api/print` → 结果以全屏色块 + 振动 + 声音反馈；如果是 `duplicate`，显示上次打印时间和"强制补打"按钮（需二次确认）。
+```
+src/core       纯 TS 业务层：label-parser / dedup-guard / serial-queue / print-queue / job-store / print-service
+               templates/：template-model / builtin-templates / sanitize-template / note-text / text-fit / template-catalog
+src/shared     主进程与界面共用：brand / label-paper / print-timing / printer-readiness / job-history / settings / ipc-contract / sample-label
+src/main       storage/（database / migrations / row-readers / sqlite-*）、printing/（label-html / printer-status / electron-driver-adapter）
+               ipc-validators / ipc / logging / window / tray / index
+src/preload    contextBridge：window.api、window.windowControls
+src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models（hooks）→ components（纯视图）
+```
 
-### HTTP API（仅 HTTPS，默认端口 8443）
+**依赖方向**：
+- 界面只通过 IPC 调用主进程。
+- 主进程的业务只经过 `PrintService` 和 `TemplateCatalog`。
+- `core` 不引用 Electron、Node 文件系统或 SQLite。
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | `/api/auth` | `{ pin }` → 设置 HttpOnly cookie |
-| GET | `/api/printers` | 返回 PC 端已启用的打印机 |
-| POST | `/api/print` | `{ raw, printerName, force? }` → `PrintResult` |
-| GET | `/api/jobs?limit=20` | 本设备最近的打印记录 |
+## 8. 安全（Electron 安全清单）
 
-- 所有请求体都用 JSON Schema 校验（Fastify 内置），`raw` 最长 128。
-- 错误响应不暴露堆栈和内部路径。
+- **渲染进程隔离**：`contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`；拒绝页面导航和打开新窗口；设置 CSP。
+- **IPC**：只接受主窗口 `webContents` 发来的消息；所有参数先经过 `ipc-validators` 校验，不合法直接抛错。
+- **权限请求**：一律拒绝（`setPermissionRequestHandler`）。
+- **Fuses**：
+  - 关闭：`runAsNode`、`enableNodeOptionsEnvironmentVariable`、`enableNodeCliInspectArguments`
+  - 开启：`onlyLoadAppFromAsar`、`enableEmbeddedAsarIntegrityValidation`、`enableCookieEncryption`
+- **菜单**：安装版在 ready 之前移除默认菜单（刷新、开发者工具、缩放快捷键会破坏扫码状态和预览比例），并禁用页面缩放。
 
-## 7. 安全
+## 9. 界面
 
-- 服务监听 `0.0.0.0:8443`，只接受来源为私有网段（RFC1918 + 链路本地地址）的请求。
-- **访问令牌**：启动时生成一个随机 token，嵌入 PC 界面上的二维码 URL（`?t=`），扫码访问会自动认证；手动输入地址的，需要输入 PC 界面上显示的 6 位 PIN。认证成功后写入 HttpOnly + Secure + SameSite=Strict 的 cookie。PC 端可以一键重置 token 和 PIN，让所有已连接设备失效。
-- PIN 连续错误 5 次，锁定该 IP 1 分钟。
-- Electron：`contextIsolation: true`，`nodeIntegration: false`，`sandbox: true`；打印窗口不加载任何远程内容。
+- **窗口**：
+  - 无系统边框，标题栏自绘：CDL 品牌标识、产品名、当前打印机状态胶囊、最小化 / 最大化 / 关闭按钮。
+  - 关闭按钮只隐藏到托盘。第一次隐藏时，Windows 会弹气泡提示"扫码前请先打开窗口"。
+- **扫码条**：扫码框、「备注」下拉框（选完焦点立即回到扫码框）、自动打印开关。
+- **扫码框**：始终保持焦点。
+  - 点击按钮或开关后，焦点立即回到扫码框；否则扫码枪发出的回车会"点击"刚才那个按钮。
+  - 搜索框闲置 8 秒后，焦点也会回到扫码框。
+  - 模板编辑区和设置区（标记了 `data-keep-focus`）里的文本框不会被抢走焦点。
+  - 输入法组合输入期间按回车不会提交。
+- **预览**：
+  - 软尺刻度框住标签，按容器大小自适应缩放。
+  - 每次出现新预览时，标签像热敏纸出纸一样从上方滑入；系统开启"减少动态效果"时关闭这个动画。
+  - 没有扫码时，用示例码展示当前模板。
+  - 编辑模板时显示草稿，并标注"未保存不会用于打印"。
+- **侧栏**：四个标签页。切换时只隐藏、不卸载，搜索词和编辑状态都会保留。
+  - **打印机**：可搜索；标出当前打印机；每台都能打测试页；窗口重新获得焦点时自动刷新列表。
+  - **模板**：列出内置和自定义模板，可以使用、复制、编辑、删除（删除需要确认）；包含模板编辑器。
+  - **打印记录**：全文搜索、分页加载；每条记录可以"预览"或"重打"；显示"总数 / 上限"。
+  - **设置**：
+    - 防重复打印的时间窗口。
+    - 打印记录保留上限，调小时需要确认。
+    - 开机自启：登录后自动打开窗口，不隐藏，所以可以直接扫码。
+    - 常用备注：添加、删除。
+    - 关于：产品名、版本、出品方（陈大露 CDL）、数据目录，以及"打开日志目录"按钮。
+- **反馈**：
+  - 状态条用颜色、大字和提示音三重反馈。
+  - IPC 调用失败时，右下角通知"程序内部错误，已写入日志"，与打印机故障分开显示。
+  - 顶层 ErrorBoundary 在界面出错时提供"重新加载界面"按钮。
+- **视觉**：
+  - 配色：机壳灰 `#E4E7E2`、纸白 `#FBFBF8`、墨黑 `#18211E`、软尺黄 `#F2C12E`。
+  - 状态色：成功 `#1F8A5B`、重复 `#E0752D`、失败 `#C8372D`。
+  - 字体：标题用得意黑 Smiley Sans（OFL 许可，随包内置，许可证随安装包分发）；正文用 Microsoft YaHei UI；数据用 Cascadia Mono / Consolas。
+- **图标**：由 SVG 源文件生成。
+  - 应用图标：软尺加上标签纸上的 CDL 字标。
+  - 托盘图标：不带文字的简化版，提供 1x、1.25x、1.5x、2x 四种尺寸。
 
-## 8. PC 界面
+## 10. 运维
 
-- **窗口**：无系统边框（`frame: false`），自绘标题栏：可拖拽区域、应用名、当前打印机胶囊、最小化 / 最大化 / 关闭按钮。关闭 = 隐藏到托盘；最小尺寸 960×640。
-- **扫码区**：大号扫码输入框 + "自动打印"开关。
-- **预览区**：标签按实物比例渲染（60×40mm），状态条显示本次结果；手动模式下有"打印"按钮。
-- **打印机列表**：本机打印机可能很多（申通、标签、德邦、Qirui QR-488、HPRT N31C …）。列表支持搜索过滤、滚动；点选即设为当前打印机；每项有"打印测试页"；当前打印机不在系统里时显示警示。
-- **设置**：门限窗口（分钟）、开机自启。（Phase 2 再加：端口、重置 token/PIN、手机访问二维码）
-- **打印记录（可回溯）**：按时间倒序显示（时间、来源、内容、打印机、结果），可以按内容搜索。每条记录有两个操作：
-  - "预览"：把这条标签重新加载到预览区。
-  - "重打"：预览并立即打印，同样经过门限；被拦截时可以强制补打。来源记为"记录重打"。
-- **环形池**：`jobs` 表只保留最新的 N 条。每次插入都在同一个事务里删除超出容量的最旧记录（按自增 `seq` 排序）；调小容量时立即裁剪。N 可在设置里调整，默认 100,000，范围 1,000–1,000,000（10 万条约 20 MB）。
-  - 插入后裁剪用 `DELETE … WHERE seq <= :lastSeq - :capacity`，走主键，开销与容量无关；调整容量时用 `OFFSET` 精确裁剪。
-  - 界面不整表加载：每页 100 条，按 `seq` 做 keyset 分页（"加载更早的记录"）；搜索在 SQL 里用转义后的 `LIKE` 完成；计数显示"总数 / 上限"。
-  - 注意：重启后的门限回放只能覆盖环形池里还保留的记录。
+- **日志**：electron-log 写到 `<数据目录>/logs/main.log`，超过 5MB 轮转。
+  - 主进程：记录所有 console 输出和未捕获异常。
+  - 渲染进程：通过 Electron 44 的 `console-message` 事件对象收集警告和错误。
+  - 崩溃转储：`crashReporter.start({ uploadToServer: false })`，只保存在本地。
+- **进程异常**：渲染进程崩溃时自动重新加载；窗口无响应时写日志。
+- **关机与注销**：监听 Windows 的 `query-session-end` / `session-end` 事件，放行窗口关闭并关闭数据库，不阻塞关机。
+- **启动失败**：弹出中文提示，并附上日志目录。
+- **开机自启**：用 `setLoginItemSettings({ openAtLogin, name: appId })` 注册。卸载时，NSIS 脚本按同一个值名删除 `HKCU\…\Run` 中的启动项。
 
-### 持久化
+## 11. 构建与发布
 
-`userData` 显式设为 `%APPDATA%\LabelFlash`（英文路径，避开中文目录问题）：
-- `labelflash.db`：SQLite 数据库，使用 Electron 内置 Node 的 `node:sqlite`（`DatabaseSync`，Electron 44 / Node 24.21 / SQLite 3.53.4 已验证）。
-  - pragma：`journal_mode = WAL`、`synchronous = NORMAL`、`foreign_keys = ON`、`busy_timeout = 5000`
-  - 迁移：`MIGRATIONS` 数组只追加不修改；`PRAGMA user_version` 记录已应用的版本；每个迁移在独立事务中执行；数据库版本比程序新时拒绝启动。
-  - `jobs`（STRICT）：`seq` 自增主键、`id`、`created_at`、`raw`、`printer_name`、`source`、`status`、`forced`、`failure_reason`，枚举字段用 CHECK 约束；另有一个 `status = 'printed'` 的部分索引，按 `created_at` 建，用于门限回放。
-  - `settings`（STRICT）：`key` → JSON `value`，内容为 `selectedPrinter`、`autoPrint`、`dedupWindowMinutes`、`historyLimit`、`launchAtLogin`；读取时经 `sanitizeSettings` 校验。
-  - 退出时（`will-quit`）关闭数据库。
+- **工具链**：
+  - 包管理与测试：Bun 1.4
+  - 构建：electron-vite 5、Vite 7
+  - 语言：TypeScript 5.9 strict，并开启 `noUncheckedIndexedAccess`、`noPropertyAccessFromIndexSignature`
+  - lint、格式化、import 排序：Biome 2，要求零警告
+- **打包**：electron-builder 26 生成 NSIS x64 安装包 `CDL-LabelFlash-Setup-${version}.exe`，配置 `publish: null`。已用 `--mac dir` 验证过 Bun 的依赖收集和 fuses 配置。
+- **CI**：GitHub Actions 在 Windows 上执行 `bun run check`（lint + 类型检查 + 测试），然后打包并上传安装包；推送 `v*` 标签时，把安装包附加到 Release。
+- **签名**：安装包暂未签名，Windows 会弹出 SmartScreen 提示；这一点已写进验收说明。
 
-### 视觉方向
+## 12. 测试
 
-主题取自样衣间的**软尺**和**热敏标签**：
-- **配色**：
-  - 机壳灰 `#E4E7E2`（背景）
-  - 纸白 `#FBFBF8`（面板和标签）
-  - 墨黑 `#18211E`（文字、标题栏）
-  - 软尺黄 `#F2C12E`（品牌强调、刻度）
-  - 状态色三种：成功绿 `#1F8A5B`、重复橙 `#E0752D`、失败红 `#C8372D`
-- **字体**：
-  - 标题和大字状态：得意黑 Smiley Sans（OFL，随包内置）
-  - 正文：`Microsoft YaHei UI`
-  - 编码等数据：`Cascadia Mono` / `Consolas`
-- **标志元素**：预览区是一段"软尺"。标签四周是黄底毫米刻度尺（上边 60mm、左边 40mm，每 10mm 标数字），直观表明这是实物尺寸的 60×40 标签。
-- **唯一动效**：每次新的预览像热敏纸出纸一样，从上方滑入（180ms）；系统开启"减少动态效果"时关闭。
-- 其余元素保持克制：键盘焦点清晰可见；状态靠颜色 + 文字 + 声音三重反馈，远处也能看清。
+- **单元测试**（bun test）：
+  - 解析：包括字母尺码。
+  - 门限、打印队列：包括超时中止。
+  - PrintService：超时语义、并发、强制补打、记录写入失败。
+  - 模板：校验、内置模板、变量展开、字号适配、模板目录。
+  - 数据库：迁移与回滚。
+  - 打印记录：环形保留、FTS 搜索、防注入、分页。
+  - 设置与模板仓库。
+  - 标签 HTML、打印机状态的解析与轮询。
+  - IPC 参数校验。
+  - 界面纯逻辑：状态文案、打印机胶囊、通知中心、过滤、去抖。
+- **界面验证**：用开发版加 CDP 脚本走一遍"复制模板 → 编辑备注 → 保存并使用 → 扫码"，每一步截图。
+- **Windows 真机验收**：清单见实施计划 Task 14。
 
-## 9. 部署（Windows）
-
-- 用 electron-builder 打 NSIS 安装包（x64）。安装时执行 `netsh advfirewall firewall add rule` 放行 8443 入站，卸载时删除。
-- 窗口关闭时最小化到托盘，服务继续运行。
-- 无第三方原生模块（SQLite 是 Electron 内置 Node 自带的 `node:sqlite`），不需要 electron-rebuild。
-
-## 10. 技术栈
-
-| 用途 | 选型 |
-|---|---|
-| 包管理 / 测试 | Bun（`bun install`、`bun test`） |
-| 构建 | electron-vite |
-| 打包 | electron-builder（NSIS） |
-| 语言 | TypeScript strict |
-| 服务端 | Fastify + @fastify/static + @fastify/cookie |
-| 存储 | `node:sqlite`（Electron 内置，WAL，`user_version` 迁移） |
-| 二维码生成 | qrcode |
-| 手机扫码 | barcode-detector（zxing-wasm polyfill） |
-| 自签证书 | selfsigned |
-| PC 界面 | React 19 + 纯 CSS（设计 token） |
-
-## 11. 测试
-
-- **单元测试（bun test，`core/`）**：
-  - 解析：正常值、编码含多个 `-`、缺少字段、超长、控制字符、首尾空白
-  - 门限：窗口内拦截、窗口外放行、并发占位只成功一次、失败后释放、force 跳过、窗口为 0 时关闭门限
-  - 打印队列：串行执行、超时、单任务失败不影响后续任务
-- **集成测试**：Fastify `inject` 测路由（认证、参数校验、结果映射），打印部分用 FakePrinterAdapter。
-- **真机验证（Windows + 标签机）**：60×40mm 版面对齐、字迹清晰度、手机扫码到出纸的端到端耗时（目标 < 2s）。
-
-## 12. 风险与首个 Spike
+## 13. 风险
 
 | 风险 | 应对 |
 |---|---|
-| iOS Safari 接受自签证书后，`getUserMedia` 可能仍被禁用 | **第一步做 spike 验证**；如果不行，改为提供"安装本地 CA 描述文件"的引导 |
-| 标签机驱动的默认纸张与 60×40 不一致，导致缩放或分页 | 打印测试页 + 引导用户在驱动里设置纸张；`pageSize` 显式传入 |
-| Windows 防火墙拦截入站 | 安装包自动添加防火墙规则；PC 界面检测到无法访问时给出提示 |
-| 多网卡、虚拟网卡导致二维码地址不对 | 过滤虚拟网卡，并列出全部地址供用户选择 |
+| 扫码枪不能输出中文 | 扫码枪开启"中文输出 / Unicode"，输入法切到英文；格式错误的提示里包含这条说明 |
+| 驱动默认纸张不是 60×40，导致打印被缩放 | 打测试页核对；在驱动首选项里把纸张设为 60×40（列入验收项） |
+| USB 标签机断开后，`Get-Printer` 仍报告 Normal | 驱动层面无法判断；靠超时语义兜底，界面提示"可能已出纸"并提供强制补打（列入验收项） |
+| 安装包未签名，触发 SmartScreen 提示 | 在验收说明中写明；后续申请代码签名证书 |

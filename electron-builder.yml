@@ -1,0 +1,64 @@
+appId: com.cdl.labelflash
+productName: CDL-云签速印
+copyright: Copyright © 2026 CDL
+directories:
+  buildResources: resources
+  output: dist
+# 主进程和 preload 都是自包含的 bundle（见 electron.vite.config.ts），安装包里不带 node_modules：
+# 不靠打包工具去收集传递依赖，也就没有「漏收一个、装完启动就崩」的可能。verify:bundle 在打包前把关。
+files:
+  - out/**
+  - resources/**
+  - "!resources/*.svg"
+  - "!resources/installer.nsh"
+  # 安装界面（插件、脚本）只在打安装包时用，不进程序本体。
+  - "!resources/installer/**"
+  - "!node_modules/**"
+  - package.json
+asarUnpack:
+  - resources/**
+extraResources:
+  - from: src/renderer/src/assets/fonts/SmileySans-OFL.txt
+    to: licenses/SmileySans-OFL.txt
+# 只保留中文和英文的 Chromium 语言包，安装包更小。
+electronLanguages:
+  - zh-CN
+  - en-US
+# 没有第三方原生模块（SQLite 是 Electron 内置的 node:sqlite），不需要重新编译。
+npmRebuild: false
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  # 界面通过 app:// 自定义协议加载，不需要 file:// 的额外特权。
+  grantFileProtocolExtraPrivileges: false
+# 自动更新：electron-updater 从 GitHub Releases 读取 latest.yml。只有 CI 在打 v* 标签时才发布（--publish always）。
+publish:
+  provider: github
+  owner: HeiSir2014
+  repo: LabelFlash
+  releaseType: release
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.png
+  executableName: CDL-LabelFlash
+# 安装界面是自绘的（resources/installer/installer.nsi），由 scripts/installer/build-installer.ts 分两段构建：
+# 第一段用 electron-builder 自带脚本取卸载程序，第二段加上 nsis.script 打出发布的安装包。
+# 所以不要直接运行 electron-builder 出安装包，用 bun run dist:win。
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  shortcutName: CDL-云签速印
+  uninstallDisplayName: CDL-云签速印
+  artifactName: CDL-LabelFlash-Setup-${version}.${ext}
+  installerLanguages:
+    - zh_CN
+  include: resources/installer.nsh

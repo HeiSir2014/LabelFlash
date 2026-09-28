@@ -1,0 +1,40 @@
+# src/core — 业务层
+
+纯 TypeScript，所有业务规则都在这里，直接用 `bun test` 测试。
+
+## 规则
+
+- **只写纯业务**：不 import `electron`、`node:*`、SQLite 或任何 DOM API。
+- **外部能力走接口**：需要外部能力时在这里定义接口，由 `src/main` 实现：
+  - 打印：`PrinterAdapter`；
+  - 存储：`JobStore`、`TemplateRepository`、`RuleRepository` 等；
+  - 时间：`Clock`；
+  - 正则执行：`RegexRunner`。
+- **时间只从注入的 `Clock` 取**：不直接调用 `Date.now()`（只有 `types.ts` 里的 `systemClock` 例外），测试里用 `testing/fake-clock.ts` 控制时间。
+- **外部输入都不可信**：设置、模板、规则、加工步骤、导入的规则文件，都要先经过对应的 `sanitize-*`，得到合法对象再用。非法字段回到默认值，不抛给用户。
+- **测试替身**：用 `testing/` 里现成的假实现（`fake-printer-adapter`、`in-memory-job-store`、`in-memory-repositories`），不在测试里临时拼 mock。
+
+## 模块
+
+| 模块 | 作用 |
+|---|---|
+| `print-service.ts` | 打印的完整流程：识别 → 加工 → 选模板 → 门限 → 排队打印 → 记录。界面和主进程都只调它 |
+| `dedup-guard.ts` | 防重门限。「检查并占位」是同步的：成功和超时记为已打印（超时说明结果不确定），确定没出纸的失败释放占位；`force` 能跳过已打印，但不能跳过正在打印的同一个码 |
+| `print-queue.ts`、`serial-queue.ts` | 串行打印，单张超时后通过 `AbortSignal` 通知适配器放弃 |
+| `errors.ts` | `PrintError`：失败原因和给用户看的补充说明（打印机问题分类） |
+| `scan/` | 识别规则（`RULE_KINDS`：delimited / keyValue / whole / regex）、加工步骤（`STEP_KINDS`：template / regexReplace / lookup / http）、内置规则、每台电脑的规则设置、规则文件导入导出 |
+| `templates/` | 模板模型、内置模板、标签内容组装、按宽度缩小字号、备注变量 |
+| `lookup/` | CSV 解析（含 GBK 编码的中文 Excel）和查找索引 |
+| `notify/` | 打印结果通知的事件、投递状态和重试时间表 |
+
+## 扩展时
+
+- **新的识别规则类型**，按顺序改这几处，每一步都先写测试：
+  1. `scan/rule-model.ts`（类型）
+  2. `scan/sanitize-rule.ts`（校验）
+  3. `scan/recognize.ts`（识别）
+  4. `scan/rule-file.ts`（导入导出）
+  5. 界面表单
+- **新的加工步骤**：同样的顺序，改 `enrich-model.ts` → `sanitize-steps.ts` → `enrich.ts`。
+- **访问外部资源的步骤**（例如 HTTP 查询）：只在这里定义接口和结果语义，真正的请求在 `src/main` 实现。
+- **打印失败的新原因**：`types.ts` 的 `PRINT_FAILURE_REASONS` 同时是数据库里 CHECK 约束的取值，要一起改 `src/main/storage/migrations.ts`（迁移规则见根目录 CLAUDE.md）。

@@ -1,0 +1,477 @@
+/* 扫码页：取材和电脑端一致——标签机机壳、热敏纸、墨、封箱胶带黄。 */
+:root {
+  --color-housing: #e4e7e2;
+  --color-paper: #fbfbf8;
+  --color-ink: #18211e;
+  --color-ink-soft: #55605b;
+  --color-rule: #c5cbc4;
+  --color-tape: #f2c12e;
+  --color-tape-wash: #fdf5d8;
+  --color-success: #1f8a5b;
+  --color-warning: #e0752d;
+  --color-warning-wash: #fbe6d7;
+  --color-error: #c8372d;
+  --color-error-wash: #f8dedb;
+  --color-page: var(--color-housing);
+  --color-card: var(--color-paper);
+  --color-text: var(--color-ink);
+  --color-text-soft: var(--color-ink-soft);
+
+  --font-body: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI", system-ui, sans-serif;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --radius: 10px;
+  /* 手指点按的最小尺寸（苹果和安卓的规范都在 44–48px）。 */
+  --touch: 48px;
+  --sweep-duration: 2.4s;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-page: #101512;
+    --color-card: #1b2320;
+    --color-text: #eef1ec;
+    --color-text-soft: #a4ada8;
+    --color-rule: #334039;
+    --color-tape-wash: #3a3218;
+    --color-warning-wash: #3d2618;
+    --color-error-wash: #3d1c19;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sweep-duration: 0s;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-page);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* hidden 属性必须压过 .screen、.job 等设置了 display 的类（它们的优先级和 [hidden] 一样），这是通行的做法。 */
+[hidden] {
+  /* biome-ignore lint/complexity/noImportantStyles: 见上面的说明 */
+  display: none !important;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 顶栏：墨色底，像标签机的操作面板。 */
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: calc(env(safe-area-inset-top) + var(--space-3)) var(--space-4) var(--space-3);
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+
+.bar p {
+  margin: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-weight: 700;
+}
+
+.brand-mark {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--color-tape);
+  color: var(--color-ink);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.brand-name,
+.printer {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.printer {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.banner {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-tape-wash);
+  border-bottom: 2px solid var(--color-tape);
+  font-size: 14px;
+}
+
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.35;
+}
+
+/* 整页提示：垂直居中。 */
+.screen-message {
+  justify-content: center;
+  gap: var(--space-4);
+  text-align: center;
+}
+
+.screen-message p {
+  margin: 0;
+  color: var(--color-text-soft);
+}
+
+/* 取景：框的颜色跟着最近一张的结果走，扫完一眼就知道成没成。 */
+.viewfinder {
+  --frame-color: var(--color-tape);
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-height: 46dvh;
+  border-radius: var(--radius);
+  background: #000;
+}
+
+.viewfinder[data-tone="success"] {
+  --frame-color: var(--color-success);
+}
+
+.viewfinder[data-tone="warning"] {
+  --frame-color: var(--color-warning);
+}
+
+.viewfinder[data-tone="error"] {
+  --frame-color: var(--color-error);
+}
+
+.viewfinder video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.frame {
+  position: absolute;
+  inset: 14%;
+  border-radius: 6px;
+  /* 框外压暗，框内保持原样，视线自然落到框里。 */
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.38);
+  background:
+    linear-gradient(var(--frame-color), var(--frame-color)) top left / 28px 4px,
+    linear-gradient(var(--frame-color), var(--frame-color)) top left / 4px 28px,
+    linear-gradient(var(--frame-color), var(--frame-color)) top right / 28px 4px,
+    linear-gradient(var(--frame-color), var(--frame-color)) top right / 4px 28px,
+    linear-gradient(var(--frame-color), var(--frame-color)) bottom left / 28px 4px,
+    linear-gradient(var(--frame-color), var(--frame-color)) bottom left / 4px 28px,
+    linear-gradient(var(--frame-color), var(--frame-color)) bottom right / 28px 4px,
+    linear-gradient(var(--frame-color), var(--frame-color)) bottom right / 4px 28px;
+  background-repeat: no-repeat;
+}
+
+.sweep {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  height: 2px;
+  background: var(--frame-color);
+  box-shadow: 0 0 12px var(--frame-color);
+  animation: sweep var(--sweep-duration) ease-in-out infinite alternate;
+}
+
+@keyframes sweep {
+  from {
+    top: 8%;
+  }
+  to {
+    top: 92%;
+  }
+}
+
+/* 点按对焦的位置提示 */
+.focus-ring {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border: 2px solid var(--color-tape);
+  border-radius: 8px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* 还没开始、摄像头打不开、识别组件坏了时盖在取景框上：一句说明加一个按钮。 */
+.cover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: rgb(0 0 0 / 0.72);
+  color: #fff;
+  text-align: center;
+}
+
+.cover p {
+  margin: 0;
+}
+
+.torch {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: calc(var(--touch) / 2);
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+}
+
+.hint {
+  margin: 0;
+  text-align: center;
+  color: var(--color-text-soft);
+  font-size: 14px;
+}
+
+.hint-extra {
+  padding: var(--space-2) var(--space-3);
+  border-radius: 6px;
+  background: var(--color-tape-wash);
+  color: var(--color-text);
+}
+
+/* 任务列表：像一串刚打出来的小票，最新的一张在最上面、最醒目。 */
+.jobs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job {
+  --job-color: var(--color-tape);
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: start;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--color-card);
+  border: 1px solid var(--color-rule);
+  border-left: 5px solid var(--job-color);
+}
+
+.job[data-tone="success"] {
+  --job-color: var(--color-success);
+}
+
+.job[data-tone="warning"] {
+  --job-color: var(--color-warning);
+}
+
+.job[data-tone="error"] {
+  --job-color: var(--color-error);
+  background: var(--color-error-wash);
+}
+
+.job-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--job-color);
+  color: #fff;
+  font-weight: 700;
+}
+
+.job[data-tone="pending"] .job-mark {
+  border: 3px solid var(--color-rule);
+  border-top-color: var(--color-tape);
+  background: transparent;
+  animation: spin 0.9s linear infinite;
+}
+
+.job[data-tone="success"] .job-mark::before {
+  content: "✓";
+}
+
+.job[data-tone="warning"] .job-mark::before {
+  content: "!";
+}
+
+.job[data-tone="error"] .job-mark::before {
+  content: "×";
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .job[data-tone="pending"] .job-mark {
+    animation-duration: 3s;
+  }
+}
+
+.job-body {
+  min-width: 0;
+}
+
+.job-body p {
+  margin: 0;
+}
+
+.job-title {
+  font-weight: 700;
+}
+
+.job:first-child .job-title {
+  font-size: 18px;
+}
+
+.job-detail {
+  color: var(--color-text-soft);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.job-actions {
+  grid-column: 2;
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* 摄像头用不了时的两种办法 */
+.fallback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+.manual {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.manual input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-card);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
+  border: 2px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-card);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.button:active {
+  transform: translateY(1px);
+}
+
+.button:disabled {
+  opacity: 0.5;
+}
+
+.button.block {
+  width: 100%;
+}
+
+/* 主要操作：封箱胶带黄配墨色字（对比度够，白字在黄底上看不清）。 */
+.button.primary {
+  border-color: var(--color-tape);
+  background: var(--color-tape);
+  color: var(--color-ink);
+}
+
+/* 橙底用墨色字：白字在这个橙色上的对比度只有 3:1 左右，不够小字用。 */
+.button.warning {
+  border-color: var(--color-warning);
+  background: var(--color-warning);
+  color: var(--color-ink);
+}

@@ -1,9 +1,3 @@
-@font-face {
-  font-family: "Smiley Sans";
-  src: url("../assets/fonts/SmileySans-Oblique.woff2") format("woff2");
-  font-display: swap;
-}
-
 :root {
   /* 取材：标签机机壳、热敏纸、墨、软尺 */
   --color-housing: #e4e7e2;
@@ -19,8 +13,10 @@
   --color-error: #c8372d;
   --color-error-wash: #f8dedb;
 
-  --font-display: "Smiley Sans", "Microsoft YaHei UI", sans-serif;
+  /* 标题与正文都用系统正体中文字体（不打包字体文件）；标题靠字重区分层级。 */
   --font-body: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  --font-display: var(--font-body);
+  --font-display-weight: 700;
   --font-data: "Cascadia Mono", Consolas, "SF Mono", monospace;
 
   --space-1: 4px;

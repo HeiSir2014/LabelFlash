@@ -200,7 +200,8 @@ src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models�
 - **视觉**：
   - 配色：机壳灰 `#E4E7E2`、纸白 `#FBFBF8`、墨黑 `#18211E`、软尺黄 `#F2C12E`。
   - 状态色：成功 `#1F8A5B`、重复 `#E0752D`、失败 `#C8372D`。
-  - 字体：标题用得意黑 Smiley Sans（OFL 许可，随包内置，许可证随安装包分发）；正文用 Microsoft YaHei UI；数据用 Cascadia Mono / Consolas。
+  - 字体：标题和正文都用系统正体中文字体（Windows 为 Microsoft YaHei UI，macOS 为 PingFang SC），标题用粗体区分层级，不打包字体文件；数据用 Cascadia Mono / Consolas。
+  - 不用倾斜字体：扫码台上的标签、状态和按钮都要一眼读清，倾斜字形在小字号和低分屏上更难辨认。Logo 里的中文轮廓来自得意黑，已转成路径，许可证仍随安装包分发。
 - **图标**：由 SVG 源文件生成。
   - 应用图标：软尺加上标签纸上的 CDL 字标。
   - 托盘图标：不带文字的简化版，提供 1x、1.25x、1.5x、2x 四种尺寸。

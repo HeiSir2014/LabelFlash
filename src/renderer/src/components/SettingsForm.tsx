@@ -175,7 +175,7 @@ export function SettingsForm({
             </dd>
             <dt>出品</dt>
             <dd>{appInfo.brandOwner}（CDL）</dd>
-            <dt>店铺</dt>
+            <dt>淘宝店铺</dt>
             <dd>
               <button type="button" className="link-button" onClick={onOpenShop}>
                 {BRAND.shop.name}

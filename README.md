@@ -37,6 +37,13 @@ CDL 出品的扫码打标签工具，支持 Windows 和 macOS。用扫码枪扫�
   - 排版按打印机点阵优化：二维码每个模块取整数个打印点（203dpi），打出来边缘清晰；内容太长时自动降低容错，仍然扫不了就不印二维码并提示。文字取放得下的最大字号，订单号宁可缩小一点也不从中间断开。
   - 备注可以放在二维码旁的空白处或底部，支持 `{字段名}`、`{完整内容}`、`{规则}`、`{日期}`、`{时间}` 变量。
   - 扫码框旁的「备注」下拉框可以一键切换常用备注，常用备注在配置中心「常用备注」页管理。
+- **手机扫码**：扫码枪不在手边时，用手机摄像头扫码，标签从这台电脑的打印机出来。
+  - 点标题栏「手机扫码」，屏幕上出现一个二维码；用手机相机或微信扫它，打开扫码页，点「开始扫码」后对准标签，扫到就打。最多 5 部手机同时用，任务在电脑上排队，一张一张打；每部手机只看到自己的任务和排队位置。
+  - 打印和扫码枪完全一样：识别规则、加工步骤、模板、防重复都照常生效，打印记录的来源记为「手机」。
+  - 手机和电脑经中转服务通信：电脑只在点了「手机扫码」后才连接，结束或 30 分钟没有扫码就断开；二维码 10 分钟内没人打开就失效。内容端到端加密，中转服务看不到扫码内容。
+  - 电脑上随时能看到加入了哪些手机，可以移除（移除后自动暂停新手机加入，需要时再允许）。
+  - 中转地址在配置中心「手机扫码」页设置。官方安装包默认用 yterm.cn 上的中转服务，也可以换成自己部署的（见 `relay/README.md`）。电脑要能直接访问中转地址的 443 端口：程序不走系统代理。
+  - 手机网络不稳时不会丢、也不会重复打：断线期间扫的先存在手机上，连上后自动补发。
 - **打印结果通知**：每次打印的结果以 JSON 发给最多 5 个地址（ERP、仓库系统、群机器人），带 HMAC-SHA256 签名。通知先存进本机队列、后台发送，断网自动重试（最长 24 小时），不影响打印；配置中心「打印结果通知」页可以发送测试、查看发送记录。
 - **打印记录**：
   - 可以回看任意一条记录的预览，也可以重打。
@@ -97,6 +104,8 @@ bun run test:e2e   # 构建后用 Playwright 启动 Electron 跑端到端测试
 # 视觉验收：按设计文档 §8 截图并自动检查，结果在 test-results/visual-acceptance/
 bun run build && bunx playwright test --config e2e/visual/playwright.config.ts
 bun run icons      # 修改 resources/*.svg 后重新生成图标
+bun run relay:dev  # 本机启动手机扫码的中转服务（http://localhost:3180），在配置中心填这个地址
+bun run test:relay-browser  # 用 Edge 的假摄像头跑一遍手机扫码页
 bun run installer:skin  # 只生成安装界面的皮肤（调界面时用），输出到 dist/.installer/
 bun run dist:win   # 在 Windows 上打安装包，输出到 dist/
 ```
@@ -110,11 +119,12 @@ GitHub Actions 在 Windows 上运行：
 
 - 推送到 `master` 或提交 PR：执行检查和 E2E 测试，并上传安装包产物。
 - 推送 `v*` 标签：electron-builder 把安装包和 `latest.yml` 发布到 GitHub Release，已安装的客户端会自动更新。
+- 安装包的默认中转地址来自仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL`（代码里不写域名）；自己构建时可以用环境变量 `CDL_LABELFLASH_DEFAULT_RELAY_URL` 指定，不设就没有默认值。
 
 发布新版本：
 
-1. 修改 `package.json` 里的 `version`。
-2. 提交后打同名标签，例如 `git tag v1.0.1 && git push --tags`。标签版本必须和 `package.json` 一致：客户端按版本号比较、按文件名里的版本找旧版 blockmap 做差分下载。
+1. 修改 `package.json` 里的 `version`，经 PR 合进 `master`。
+2. 在 `master` 的提交上打同名标签，例如 `git tag v1.0.1 && git push --tags`。发布作业会先检查：标签所在的提交在 `master` 上；标签和 `package.json` 的版本一致（客户端按版本号比较、按文件名里的版本找旧版 blockmap 做差分下载）；设置了默认中转地址。任何一项不符合都不发布。
 
 ## 目录结构
 
@@ -127,5 +137,6 @@ src/renderer   界面（React，MVVM：lib + view-models + components）
 scripts/       构建脚本：bundle 自包含检查、图标生成、安装包（installer/：皮肤生成与两段构建）
 resources/     应用图标和托盘图标（见 resources/README.md）、安装包资源（installer/）
 e2e/           Playwright 端到端测试
+relay/         手机扫码：云端中转服务（Bun）和手机扫码页，单独部署，不进安装包
 docs/          设计文档、实施计划、路线图、Windows 验收记录
 ```

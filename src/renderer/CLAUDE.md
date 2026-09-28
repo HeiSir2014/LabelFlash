@@ -6,12 +6,13 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 
 | 层 | 目录 | 要求 |
 |---|---|---|
-| 纯逻辑 | `src/lib/` | 不碰 React、DOM 和 `window.api`，用 `bun test` 测试：状态文字、焦点规则、多行扫码拼接、播报调度、悬停意图等 |
+| 纯逻辑 | `src/lib/` | 不碰 React、DOM 和 `window.api`，用 `bun test` 测试：状态文字、焦点规则、多行扫码拼接、播报调度、扫码去向、手机扫码的文字等 |
 | 视图模型 | `src/view-models/` | `use-*` hooks：持有状态，调用 `window.api`，把 lib 的逻辑接到 React 上 |
 | 视图 | `src/components/` | 只管展示：数据由 props 传入，操作通过回调传出，不直接调用 `window.api` |
 
 - 能写成纯函数的逻辑都放进 `lib/` 并补测试，组件里只留渲染。
 - **只经 preload 访问主进程**：唯一的入口是 `window.api`（类型见 `src/shared/ipc-contract.ts`）。界面不访问网络、不加载远程内容，CSP 也不允许。
+- **剪贴板**：页面的权限请求（包括剪贴板）一律被拒绝。要复制时经主进程，而且只能复制已有密钥的引用（`copySecretReference`，通道 `secrets:copy-reference`），不能往剪贴板里写任意内容。
 - **不在渲染过程中改 ref**：保存「最新回调」一类的 ref，放在 `useEffect` 里更新。
 - **出错提示**：调用失败统一经 `lib/notices.ts` 的 `reportError` 提示用户，错误写进日志，不静默吞掉。
 
@@ -19,13 +20,22 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 
 扫码枪只往当前焦点里「打字」。焦点不对，扫到的内容就丢了，或者被当成快捷键执行。
 
-- **焦点规则**：规则写在 `lib/scan-focus.ts` 和对应的 view-model 里，改动前先读它们的测试。
-  - 点按钮或空白处后，0.3 秒回到扫码框；
-  - 焦点不在输入框时按下可打印字符，立即切到扫码框，这个字符也不丢；
+- **焦点规则**：规则写在 `lib/scan-focus.ts` 和 `view-models/use-scan-focus.ts` 里，改动前先读它们的测试。
+  - 「输入框」按排除法判断：会接收文字的都算（包括密码框、网址框）；下拉框不算输入框（字母在里面只会跳选），但焦点在下拉框里时也不拉回；
+  - 点按钮或空白处后，0.3 秒回到扫码框；标了 `data-keep-focus` 的区域（「手机扫码」浮层）除外，键盘要能在里面操作；
+  - 焦点不在输入框时按下可打印字符，立即切到扫码框，这个字符也不丢（浮层里也一样，扫码枪照常能用）；
   - 10 秒无操作回到扫码框；
+  - 浮层这类组件关闭时调用 `returnFocusToScanBox()`，焦点立即回到扫码框；
   - 自动回焦不改动内容和选区。
 - **多行扫码**：二维码里的换行会以回车发出，`lib/scan-assembler.ts` 按回车后的停顿区分「码里的换行」和「扫完了」。停顿时长是设置项 `scanLineGapMs`，默认 80 毫秒。
 - **不能打印的界面**：配置中心里永远不打印。
+
+## 手机扫码
+
+- **状态来自主进程**：`view-models/use-mobile-station.ts` 在 App 里创建，跟随 `mobile:status-changed` 推送；标题栏按钮、浮层、配置页都从它取数据。文字都在 `lib/mobile-text.ts`（有测试）。
+- **浮层非模态**：不用 `dialog.showModal`，扫码框和 F2 照常可用；只在工作台上显示，配置中心打开时隐藏。Esc 关闭。
+- **二维码在本机生成**：用 `view-models/use-qr-image.ts`，不请求任何在线服务。
+- **手机的打印结果不播报**：拿手机的人看手机；这边只刷新打印记录。
 
 ## 播报与提示音
 
@@ -48,7 +58,7 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 ## 测试与验收
 
 - **单元测试**：写在 `lib/*.test.ts`，只测行为，不测实现细节。
-- **E2E**：在 `e2e/app.e2e.ts`。
+- **E2E**：在 `e2e/*.e2e.ts`（工作台和配置中心在 `app.e2e.ts`，手机扫码在 `mobile.e2e.ts`）。
+  - 用 `e2e/support/fixtures.ts` 的 `test`（`electronApp` 夹具：用例结束时关掉程序、删掉数据目录），共用的操作在 `e2e/support/app-helpers.ts`，本机中转服务和测试手机在 `e2e/support/relay-server.ts`。
   - 用角色和标签定位元素（`getByRole`、`getByLabel`），不依赖类名以外的实现细节。
-  - 涉及鼠标悬停计时的用例用 `toPass` 重试：有人在用的电脑上，系统会按真实光标位置补发「离开窗口」事件，打断计时。
 - **视觉验收**：界面改完后截图核对对齐、裁切、焦点框和键盘操作。Windows 看 100% 和 150% 缩放，macOS 看红绿灯区域和全屏状态。验收项见配置中心设计文档第 8 节。

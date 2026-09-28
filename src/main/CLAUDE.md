@@ -8,6 +8,7 @@
   - `window-state.ts`、`window-bounds.ts`、`gpu-fallback.ts`、`context-menu.ts`
   - `log-files.ts`、`ipc-errors.ts`、`ipc-validators.ts`、`update-settings.ts`
   - `printing/printer-status.ts`
+  - `mobile/` 整个目录
 - **接线文件保持薄**：`window.ts`、`window-placement.ts`、`updater.ts`、`index.ts` 这类只负责接线，不写业务判断。
 - **依赖注入**：外部依赖由构造参数传入，测试时换成假的，例如 `PrinterProbeHost` 的进程工厂。
 
@@ -52,6 +53,20 @@
 | `updater.ts` + `update-settings.ts` | 自动更新。所有更新行为都在 `update-settings.ts` 里显式设置，不依赖库的默认值 |
 | `window-placement.ts` | 按显示器记忆窗口位置。保存时扣掉 Windows 小数缩放下创建窗口的尺寸误差，否则窗口每次启动都会变大一点 |
 | `security.ts`、`app-protocol.ts` | 拒绝导航、新窗口、重定向和 webview；只经 `app://bundle/` 提供界面文件 |
+| `mobile/` | 手机扫码的电脑端，见下一节 |
+
+## 手机扫码（`mobile/`）
+
+设计见 `docs/superpowers/specs/2026-09-29-mobile-scan-relay-design.md`，中转服务和扫码页在 `relay/`（见 `relay/CLAUDE.md`）。
+
+- **分层**：都不 import electron，用 `bun test` 测试；`index.ts` 只负责创建 `MobileStation` 并接上设置变化、定时器和退出。
+  - `mobile-session.ts`：会话规则（手机加入与移除、暂停加入、防重放、打印队列、任务去重、背压、到期），纯逻辑；
+  - `mobile-host.ts`：编排（连接、加解密、按顺序执行任务），每条 Promise 链都接住异常；
+  - `mobile-station.ts`：选中转地址、经 `PrintService` 打印（来源 `mobile`）、跟随设置变化；
+  - `mobile-replies.ts`：发给手机的结果有长度上限，保证放得进一帧。
+- **中转地址**：设置 `mobileRelayUrl` 优先，构建时注入的默认值（`build-defaults.ts`）兜底；规则在 `src/shared/relay-url.ts`。代码、测试里不写官方域名。
+- **协议只有一份**：改消息时同时改 `src/shared/mobile-protocol.ts`、这里、`relay/web/src/phone-session.ts` 和设计文档第 5 节。
+- **不播报手机的结果**：结果显示在手机上；电脑只刷新打印记录。
 
 ## 平台差异（Windows / macOS）
 

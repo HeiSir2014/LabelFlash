@@ -51,7 +51,7 @@
   - `regex`：`{ pattern; flags }`
 - `RULE_KINDS`、`RULE_LIMITS`、`BUILT_IN_RULE_PREFIX = 'builtin:'`、`CUSTOM_RULE_PREFIX = 'custom:'`、`RULE_ID_PATTERN`、`isBuiltInRuleId`、`isValidFieldName`、`namedGroups(pattern): string[]`。
 - `sanitizeRule(value, id): ScanRule | RuleIssue`：严格校验，不合法时返回 `{ issue: string }`（中文原因），不做静默修正。
-- `BUILT_IN_RULES`：依次为 `dash-three`、`digits-order`、`key-value`、`raw`；`DEFAULT_RULE_BINDINGS`（横杠三段 → `builtin:standard`）。
+- `BUILT_IN_RULES`：依次为 `dash-three`、`digits-order`、`key-value`、`raw`；`DEFAULT_RULE_TEMPLATE_BINDINGS`（横杠三段 → `builtin:standard`）。
 
 **测试要点:**
 - `normalizeRaw`：
@@ -150,14 +150,14 @@
   - 已删除的规则被丢弃。
   - 保留用户排好的顺序和启用状态。
   - 导入的规则插在「原样打印」之前。
-- 仓库：重新打开数据库后规则仍在；数据库版本变为 2。
+- 仓库：重新打开数据库后规则仍在；`scan_rules` 在初始 schema 里，数据库版本仍为 1（1.0.1 发布前不做迁移）。
 - 设置：默认值、夹取、非法项被丢弃。
 
 - [x] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): rule catalog, per-machine rule settings and scan_rules table`（afb2903）
 
 ### Task 4: 通用模板
 
-> 执行说明：模板模型一改，`LabelJob`、打印服务和状态文案必须同时改才能编译，Task 4 与 Task 5 合并为一次提交；模板编辑器的字段区、二维码内容来源也随之提前完成（Task 8 只剩「识别规则」页）。执行中按需求追加了字段排列（横向 / 垂直）、可配置分隔符、按点阵对齐的二维码排布和新的文字排版算法，见规格 §4。
+> 执行说明：模板模型一改，`LabelJob`、打印服务和状态文案必须同时改才能编译，Task 4 与 Task 5 合并为一次提交；模板编辑器的字段区、二维码内容来源也随之提前完成（Task 8 只剩「识别规则」页）；但「指定字段」的字段名候选列表没有做，和规格 §6 的「正在查询…」状态、单条规则导出一起移到[配置中心计划](2026-09-29-config-center.md)。执行中按需求追加了字段排列（横向 / 垂直）、可配置分隔符、按点阵对齐的二维码排布和新的文字排版算法，见规格 §4。
 
 **Files:**
 - Modify: `src/core/templates/template-model.ts`, `sanitize-template.ts`, `builtin-templates.ts`, `note-text.ts`, `note-override.ts`（如需）, `src/main/printing/label-html.ts`
@@ -238,8 +238,8 @@
 ### Task 5C: HTTP 查询与密钥
 
 **Files:**
-- Create: `src/core/scan/json-path.ts`、`src/main/scan/http-step.ts`（`fetch` + `AbortSignal.timeout`、大小限制、缓存）、`src/main/storage/secret-store.ts`（`safeStorage`）
-- Modify: `enrich.ts`（`http` 步骤、变量按 URL / JSON 转义）、`settings.ts`（`secrets`）、IPC（密钥名称列表、设置、删除）
+- Create: `src/core/scan/json-path.ts`、`src/main/scan/http-step.ts`（`fetch` + `AbortSignal.timeout`、大小限制、缓存）、`src/main/storage/sqlite-secret-store.ts`（独立的 `secrets` 表）、`src/main/secrets/safe-storage-cipher.ts`（`safeStorage`）
+- Modify: `enrich.ts`（`http` 步骤、变量按 URL / JSON 转义）、`migrations.ts`（初始 schema 加 `secrets` 表；密钥不放进设置，设置会整份发给界面）、IPC（密钥名称列表、设置、删除）
 - Test: `json-path.test.ts`、`http-step.test.ts`（本地 `Bun.serve` 测试服务器）、`enrich.test.ts`
 
 **测试要点:** 超时、非 2xx、非 JSON、超过 256KB、取不到值 → 按 `onError` 处理；缓存命中不再请求；只允许 http/https；密钥替换进请求头但不进日志和错误信息；URL 变量编码、JSON 请求体变量转义。
@@ -303,7 +303,7 @@
 ### Task 8: 「识别规则」页与模板编辑器
 
 **Files:**
-- Create: `src/renderer/src/components/RulePanel.tsx`, `RuleEditor.tsx`, `StepEditor.tsx`（四种加工步骤的表单）, `RuleTester.tsx`, `LookupTables.tsx`, `SecretList.tsx`, `WebhookSettings.tsx`（接口列表、编辑、发送测试、发送记录、立即重试）, `src/renderer/src/view-models/use-rules.ts`, `src/renderer/src/lib/rule-text.ts`（+ test）
+- Create: `src/renderer/src/components/RulePanel.tsx`, `RuleEditor.tsx`, `RuleKindForm.tsx`（四种识别方式的表单）, `StepForms.tsx`（四种加工步骤的表单）, `RuleTester.tsx`, `LookupTables.tsx`, `SecretList.tsx`, `WebhookSettings.tsx`（接口列表、编辑、发送测试、发送记录、立即重试）, `src/renderer/src/view-models/use-rules.ts`, `src/renderer/src/lib/rule-text.ts`（+ test）
 - Modify: `SidePanel.tsx`（新增第 5 个标签页「识别规则」）、`App.tsx`、`app.css`（模板编辑器的字段区与二维码内容来源已在 Task 4 完成）
 
 **测试要点:**
@@ -317,15 +317,17 @@
 - Modify: `e2e/app.e2e.ts`, `README.md`, `docs/roadmap.md`, `docs/superpowers/specs/2026-09-28-label-flash-design.md`（指向新规格）
 
 **E2E 用例:**
-1. 扫纯数字订单号 `202609281234567`：预览角标为「纯数字订单号 · 通用（二维码在左）」，标签上有「订单号」。
-2. 用键盘一次打出 `订单号:A100`、回车、`尺码:M`、回车，最后停顿：只识别为一次扫码，得到订单号和尺码两个字段。
-3. 在「识别规则」页的「试一试」里输入 `CL1_红_M`，结果为「原样打印」；新建一条下划线分隔的规则后再试，命中新规则。
-4. 把「纯数字订单号」绑定到「通用 · 大字」模板后扫码，预览换成该模板。
+实际实现的用例（`e2e/app.e2e.ts`）：
 
-**真机:** 在 Mac 上用 EPSON 真打一张：多行键值标签和纯数字订单号标签各一张，检查排版和二维码内容。
+1. 扫纯数字订单号 `202609280001`：预览为「纯数字订单号 · 通用（二维码在左）」，字段前缀为「订单号：」；`hello` 走「原样打印」；含不可见字符的内容提示「扫码内容无法识别」。
+2. 用键盘连续打出 `订单号：A001`、回车、`款号：CL5640`、回车、`尺码：XL`、回车，最后停顿：只识别为一次扫码，命中「多行键值」，三个字段。
+3. 「试一试」里输入 `CL1_红_M`，命中「原样打印」；新建一条下划线分隔的规则后再试，命中新规则。
+4. 把「纯数字订单号」绑定到「样衣标准（二维码在左）」后扫码，预览换成该模板。
+
+**真机:** 在 Mac 上用家用喷墨打印机真打：多行键值标签和纯数字订单号标签各一张，检查排版和二维码内容。
 
 - [x] `bun run check && bun run test:e2e`：E2E 7 个用例覆盖以上 4 点（1df4705）。
 - [x] Mac 真机：
   - 集成：真实 Electron 里 HTTP 查询走 net.fetch、密钥存 macOS 钥匙串，查询结果进入字段；打印结果通知签名可被接收方验证，后台送达。
-  - 打印：EPSON 真打多行键值、纯数字订单号各一张，CUPS 任务均为 completed。
+  - 打印：家用喷墨打印机真打多行键值、纯数字订单号各一张，CUPS 任务均为 completed。
 - [x] 文档：README、路线图、Phase 1 规格指向本规格。

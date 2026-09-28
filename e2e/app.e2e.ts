@@ -94,6 +94,15 @@ test('tries content against the rules and prints with the template bound to a ru
   await page.getByLabel('要识别的内容').first().fill('202609280001');
   await expect(page.locator('.rule-tester__result').first()).toContainText('命中「纯数字订单号」');
 
+  // 没有规则认得下划线：落到「原样打印」；新建一条下划线分隔的规则后，命中新规则。
+  const tester = page.getByLabel('要识别的内容').first();
+  await tester.fill('CL1_红_M');
+  await expect(page.locator('.rule-tester__result').first()).toContainText('命中「原样打印」');
+  await page.getByRole('button', { name: '新建规则' }).click();
+  await page.getByRole('button', { name: '返回列表' }).click();
+  await tester.fill('CL1_红_M ');
+  await expect(page.locator('.rule-tester__result').first()).toContainText('命中「新规则（分隔符拆分）」');
+
   await page.getByLabel('「纯数字订单号」用的模板').selectOption({ label: '样衣标准（二维码在左）' });
   await scan(page, '202609280001');
   await expect(page.locator('.label-badge')).toHaveText('纯数字订单号 · 样衣标准（二维码在左）');

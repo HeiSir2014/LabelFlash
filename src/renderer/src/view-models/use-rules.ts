@@ -3,6 +3,7 @@ import type { LookupTableInfo } from '../../../core/lookup/lookup-model';
 import { isBuiltInRuleId, type RuleKind, type ScanRule } from '../../../core/scan/rule-model';
 import type { RuleSetting } from '../../../core/scan/rule-settings';
 import type { RuleListing, RuleTestResult } from '../../../shared/rule-api';
+import { deepEqual } from '../lib/deep-equal';
 import { notices, reportError } from '../lib/notices';
 
 /** 规则设置有变化后回调（例如刷新扫码预览：绑定的模板变了）。 */
@@ -58,7 +59,7 @@ export function useRules({ onRulesChanged }: RulesOptions) {
   }, [listing]);
 
   const stored = useMemo(() => listing.rules.find((rule) => rule.id === draft?.id) ?? null, [listing, draft]);
-  const isDirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(stored);
+  const isDirty = draft !== null && !deepEqual(draft, stored);
 
   const saveSettings = useCallback(
     async (settings: RuleSetting[]) => {

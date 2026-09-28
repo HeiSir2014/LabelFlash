@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isBuiltInTemplateId, type LabelTemplate } from '../../../core/templates/template-model';
 import type { AppSettings } from '../../../shared/settings';
+import { deepEqual } from '../lib/deep-equal';
 import { notices, reportError } from '../lib/notices';
 
 interface TemplatesOptions {
@@ -37,7 +38,7 @@ export function useTemplates({
     [templates, activeTemplateId],
   );
   const stored = useMemo(() => templates.find((template) => template.id === draft?.id) ?? null, [templates, draft]);
-  const isDirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(stored);
+  const isDirty = draft !== null && !deepEqual(draft, stored);
 
   const activate = useCallback(
     async (id: string) => {

@@ -47,8 +47,15 @@ export async function launchApp(userData?: string): Promise<LaunchedApp> {
   }
   const platformArgs = process.platform === 'darwin' ? MAC_TEST_ARGS : [];
   const app = await electron.launch({ args: [APP_ROOT, ...platformArgs], env });
-  const page = await app.firstWindow();
-  await expect(page.locator('.scan-bar__input')).toBeVisible();
+  let page: Page;
+  try {
+    page = await app.firstWindow();
+    await expect(page.locator('.scan-bar__input')).toBeVisible();
+  } catch (error) {
+    // 调用方还没拿到这个程序，没法关它：启动没完成就在这里关掉，免得残留的进程占着数据目录。
+    await app.close().catch(() => undefined);
+    throw error;
+  }
   return {
     app,
     page,

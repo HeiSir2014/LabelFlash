@@ -19,19 +19,25 @@
 
 - **2026-09-29 中转地址不写进代码**：项目开源，中转地址改为设置项，官方安装包的默认值在构建时注入；中转服务的 `PUBLIC_ORIGIN` 必填、没有默认值。
 - **2026-09-29 扫码即打 + 幂等任务**：需求方要求界面上扫到就打，协议按正规做法设计。
-  - 内层消息改为 `hello` / `submit`（手机 → 电脑）和 `welcome` / `taken` / `printer` / `accepted` / `result` / `refused`（电脑 → 手机），去掉 `preview`、`busy` 和请求超时。
+  - 内层消息改为 `hello` / `submit`（手机 → 电脑）和 `welcome` / `denied` / `printer` / `accepted` / `queue` / `started` / `result` / `refused`（电脑 → 手机），去掉 `preview`、`busy` 和请求超时。
   - 任务号是幂等键；手机的发件箱在重连后原样重发；排队执行，超出上限明确拒绝（设计 4.3、4.4、5.2）。
-  - Task 1、7、8 下面的契约是最初版本，已被取代，以 `src/shared/mobile-protocol.ts`、`relay/web/src/phone-state.ts`、`relay/web/src/phone-session.ts` 为准。
 - **2026-09-29 摄像头对焦**：显式设置持续对焦、点按对焦、适度变焦（设计 6.2），见 Task 10a。
-- **进度**：Task 1–10 已完成并提交。
+- **2026-09-29 几个人同时用**：一个二维码最多 5 部手机，各有令牌，可以移除；所有手机的任务共用一个队列（设计 4.3、4.4）。
+- **2026-09-29 完整审查后的修复**：
+  - 协议：排队位置改为每部手机一条 `queue`，只发给位置变了的手机；已接受的任务长时间没进展就再问一次；消息大小上限和最坏情况测试；移除手机后暂停加入（`denied: locked`）；关闭码集中到 `CLOSE_CODES`；连接超时；被对端接纳后才重置退避。
+  - 中转服务：生产模式和错误处理；满了在升级前回 503；单调时钟；限速按手机和任务上限算。
+  - 电脑端：每条链都接住异常；电脑重连后手机列表对得上；二维码有效期从显示时算起；告诉手机的是打印机的显示名。
+  - 扫码页：点「开始扫码」才开摄像头；发件箱存进 `localStorage`；按码分开防抖；只解码看得见的区域；识别组件的加载、超时和失败；控制器可测；无障碍和对比度。
+  - 发布脚本：不发有未提交改动或正在运行的版本；构建脚本不会清空错误的目录。
+- **2026-09-29 目标版本改为 1.0.1**：需求方决定手机扫码随 1.0.1 发布。阶段 5 基于配置中心的分支做。
+- **下面各任务里的契约是当时的版本**：实现过程中已多次调整，以代码和设计文档为准（`src/shared/mobile-protocol.ts`、`src/shared/mobile-status.ts`、`src/main/mobile/`、`relay/web/src/`）。
+- **进度**：Task 1–14 已完成并提交，审查修复已完成；Task 15（真手机）待需求方；阶段 5 进行中。
 
 ---
 
 ## 全局约束
 
-- **冻结**：配置中心重构合回 `feature/phase1-desktop-client` 之前，不改 `src/renderer/`、`e2e/` 和 `src/main/` 里已有的文件。
-  - 可以在 `src/main/mobile/` 里新增不依赖 Electron 的文件；
-  - 可以新增 `src/shared/` 文件；不改 `src/shared/voice.ts`，重构那边会改它。
+- **阶段 1–4 的冻结**：当时配置中心在另一个分支上重构，这四个阶段不改 `src/renderer/`、`e2e/` 和 `src/main/` 里已有的文件，只新增文件。阶段 5 基于 `feature/config-center` 做。
 - **提交前**：每个提交都通过 `bun run check`（Biome、类型检查、全部单元测试）。
 - **提交信息**：英文 Conventional Commits，正文写为什么改。
 - **写法**：
@@ -56,15 +62,17 @@
 | `relay/src/server.ts` | `Bun.serve` 接线：HTTP 路由、WebSocket → hub |
 | `relay/src/main.ts` | 入口：读配置、启动、处理 SIGTERM |
 | `relay/web/index.html`、`relay/web/styles.css` | 扫码页外壳和样式 |
-| `relay/web/src/phone-state.ts` | 页面状态机（reducer） |
-| `relay/web/src/result-view.ts` | 预览和打印结果 → 标题、说明、按钮 |
+| `relay/web/src/phone-state.ts` | 页面状态机（reducer），状态用可辨识联合 |
+| `relay/web/src/result-view.ts` | 任务、整页提示、取景提示的文字和按钮（纯函数） |
 | `relay/web/src/device-label.ts` | UA → 「iPhone · 微信」 |
-| `relay/web/src/phone-session.ts` | 手机端协议：join、hello、nonce 与 id、请求超时、not-found 重试 |
-| `relay/web/src/token-store.ts` | 按会话保存令牌（`localStorage`，异常时降级为内存） |
-| `relay/web/src/reader-options.ts` | zxing 的码制和选项（worker 和测试共用） |
-| `relay/web/src/decode-worker.ts`、`decoder.ts` | worker 里解码；主线程侧一次只送一帧 |
-| `relay/web/src/camera.ts` | 摄像头、取帧、手电筒、屏幕常亮 |
-| `relay/web/src/view.ts`、`main.ts` | 渲染与接线 |
+| `relay/web/src/phone-session.ts` | 手机端协议：join、hello、nonce 与 seq、发件箱、重发与进度查询、not-found 宽限期 |
+| `relay/web/src/session-store.ts` | 按会话保存令牌和发件箱（`localStorage`，异常时降级为内存，过期记录自动清掉） |
+| `relay/web/src/scan-gate.ts` | 取景防抖，按码分开记 |
+| `relay/web/src/barcode-text.ts`、`reader-options.ts` | 没有 ECI 时判断 UTF-8 / GBK；zxing 的码制和选项（worker 和测试共用） |
+| `relay/web/src/decode-worker.ts`、`decoder.ts` | worker 里解码；主线程侧一次只送一帧，管加载、超时和失败 |
+| `relay/web/src/camera-features.ts`、`camera.ts` | 对焦、变焦、可见区域的计算（纯函数）；摄像头、取帧、手电筒、屏幕常亮 |
+| `relay/web/src/phone-controller.ts` | 编排：状态机、会话、摄像头、解码、页面；浏览器能力经接口注入 |
+| `relay/web/src/view.ts`、`main.ts` | 渲染；创建真实的浏览器对象 |
 | `relay/tsconfig.json`、`relay/web/tsconfig.json` | 服务端（Bun）和页面（DOM）的类型检查 |
 | `scripts/relay/build.ts` | 构建 `relay/dist/`：`server.js` 和带哈希的 `web/` |
 | `scripts/relay/deploy.ts` | 上传、`docker build`、替换容器、健康检查；目标服务器从环境变量读取 |
@@ -74,9 +82,10 @@
 | `src/main/mobile/relay-endpoint.ts` | 中转地址：设置优先、构建默认值兜底，校验并拼出各地址 |
 | `src/main/mobile/mobile-session.ts` | 电脑端会话状态 |
 | `src/main/mobile/mobile-replies.ts` | `PrintService` 结果 → 手机精简结果 |
-| `src/main/mobile/mobile-host.ts` | 电脑端编排：socket + 加密 + 会话 + 注入的预览/打印函数 |
+| `src/main/mobile/mobile-host.ts` | 电脑端编排：socket + 加密 + 会话 + 注入的打印函数和当前打印机 |
 | `src/shared/mobile-status.ts` | 推给界面的会话状态类型（阶段 5 的 IPC 用） |
-| `relay/test/*.e2e.ts`、`relay/playwright.config.ts` | 假摄像头的浏览器测试 |
+| `src/shared/duration-text.ts` | 时长的说法（防重复窗口、到期时间），界面和扫码页共用 |
+| `relay/test/fake-camera.ts`、`relay/test/phone-page.browser.ts` | 二维码 → Y4M 假摄像头视频；Edge 驱动扫码页的浏览器测试（`bun run test:relay-browser`） |
 
 ---
 
@@ -382,7 +391,7 @@ export type PeerRole = 'desktop' | 'phone';
 export interface HubLimits {
   maxSessions: number;          // 500
   maxConnections: number;       // 2000
-  maxPhonesPerSession: number;  // 3
+  maxPhonesPerSession: number;  // MAX_PHONES_PER_SESSION × 2
   maxConnectionsPerIp: number;  // 20
 }
 export interface HubDeps { clock: Clock; log: (line: string) => void; limits?: Partial<HubLimits> }
@@ -399,7 +408,8 @@ export class RelayHub {
 ```
 
   - 所有权：`node:crypto` 的 `createHash('sha256')` 算出 `secret` 的哈希，再用 `timingSafeEqual` 比较。
-  - 关闭码写成常量：`CLOSE_NORMAL = 1000`、`CLOSE_POLICY = 1008`、`CLOSE_TRY_LATER = 1013`、`CLOSE_REPLACED = 4001`。
+  - 关闭码用协议里的 `CLOSE_CODES`（`normal` 1000、`policy` 1008、`tryLater` 1013、`replaced` 4001），三方共用一份。
+  - 另有 `hasRoom(ip)`：`server.ts` 在升级成 WebSocket 之前先问，满了回 503。
 
 - [ ] **Step 4: 运行，确认通过。**
 - [ ] **Step 5: 提交**：`feat(relay): stateless session hub with ownership, grace and limits`。
@@ -610,6 +620,8 @@ export const READER_OPTIONS = {
 
 ### Task 11: 中转地址、会话状态、精简结果
 
+> 这里写的是最初「一部手机认领」的版本。多部手机、`denied`、暂停加入、`queue`、字段上限 10 × 200 字符和 `MobileStatus` 的现行定义见设计 4.3–4.4、7.3 和代码。
+
 **Files:**
 - Create: `src/main/mobile/relay-endpoint.ts`、`src/main/mobile/mobile-session.ts`、`src/main/mobile/mobile-replies.ts`、`src/shared/mobile-status.ts`
 - Test: 同名 `*.test.ts`
@@ -658,6 +670,8 @@ export type MobileStatus =
 - [ ] **Step 5: 提交**：`feat(mobile): desktop session state with idempotent jobs`。
 
 ### Task 12: 电脑端编排 + 经真实中转服务的集成测试
+
+> 现行接口：`print(raw, force, printerName)`、`selectedPrinter(): Promise<PrinterInfo | null>`（系统名和显示名），另有 `removePhone(id)`、`setJoinLocked(locked)`。集成测试还覆盖多部手机排队、移除后暂停加入、中转服务重启后手机列表对得上。
 
 **Files:**
 - Create: `src/main/mobile/mobile-host.ts`
@@ -716,14 +730,14 @@ export class MobileHost {
 ### Task 13: 浏览器测试（假摄像头）
 
 **Files:**
-- Create: `relay/test/fake-camera.ts`（二维码 → Y4M 视频）、`relay/test/phone-page.e2e.ts`、`relay/playwright.config.ts`
+- Create: `relay/test/fake-camera.ts`（二维码 → Y4M 视频）、`relay/test/phone-page.browser.ts`（`bun test` 直接驱动 Playwright，不需要单独的 Playwright 配置）
 - Modify: `package.json`（脚本 `test:relay-browser`）
 
 - [ ] **Step 1: 写测试：**
   - 生成 640×480、30 帧的 Y4M：白底，中间是 `CL5640-TK-图片色-XL` 的二维码。Y 平面按像素灰度，U、V 平面填 128。
   - 用 `channel: 'msedge'` 启动，参数为 `--use-fake-ui-for-media-stream`、`--use-fake-device-for-media-stream`、`--use-file-for-fake-video-capture=<y4m>`。
   - 本机启动中转服务（`PUBLIC_ORIGIN=http://localhost:<端口>`），用 `MobileHost` 当电脑端（中转地址填本机，注入假的打印），打开它给出的 `url`。
-  - 断言：假摄像头画面里的码被自动扫到，任务列表里出现「已发送打印」和字段摘要；注入的 `print` 只被调用一次（画面一直是同一张，防抖生效）。
+  - 点「开始扫码」后，断言：假摄像头画面里的码被自动扫到，任务列表里出现「已发送打印」和字段摘要，朗读区读出同一句；注入的 `print` 只被调用一次（画面一直是同一张，防抖生效）。
 - [ ] **Step 2: 运行 `bun run test:relay-browser`，确认通过。**
 - [ ] **Step 3: 提交**：`test(phone): camera scan through a fake video device`。
 
@@ -768,32 +782,37 @@ export class MobileHost {
 
 ### Task 15: 真手机试用（需求方）
 
-- [ ] 在本机运行 `bun scripts/relay/demo-desktop.ts`：一个用 `MobileHost` 的命令行电脑端，在终端里显示二维码，把收到的预览和打印请求打出来，不真的打印。
+- [ ] 在本机运行 `bun scripts/relay/demo-desktop.ts <中转地址>`：一个用 `MobileHost` 的命令行电脑端，在终端里显示二维码，把收到的打印任务打出来，不真的打印。
 - [ ] 请需求方用 iPhone Safari、iPhone 微信、安卓 Chrome、安卓微信各扫一次，记录：
-  - 能否实时取景、识别速度；
-  - 中文是否正确；
+  - 能否实时取景、识别速度、对焦；
+  - 中文（UTF-8 和 GBK）是否正确；
   - 拍照降级是否可用；
-  - 第二部手机是否被拒绝。
+  - 两部手机同时扫，是否排队、各自看到自己的结果；第 6 部手机是否被拒绝；
+  - 刷新页面、切到后台再回来，没出结果的任务是否接着发。
 - [ ] 结果写进 `docs/windows-acceptance.md` 的「手机扫码」一节，每项注明「通过」「部分」或「待验收」。
 - [ ] 提交：`docs: phone scan acceptance on real devices`。
 
 ---
 
-## 阶段 5：接入电脑（配置中心重构合回后）
+## 阶段 5：接入电脑（基于配置中心的分支）
 
-重构合回后，先按新的界面结构把本阶段细化成任务，再实施。已确定的内容：
+在 `feature/mobile-desktop` 上做：它从 `feature/config-center` 拉出，合入 `feature/phase1-desktop-client` 上的手机扫码提交。做完合回，随 1.0.1 发布。先按配置中心的新结构把本阶段细化成任务，再实施。已确定的内容：
 
 1. **主进程**：
-   - 设置项 `mobileRelayUrl`（`src/shared/settings.ts`，清洗用 `sanitizeRelayUrl`）；配置中心「手机扫码」一节的地址输入框和「恢复默认」；
+   - 设置项 `mobileRelayUrl`（`src/shared/settings.ts`，清洗用 `sanitizeRelayUrl`）；
    - `electron.vite.config.ts` 用 `define` 注入 `CDL_LABELFLASH_DEFAULT_RELAY_URL`；CI 的发布作业从 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL` 读取；
    - `src/main/mobile/mobile-station.ts` 创建 `MobileHost`，接上 `PrintService.submit`（`source: 'mobile'`）、`toPhonePrintResult`、设置里的 `selectedPrinter`、打印机显示名；设置里的打印机变了时调用 `printerChanged()`；
    - 程序退出时 `stop('quit')`；每 5 秒 `tick()`。
-2. **IPC**：
-   - `mobile:start` / `mobile:stop` / `mobile:status`，以及推送 `mobile:status-changed`；
+2. **IPC**（都加在 `ipc-contract.ts`、`ipc.ts`、preload 的末尾）：
+   - `mobile:start` / `mobile:stop` / `mobile:status` / `mobile:remove-phone` / `mobile:set-join-locked`，以及推送 `mobile:status-changed`；
    - `ipc-validators.ts` 校验；preload 暴露；
    - 主进程用 `qrcode` 生成二维码 SVG 的 data URL，随状态返回。
-3. **界面**：
-   - 工作台标题栏加「手机扫码」按钮和状态点；弹窗按设计 7.3 显示各状态；
+3. **界面**（设计 7.3）：
+   - 标题栏「配置」和打印机之间加「手机扫码」按钮和状态点；非模态浮层显示各状态，Esc 关闭后焦点回到扫码框；
+   - 二维码有效期倒计时，过期后「重新生成」；手机列表带「移除」，暂停加入时带「允许新手机加入」；
+   - 地址或打印机没设置时，给出去配置的链接（`PageLink` / `StatusView.link`）；
+   - 配置中心「集成」分组加「手机扫码」页：中转地址、「恢复默认」、当前状态；
+   - 1024×680 和 1280×800 各截图核对；
    - 收到手机打印的结果后刷新打印记录；
    - `feedback-cues.ts` 改用 `src/shared/print-cues.ts`。
 4. **E2E**：Electron 连本机中转服务，脚本手机扫码 → 打印记录出现来源「手机」的一条（打印机用 E2E 现有的假打印方式）。
@@ -801,7 +820,7 @@ export class MobileHost {
    - README：功能、中转地址（官方安装包默认用 yterm.cn 上的中转服务，可以在设置里换成自己部署的）、「电脑要能直接访问中转服务的 443 端口，不支持系统代理」、内容端到端加密；
    - `src/main/CLAUDE.md`、`src/renderer/CLAUDE.md`：新模块和约束；
    - 设计文档里和实现不一致的地方同步改掉。
-6. **验收**：Windows 150% 缩放和 macOS 各走一遍，真机出纸，版本号改为 1.1.0。
+6. **验收**：Windows 150% 缩放和 macOS 各走一遍，真机出纸；官方中转服务部署好，安装包的默认地址能连上。版本号保持 1.0.1。
 
 ## 自查
 

@@ -37,7 +37,7 @@
 |---|---|
 | `bun install` | 安装依赖，同时下载 Electron 二进制 |
 | `bun run dev` | 开发版（热更新） |
-| `bun run check` | Biome + 三份 tsconfig 的类型检查 + 全部单元测试 |
+| `bun run check` | Biome + 五份 tsconfig（主进程与脚本、界面、E2E、中转服务、扫码页）的类型检查 + 全部单元测试 |
 | `bun test <路径>` | 只跑某个单元测试文件 |
 | `bun run test:e2e` | 构建 → 检查 bundle → Playwright 驱动构建版 Electron |
 | `bun run dist:win` | Windows 安装包（两段构建，见 `resources/installer/CLAUDE.md`），输出到 `dist/` |
@@ -85,7 +85,7 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
 - **测试**：新功能、修 bug 都先写失败的测试。测试名用英文描述行为；纯逻辑放进可测的模块（core、`lib/`、主进程里不依赖 Electron 的文件）。
 - **用词**：界面文字和播报用词保持一致，只说程序确知的事。例如驱动回调成功只代表任务进了打印队列，所以写「已发送打印」，不写「打印成功」。
 - **出错**：不吞异常。主进程把错误和上下文写进日志，界面给出中文提示和下一步该怎么做。
-- **依赖**：不随意引入新依赖，先用现有的：运行时有 electron-log、electron-updater、msedge-tts、qrcode；开发时有 sharp、Playwright、Biome。
+- **依赖**：不随意引入新依赖，先用现有的：运行时有 electron-log、electron-updater、msedge-tts、qrcode；开发时有 sharp、Playwright、Biome，以及只打进手机扫码页的 zxing-wasm。
 
 ## 命名与措辞限制
 

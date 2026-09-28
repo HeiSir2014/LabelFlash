@@ -17,7 +17,7 @@
 | 路径 | 内容 |
 |---|---|
 | `src/` | 服务端：`hub.ts`（会话路由、限流、容量）、`server.ts`（`Bun.serve` 接线）、`static-files.ts`（扫码页和安全响应头）、`config.ts` |
-| `web/` | 扫码页：`index.html`、`styles.css`、`src/`（状态机、协议、摄像头、解码、界面） |
+| `web/` | 扫码页：`index.html`、`styles.css`、`src/`（状态机、控制器、协议、发件箱存储、摄像头、解码、界面） |
 | `test/` | 假摄像头的浏览器测试 |
 | `deploy/nginx-location.conf` | nginx 反向代理示例 |
 | `Dockerfile` | 镜像（只放构建产物） |
@@ -32,7 +32,7 @@ bun scripts/relay/demo-desktop.ts http://localhost:3180/   # 命令行版电脑�
 bun run test:relay-browser                                 # 用 Edge 的假摄像头跑一遍扫码
 ```
 
-- **打开页面**：在电脑上用 `http://localhost:3180/m/…` 打开扫码页（浏览器把 localhost 当作安全上下文，摄像头可用）。
+- **打开页面**：在电脑上用 `http://localhost:3180/m/…` 打开扫码页（浏览器把 localhost 当作安全上下文，摄像头可用），点「开始扫码」打开摄像头。
 - **地址要一致**：手机页面的 Origin 必须和中转服务的 `PUBLIC_ORIGIN` 一致，所以要用 `localhost`，不能用 `127.0.0.1`。
 - **真机测试**：手机不能访问电脑的 localhost。要用真手机试，先部署到有 https 的服务器。
 
@@ -50,6 +50,7 @@ bun run test:relay-browser                                 # 用 Edge 的假摄�
    | `RELAY_HEALTH_URL` | `https://relay.example.com/labelflash/healthz` | 对外的健康检查地址 |
 
    脚本依次做这几件事：
+   - 先检查：工作区有没提交的改动、或者服务器上已经在运行这个版本时，不发布（提交新改动后再发）；
    - 本机构建，上传到服务器的 `~/labelflash-relay/<版本>/`；
    - `docker build`，替换容器 `labelflash-relay`；
    - 在服务器本机和对外各检查一次健康，没通过就换回上一个版本；

@@ -1,12 +1,12 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, Menu, screen } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import { BRAND } from '../shared/brand';
 import { IpcChannel } from '../shared/ipc-contract';
 import { windowChromeFor } from '../shared/window-chrome';
 import { APP_ENTRY_URL } from './bundle-path';
 import { buildContextMenuTemplate } from './context-menu';
 import { forwardRendererConsole } from './logging';
-import { fitWindowToWorkArea } from './window-bounds';
+import type { WindowPlacement } from './window-state';
 
 const HOUSING_COLOR = '#E4E7E2';
 /** macOS 红绿灯的位置：按钮高约 14px，在 40px 高的自绘标题栏里垂直居中（与 app.css 的 --title-bar-height 一致）。 */
@@ -16,15 +16,15 @@ const RENDERER_RELOAD_COOLDOWN_MS = 30_000;
 
 export interface MainWindowOptions {
   icon: string;
+  /** 打开的位置、尺寸和最小尺寸（见 window-placement.ts）：上次的位置，或鼠标所在屏幕的默认位置。 */
+  placement: WindowPlacement;
   shouldHideOnClose: () => boolean;
   onHidden: () => void;
 }
 
 /** 无系统边框窗口，标题栏由渲染进程自绘。 */
 export function createMainWindow(options: MainWindowOptions): BrowserWindow {
-  // 在鼠标所在的屏幕上打开，并保证整个窗口落在工作区内。
-  const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const { bounds, minWidth, minHeight } = fitWindowToWorkArea(workArea);
+  const { bounds, minWidth, minHeight, isMaximized } = options.placement;
   const chrome = windowChromeFor(process.platform);
   const window = new BrowserWindow({
     ...bounds,
@@ -48,7 +48,12 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
     },
   });
 
-  window.once('ready-to-show', () => window.show());
+  window.once('ready-to-show', () => {
+    if (isMaximized) {
+      window.maximize();
+    }
+    window.show();
+  });
   window.on('close', (event) => {
     if (options.shouldHideOnClose()) {
       event.preventDefault();

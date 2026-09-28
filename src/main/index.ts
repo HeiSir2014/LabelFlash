@@ -29,11 +29,13 @@ import { openDatabase } from './storage/database';
 import { SqliteJobStore } from './storage/sqlite-job-store';
 import { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import { SqliteTemplateRepository } from './storage/sqlite-template-repository';
+import { SqliteWindowStateStore } from './storage/sqlite-window-state-store';
 import { type AppTray, createTray } from './tray';
 import { AppUpdater } from './updater';
 import { synthesizeWithEdge } from './voice/edge-synthesizer';
 import { VoiceClips } from './voice/voice-clips';
 import { createMainWindow } from './window';
+import { planInitialPlacement, trackWindowPlacement } from './window-placement';
 
 const DATABASE_FILE_NAME = 'labelflash.db';
 const VOICE_CACHE_DIR_NAME = 'voice-cache';
@@ -220,12 +222,16 @@ async function bootstrap(): Promise<void> {
   if (process.platform === 'darwin' && !app.isPackaged) {
     app.dock?.setIcon(appIcon);
   }
+  const windowStates = new SqliteWindowStateStore(database);
   mainWindow = createMainWindow({
     icon: appIcon,
+    placement: planInitialPlacement(windowStates),
     // 没有托盘图标时照常关闭：藏起来之后就再也叫不回窗口了。
     shouldHideOnClose: () => !isQuitting && tray !== null,
     onHidden: () => tray?.notifyHiddenOnce(),
   });
+  // 必须先于下面的 session-end 处理注册：关机时先保存窗口位置，再关闭数据库。
+  trackWindowPlacement(mainWindow, windowStates);
   // Windows 关机、注销时不会触发 before-quit：放行窗口关闭并关闭数据库，不能阻塞关机。
   mainWindow.on('query-session-end', () => {
     isQuitting = true;

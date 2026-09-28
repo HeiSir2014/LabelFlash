@@ -213,6 +213,8 @@ input {
   flex: 1;
   align-items: center;
   gap: var(--space-3);
+  /* 允许扫码框比输入框的默认宽度更窄：否则最小窗口下备注和开关会被挤到右侧面板上。 */
+  min-width: 0;
   height: 64px;
   padding: 0 var(--space-4);
   border: 2px solid var(--color-ink);

@@ -4,7 +4,14 @@
  * 密钥只在二维码链接的 # 部分里，中转服务拿不到，所以它只能转发、看不到扫码内容和打印结果。
  * 只用 globalThis.crypto（WebCrypto）：浏览器、Bun 和 Electron 主进程（Node 24）都有，这个文件三方共用。
  */
-import { ID_BYTES, IV_BYTES, KEY_BYTES, MOBILE_PROTOCOL_VERSION, type SealedBody } from './mobile-protocol';
+import {
+  ID_BYTES,
+  IV_BYTES,
+  KEY_BYTES,
+  MAX_MESSAGE_BYTES,
+  MOBILE_PROTOCOL_VERSION,
+  type SealedBody,
+} from './mobile-protocol';
 
 /** p2d = 手机发给电脑，d2p = 电脑发给手机。写进附加数据，一个方向的消息不能被反射回去。 */
 export type Direction = 'p2d' | 'd2p';
@@ -50,6 +57,7 @@ export async function importSessionKey(key: string): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 
+/** 明文超过 MAX_MESSAGE_BYTES 时抛错：发出去也会因为帧太大被中转服务断开，不如在这里就暴露出来。 */
 export async function sealMessage(
   key: CryptoKey,
   direction: Direction,
@@ -58,6 +66,9 @@ export async function sealMessage(
 ): Promise<SealedBody> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
   const plain = textEncoder.encode(JSON.stringify(message));
+  if (plain.length > MAX_MESSAGE_BYTES) {
+    throw new Error(`消息有 ${plain.length} 字节，超过上限 ${MAX_MESSAGE_BYTES}`);
+  }
   const sealed = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv, additionalData: additionalData(direction, session) },
     key,

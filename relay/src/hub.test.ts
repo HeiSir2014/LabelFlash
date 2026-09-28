@@ -40,15 +40,14 @@ class FakePeer implements Peer {
 let clock: FakeClock;
 let logs: string[];
 let hub: RelayHub;
-let nextPeer: number;
 
 function createHub(limits = {}): RelayHub {
   return new RelayHub({ clock, log: (line) => logs.push(line), limits });
 }
 
+/** 连接号和 server.ts 一样用随机数：电脑发来的 phone 字段必须是这种格式。 */
 function peer(ip?: string): FakePeer {
-  nextPeer += 1;
-  return new FakePeer(`peer${nextPeer}`, ip);
+  return new FakePeer(randomId(), ip);
 }
 
 function send(from: FakePeer, frame: object): void {
@@ -75,7 +74,6 @@ function joinPhone(session: string, ip?: string): FakePeer {
 beforeEach(() => {
   clock = new FakeClock();
   logs = [];
-  nextPeer = 0;
   hub = createHub();
 });
 

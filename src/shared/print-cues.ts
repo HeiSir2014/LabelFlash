@@ -9,12 +9,13 @@ import type { VoiceCue } from './voice';
 /** 这次打印是怎么发起的：扫码、强制补打、从打印记录重打、打测试页。 */
 export type PrintMode = 'scan' | 'force' | 'history' | 'test';
 
-/** PrintResult 和手机收到的精简结果都满足这个结构。 */
+/** PrintResult 和手机收到的精简结果都满足这个结构；no-printer 只出现在手机收到的结果里。 */
 export type PrintOutcome =
   | { status: 'printed' }
   | { status: 'duplicate'; recent: RecentPrint }
   | { status: 'invalid' }
-  | { status: 'failed'; reason: PrintFailureReason; issue?: PrinterIssue | null };
+  | { status: 'failed'; reason: PrintFailureReason; issue?: PrinterIssue | null }
+  | { status: 'no-printer' };
 
 const PRINTED_CUE: Record<PrintMode, VoiceCue> = {
   scan: 'printed',
@@ -41,6 +42,8 @@ export function printResultCue(result: PrintOutcome, mode: PrintMode): VoiceCue 
       return 'invalid';
     case 'failed':
       return failureCue(result.reason, result.issue ?? null);
+    case 'no-printer':
+      return 'noPrinter';
   }
 }
 

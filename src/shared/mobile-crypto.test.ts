@@ -8,7 +8,14 @@ import {
   sealMessage,
   toBase64Url,
 } from './mobile-crypto';
-import { isRandomId, isSessionKey } from './mobile-protocol';
+import {
+  isRandomId,
+  isSessionKey,
+  MAX_FRAME_BYTES,
+  MAX_MESSAGE_BYTES,
+  MAX_REQUEST_RAW_LENGTH,
+  type PhoneMessage,
+} from './mobile-protocol';
 
 const SESSION = randomId();
 const MESSAGE = { type: 'preview', nonce: randomId(), id: 1, raw: 'CL5640-TK-图片色-XL' };
@@ -76,6 +83,22 @@ describe('sealMessage / openMessage', () => {
     const body = await sealMessage(key, 'p2d', SESSION, MESSAGE);
     const flipped = body.ct.startsWith('A') ? `B${body.ct.slice(1)}` : `A${body.ct.slice(1)}`;
     expect(await openMessage(key, 'p2d', SESSION, { ...body, ct: flipped })).toBeNull();
+  });
+
+  test('fits the largest request in one frame', async () => {
+    const key = await importSessionKey(randomKey());
+    // 控制字符在 JSON 里转义成 \u0001 这样的 6 个字节，是最坏情况。
+    const raw = String.fromCharCode(1).repeat(MAX_REQUEST_RAW_LENGTH);
+    const message: PhoneMessage = { type: 'submit', nonce: randomId(), seq: 1, job: randomId(), raw, force: false };
+    const body = await sealMessage(key, 'p2d', SESSION, message);
+    const frame = JSON.stringify({ t: 'recv', phone: randomId(), body });
+    expect(new TextEncoder().encode(frame).length).toBeLessThanOrEqual(MAX_FRAME_BYTES);
+  });
+
+  test('refuses to seal a message beyond the size limit', async () => {
+    const key = await importSessionKey(randomKey());
+    const huge = { raw: 'x'.repeat(MAX_MESSAGE_BYTES) };
+    await expect(sealMessage(key, 'p2d', SESSION, huge)).rejects.toThrow('超过上限');
   });
 
   test('refuses an iv of the wrong length', async () => {

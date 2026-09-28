@@ -13,15 +13,24 @@ export interface CameraCapabilities {
   torch?: boolean;
 }
 
-export interface VideoPoint {
+/** 一个点：单位由用法决定（元素上的像素，或视频画面里的归一化坐标）。 */
+export interface Point {
   x: number;
   y: number;
 }
 
+export interface Size {
+  width: number;
+  height: number;
+}
+
+export interface Rect extends Point, Size {}
+
 /** 一组约束：每组只设一项，逐组应用，某一项被拒绝不影响其他项。 */
 export interface CameraConstraintSet {
   focusMode?: 'continuous' | 'single-shot';
-  pointsOfInterest?: VideoPoint[];
+  /** 对焦点：视频画面里的归一化坐标（左上角 0,0，右下角 1,1）。 */
+  pointsOfInterest?: Point[];
   zoom?: number;
 }
 
@@ -55,7 +64,7 @@ export function startupConstraints(capabilities: CameraCapabilities): CameraCons
 export function focusAtConstraints(
   capabilities: CameraCapabilities,
   supportsPointsOfInterest: boolean,
-  point: VideoPoint,
+  point: Point,
 ): CameraConstraintSet | null {
   if (!supportsPointsOfInterest) {
     return null;
@@ -74,22 +83,26 @@ export function hasTorch(capabilities: CameraCapabilities): boolean {
 }
 
 /**
- * 点在取景元素上的位置 → 视频画面里的归一化坐标（左上角 0,0，右下角 1,1）。
+ * 视频画面里在取景元素上看得见的那一块（视频像素坐标）。
  * 视频以 object-fit: cover 铺满元素：按较大的比例缩放，多出来的两边被裁掉。
+ * 解码只读这一块：看不见的地方（例如旁边另一张标签）不该被打印；画面小了解码也更快。
  */
-export function tapToVideoPoint(
-  tap: VideoPoint,
-  element: { width: number; height: number },
-  video: { width: number; height: number },
-): VideoPoint {
+export function visibleVideoRect(element: Size, video: Size): Rect {
+  if (element.width <= 0 || element.height <= 0) {
+    return { x: 0, y: 0, width: video.width, height: video.height };
+  }
   const scale = Math.max(element.width / video.width, element.height / video.height);
-  const shownWidth = video.width * scale;
-  const shownHeight = video.height * scale;
-  const cropLeft = (shownWidth - element.width) / 2;
-  const cropTop = (shownHeight - element.height) / 2;
+  const width = Math.min(video.width, element.width / scale);
+  const height = Math.min(video.height, element.height / scale);
+  return { x: (video.width - width) / 2, y: (video.height - height) / 2, width, height };
+}
+
+/** 点在取景元素上的位置（像素）→ 视频画面里的归一化坐标（左上角 0,0，右下角 1,1）。 */
+export function tapToVideoPoint(tap: Point, element: Size, video: Size): Point {
+  const visible = visibleVideoRect(element, video);
   return {
-    x: clampUnit((tap.x + cropLeft) / shownWidth),
-    y: clampUnit((tap.y + cropTop) / shownHeight),
+    x: clampUnit((visible.x + (tap.x / element.width) * visible.width) / video.width),
+    y: clampUnit((visible.y + (tap.y / element.height) * visible.height) / video.height),
   };
 }
 

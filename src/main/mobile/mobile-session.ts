@@ -1,7 +1,7 @@
 /**
  * 电脑端的会话状态（纯逻辑，时间由 Clock 注入）：手机加入与移除、防重放、打印队列、任务去重、背压与限流、到期。
  *
- * - 多部手机共用一个二维码，每部手机有自己的令牌；电脑上可以随时移除某一部（令牌作废）。
+ * - 多部手机共用一个二维码，每部手机有自己的令牌；电脑上可以随时移除某一部（令牌作废，并暂停新手机加入）。
  * - 所有手机的任务进同一个队列，先来先打，一次打一张；每个任务的结果只发给提交它的手机。
  * - 任务是幂等的：同一个任务号只执行一次，重发只回当前进度（accepted / started）或已有的结果。
  */
@@ -12,16 +12,16 @@ import {
   type CloseReason,
   type DenialReason,
   type DesktopMessage,
+  IDLE_END_MS,
   MAX_PENDING_JOBS,
   MAX_PHONES_PER_SESSION,
   type PhoneMessage,
   type PhonePrintResult,
+  type QueuePosition,
+  UNCLAIMED_TTL_MS,
 } from '../../shared/mobile-protocol';
+import type { MobilePhone } from '../../shared/mobile-status';
 
-/** 二维码显示后多久没有手机加入就作废：拍到屏幕的人拿到的也只是一个很快过期的链接。 */
-export const UNCLAIMED_TTL_MS = 10 * 60_000;
-/** 多久没有任务就自动结束：偶尔补打用完就放下了，不该一直连着。 */
-export const IDLE_END_MS = 30 * 60_000;
 /** 所有手机合计每分钟最多接受的任务数：热敏标签机大约一秒出一张，再快也打不出来。 */
 export const MAX_JOBS_PER_MINUTE = 60;
 /** 保留结果的任务数：远多于重连时要补发的几张；更早的任务号即使被重放，也会先被 nonce / seq 挡住。 */
@@ -42,14 +42,6 @@ export type SubmitDecision =
   /** 新任务：先回复 accepted，再按队列顺序执行（started → complete）。 */
   | { kind: 'run'; reply: DesktopMessage; job: string; raw: string; force: boolean };
 
-export interface PhoneSummary {
-  /** 电脑界面上用来指认、移除这部手机；不是令牌。 */
-  id: string;
-  device: string;
-  online: boolean;
-  printed: number;
-}
-
 interface Phone {
   id: string;
   token: string;
@@ -62,11 +54,17 @@ interface Phone {
   printed: number;
 }
 
-type Job = { owner: string; state: 'queued' | 'printing' } | { owner: string; state: 'done'; result: PhonePrintResult };
+type Job =
+  /** ahead：最近一次告诉手机的排队位置，位置变了才再发。 */
+  | { owner: string; state: 'queued'; ahead: number }
+  | { owner: string; state: 'printing' }
+  | { owner: string; state: 'done'; result: PhonePrintResult };
 
 export class MobileSession {
-  private readonly createdAt: number;
+  /** 二维码第一次显示（中转服务确认会话）的时间：没人打开的二维码从这时起算过期。 */
+  private shownAt: number | null = null;
   private hasEverJoined = false;
+  private isJoinLocked = false;
   /** 按加入顺序排列（Map 保持插入顺序），界面上的手机列表也按这个顺序。 */
   private readonly phones = new Map<string, Phone>();
   /** 连接号 → 手机 id；连上了还没加入（或被拒绝）的连接为 null。 */
@@ -79,8 +77,20 @@ export class MobileSession {
   private printedCount = 0;
 
   constructor(private readonly clock: Clock) {
-    this.createdAt = clock.now();
-    this.lastActivity = this.createdAt;
+    this.lastActivity = clock.now();
+  }
+
+  /**
+   * 中转服务确认了会话（第一次，或断线重连之后）。重连时中转服务可能已经换过一轮手机连接：
+   * 旧的连接一律作废，由中转服务重新通知（joined），手机重新打招呼（hello）后再对上号。
+   */
+  relayOpened(): void {
+    this.shownAt ??= this.clock.now();
+    this.connections.clear();
+    for (const phone of this.phones.values()) {
+      phone.connection = null;
+      phone.nonce = null;
+    }
   }
 
   phoneJoined(connection: string): void {
@@ -90,7 +100,7 @@ export class MobileSession {
   phoneLeft(connection: string): void {
     const phone = this.phoneAt(connection);
     this.connections.delete(connection);
-    if (phone) {
+    if (phone?.connection === connection) {
       phone.connection = null;
       phone.nonce = null;
     }
@@ -100,8 +110,14 @@ export class MobileSession {
     if (!this.connections.has(connection)) {
       return { kind: 'denied', reason: 'removed' };
     }
+    // 同一个连接又打一次招呼（电脑重连后中转服务让手机重新打招呼）：先解开它和原来那部手机的关系，
+    // 否则令牌对不上时原来那部手机会一直显示在线。
+    this.unbind(connection);
     let phone: Phone;
     if (message.token === null) {
+      if (this.isJoinLocked) {
+        return { kind: 'denied', reason: 'locked' };
+      }
       if (this.phones.size >= MAX_PHONES_PER_SESSION) {
         return { kind: 'denied', reason: 'full' };
       }
@@ -109,7 +125,7 @@ export class MobileSession {
         id: randomId(),
         token: randomId(),
         device: message.device,
-        connection,
+        connection: null,
         nonce: null,
         lastSeq: 0,
         printed: 0,
@@ -124,7 +140,7 @@ export class MobileSession {
         return { kind: 'denied', reason: 'removed' };
       }
       phone = known;
-      if (phone.connection !== null && phone.connection !== connection) {
+      if (phone.connection !== null) {
         // 同一部手机换了连接（刷新页面、换网络）：旧连接不再代表它。
         this.connections.set(phone.connection, null);
       }
@@ -161,11 +177,12 @@ export class MobileSession {
       return { kind: 'reply', message: { type: 'refused', job: message.job, reason: 'rate-limited' } };
     }
     this.acceptedAt.push(now);
-    this.jobs.set(message.job, { owner: phone.id, state: 'queued' });
+    const ahead = this.queue.length;
+    this.jobs.set(message.job, { owner: phone.id, state: 'queued', ahead });
     this.queue.push(message.job);
     return {
       kind: 'run',
-      reply: { type: 'accepted', job: message.job, ahead: this.queue.length - 1 },
+      reply: { type: 'accepted', job: message.job, ahead },
       job: message.job,
       raw: message.raw,
       force: message.force,
@@ -175,7 +192,7 @@ export class MobileSession {
   /** 任务开始打印。任务已不在队列里（它的手机被移除了）时返回 null，调用方就不再打印它。 */
   started(jobId: string): Delivery[] | null {
     const job = this.jobs.get(jobId);
-    if (!job || job.state !== 'queued' || !this.queue.includes(jobId)) {
+    if (job?.state !== 'queued' || !this.queue.includes(jobId)) {
       return null;
     }
     this.jobs.set(jobId, { owner: job.owner, state: 'printing' });
@@ -198,11 +215,12 @@ export class MobileSession {
       }
     }
     this.forgetOldJobs();
-    return [...this.deliver(job.owner, { type: 'result', job: jobId, result }), ...this.queuePositions()];
+    return [...this.deliver(job.owner, { type: 'result', job: jobId, result }), ...this.queueUpdates()];
   }
 
   /**
    * 移除一部手机：令牌作废，它排队中的任务不再打印（正在打印的那张照常打完）。
+   * 同时暂停新手机加入：被移除的人还拿着二维码，换个浏览器就能以新手机的身份回来；要加新手机时在电脑上重新允许。
    * 返回要断开的连接，以及排在后面的手机的新位置。
    */
   removePhone(id: string): { kick: string | null; deliveries: Delivery[] } {
@@ -211,6 +229,7 @@ export class MobileSession {
       return { kick: null, deliveries: [] };
     }
     this.phones.delete(id);
+    this.isJoinLocked = true;
     if (phone.connection !== null) {
       this.connections.set(phone.connection, null);
     }
@@ -221,7 +240,12 @@ export class MobileSession {
         this.removeFromQueue(jobId);
       }
     }
-    return { kick: phone.connection, deliveries: this.queuePositions() };
+    return { kick: phone.connection, deliveries: this.queueUpdates() };
+  }
+
+  /** 暂停或重新允许新手机加入；已加入的手机不受影响。 */
+  setJoinLocked(locked: boolean): void {
+    this.isJoinLocked = locked;
   }
 
   /** 在线手机的连接号（打印机变了要告诉它们）。 */
@@ -229,16 +253,17 @@ export class MobileSession {
     return [...this.phones.values()].flatMap((phone) => (phone.connection === null ? [] : [phone.connection]));
   }
 
-  /** 还没有手机加入时，二维码的失效时间；有手机加入过之后为 null。 */
+  /** 还没有手机加入时，二维码的失效时间；有手机加入过（或者二维码还没显示）时为 null。 */
   unclaimedUntil(): number | null {
-    return this.hasEverJoined ? null : this.createdAt + UNCLAIMED_TTL_MS;
+    return this.hasEverJoined || this.shownAt === null ? null : this.shownAt + UNCLAIMED_TTL_MS;
   }
 
   /** 该结束时返回原因。队列里还有任务时不算空闲。 */
   expiry(): CloseReason | null {
     const now = this.clock.now();
     if (!this.hasEverJoined) {
-      return now - this.createdAt >= UNCLAIMED_TTL_MS ? 'idle' : null;
+      const until = this.unclaimedUntil();
+      return until !== null && now >= until ? 'idle' : null;
     }
     if (this.queue.length > 0) {
       return null;
@@ -246,7 +271,7 @@ export class MobileSession {
     return now - this.lastActivity >= IDLE_END_MS ? 'idle' : null;
   }
 
-  status(): { phones: PhoneSummary[]; printed: number; queued: number } {
+  status(): { phones: MobilePhone[]; printed: number; queued: number; joinLocked: boolean } {
     return {
       phones: [...this.phones.values()].map((phone) => ({
         id: phone.id,
@@ -256,13 +281,17 @@ export class MobileSession {
       })),
       printed: this.printedCount,
       queued: this.queue.length,
+      joinLocked: this.isJoinLocked,
     };
   }
 
   private progressOf(jobId: string, job: Job): DesktopMessage {
     switch (job.state) {
-      case 'queued':
-        return { type: 'accepted', job: jobId, ahead: this.queue.indexOf(jobId) };
+      case 'queued': {
+        const ahead = this.queue.indexOf(jobId);
+        this.jobs.set(jobId, { ...job, ahead });
+        return { type: 'accepted', job: jobId, ahead };
+      }
       case 'printing':
         return { type: 'started', job: jobId };
       case 'done':
@@ -270,12 +299,26 @@ export class MobileSession {
     }
   }
 
-  /** 排队中的每个任务的当前位置，发给各自的手机。 */
-  private queuePositions(): Delivery[] {
-    return this.queue.flatMap((jobId, ahead) => {
+  /**
+   * 队伍往前走之后的位置更新：每部手机一条，列出它所有排队中的任务；位置都没变的手机不发。
+   * 一次打印最多引出「结果 + 每部手机一条」，不会因为排队的任务多而刷爆中转服务的限速。
+   */
+  private queueUpdates(): Delivery[] {
+    const byOwner = new Map<string, { positions: QueuePosition[]; hasMoved: boolean }>();
+    this.queue.forEach((jobId, ahead) => {
       const job = this.jobs.get(jobId);
-      return job?.state === 'queued' ? this.deliver(job.owner, { type: 'accepted', job: jobId, ahead }) : [];
+      if (job?.state !== 'queued') {
+        return;
+      }
+      const entry = byOwner.get(job.owner) ?? { positions: [], hasMoved: false };
+      entry.positions.push({ job: jobId, ahead });
+      entry.hasMoved ||= job.ahead !== ahead;
+      byOwner.set(job.owner, entry);
+      this.jobs.set(jobId, { ...job, ahead });
     });
+    return [...byOwner].flatMap(([owner, { positions, hasMoved }]) =>
+      hasMoved ? this.deliver(owner, { type: 'queue', jobs: positions }) : [],
+    );
   }
 
   private deliver(phoneId: string, message: DesktopMessage): Delivery[] {
@@ -286,6 +329,16 @@ export class MobileSession {
   private phoneAt(connection: string): Phone | undefined {
     const id = this.connections.get(connection);
     return id ? this.phones.get(id) : undefined;
+  }
+
+  /** 解开连接和它当前代表的手机。 */
+  private unbind(connection: string): void {
+    const phone = this.phoneAt(connection);
+    this.connections.set(connection, null);
+    if (phone?.connection === connection) {
+      phone.connection = null;
+      phone.nonce = null;
+    }
   }
 
   private phoneWithToken(token: string): Phone | undefined {

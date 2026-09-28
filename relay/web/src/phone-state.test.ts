@@ -3,6 +3,7 @@ import { MAX_PENDING_JOBS, type PhonePrintResult } from '../../../src/shared/mob
 import {
   canSubmit,
   initialPhoneState,
+  isFinished,
   JOB_HISTORY,
   type PhoneEvent,
   type PhoneState,
@@ -22,15 +23,21 @@ function run(events: PhoneEvent[], start: PhoneState = initialPhoneState(true)):
 
 const welcomed: PhoneEvent = { type: 'welcomed', printer: '热敏标签机' };
 const submitted = (job: string, raw = RAW, force = false): PhoneEvent => ({ type: 'submitted', job, raw, force });
+const queued = (job: string, ahead: number): PhoneEvent => ({ type: 'queued', positions: [{ job, ahead }] });
 
 describe('reducePhone', () => {
   test('starts without a link or connecting', () => {
-    expect(initialPhoneState(false).screen).toBe('no-link');
-    expect(initialPhoneState(true)).toMatchObject({ screen: 'connecting', link: 'reconnecting' });
+    expect(initialPhoneState(false).screen).toEqual({ name: 'no-link' });
+    expect(initialPhoneState(true)).toMatchObject({
+      screen: { name: 'connecting' },
+      link: 'reconnecting',
+      camera: 'idle',
+      decoder: 'loading',
+    });
   });
 
   test('starts scanning once the desktop welcomes the phone', () => {
-    expect(run([welcomed])).toMatchObject({ screen: 'scanning', link: 'online', printer: '热敏标签机' });
+    expect(run([welcomed])).toMatchObject({ screen: { name: 'scanning' }, link: 'online', printer: '热敏标签机' });
   });
 
   test('follows the desktop printer', () => {
@@ -43,33 +50,67 @@ describe('reducePhone', () => {
       ['b', 'sending'],
       ['a', 'sending'],
     ]);
-    state = reducePhone(state, { type: 'accepted', job: 'a', ahead: 3 });
+    state = reducePhone(state, queued('a', 3));
     expect(state.jobs[1]).toMatchObject({ status: 'queued', ahead: 3 });
-    state = reducePhone(state, { type: 'accepted', job: 'a', ahead: 1 });
+    state = reducePhone(state, queued('a', 1));
     expect(state.jobs[1]).toMatchObject({ status: 'queued', ahead: 1 });
     state = reducePhone(state, { type: 'started', job: 'a' });
-    expect(state.jobs[1]).toMatchObject({ status: 'printing', ahead: null });
+    expect(state.jobs[1]).toEqual({ id: 'a', raw: RAW, force: false, status: 'printing' });
     state = reducePhone(state, { type: 'result', job: 'a', result: PRINTED });
-    expect(state.jobs[1]).toMatchObject({ status: 'done', result: PRINTED });
+    expect(state.jobs[1]).toEqual({ id: 'a', raw: RAW, force: false, status: 'done', result: PRINTED });
+  });
+
+  test('moves several jobs of one queue update at once', () => {
+    const state = run([
+      welcomed,
+      submitted('a'),
+      submitted('b'),
+      {
+        type: 'queued',
+        positions: [
+          { job: 'a', ahead: 0 },
+          { job: 'b', ahead: 1 },
+        ],
+      },
+    ]);
+    expect(state.jobs.map((job) => (job.status === 'queued' ? job.ahead : null))).toEqual([1, 0]);
   });
 
   test('does not move a printing or finished job back into the queue', () => {
     const printing = run([welcomed, submitted('a'), { type: 'started', job: 'a' }]);
-    expect(reducePhone(printing, { type: 'accepted', job: 'a', ahead: 0 })).toBe(printing);
+    expect(reducePhone(printing, queued('a', 0))).toBe(printing);
     const done = reducePhone(printing, { type: 'result', job: 'a', result: PRINTED });
     expect(reducePhone(done, { type: 'started', job: 'a' })).toBe(done);
+    expect(reducePhone(done, { type: 'refused', job: 'a', reason: 'rate-limited' })).toBe(done);
   });
 
   test('marks a refused job', () => {
     const state = run([welcomed, submitted('a'), { type: 'refused', job: 'a', reason: 'rate-limited' }]);
-    expect(state.jobs[0]).toMatchObject({ status: 'refused', refusal: 'rate-limited' });
+    expect(state.jobs[0]).toMatchObject({ status: 'refused', reason: 'rate-limited' });
   });
 
-  test('keeps only the most recent jobs', () => {
-    const events = Array.from({ length: JOB_HISTORY + 5 }, (_, index) => submitted(`job${index}`));
+  test('lists a restored job only once', () => {
+    const state = run([submitted('a'), welcomed, submitted('a')]);
+    expect(state.jobs).toHaveLength(1);
+  });
+
+  test('keeps only the most recent finished jobs', () => {
+    const events = Array.from({ length: JOB_HISTORY + 5 }, (_, index) => [
+      submitted(`job${index}`),
+      { type: 'result', job: `job${index}`, result: PRINTED } as PhoneEvent,
+    ]).flat();
     const state = run([welcomed, ...events]);
     expect(state.jobs).toHaveLength(JOB_HISTORY);
     expect(state.jobs[0]?.id).toBe(`job${JOB_HISTORY + 4}`);
+  });
+
+  test('keeps a job still waiting for its result however many came after it', () => {
+    const later = Array.from({ length: JOB_HISTORY }, (_, index) => [
+      submitted(`job${index}`),
+      { type: 'result', job: `job${index}`, result: PRINTED } as PhoneEvent,
+    ]).flat();
+    const state = run([welcomed, submitted('waiting'), ...later]);
+    expect(state.jobs.at(-1)).toMatchObject({ id: 'waiting', status: 'sending' });
   });
 
   test('ignores updates for jobs it no longer lists', () => {
@@ -79,20 +120,23 @@ describe('reducePhone', () => {
 
   test('tracks the link separately from the jobs', () => {
     const state = run([welcomed, submitted('a'), { type: 'link', link: 'reconnecting' }]);
-    expect(state).toMatchObject({ screen: 'scanning', link: 'reconnecting' });
+    expect(state).toMatchObject({ screen: { name: 'scanning' }, link: 'reconnecting' });
     expect(state.jobs[0]?.status).toBe('sending');
   });
 
   test('ends for good', () => {
     const ended = run([welcomed, { type: 'ended', reason: 'idle' }]);
-    expect(ended).toMatchObject({ screen: 'ended', endReason: 'idle' });
+    expect(ended.screen).toEqual({ name: 'ended', reason: 'idle' });
+    expect(isFinished(ended)).toBe(true);
     expect(reducePhone(ended, welcomed)).toBe(ended);
-    expect(run([{ type: 'not-found' }]).screen).toBe('not-found');
-    expect(run([{ type: 'denied', reason: 'full' }])).toMatchObject({ screen: 'denied', denial: 'full' });
+    expect(run([{ type: 'not-found' }]).screen).toEqual({ name: 'not-found' });
+    expect(run([{ type: 'denied', reason: 'locked' }]).screen).toEqual({ name: 'denied', reason: 'locked' });
+    expect(run([{ type: 'outdated' }]).screen).toEqual({ name: 'outdated' });
   });
 
-  test('remembers whether the camera works', () => {
-    expect(run([welcomed, { type: 'camera', camera: 'unavailable' }]).camera).toBe('unavailable');
+  test('tracks the camera and the decoder', () => {
+    const state = run([welcomed, { type: 'camera', camera: 'unavailable' }, { type: 'decoder', decoder: 'failed' }]);
+    expect(state).toMatchObject({ camera: 'unavailable', decoder: 'failed' });
   });
 });
 

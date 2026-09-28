@@ -67,7 +67,7 @@ beforeAll(async () => {
       clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
     },
     createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
-    printerName: () => '热敏标签机',
+    selectedPrinter: async () => ({ name: 'LABEL_PRINTER_01', displayName: '热敏标签机' }),
     print: async (raw) => {
       prints.push(raw);
       return PRINTED;
@@ -106,9 +106,13 @@ test(
     page.on('pageerror', (error) => errors.push(String(error)));
     await page.goto(status.url);
 
-    await page.getByText('已发送打印').waitFor({ timeout: SCAN_TIMEOUT_MS });
-    expect(await page.getByText('CL5640 · 图片色 · XL').isVisible()).toBe(true);
+    // 摄像头要等拿手机的人点「开始扫码」才打开（振动和授权都需要一次点按）。
+    await page.getByRole('button', { name: '开始扫码' }).click({ timeout: SCAN_TIMEOUT_MS });
+    await page.locator('.job-title', { hasText: '已发送打印' }).waitFor({ timeout: SCAN_TIMEOUT_MS });
+    expect(await page.locator('.job-detail').first().textContent()).toBe('CL5640 · 图片色 · XL');
     expect(await page.locator('#printer').textContent()).toBe('打印机：热敏标签机');
+    // 屏幕阅读器从单独的朗读区听到最新一张的结果。
+    expect(await page.locator('#announcer').textContent()).toBe('已发送打印：CL5640 · 图片色 · XL');
 
     await Bun.sleep(HOLD_STILL_MS);
     expect(prints).toEqual([LABEL]);

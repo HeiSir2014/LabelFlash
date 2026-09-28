@@ -6,7 +6,7 @@ import { decodeBarcodeBytes } from './barcode-text';
  *
  * - 码制只开样衣间会遇到的：二维码、Data Matrix，以及订单号常用的一维码。
  *   不开 ITF 这类容易从杂乱画面里误识出数字的码制。
- * - 每帧只要一个码：扫到就停下来确认。
+ * - 每帧只取一个码：扫到就作为一个打印任务发出去，同一张标签留在画面里由 scan-gate.ts 防抖。
  */
 export const READER_OPTIONS: ReaderOptions = {
   formats: ['QRCode', 'DataMatrix', 'Code128', 'Code39', 'EAN13', 'EAN8', 'UPCA'],

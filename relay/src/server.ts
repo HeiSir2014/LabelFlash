@@ -3,9 +3,9 @@
  */
 import type { Server, ServerWebSocket } from 'bun';
 import { randomId } from '../../src/shared/mobile-crypto';
-import { MAX_FRAME_BYTES } from '../../src/shared/mobile-protocol';
+import { CLOSE_CODES, MAX_FRAME_BYTES } from '../../src/shared/mobile-protocol';
 import type { RelayConfig } from './config';
-import { CLOSE_POLICY, CLOSE_TRY_LATER, type HubLimits, type Peer, type PeerRole, RelayHub } from './hub';
+import { type HubLimits, type Peer, type PeerRole, RelayHub } from './hub';
 import { serveStatic } from './static-files';
 
 export interface RunningRelay {
@@ -72,7 +72,7 @@ export function startRelay(
         const peer = toPeer(socket);
         socket.data.peer = peer;
         if (!hub.attach(peer, socket.data.role)) {
-          socket.close(CLOSE_TRY_LATER, 'busy');
+          socket.close(CLOSE_CODES.tryLater, 'busy');
         }
       },
       message(socket, message) {
@@ -81,7 +81,7 @@ export function startRelay(
           return;
         }
         if (typeof message !== 'string') {
-          socket.close(CLOSE_POLICY, 'text frames only');
+          socket.close(CLOSE_CODES.policy, 'text frames only');
           return;
         }
         hub.receive(peer, message);

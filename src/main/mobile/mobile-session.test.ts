@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { FakeClock } from '../../core/testing/fake-clock';
 import { randomId } from '../../shared/mobile-crypto';
 import {
+  IDLE_END_MS,
   MAX_PENDING_JOBS,
   MAX_PHONES_PER_SESSION,
   type PhoneMessage,
   type PhonePrintResult,
+  UNCLAIMED_TTL_MS,
 } from '../../shared/mobile-protocol';
-import { IDLE_END_MS, JOB_MEMORY, MAX_JOBS_PER_MINUTE, MobileSession, UNCLAIMED_TTL_MS } from './mobile-session';
+import { JOB_MEMORY, MAX_JOBS_PER_MINUTE, MobileSession } from './mobile-session';
 
 type Submit = Extract<PhoneMessage, { type: 'submit' }>;
 
@@ -55,9 +57,14 @@ function finish(job: string): void {
   session.complete(job, PRINTED);
 }
 
+function phoneId(index: number): string {
+  return session.status().phones[index]?.id ?? '';
+}
+
 beforeEach(() => {
   clock = new FakeClock();
   session = new MobileSession(clock);
+  session.relayOpened();
 });
 
 describe('joining', () => {
@@ -105,14 +112,54 @@ describe('joining', () => {
 
   test('removes a phone: disconnects it and revokes its token', () => {
     const phone = join('c1');
-    const id = session.status().phones[0]?.id ?? '';
-    expect(session.removePhone(id).kick).toBe('c1');
+    expect(session.removePhone(phoneId(0)).kick).toBe('c1');
     expect(session.status().phones).toEqual([]);
     session.phoneJoined('c2');
     expect(session.hello('c2', { type: 'hello', token: phone.token, device: 'x' })).toEqual({
       kind: 'denied',
       reason: 'removed',
     });
+  });
+
+  test('stops new phones from joining after a removal, until allowed again', () => {
+    join('c1');
+    session.removePhone(phoneId(0));
+    expect(session.status().joinLocked).toBe(true);
+    session.phoneJoined('c2');
+    expect(session.hello('c2', { type: 'hello', token: null, device: 'x' })).toEqual({
+      kind: 'denied',
+      reason: 'locked',
+    });
+    session.setJoinLocked(false);
+    expect(session.hello('c2', { type: 'hello', token: null, device: 'x' }).kind).toBe('welcome');
+  });
+
+  test('still welcomes phones it knows while new ones are paused', () => {
+    const first = join('c1');
+    join('c2');
+    session.removePhone(phoneId(1));
+    session.phoneLeft('c1');
+    expect(join('c3', 'x', first.token).token).toBe(first.token);
+  });
+
+  test('does not leave a ghost when a connection says hello as another phone', () => {
+    join('c1');
+    session.hello('c1', { type: 'hello', token: null, device: '安卓 · Chrome' });
+    expect(session.status().phones.map((phone) => phone.online)).toEqual([false, true]);
+  });
+
+  test('keeps a phone online on its new connection when the old one closes late', () => {
+    const phone = join('c1');
+    join('c2', 'x', phone.token);
+    session.phoneLeft('c1');
+    expect(session.status().phones.map((each) => each.online)).toEqual([true]);
+  });
+
+  test('forgets every connection when the relay session is reopened', () => {
+    const phone = join('c1');
+    session.relayOpened();
+    expect(session.status().phones.map((each) => each.online)).toEqual([false]);
+    expect(session.submit('c1', submission(phone))).toEqual({ kind: 'ignore' });
   });
 });
 
@@ -139,20 +186,38 @@ describe('the queue', () => {
     expect(session.started(a)).toEqual([{ connection: 'c1', message: { type: 'started', job: a } }]);
   });
 
-  test('sends the result to the phone that asked, and moves everyone else up', () => {
+  test('sends the result to the phone that asked, and one queue update to every phone that moved up', () => {
     const first = join('c1');
     const second = join('c2');
     const a = queue(first);
     const b = queue(second);
     const c = queue(first);
+    const d = queue(first);
     session.started(a);
     expect(session.complete(a, PRINTED)).toEqual([
       { connection: 'c1', message: { type: 'result', job: a, result: PRINTED } },
-      { connection: 'c2', message: { type: 'accepted', job: b, ahead: 0 } },
-      { connection: 'c1', message: { type: 'accepted', job: c, ahead: 1 } },
+      { connection: 'c2', message: { type: 'queue', jobs: [{ job: b, ahead: 0 }] } },
+      {
+        connection: 'c1',
+        message: {
+          type: 'queue',
+          jobs: [
+            { job: c, ahead: 1 },
+            { job: d, ahead: 2 },
+          ],
+        },
+      },
     ]);
     expect(session.status().phones.map((phone) => phone.printed)).toEqual([1, 0]);
     expect(session.status().printed).toBe(1);
+  });
+
+  test('tells nobody when no queued job moved', () => {
+    const first = join('c1');
+    const second = join('c2');
+    queue(first);
+    queue(second);
+    expect(session.removePhone(phoneId(1)).deliveries).toEqual([]);
   });
 
   test('keeps a result for a phone that is offline', () => {
@@ -174,12 +239,19 @@ describe('the queue', () => {
     const a = queue(first);
     queue(second);
     const c = queue(first);
-    const id = session.status().phones[1]?.id ?? '';
-    expect(session.removePhone(id)).toEqual({
+    expect(session.removePhone(phoneId(1))).toEqual({
       kick: 'c2',
       deliveries: [
-        { connection: 'c1', message: { type: 'accepted', job: a, ahead: 0 } },
-        { connection: 'c1', message: { type: 'accepted', job: c, ahead: 1 } },
+        {
+          connection: 'c1',
+          message: {
+            type: 'queue',
+            jobs: [
+              { job: a, ahead: 0 },
+              { job: c, ahead: 1 },
+            ],
+          },
+        },
       ],
     });
     expect(session.status().queued).toBe(2);
@@ -188,7 +260,7 @@ describe('the queue', () => {
   test('does not start a job that is no longer queued', () => {
     const phone = join('c1');
     const job = queue(phone);
-    session.removePhone(session.status().phones[0]?.id ?? '');
+    session.removePhone(phoneId(0));
     expect(session.started(job)).toBeNull();
   });
 });
@@ -292,6 +364,22 @@ describe('expiry', () => {
     expect(session.expiry()).toBeNull();
     clock.advance(1);
     expect(session.expiry()).toBe('idle');
+  });
+
+  test('starts the join deadline when the code is first shown, not while connecting', () => {
+    const fresh = new MobileSession(clock);
+    clock.advance(UNCLAIMED_TTL_MS);
+    expect(fresh.unclaimedUntil()).toBeNull();
+    expect(fresh.expiry()).toBeNull();
+    fresh.relayOpened();
+    expect(fresh.unclaimedUntil()).toBe(clock.now() + UNCLAIMED_TTL_MS);
+  });
+
+  test('keeps the join deadline when the relay session is reopened', () => {
+    const deadline = session.unclaimedUntil();
+    clock.advance(1_000);
+    session.relayOpened();
+    expect(session.unclaimedUntil()).toBe(deadline);
   });
 
   test('stops the join deadline once a phone has joined', () => {

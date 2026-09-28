@@ -2,9 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import {
   buildPhoneUrl,
+  clipText,
   type DesktopFrame,
   type DesktopMessage,
+  isRequestRaw,
   MAX_DEVICE_LENGTH,
+  MAX_PENDING_JOBS,
+  MAX_REQUEST_RAW_LENGTH,
   MOBILE_PROTOCOL_VERSION,
   type PhoneMessage,
   type PhonePrintResult,
@@ -23,6 +27,9 @@ const SESSION = 'AbCdEfGhIjKlMnOpQrSt_-';
 const SECRET = 'zyxwvutsrqponmlkjihg01';
 const KEY = 'K'.repeat(43);
 const JOB = 'JobJobJobJobJobJobJob0';
+const OTHER_JOB = 'JobJobJobJobJobJobJob1';
+/** 中转服务分配的连接号也是 16 字节随机数。 */
+const PHONE = 'PhonePhonePhonePhone01';
 const BODY = { iv: 'aaaaaaaaaaaaaaaa', ct: 'bbbb-_cc' };
 
 const json = (value: unknown) => JSON.stringify(value);
@@ -44,14 +51,18 @@ describe('parseDesktopFrame', () => {
   });
 
   test('accepts send, kick, close and ping', () => {
-    expect(parseDesktopFrame(json({ t: 'send', phone: 'p1', body: BODY }))).toEqual({
+    expect(parseDesktopFrame(json({ t: 'send', phone: PHONE, body: BODY }))).toEqual({
       t: 'send',
-      phone: 'p1',
+      phone: PHONE,
       body: BODY,
     });
-    expect(parseDesktopFrame(json({ t: 'kick', phone: 'p1' }))).toEqual({ t: 'kick', phone: 'p1' });
+    expect(parseDesktopFrame(json({ t: 'kick', phone: PHONE }))).toEqual({ t: 'kick', phone: PHONE });
     expect(parseDesktopFrame(json({ t: 'close', reason: 'idle' }))).toEqual({ t: 'close', reason: 'idle' });
     expect(parseDesktopFrame(json({ t: 'ping' }))).toEqual({ t: 'ping' });
+  });
+
+  test('rejects a phone id that the relay could not have assigned', () => {
+    expect(parseDesktopFrame(json({ t: 'kick', phone: 'p1' }))).toBeNull();
   });
 
   test('rejects a close frame with an unknown reason', () => {
@@ -59,7 +70,7 @@ describe('parseDesktopFrame', () => {
   });
 
   test('drops fields that are not part of the frame', () => {
-    expect(parseDesktopFrame(json({ t: 'kick', phone: 'p1', extra: 1 }))).toEqual({ t: 'kick', phone: 'p1' });
+    expect(parseDesktopFrame(json({ t: 'kick', phone: PHONE, extra: 1 }))).toEqual({ t: 'kick', phone: PHONE });
   });
 
   test('rejects unknown types, invalid JSON, arrays and null', () => {
@@ -87,9 +98,9 @@ describe('parseRelayToDesktop', () => {
   test('accepts every relay message', () => {
     const frames: RelayToDesktop[] = [
       { t: 'opened' },
-      { t: 'joined', phone: 'p1' },
-      { t: 'left', phone: 'p1' },
-      { t: 'recv', phone: 'p1', body: BODY },
+      { t: 'joined', phone: PHONE },
+      { t: 'left', phone: PHONE },
+      { t: 'recv', phone: PHONE, body: BODY },
       { t: 'pong' },
       { t: 'error', code: 'session-taken' },
     ];
@@ -139,6 +150,17 @@ describe('parsePhoneMessage', () => {
     expect(message).toEqual({ type: 'hello', token: SECRET, device: 'x'.repeat(MAX_DEVICE_LENGTH) });
   });
 
+  test('strips line breaks and direction overrides from the device label', () => {
+    const newline = String.fromCharCode(0x0a);
+    const rightToLeftOverride = String.fromCodePoint(0x202e);
+    const device = ` iPhone${newline}2026-09-29 forged log line ${rightToLeftOverride}微信 `;
+    expect(parsePhoneMessage({ type: 'hello', token: null, device })).toEqual({
+      type: 'hello',
+      token: null,
+      device: 'iPhone2026-09-29 forged log line 微信',
+    });
+  });
+
   test('rejects a hello with a malformed token', () => {
     expect(parsePhoneMessage({ type: 'hello', token: 'abc', device: 'x' })).toBeNull();
   });
@@ -186,6 +208,7 @@ describe('parseDesktopMessage', () => {
       { type: 'welcome', token: SECRET, nonce: SESSION, printer: null },
       { type: 'denied', reason: 'full' },
       { type: 'denied', reason: 'removed' },
+      { type: 'denied', reason: 'locked' },
       { type: 'printer', printer: '热敏标签机' },
       { type: 'printer', printer: null },
     ];
@@ -218,6 +241,25 @@ describe('parseDesktopMessage', () => {
     expect(parseDesktopMessage({ type: 'refused', job: JOB, reason: 'busy' })).toBeNull();
   });
 
+  test('accepts the queue positions of one phone', () => {
+    const message: DesktopMessage = {
+      type: 'queue',
+      jobs: [
+        { job: JOB, ahead: 1 },
+        { job: OTHER_JOB, ahead: 4 },
+      ],
+    };
+    expect(parseDesktopMessage(message)).toEqual(message);
+  });
+
+  test('rejects an empty, oversized or malformed queue update', () => {
+    expect(parseDesktopMessage({ type: 'queue', jobs: [] })).toBeNull();
+    const tooMany = Array.from({ length: MAX_PENDING_JOBS + 1 }, () => ({ job: JOB, ahead: 0 }));
+    expect(parseDesktopMessage({ type: 'queue', jobs: tooMany })).toBeNull();
+    expect(parseDesktopMessage({ type: 'queue', jobs: [{ job: JOB, ahead: -1 }] })).toBeNull();
+    expect(parseDesktopMessage({ type: 'queue', jobs: [{ job: 'job-1', ahead: 0 }] })).toBeNull();
+  });
+
   test('accepts every job result', () => {
     const results: PhonePrintResult[] = [
       { status: 'printed', ruleName: '横杠三段', fields: [{ name: '编码', value: 'CL5640' }] },
@@ -241,6 +283,25 @@ describe('parseDesktopMessage', () => {
   test('rejects a failure with an unknown reason', () => {
     const result = { status: 'failed', reason: 'ON_FIRE', detail: null, issue: null };
     expect(parseDesktopMessage({ type: 'result', job: JOB, result })).toBeNull();
+  });
+});
+
+describe('clipText', () => {
+  test('keeps short text as it is', () => {
+    expect(clipText('热敏标签机', 10)).toBe('热敏标签机');
+  });
+
+  test('never splits a character made of two code units', () => {
+    const smile = String.fromCodePoint(0x1f600);
+    expect(clipText(`${smile}${smile}${smile}`, 2)).toBe(`${smile}${smile}`);
+  });
+});
+
+describe('isRequestRaw', () => {
+  test('accepts content up to the request limit and nothing longer', () => {
+    expect(isRequestRaw('x'.repeat(MAX_REQUEST_RAW_LENGTH))).toBe(true);
+    expect(isRequestRaw('x'.repeat(MAX_REQUEST_RAW_LENGTH + 1))).toBe(false);
+    expect(isRequestRaw(42)).toBe(false);
   });
 });
 

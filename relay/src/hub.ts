@@ -8,6 +8,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Clock } from '../../src/core/types';
 import {
+  CLOSE_CODES,
   DESKTOP_GRACE_MS,
   type DesktopFrame,
   type EndReason,
@@ -72,12 +73,6 @@ const DESKTOP_FRAME_BURST = 2 * MAX_PHONES_PER_SESSION * (1 + MAX_PENDING_JOBS);
 const MAX_RATE_VIOLATIONS = 50;
 /** 日志里只记会话号的前几个字符，够排查问题，又不能拿来加入会话。 */
 const LOGGED_SESSION_CHARS = 6;
-
-export const CLOSE_NORMAL = 1000;
-export const CLOSE_POLICY = 1008;
-export const CLOSE_TRY_LATER = 1013;
-/** 同一台电脑重新连上来，旧连接让位。 */
-export const CLOSE_REPLACED = 4001;
 
 interface Connection {
   peer: Peer;
@@ -191,7 +186,7 @@ export class RelayHub {
     const now = this.deps.clock.now();
     for (const connection of [...this.connections.values()]) {
       if (connection.session === null && now - connection.attachedAt >= FIRST_FRAME_TIMEOUT_MS) {
-        this.close(connection, CLOSE_POLICY, 'no first frame');
+        this.close(connection, CLOSE_CODES.policy, 'no first frame');
       }
     }
     for (const session of [...this.sessions.values()]) {
@@ -208,14 +203,14 @@ export class RelayHub {
 
   private receiveFromDesktop(connection: Connection, frame: DesktopFrame | null): void {
     if (frame === null) {
-      this.refuse(connection, 'bad-frame', CLOSE_POLICY);
+      this.refuse(connection, 'bad-frame', CLOSE_CODES.policy);
       return;
     }
     if (connection.session === null) {
       if (frame.t === 'open') {
         this.open(connection, frame);
       } else {
-        this.refuse(connection, 'bad-frame', CLOSE_POLICY);
+        this.refuse(connection, 'bad-frame', CLOSE_CODES.policy);
       }
       return;
     }
@@ -225,7 +220,7 @@ export class RelayHub {
     }
     switch (frame.t) {
       case 'open':
-        this.refuse(connection, 'bad-frame', CLOSE_POLICY);
+        this.refuse(connection, 'bad-frame', CLOSE_CODES.policy);
         return;
       case 'send': {
         const phone = session.phones.get(frame.phone);
@@ -238,7 +233,7 @@ export class RelayHub {
         const phone = session.phones.get(frame.phone);
         if (phone) {
           sendTo(phone, { t: 'kicked' });
-          this.close(phone, CLOSE_NORMAL, 'kicked');
+          this.close(phone, CLOSE_CODES.normal, 'kicked');
         }
         return;
       }
@@ -254,20 +249,20 @@ export class RelayHub {
 
   private receiveFromPhone(connection: Connection, frame: PhoneFrame | null): void {
     if (frame === null) {
-      this.refuse(connection, 'bad-frame', CLOSE_POLICY);
+      this.refuse(connection, 'bad-frame', CLOSE_CODES.policy);
       return;
     }
     if (connection.session === null) {
       if (frame.t === 'join') {
         this.join(connection, frame);
       } else {
-        this.refuse(connection, 'bad-frame', CLOSE_POLICY);
+        this.refuse(connection, 'bad-frame', CLOSE_CODES.policy);
       }
       return;
     }
     switch (frame.t) {
       case 'join':
-        this.refuse(connection, 'bad-frame', CLOSE_POLICY);
+        this.refuse(connection, 'bad-frame', CLOSE_CODES.policy);
         return;
       case 'send': {
         const desktop = this.sessions.get(connection.session)?.desktop;
@@ -285,7 +280,7 @@ export class RelayHub {
 
   private open(connection: Connection, frame: Extract<DesktopFrame, { t: 'open' }>): void {
     if (frame.v !== MOBILE_PROTOCOL_VERSION) {
-      this.refuse(connection, 'version', CLOSE_POLICY);
+      this.refuse(connection, 'version', CLOSE_CODES.policy);
       return;
     }
     const secretHash = sha256(frame.secret);
@@ -293,14 +288,14 @@ export class RelayHub {
     if (existing) {
       if (!timingSafeEqual(existing.secretHash, secretHash)) {
         this.deps.log(`session taken session=${short(frame.session)} ip=${connection.peer.ip}`);
-        this.refuse(connection, 'session-taken', CLOSE_POLICY);
+        this.refuse(connection, 'session-taken', CLOSE_CODES.policy);
         return;
       }
       this.takeOver(existing, connection);
       return;
     }
     if (this.sessions.size >= this.limits.maxSessions) {
-      this.refuse(connection, 'server-busy', CLOSE_TRY_LATER);
+      this.refuse(connection, 'server-busy', CLOSE_CODES.tryLater);
       return;
     }
     this.sessions.set(frame.session, {
@@ -324,7 +319,7 @@ export class RelayHub {
     if (stale && stale !== connection) {
       // 先解除旧连接和会话的关系，关闭它时就不会把会话标成离线。
       stale.session = null;
-      this.close(stale, CLOSE_REPLACED, 'replaced');
+      this.close(stale, CLOSE_CODES.replaced, 'replaced');
     }
     sendTo(connection, { t: 'opened' });
     for (const phone of session.phones.values()) {
@@ -336,17 +331,17 @@ export class RelayHub {
 
   private join(connection: Connection, frame: Extract<PhoneFrame, { t: 'join' }>): void {
     if (frame.v !== MOBILE_PROTOCOL_VERSION) {
-      this.refuse(connection, 'version', CLOSE_POLICY);
+      this.refuse(connection, 'version', CLOSE_CODES.policy);
       return;
     }
     const session = this.sessions.get(frame.session);
     if (!session) {
       sendTo(connection, { t: 'not-found' });
-      this.close(connection, CLOSE_NORMAL, 'not found');
+      this.close(connection, CLOSE_CODES.normal, 'not found');
       return;
     }
     if (session.phones.size >= this.limits.maxPhonesPerSession) {
-      this.refuse(connection, 'server-busy', CLOSE_TRY_LATER);
+      this.refuse(connection, 'server-busy', CLOSE_CODES.tryLater);
       return;
     }
     session.phones.set(connection.peer.id, connection);
@@ -365,11 +360,11 @@ export class RelayHub {
     for (const phone of session.phones.values()) {
       phone.session = null;
       sendTo(phone, { t: 'ended', reason });
-      this.close(phone, CLOSE_NORMAL, 'session ended');
+      this.close(phone, CLOSE_CODES.normal, 'session ended');
     }
     if (session.desktop) {
       session.desktop.session = null;
-      this.close(session.desktop, CLOSE_NORMAL, 'session ended');
+      this.close(session.desktop, CLOSE_CODES.normal, 'session ended');
     }
   }
 
@@ -377,7 +372,7 @@ export class RelayHub {
     connection.violations += 1;
     if (connection.violations >= MAX_RATE_VIOLATIONS) {
       this.deps.log(`closed flooding ${connection.role} ip=${connection.peer.ip}`);
-      this.close(connection, CLOSE_POLICY, 'rate limited');
+      this.close(connection, CLOSE_CODES.policy, 'rate limited');
       return;
     }
     sendTo(connection, { t: 'error', code: 'rate-limited' });

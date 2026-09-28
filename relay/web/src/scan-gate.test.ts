@@ -27,22 +27,38 @@ describe('ScanGate', () => {
     const gate = new ScanGate();
     gate.accept('A', 0);
     expect(gate.accept('B', FRAME_MS)).toBe(true);
-    expect(gate.accept('A', 2 * FRAME_MS)).toBe(true);
   });
 
-  test('keeps the last code fresh while it is seen between scans', () => {
+  test('prints each of two labels in view once, while the decoder alternates between them', () => {
+    const gate = new ScanGate();
+    const accepted: string[] = [];
+    for (let frame = 0; frame < 100; frame += 1) {
+      const text = frame % 2 === 0 ? 'A' : 'B';
+      if (gate.accept(text, frame * FRAME_MS)) {
+        accepted.push(text);
+      }
+    }
+    expect(accepted).toEqual(['A', 'B']);
+  });
+
+  test('does not let a code typed by hand reset the label in view', () => {
     const gate = new ScanGate();
     gate.accept('A', 0);
-    // 打印中、结果显示期间还在看着同一张标签。
+    gate.remember('typed by hand', FRAME_MS);
+    expect(gate.accept('A', 2 * FRAME_MS)).toBe(false);
+  });
+
+  test('keeps a printed code fresh while it is seen but cannot be submitted', () => {
+    const gate = new ScanGate();
+    gate.accept('A', 0);
     gate.observe('A', SAME_CODE_REARM_MS - 1);
     expect(gate.accept('A', 2 * SAME_CODE_REARM_MS - 2)).toBe(false);
   });
 
-  test('does not remember a different code seen between scans', () => {
+  test('does not remember a new code seen while it cannot be submitted', () => {
     const gate = new ScanGate();
-    gate.accept('A', 0);
-    gate.observe('B', FRAME_MS);
-    expect(gate.accept('B', 2 * FRAME_MS)).toBe(true);
+    gate.observe('B', 0);
+    expect(gate.accept('B', FRAME_MS)).toBe(true);
   });
 
   test('remembers a code submitted by hand', () => {

@@ -6,12 +6,16 @@
  *
  * 用法：bun scripts/relay/build.ts [输出目录]，默认 relay/dist。
  */
-import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { basename, join, parse, resolve, sep } from 'node:path';
 import { BRAND } from '../../src/shared/brand';
+import { MAX_REQUEST_RAW_LENGTH } from '../../src/shared/mobile-protocol';
 
 const ROOT = resolve(import.meta.dir, '../..');
 const WEB_SOURCE = join(ROOT, 'relay', 'web');
+const DEFAULT_OUT_DIR = join(ROOT, 'relay', 'dist');
+/** 版本号里标记「工作区有没提交的改动」。 */
+export const DIRTY_SUFFIX = '.dirty';
 const READER_WASM = join(ROOT, 'node_modules', 'zxing-wasm', 'dist', 'reader', 'zxing_reader.wasm');
 /** 文件名里的哈希位数：8 位十六进制在几十个文件里不会撞。 */
 const HASH_LENGTH = 8;
@@ -23,6 +27,7 @@ export interface RelayBuildOptions {
 
 export async function buildRelay({ outDir, version }: RelayBuildOptions): Promise<void> {
   const assetsDir = join(outDir, 'web', 'assets');
+  await assertSafeOutDir(outDir);
   await rm(outDir, { recursive: true, force: true });
   await mkdir(assetsDir, { recursive: true });
 
@@ -41,6 +46,7 @@ export async function buildRelay({ outDir, version }: RelayBuildOptions): Promis
   const html = template
     .replaceAll('{{productName}}', escapeHtml(BRAND.productName))
     .replaceAll('{{brandMark}}', escapeHtml(BRAND.mark))
+    .replaceAll('{{maxRawLength}}', String(MAX_REQUEST_RAW_LENGTH))
     .replace('href="styles.css"', `href="assets/${styleName}"`)
     .replace('src="app.js"', `src="assets/${mainName}"`);
   await writeFile(join(outDir, 'web', 'index.html'), html);
@@ -97,16 +103,45 @@ function escapeHtml(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
 
-/** package.json 的版本加 git 短哈希，部署时据此确认新版本已经在运行。 */
+/**
+ * 构建前清空输出目录，所以先确认它是构建产物的目录：
+ * 仓库里只允许 relay/dist；仓库外只允许不存在、空的，或者一看就是上次构建的产物（有 server.js 和 web/）。
+ * 传错参数（例如 `bun scripts/relay/build.ts src`）时报错，而不是把源码删掉。
+ */
+export async function assertSafeOutDir(outDir: string): Promise<void> {
+  const target = resolve(outDir);
+  const inRepo = target === ROOT || target.startsWith(ROOT + sep);
+  if (inRepo) {
+    if (target !== DEFAULT_OUT_DIR && !target.startsWith(DEFAULT_OUT_DIR + sep)) {
+      throw new Error(`输出目录只能在 relay/dist 下：${target}`);
+    }
+    return;
+  }
+  if (ROOT.startsWith(target + sep) || target === parse(target).root) {
+    throw new Error(`输出目录不能是仓库的上级目录或磁盘根目录：${target}`);
+  }
+  const entries = await readdir(target).catch(() => [] as string[]);
+  const isPreviousBuild = entries.includes('server.js') && entries.includes('web');
+  if (entries.length > 0 && !isPreviousBuild) {
+    throw new Error(`输出目录不是空的，也不像上次的构建产物，不会清空它：${target}`);
+  }
+}
+
+/**
+ * package.json 的版本加 git 短哈希，部署时据此确认新版本已经在运行。
+ * 工作区有没提交的改动时加上 .dirty：这样的版本号对不上任何提交，发布脚本会拒绝它。
+ */
 export async function relayVersion(): Promise<string> {
   const pkg = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8')) as { version: string };
   const git = Bun.spawnSync(['git', 'rev-parse', '--short', 'HEAD'], { cwd: ROOT });
   const commit = git.exitCode === 0 ? git.stdout.toString().trim() : 'nogit';
-  return `${pkg.version}+${commit}`;
+  const status = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd: ROOT });
+  const isDirty = status.exitCode !== 0 || status.stdout.toString().trim() !== '';
+  return `${pkg.version}+${commit}${isDirty ? DIRTY_SUFFIX : ''}`;
 }
 
 if (import.meta.main) {
-  const outDir = resolve(process.argv[2] ?? join(ROOT, 'relay', 'dist'));
+  const outDir = resolve(process.argv[2] ?? DEFAULT_OUT_DIR);
   const version = await relayVersion();
   await buildRelay({ outDir, version });
   console.log(`relay ${version} built to ${outDir}`);

@@ -1,10 +1,13 @@
 import type { PrintResult } from '../../core/types';
-import type { PhonePrintResult } from '../../shared/mobile-protocol';
+import { clipText, type PhonePrintResult } from '../../shared/mobile-protocol';
 
-/** 发给手机的字段个数上限：手机上只显示摘要，多了没用，还占带宽。 */
-export const PHONE_FIELD_LIMIT = 30;
-/** 每个字段名和值的长度上限：HTTP 查询回来的值可能很长。 */
-export const PHONE_VALUE_LIMIT = 300;
+/** 发给手机的字段个数上限：手机上只把前几个字段的值列成一行摘要，多了没用，还占带宽。 */
+export const PHONE_FIELD_LIMIT = 10;
+/**
+ * 规则名、字段名、字段值、失败说明的长度上限（字符）：HTTP 查询回来的值可能很长。
+ * 和 PHONE_FIELD_LIMIT 一起保证最坏情况下结果消息也不超过 MAX_MESSAGE_BYTES（见测试）。
+ */
+export const PHONE_TEXT_LIMIT = 200;
 
 /** PrintService 的结果 → 发给手机的精简结果：只带手机要显示的，不带原文以外的内部信息。 */
 export function toPhonePrintResult(result: PrintResult): PhonePrintResult {
@@ -12,10 +15,10 @@ export function toPhonePrintResult(result: PrintResult): PhonePrintResult {
     case 'printed':
       return {
         status: 'printed',
-        ruleName: result.scan.ruleName.slice(0, PHONE_VALUE_LIMIT),
+        ruleName: clip(result.scan.ruleName),
         fields: result.scan.fields.slice(0, PHONE_FIELD_LIMIT).map((field) => ({
-          name: field.name.slice(0, PHONE_VALUE_LIMIT),
-          value: field.value.slice(0, PHONE_VALUE_LIMIT),
+          name: clip(field.name),
+          value: clip(field.value),
         })),
       };
     case 'duplicate':
@@ -23,6 +26,15 @@ export function toPhonePrintResult(result: PrintResult): PhonePrintResult {
     case 'invalid':
       return { status: 'invalid', reason: result.reason };
     case 'failed':
-      return { status: 'failed', reason: result.reason, detail: result.detail ?? null, issue: result.issue ?? null };
+      return {
+        status: 'failed',
+        reason: result.reason,
+        detail: result.detail === undefined ? null : clip(result.detail),
+        issue: result.issue ?? null,
+      };
   }
+}
+
+function clip(text: string): string {
+  return clipText(text, PHONE_TEXT_LIMIT);
 }

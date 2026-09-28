@@ -4,13 +4,15 @@ import {
   DESKTOP_GRACE_MS,
   type DesktopMessage,
   JOB_ACK_TIMEOUT_MS,
+  JOB_STATUS_POLL_MS,
+  MAX_REQUEST_RAW_LENGTH,
   MOBILE_PROTOCOL_VERSION,
   type PhonePrintResult,
   type SealedBody,
 } from '../../../src/shared/mobile-protocol';
 import { FakeSocket, FakeTimers } from '../../../src/shared/testing/fake-socket';
 import { PhoneSession, type SessionEvent } from './phone-session';
-import { createTokenStore, type TokenStore } from './token-store';
+import { openSessionStore, type SessionStore } from './session-store';
 
 const URL = 'wss://relay.example.com/labelflash/ws/phone';
 const SESSION = randomId();
@@ -22,7 +24,7 @@ let key: CryptoKey;
 let timers: FakeTimers;
 let sockets: FakeSocket[];
 let events: SessionEvent[];
-let tokens: TokenStore;
+let store: SessionStore;
 let phone: PhoneSession;
 
 function socket(): FakeSocket {
@@ -31,6 +33,24 @@ function socket(): FakeSocket {
     throw new Error('no socket');
   }
   return latest;
+}
+
+function createPhone(): PhoneSession {
+  return new PhoneSession({
+    relayUrl: URL,
+    session: SESSION,
+    key,
+    device: 'iPhone · 微信',
+    store,
+    timers,
+    now: () => timers.now,
+    createSocket: (url) => {
+      const created = new FakeSocket(url);
+      sockets.push(created);
+      return created;
+    },
+    onEvent: (event) => events.push(event),
+  });
 }
 
 /** 加解密用的是真实的 WebCrypto（异步）：等到条件成立，最多 2 秒。 */
@@ -92,27 +112,21 @@ async function reconnect(): Promise<string> {
   return welcome();
 }
 
+/** 让时间过去，同时保持连接活着（每秒回一个 pong），只是任务没有回音。 */
+function keepAliveFor(ms: number): void {
+  for (let elapsed = 0; elapsed < ms; elapsed += 1_000) {
+    timers.advance(1_000);
+    socket().receive('{"t":"pong"}');
+  }
+}
+
 beforeEach(async () => {
   key = await importSessionKey(randomKey());
   timers = new FakeTimers();
   sockets = [];
   events = [];
-  tokens = createTokenStore(null);
-  phone = new PhoneSession({
-    relayUrl: URL,
-    session: SESSION,
-    key,
-    device: 'iPhone · 微信',
-    tokens,
-    timers,
-    now: () => timers.now,
-    createSocket: (url) => {
-      const created = new FakeSocket(url);
-      sockets.push(created);
-      return created;
-    },
-    onEvent: (event) => events.push(event),
-  });
+  store = openSessionStore(null, SESSION, () => timers.now);
+  phone = createPhone();
   phone.start();
 });
 
@@ -129,13 +143,13 @@ describe('PhoneSession: joining', () => {
     socket().open();
     await expectSent(1, () => socket().receive('{"t":"online"}'));
     await expectEvent(() => fromDesktop({ type: 'welcome', token, nonce: randomId(), printer: '热敏标签机' }));
-    expect(tokens.get(SESSION)).toBe(token);
+    expect(store.token).toBe(token);
     expect(events).toContainEqual({ type: 'welcomed', printer: '热敏标签机' });
   });
 
   test('says hello with the saved token after reconnecting', async () => {
     await welcome();
-    const token = tokens.get(SESSION);
+    const token = store.token;
     socket().drop();
     timers.advance(1_000);
     socket().open();
@@ -161,26 +175,50 @@ describe('PhoneSession: jobs', () => {
       { type: 'submit', nonce, seq: 2, job: second, raw: RAW, force: true },
     ]);
     expect(first).not.toBe(second);
+    expect(events).toContainEqual({ type: 'submitted', job: first, raw: RAW, force: false });
   });
 
-  test('reports acknowledgements, results and refusals', async () => {
+  test('refuses content beyond the request limit before sending anything', () => {
+    expect(() => phone.submit('x'.repeat(MAX_REQUEST_RAW_LENGTH + 1), false)).toThrow();
+    expect(store.jobs).toEqual([]);
+  });
+
+  test('reports queue positions, starts, results and refusals', async () => {
     await welcome();
     const job = phone.submit(RAW, false);
     await expectSent(2);
     await expectEvent(() => fromDesktop({ type: 'accepted', job, ahead: 2 }));
-    await expectEvent(() => fromDesktop({ type: 'accepted', job, ahead: 0 }));
+    await expectEvent(() => fromDesktop({ type: 'queue', jobs: [{ job, ahead: 0 }] }));
     await expectEvent(() => fromDesktop({ type: 'started', job }));
     await expectEvent(() => fromDesktop({ type: 'result', job, result: PRINTED }));
     const refusedJob = phone.submit(RAW, false);
     await expectSent(3);
     await expectEvent(() => fromDesktop({ type: 'refused', job: refusedJob, reason: 'too-many-pending' }));
-    expect(events.slice(-5)).toEqual([
-      { type: 'accepted', job, ahead: 2 },
-      { type: 'accepted', job, ahead: 0 },
+    expect(events.filter((event) => event.type !== 'submitted').slice(-5)).toEqual([
+      { type: 'queued', positions: [{ job, ahead: 2 }] },
+      { type: 'queued', positions: [{ job, ahead: 0 }] },
       { type: 'started', job },
       { type: 'result', job, result: PRINTED },
       { type: 'refused', job: refusedJob, reason: 'too-many-pending' },
     ]);
+  });
+
+  test('passes on only the queue positions of jobs still waiting', async () => {
+    await welcome();
+    const waiting = phone.submit(RAW, false);
+    const done = phone.submit('OTHER', false);
+    await expectSent(3);
+    await expectEvent(() => fromDesktop({ type: 'result', job: done, result: PRINTED }));
+    await expectEvent(() =>
+      fromDesktop({
+        type: 'queue',
+        jobs: [
+          { job: waiting, ahead: 0 },
+          { job: done, ahead: 1 },
+        ],
+      }),
+    );
+    expect(events.at(-1)).toEqual({ type: 'queued', positions: [{ job: waiting, ahead: 0 }] });
   });
 
   test('holds jobs scanned while offline and sends them once welcomed', async () => {
@@ -206,24 +244,30 @@ describe('PhoneSession: jobs', () => {
     await welcome();
     const job = phone.submit(RAW, false);
     await expectSent(2);
-    // 连接本身保持活着，只是这条没有回音。
-    for (let elapsed = 0; elapsed < JOB_ACK_TIMEOUT_MS; elapsed += 1_000) {
-      timers.advance(1_000);
-      socket().receive('{"t":"pong"}');
-    }
+    keepAliveFor(JOB_ACK_TIMEOUT_MS);
     await expectSent(3);
     expect((await submits()).map((message) => message['job'])).toEqual([job, job]);
   });
 
-  test('stops resending once the job is acknowledged', async () => {
+  test('asks again about an accepted job that has made no progress for a while', async () => {
     await welcome();
     const job = phone.submit(RAW, false);
     await expectSent(2);
-    await expectEvent(() => fromDesktop({ type: 'accepted', job, ahead: 0 }));
-    for (let elapsed = 0; elapsed < 3 * JOB_ACK_TIMEOUT_MS; elapsed += 1_000) {
-      timers.advance(1_000);
-      socket().receive('{"t":"pong"}');
-    }
+    await expectEvent(() => fromDesktop({ type: 'accepted', job, ahead: 3 }));
+    keepAliveFor(JOB_STATUS_POLL_MS - 1_000);
+    await Bun.sleep(20);
+    expect(await submits()).toHaveLength(1);
+    keepAliveFor(1_000);
+    await expectSent(3);
+    expect((await submits()).map((message) => message['job'])).toEqual([job, job]);
+  });
+
+  test('stops asking once the result is in', async () => {
+    await welcome();
+    const job = phone.submit(RAW, false);
+    await expectSent(2);
+    await expectEvent(() => fromDesktop({ type: 'result', job, result: PRINTED }));
+    keepAliveFor(2 * JOB_STATUS_POLL_MS);
     await Bun.sleep(20);
     expect(await submits()).toHaveLength(1);
   });
@@ -237,13 +281,57 @@ describe('PhoneSession: jobs', () => {
   });
 });
 
+describe('PhoneSession: surviving a page reload', () => {
+  test('saves the jobs still waiting for a result', async () => {
+    await welcome();
+    const waiting = phone.submit(RAW, false);
+    const done = phone.submit('OTHER', true);
+    await expectSent(3);
+    await expectEvent(() => fromDesktop({ type: 'result', job: done, result: PRINTED }));
+    expect(store.jobs).toEqual([{ id: waiting, raw: RAW, force: false }]);
+  });
+
+  test('shows the saved jobs on start and sends them with the same ids once welcomed', async () => {
+    const job = phone.submit(RAW, false);
+    phone.stop();
+    events = [];
+    phone = createPhone();
+    phone.start();
+    expect(events).toEqual([{ type: 'submitted', job, raw: RAW, force: false }]);
+    const nonce = await welcome();
+    await expectSent(2);
+    expect(await submits()).toEqual([{ type: 'submit', nonce, seq: 1, job, raw: RAW, force: false }]);
+  });
+
+  test('waits for the desktop after a reload when it had been welcomed before', async () => {
+    await welcome();
+    phone.stop();
+    events = [];
+    phone = createPhone();
+    phone.start();
+    socket().open();
+    socket().receive('{"t":"not-found"}');
+    await expectEvent(() => socket().drop());
+    expect(events).toEqual([{ type: 'link', link: 'desktop-offline' }]);
+  });
+
+  test('clears the saved jobs when the session ends', async () => {
+    await welcome();
+    phone.submit(RAW, false);
+    await expectSent(2);
+    await expectEvent(() => socket().receive('{"t":"ended","reason":"stopped"}'));
+    expect(store.jobs).toEqual([]);
+  });
+});
+
 describe('PhoneSession: link and session end', () => {
   test('reports a dropped link without losing jobs', async () => {
     await welcome();
     phone.submit(RAW, false);
     await expectSent(2);
-    socket().drop();
+    await expectEvent(() => socket().drop());
     expect(events.at(-1)).toEqual({ type: 'link', link: 'reconnecting' });
+    expect(store.jobs).toHaveLength(1);
   });
 
   test('reports a desktop that stepped away', async () => {
@@ -271,6 +359,15 @@ describe('PhoneSession: link and session end', () => {
     expect(events.at(-1)).toEqual({ type: 'ended', reason: 'stopped' });
   });
 
+  test('asks for a reload when the relay speaks another protocol version, and stops retrying', async () => {
+    socket().open();
+    await expectEvent(() => socket().receive('{"t":"error","code":"version"}'));
+    expect(events.at(-1)).toEqual({ type: 'outdated' });
+    socket().drop();
+    timers.advance(60_000);
+    expect(sockets).toHaveLength(1);
+  });
+
   test('treats an unknown session as gone when it was never welcomed', async () => {
     socket().open();
     await expectEvent(() => socket().receive('{"t":"not-found"}'));
@@ -281,11 +378,25 @@ describe('PhoneSession: link and session end', () => {
     await welcome();
     socket().receive('{"t":"not-found"}');
     await expectEvent(() => socket().drop());
-    expect(events.at(-1)).toEqual({ type: 'link', link: 'reconnecting' });
-    timers.advance(DESKTOP_GRACE_MS);
-    socket().open();
-    await expectEvent(() => socket().receive('{"t":"not-found"}'));
-    expect(events.at(-1)).toEqual({ type: 'not-found' });
+    expect(events.at(-1)).toEqual({ type: 'link', link: 'desktop-offline' });
+    // 每次按退避重连，中转服务都回 not-found 再断开，直到过了宽限期。
+    const start = timers.now;
+    let handled = sockets.length;
+    while (!events.some((event) => event.type === 'not-found')) {
+      if (timers.now - start > 2 * DESKTOP_GRACE_MS) {
+        throw new Error('never gave up on the session');
+      }
+      timers.advance(1_000);
+      if (sockets.length > handled) {
+        handled = sockets.length;
+        socket().open();
+        socket().receive('{"t":"not-found"}');
+        await Bun.sleep(1);
+        socket().drop();
+        await Bun.sleep(1);
+      }
+    }
+    expect(timers.now - start).toBeGreaterThanOrEqual(DESKTOP_GRACE_MS - 30_000);
   });
 
   test('drops messages it cannot decrypt', async () => {

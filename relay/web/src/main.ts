@@ -1,155 +1,20 @@
 /**
- * 扫码页入口：读链接里的会话号和密钥，接上连接、摄像头、解码和状态机。
- * 状态转换在 phone-state.ts，文字在 result-view.ts，这里只做接线。
+ * 扫码页入口：读链接里的会话号和密钥，创建真实的摄像头、解码器、页面和会话，交给 PhoneController。
+ * 状态转换在 phone-state.ts，文字在 result-view.ts，编排在 phone-controller.ts，这里只做接线。
  */
 import { importSessionKey } from '../../../src/shared/mobile-crypto';
-import { MAX_PENDING_JOBS, parsePhoneFragment } from '../../../src/shared/mobile-protocol';
+import { parsePhoneFragment } from '../../../src/shared/mobile-protocol';
 import { Camera, imageFromFile } from './camera';
-import { tapToVideoPoint } from './camera-features';
 import { Decoder } from './decoder';
 import { deviceLabel } from './device-label';
+import { PhoneController } from './phone-controller';
 import { PhoneSession } from './phone-session';
-import { canSubmit, initialPhoneState, type PhoneEvent, type PhoneState, reducePhone } from './phone-state';
-import { ScanGate } from './scan-gate';
-import { createTokenStore, type KeyValueStorage } from './token-store';
+import { initialPhoneState } from './phone-state';
+import { type KeyValueStorage, openSessionStore } from './session-store';
 import { PhoneView } from './view';
 
 /** 相对页面地址，由 scripts/relay/build.ts 注入（带内容哈希）。 */
 declare const DECODE_WORKER_URL: string;
-
-/** 每秒解码约 6 帧：够快，又不让手机发烫。 */
-const SCAN_FRAME_INTERVAL_MS = 160;
-/** 扫到一个码时的短振动，相当于扫码枪的「嘀」（安卓支持；iPhone 的浏览器不支持振动）。 */
-const SCANNED_VIBRATE_MS = 40;
-/** 打印出问题时的振动：两下，和「扫到了」区分开。 */
-const PROBLEM_VIBRATE_PATTERN_MS = [80, 60, 80];
-const FINISHED_SCREENS: ReadonlySet<PhoneState['screen']> = new Set(['no-link', 'ended', 'not-found', 'denied']);
-
-const fragment = parsePhoneFragment(location.hash);
-let state: PhoneState = initialPhoneState(fragment !== null);
-let session: PhoneSession | null = null;
-let isTorchOn = false;
-let hint: string | null = null;
-
-const gate = new ScanGate();
-const camera = new Camera(document.getElementById('video') as HTMLVideoElement);
-const decoder = new Decoder(new URL(DECODE_WORKER_URL, document.baseURI).href);
-const view = new PhoneView(document, {
-  onJobAction: (job, action) => submit(job.raw, { explicit: true, force: action === 'force' }),
-  onPhoto: (file) => void decodePhoto(file),
-  onManual: (raw) => submit(raw, { explicit: true, force: false }),
-  onTorch: (on) => {
-    isTorchOn = on;
-    void camera.setTorch(on).catch((error) => console.warn('[main] torch failed', error));
-    render();
-  },
-  onViewfinderTap: (tap, element) => {
-    const frame = camera.frameSize;
-    // iPhone 等不支持点按对焦的设备由系统自动对焦，点了也不画对焦圈，免得让人以为对焦了。
-    if (!frame || !camera.canFocusAt) {
-      return;
-    }
-    view.showFocusRing(tap);
-    void camera.focusAt(tapToVideoPoint(tap, element, frame));
-  },
-});
-
-function render(): void {
-  view.render(state, { hasTorch: camera.isRunning && camera.hasTorch, isTorchOn }, hint);
-}
-
-function dispatch(event: PhoneEvent): void {
-  const previous = state;
-  state = reducePhone(state, event);
-  if (state === previous) {
-    return;
-  }
-  if (event.type === 'result' && event.result.status !== 'printed' && event.result.status !== 'duplicate') {
-    navigator.vibrate?.(PROBLEM_VIBRATE_PATTERN_MS);
-  }
-  render();
-  syncCamera();
-}
-
-function showHint(text: string | null): void {
-  hint = text;
-  render();
-}
-
-/**
- * 提交一个打印任务。explicit = 拍照识别、手动输入、点重试或补打：用户明确要打这一张，不经过取景防抖。
- * 取景里扫到的码要经过防抖：同一张标签停在镜头里只打一次。
- */
-function submit(raw: string, options: { explicit: boolean; force: boolean }): void {
-  const now = Date.now();
-  if (!session || !canSubmit(state)) {
-    gate.observe(raw, now);
-    if (state.screen === 'scanning') {
-      showHint(`还有 ${MAX_PENDING_JOBS} 张在等结果，稍等再扫`);
-    }
-    return;
-  }
-  if (options.explicit) {
-    gate.remember(raw, now);
-  } else if (!gate.accept(raw, now)) {
-    return;
-  }
-  const job = session.submit(raw, options.force);
-  navigator.vibrate?.(SCANNED_VIBRATE_MS);
-  hint = null;
-  dispatch({ type: 'submitted', job, raw, force: options.force });
-}
-
-/** 会话进行中且页面可见时开着摄像头；结束了或切到后台就关掉。 */
-function syncCamera(): void {
-  const wantsCamera = state.screen === 'scanning' && document.visibilityState === 'visible';
-  if (!wantsCamera) {
-    if (camera.isRunning) {
-      camera.stop();
-      isTorchOn = false;
-    }
-    return;
-  }
-  if (camera.isRunning || state.camera === 'unavailable') {
-    return;
-  }
-  camera.start().then(
-    () => dispatch({ type: 'camera', camera: 'live' }),
-    (error: unknown) => {
-      console.warn('[main] camera unavailable', error);
-      dispatch({ type: 'camera', camera: 'unavailable' });
-    },
-  );
-}
-
-async function decodePhoto(file: File): Promise<void> {
-  try {
-    const text = await decoder.decode(await imageFromFile(file));
-    if (text) {
-      submit(text, { explicit: true, force: false });
-    } else {
-      showHint('照片里没有找到条码或二维码。靠近一点、对准后再拍。');
-    }
-  } catch (error) {
-    console.warn('[main] photo decoding failed', error);
-    showHint('这张照片读不出来，换一张再试。');
-  }
-}
-
-function scanFrame(): void {
-  if (state.screen !== 'scanning' || !camera.isRunning || decoder.isBusy) {
-    return;
-  }
-  const image = camera.grab();
-  if (!image) {
-    return;
-  }
-  void decoder.decode(image).then((text) => {
-    if (text) {
-      submit(text, { explicit: false, force: false });
-    }
-  });
-}
 
 function safeLocalStorage(): KeyValueStorage | null {
   try {
@@ -160,30 +25,78 @@ function safeLocalStorage(): KeyValueStorage | null {
 }
 
 async function start(): Promise<void> {
-  render();
-  if (!fragment || FINISHED_SCREENS.has(state.screen)) {
+  const fragment = parsePhoneFragment(location.hash);
+  const camera = new Camera(document.getElementById('video') as HTMLVideoElement);
+  // 控制器要先有，页面和解码器的回调才能交给它；构造完之前它们不会触发。
+  let controller: PhoneController | null = null;
+  const decoder = new Decoder(new URL(DECODE_WORKER_URL, document.baseURI).href, (status) =>
+    controller?.dispatch({ type: 'decoder', decoder: status }),
+  );
+  const view = new PhoneView(document, {
+    onOpenCamera: () => controller?.openCamera(),
+    onJobAction: (job, action) => controller?.jobAction(job, action),
+    onPhoto: (file) => void controller?.photo(file),
+    onManual: (raw) => controller?.manual(raw) ?? false,
+    onTorch: (on) => controller?.torch(on),
+    onViewfinderTap: (tap) => controller?.focusAt(tap),
+    onReload: () => controller?.reload(),
+  });
+  const pageController = new PhoneController(
+    {
+      camera,
+      decoder,
+      view,
+      readPhoto: imageFromFile,
+      // 没有振动的浏览器（iPhone）上什么都不做；还没点按过页面时浏览器会忽略振动。
+      vibrate: (pattern) => void navigator.vibrate?.(pattern),
+      isVisible: () => document.visibilityState === 'visible',
+      watchVisibility: (listener) => {
+        document.addEventListener('visibilitychange', listener);
+        return () => document.removeEventListener('visibilitychange', listener);
+      },
+      now: () => Date.now(),
+      timers: {
+        setTimeout: (callback, ms) => window.setTimeout(callback, ms),
+        clearTimeout: (handle) => window.clearTimeout(handle as number),
+        setInterval: (callback, ms) => window.setInterval(callback, ms),
+        clearInterval: (handle) => window.clearInterval(handle as number),
+      },
+      reload: () => location.reload(),
+    },
+    initialPhoneState(fragment !== null),
+  );
+  controller = pageController;
+  if (!fragment) {
+    decoder.dispose();
+    pageController.start(null);
     return;
   }
   // 页面在 <中转地址>m/，WebSocket 在 <中转地址>ws/phone。
   const socketUrl = new URL('../ws/phone', location.href);
   socketUrl.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  session = new PhoneSession({
+  const session = new PhoneSession({
     relayUrl: socketUrl.href,
     session: fragment.session,
     key: await importSessionKey(fragment.key),
     device: deviceLabel(navigator.userAgent),
-    tokens: createTokenStore(safeLocalStorage()),
+    store: openSessionStore(safeLocalStorage(), fragment.session, () => Date.now()),
     createSocket: (url) => new WebSocket(url),
     timers: {
       setTimeout: (callback, ms) => window.setTimeout(callback, ms),
       clearTimeout: (handle) => window.clearTimeout(handle as number),
     },
     now: () => Date.now(),
-    onEvent: dispatch,
+    onEvent: (event) => pageController.dispatch(event),
   });
+  pageController.start(session);
   session.start();
-  window.setInterval(scanFrame, SCAN_FRAME_INTERVAL_MS);
-  document.addEventListener('visibilitychange', syncCamera);
 }
 
-void start();
+start().catch((error: unknown) => {
+  // 走到这里是页面本身出了问题（例如浏览器不支持 WebCrypto）：显示出来，不留一个空白页。
+  console.error('[main] the scan page could not start', error);
+  const title = document.getElementById('message-title');
+  if (title) {
+    title.textContent = '这个浏览器打不开扫码页，请换用系统浏览器或微信再试';
+  }
+});

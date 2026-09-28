@@ -13,14 +13,16 @@
   <body>
     <header class="bar">
       <p class="brand"><span class="brand-mark">{{brandMark}}</span><span class="brand-name">{{productName}}</span></p>
-      <p class="printer" id="printer"></p>
+      <p class="printer" id="printer" hidden></p>
     </header>
     <p class="banner" id="link-banner" role="status" hidden></p>
+    <p class="visually-hidden" id="announcer" role="status" aria-live="polite"></p>
 
     <main>
       <section class="screen screen-message" id="screen-message">
         <h1 id="message-title">正在打开…</h1>
         <p id="message-text" hidden></p>
+        <button class="button primary" id="message-action" type="button" hidden>刷新页面</button>
       </section>
 
       <section class="screen screen-scan" id="screen-scan" hidden>
@@ -28,18 +30,33 @@
           <video id="video" playsinline muted></video>
           <div class="frame" aria-hidden="true"><span class="sweep"></span></div>
           <span class="focus-ring" id="focus-ring" aria-hidden="true" hidden></span>
-          <button class="torch" id="torch" type="button" hidden>开手电筒</button>
+          <div class="cover" id="viewfinder-cover" hidden>
+            <p id="cover-text"></p>
+            <button class="button primary" id="cover-button" type="button">开始扫码</button>
+          </div>
+          <button class="torch" id="torch" type="button" aria-pressed="false" hidden>开手电筒</button>
         </div>
         <p class="hint" id="scan-hint"></p>
         <p class="hint hint-extra" id="scan-hint-extra" role="status" hidden></p>
-        <ol class="jobs" id="jobs" aria-live="polite" aria-label="打印任务"></ol>
+        <ol class="jobs" id="jobs" aria-label="打印任务"></ol>
         <div class="fallback">
-          <label class="button secondary" for="photo">拍照识别</label>
-          <input class="visually-hidden" id="photo" type="file" accept="image/*" capture="environment" />
+          <div id="photo-control">
+            <label class="button block" for="photo">拍照识别</label>
+            <input class="visually-hidden" id="photo" type="file" accept="image/*" capture="environment" />
+          </div>
           <form class="manual" id="manual" autocomplete="off">
             <label class="visually-hidden" for="manual-input">手动输入扫码内容</label>
-            <input id="manual-input" type="text" enterkeyhint="go" maxlength="4000" placeholder="或者手动输入内容" />
-            <button class="button secondary" type="submit">打印</button>
+            <input
+              id="manual-input"
+              type="text"
+              enterkeyhint="go"
+              maxlength="{{maxRawLength}}"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              placeholder="或者手动输入内容"
+            />
+            <button class="button" type="submit">打印</button>
           </form>
         </div>
       </section>

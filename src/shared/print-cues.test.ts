@@ -59,4 +59,9 @@ describe('printResultCue', () => {
     const result: PhonePrintResult = { status: 'failed', reason: 'PRINTER_NOT_READY', detail: null, issue: null };
     expect(printResultCue(result, 'scan')).toBe('printerNotReady');
   });
+
+  test('asks for a printer when the desktop has none selected', () => {
+    const result: PhonePrintResult = { status: 'no-printer' };
+    expect(printResultCue(result, 'scan')).toBe('noPrinter');
+  });
 });

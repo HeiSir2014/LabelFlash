@@ -12,84 +12,95 @@ import {
   type PhonePrintResult,
   type RefusalReason,
 } from '../../../src/shared/mobile-protocol';
+import type { SessionEvent } from './phone-session';
 
-export type Screen = 'no-link' | 'connecting' | 'scanning' | 'ended' | 'not-found' | 'denied';
+export type Screen =
+  | { name: 'no-link' }
+  | { name: 'connecting' }
+  | { name: 'scanning' }
+  | { name: 'ended'; reason: EndReason }
+  | { name: 'not-found' }
+  | { name: 'denied'; reason: DenialReason }
+  /** 中转服务升级了协议，这个页面是旧的：刷新页面。 */
+  | { name: 'outdated' };
 
 /** reconnecting = 正在连中转服务；desktop-offline = 中转服务在，电脑暂时断线。 */
 export type LinkState = 'online' | 'reconnecting' | 'desktop-offline';
-export type CameraState = 'pending' | 'live' | 'unavailable';
+
+/**
+ * idle = 还没打开（等拿手机的人点「开始扫码」：振动和摄像头授权都要在点按之后）；starting = 正在打开；
+ * live = 取景中；paused = 页面切到后台时关掉了，回到前台自动再开；unavailable = 打不开或被中断，可以点按重试。
+ */
+export type CameraState = 'idle' | 'starting' | 'live' | 'paused' | 'unavailable';
+
+/** 识别组件（WebAssembly）：loading = 正在下载；ready = 可以用；failed = 加载失败，只能手动输入。 */
+export type DecoderState = 'loading' | 'ready' | 'failed';
 
 /**
  * sending = 还没送达电脑（包括断线时留在发件箱里）；queued = 电脑已收到，在排队；printing = 正在打印；
- * done / refused = 有了结果（refused 表示没有执行）。
+ * done = 有了结果；refused = 电脑没有接受，没有执行。
  */
-export type JobStatus = 'sending' | 'queued' | 'printing' | 'done' | 'refused';
+export type JobProgress =
+  | { status: 'sending' }
+  | { status: 'queued'; ahead: number }
+  | { status: 'printing' }
+  | { status: 'done'; result: PhonePrintResult }
+  | { status: 'refused'; reason: RefusalReason };
 
-export interface JobEntry {
-  id: string;
-  raw: string;
-  force: boolean;
-  status: JobStatus;
-  /** 排队时前面还有几个任务（所有手机合计）；不在排队时为 null。 */
-  ahead: number | null;
-  result: PhonePrintResult | null;
-  refusal: RefusalReason | null;
-}
+export type JobEntry = { id: string; raw: string; force: boolean } & JobProgress;
 
 export interface PhoneState {
   screen: Screen;
   link: LinkState;
   camera: CameraState;
+  decoder: DecoderState;
+  /** 电脑上选的打印机（显示名）；没选时为 null。 */
   printer: string | null;
   /** 最近的任务，新的在前。 */
   jobs: JobEntry[];
-  endReason: EndReason | null;
-  denial: DenialReason | null;
 }
 
 export type PhoneEvent =
-  | { type: 'link'; link: Exclude<LinkState, 'online'> }
-  | { type: 'welcomed'; printer: string | null }
-  | { type: 'printer'; printer: string | null }
-  | { type: 'camera'; camera: Exclude<CameraState, 'pending'> }
-  | { type: 'submitted'; job: string; raw: string; force: boolean }
-  | { type: 'accepted'; job: string; ahead: number }
-  | { type: 'started'; job: string }
-  | { type: 'result'; job: string; result: PhonePrintResult }
-  | { type: 'refused'; job: string; reason: RefusalReason }
-  | { type: 'ended'; reason: EndReason }
-  | { type: 'not-found' }
-  | { type: 'denied'; reason: DenialReason };
+  | SessionEvent
+  | { type: 'camera'; camera: Exclude<CameraState, 'idle'> }
+  | { type: 'decoder'; decoder: Exclude<DecoderState, 'loading'> };
 
-/** 页面上保留的任务条数：够看清最近扫的一批，列表又不会拉得太长。 */
+/** 页面上保留的已结束任务条数：够看清最近扫的一批，列表又不会拉得太长。还在等结果的任务一直保留。 */
 export const JOB_HISTORY = 20;
 
-const TERMINAL_SCREENS: ReadonlySet<Screen> = new Set(['no-link', 'ended', 'not-found', 'denied']);
-const WAITING_STATUSES: ReadonlySet<JobStatus> = new Set(['sending', 'queued', 'printing']);
+const WAITING_STATUSES: ReadonlySet<JobEntry['status']> = new Set(['sending', 'queued', 'printing']);
 
 export function initialPhoneState(hasLink: boolean): PhoneState {
   return {
-    screen: hasLink ? 'connecting' : 'no-link',
+    screen: hasLink ? { name: 'connecting' } : { name: 'no-link' },
     link: 'reconnecting',
-    camera: 'pending',
+    camera: 'idle',
+    decoder: 'loading',
     printer: null,
     jobs: [],
-    endReason: null,
-    denial: null,
   };
 }
 
-/** 能不能再扫一张：会话进行中，而且等结果的任务没有到上限（断线时也能扫，任务先留在手机上）。 */
+/** 会话对这部手机已经结束（或者根本没有会话）：页面不再变化。 */
+export function isFinished(state: PhoneState): boolean {
+  return state.screen.name !== 'connecting' && state.screen.name !== 'scanning';
+}
+
+export function isWaiting(job: JobEntry): boolean {
+  return WAITING_STATUSES.has(job.status);
+}
+
+/** 能不能再扫一张：会话进行中，而且等结果的任务没有到上限（断线时也能扫，任务先存在手机上）。 */
 export function canSubmit(state: PhoneState): boolean {
-  return state.screen === 'scanning' && pendingCount(state) < MAX_PENDING_JOBS;
+  return state.screen.name === 'scanning' && pendingCount(state) < MAX_PENDING_JOBS;
 }
 
 export function pendingCount(state: PhoneState): number {
-  return state.jobs.filter((job) => WAITING_STATUSES.has(job.status)).length;
+  return state.jobs.filter(isWaiting).length;
 }
 
 export function reducePhone(state: PhoneState, event: PhoneEvent): PhoneState {
-  if (TERMINAL_SCREENS.has(state.screen)) {
+  if (isFinished(state)) {
     return state;
   }
   switch (event.type) {
@@ -100,44 +111,62 @@ export function reducePhone(state: PhoneState, event: PhoneEvent): PhoneState {
         ...state,
         link: 'online',
         printer: event.printer,
-        screen: state.screen === 'connecting' ? 'scanning' : state.screen,
+        screen: state.screen.name === 'connecting' ? { name: 'scanning' } : state.screen,
       };
     case 'printer':
       return { ...state, printer: event.printer };
     case 'camera':
       return { ...state, camera: event.camera };
+    case 'decoder':
+      return { ...state, decoder: event.decoder };
     case 'submitted': {
-      const job: JobEntry = {
-        id: event.job,
-        raw: event.raw,
-        force: event.force,
-        status: 'sending',
-        ahead: null,
-        result: null,
-        refusal: null,
-      };
-      return { ...state, jobs: [job, ...state.jobs].slice(0, JOB_HISTORY) };
+      if (state.jobs.some((job) => job.id === event.job)) {
+        return state;
+      }
+      const job: JobEntry = { id: event.job, raw: event.raw, force: event.force, status: 'sending' };
+      return { ...state, jobs: trimHistory([job, ...state.jobs]) };
     }
-    case 'accepted':
-      // 排队位置会随队伍前进多次更新；已经开始打印或有了结果的，不退回「排队中」。
-      return updateJob(state, event.job, (job) =>
-        job.status === 'sending' || job.status === 'queued' ? { ...job, status: 'queued', ahead: event.ahead } : job,
-      );
+    case 'queued': {
+      let next = state;
+      for (const { job: id, ahead } of event.positions) {
+        // 排队位置会随队伍前进多次更新；已经开始打印或有了结果的，不退回「排队中」。
+        next = updateJob(next, id, (job) =>
+          job.status === 'sending' || job.status === 'queued' ? { ...job, status: 'queued', ahead } : job,
+        );
+      }
+      return next;
+    }
     case 'started':
       return updateJob(state, event.job, (job) =>
-        WAITING_STATUSES.has(job.status) ? { ...job, status: 'printing', ahead: null } : job,
+        job.status === 'sending' || job.status === 'queued' ? { ...base(job), status: 'printing' } : job,
       );
     case 'result':
-      return updateJob(state, event.job, (job) => ({ ...job, status: 'done', ahead: null, result: event.result }));
+      return updateJob(state, event.job, (job) =>
+        isWaiting(job) ? { ...base(job), status: 'done', result: event.result } : job,
+      );
     case 'refused':
-      return updateJob(state, event.job, (job) => ({ ...job, status: 'refused', ahead: null, refusal: event.reason }));
+      return updateJob(state, event.job, (job) =>
+        isWaiting(job) ? { ...base(job), status: 'refused', reason: event.reason } : job,
+      );
     case 'ended':
-      return { ...state, screen: 'ended', endReason: event.reason };
+      return { ...state, screen: { name: 'ended', reason: event.reason } };
     case 'not-found':
-      return { ...state, screen: 'not-found' };
+      return { ...state, screen: { name: 'not-found' } };
     case 'denied':
-      return { ...state, screen: 'denied', denial: event.reason };
+      return { ...state, screen: { name: 'denied', reason: event.reason } };
+    case 'outdated':
+      return { ...state, screen: { name: 'outdated' } };
   }
+}
+
+/** 只留任务本身，去掉上一个进度的字段（例如排队位置）。 */
+function base(job: JobEntry): Pick<JobEntry, 'id' | 'raw' | 'force'> {
+  return { id: job.id, raw: job.raw, force: job.force };
+}
+
+/** 超出 JOB_HISTORY 的已结束任务不再显示；还在等结果的一直留着，免得「等结果的张数」算少了。 */
+function trimHistory(jobs: JobEntry[]): JobEntry[] {
+  return jobs.filter((job, index) => index < JOB_HISTORY || isWaiting(job));
 }
 
 function updateJob(state: PhoneState, id: string, update: (job: JobEntry) => JobEntry): PhoneState {

@@ -4,17 +4,20 @@
  * 不依赖 Electron：WebSocket、计时器、打印函数都由参数注入，集成测试用真实的中转服务和手机端代码跑通。
  * 会话规则（手机加入与移除、防重放、打印队列、任务去重、背压、到期）在 mobile-session.ts；这里只做编排。
  */
-import type { Clock } from '../../core/types';
+import type { Clock, PrinterInfo } from '../../core/types';
 import { importSessionKey, openMessage, randomId, randomKey, sealMessage } from '../../shared/mobile-crypto';
 import {
   buildPhoneUrl,
   type CloseReason,
+  type DesktopFrame,
   type DesktopMessage,
   MOBILE_PROTOCOL_VERSION,
   type PhonePrintResult,
   parsePhoneMessage,
   parseRelayToDesktop,
+  type RelayErrorCode,
   type RelayToDesktop,
+  type SealedBody,
 } from '../../shared/mobile-protocol';
 import type { MobileFailure, MobileStatus } from '../../shared/mobile-status';
 import { RelaySocket, type SocketLike, type SocketTimers } from '../../shared/relay-socket';
@@ -26,10 +29,10 @@ export interface MobileHostDeps {
   clock: Clock;
   timers: SocketTimers;
   createSocket: (url: string) => SocketLike;
-  /** 执行一个打印任务：PrintService.submit 加结果换算（由 mobile-station 提供）。 */
+  /** 执行一个打印任务：PrintService.submit 加结果换算（由 mobile-station 提供）。printerName 是系统里的打印机名。 */
   print: (raw: string, force: boolean, printerName: string) => Promise<PhonePrintResult>;
-  /** 设置里当前选中的打印机；没选时为 null。 */
-  printerName: () => string | null;
+  /** 设置里当前选中的打印机（系统名用来打印，显示名告诉手机）；没选时为 null。 */
+  selectedPrinter: () => Promise<PrinterInfo | null>;
   log: (line: string) => void;
 }
 
@@ -40,10 +43,12 @@ interface Run {
   url: string;
   key: Promise<CryptoKey>;
   session: MobileSession;
-  socket: RelaySocket;
+  socket: RelaySocket<DesktopFrame>;
   isOpened: boolean;
   isRelayOnline: boolean;
   failure: MobileFailure | null;
+  /** 这次会话是因为上一个会话号被占而换的：再被占就不再换，免得来回重试。 */
+  isReplacement: boolean;
   /** 解密、加密、打印任务各串成一条链：收到的按顺序处理，发出的按顺序发，任务一个接一个执行。 */
   inbox: Promise<void>;
   outgoing: Promise<void>;
@@ -52,7 +57,7 @@ interface Run {
 
 export class MobileHost {
   private run: Run | null = null;
-  /** 不会自己恢复的失败（中转服务不支持这个协议版本）：会话已结束，留着给界面看，直到下一次开始。 */
+  /** 不会自己恢复的失败：会话已结束，留着给界面看，直到下一次开始。 */
   private finalFailure: MobileFailure | null = null;
   private readonly listeners = new Set<(status: MobileStatus) => void>();
 
@@ -60,55 +65,9 @@ export class MobileHost {
 
   /** 开始一次会话；已在进行中时返回当前状态，二维码不变。 */
   start(): MobileStatus {
-    if (this.run) {
-      return this.status();
+    if (!this.run) {
+      this.begin(false);
     }
-    const sessionId = randomId();
-    const keyText = randomKey();
-    const run: Run = {
-      sessionId,
-      secret: randomId(),
-      url: buildPhoneUrl(this.deps.relayBase.href, sessionId, keyText),
-      key: importSessionKey(keyText),
-      session: new MobileSession(this.deps.clock),
-      socket: new RelaySocket({
-        url: desktopSocketUrl(this.deps.relayBase),
-        createSocket: this.deps.createSocket,
-        timers: this.deps.timers,
-        onOpen: () => {
-          run.socket.send({ t: 'open', v: MOBILE_PROTOCOL_VERSION, session: run.sessionId, secret: run.secret });
-        },
-        onFrame: (text) => {
-          const frame = parseRelayToDesktop(text);
-          if (!frame) {
-            this.deps.log('mobile: dropped a malformed relay frame');
-            return;
-          }
-          run.inbox = run.inbox
-            .then(() => this.handle(run, frame))
-            .catch((error: unknown) => this.deps.log(`mobile: failed to handle a relay frame: ${String(error)}`));
-        },
-        onDown: () => {
-          run.isRelayOnline = false;
-          if (!run.isOpened && run.failure === null) {
-            run.failure = 'unreachable';
-          }
-          this.deps.log('mobile: relay connection lost, reconnecting');
-          this.emit();
-        },
-      }),
-      isOpened: false,
-      isRelayOnline: false,
-      failure: null,
-      inbox: Promise.resolve(),
-      outgoing: Promise.resolve(),
-      jobs: Promise.resolve(),
-    };
-    this.run = run;
-    this.finalFailure = null;
-    run.socket.start();
-    this.deps.log('mobile: session started');
-    this.emit();
     return this.status();
   }
 
@@ -136,12 +95,13 @@ export class MobileHost {
     if (!run.isOpened) {
       return { state: 'connecting' };
     }
-    const { phones, printed, queued } = run.session.status();
+    const { phones, printed, queued, joinLocked } = run.session.status();
     return {
       state: 'active',
       url: run.url,
       expiresAt: run.session.unclaimedUntil(),
       relayOnline: run.isRelayOnline,
+      joinLocked,
       phones,
       printed,
       queued,
@@ -159,12 +119,16 @@ export class MobileHost {
     if (!run) {
       return;
     }
-    for (const connection of run.session.onlineConnections()) {
-      this.send(run, connection, { type: 'printer', printer: this.deps.printerName() });
-    }
+    // 排进收件链：和 welcome 一样按顺序发，不会有手机先收到新打印机、再收到旧的。
+    this.enqueue(run, async () => {
+      const printer = await this.printerLabel();
+      for (const connection of run.session.onlineConnections()) {
+        this.send(run, connection, { type: 'printer', printer });
+      }
+    });
   }
 
-  /** 在电脑上移除一部手机：断开它、作废它的令牌，它排队中的任务不再打印。 */
+  /** 在电脑上移除一部手机：断开它、作废它的令牌，它排队中的任务不再打印；同时暂停新手机加入。 */
   removePhone(id: string): void {
     const run = this.run;
     if (!run) {
@@ -173,10 +137,21 @@ export class MobileHost {
     const { kick, deliveries } = run.session.removePhone(id);
     if (kick !== null) {
       this.send(run, kick, { type: 'denied', reason: 'removed' });
-      this.enqueueFrame(run, { t: 'kick', phone: kick });
+      this.sendFrame(run, { t: 'kick', phone: kick });
     }
     this.sendAll(run, deliveries);
-    this.deps.log('mobile: removed a phone');
+    this.deps.log('mobile: removed a phone, new phones paused');
+    this.emit();
+  }
+
+  /** 暂停或重新允许新手机加入。 */
+  setJoinLocked(locked: boolean): void {
+    const run = this.run;
+    if (!run) {
+      return;
+    }
+    run.session.setJoinLocked(locked);
+    this.deps.log(`mobile: new phones ${locked ? 'paused' : 'allowed'}`);
     this.emit();
   }
 
@@ -188,6 +163,61 @@ export class MobileHost {
     }
   }
 
+  private begin(isReplacement: boolean): void {
+    const sessionId = randomId();
+    const keyText = randomKey();
+    const run: Run = {
+      sessionId,
+      secret: randomId(),
+      url: buildPhoneUrl(this.deps.relayBase.href, sessionId, keyText),
+      key: importSessionKey(keyText),
+      session: new MobileSession(this.deps.clock),
+      socket: new RelaySocket<DesktopFrame>({
+        url: desktopSocketUrl(this.deps.relayBase),
+        createSocket: this.deps.createSocket,
+        timers: this.deps.timers,
+        onOpen: () => {
+          run.socket.send({ t: 'open', v: MOBILE_PROTOCOL_VERSION, session: run.sessionId, secret: run.secret });
+        },
+        onFrame: (text) => {
+          const frame = parseRelayToDesktop(text);
+          if (!frame) {
+            this.deps.log('mobile: dropped a malformed relay frame');
+            return;
+          }
+          this.enqueue(run, () => this.handle(run, frame));
+        },
+        onDown: () => {
+          run.isRelayOnline = false;
+          if (!run.isOpened && run.failure === null) {
+            run.failure = 'unreachable';
+          }
+          this.deps.log('mobile: relay connection lost, reconnecting');
+          this.emit();
+        },
+      }),
+      isOpened: false,
+      isRelayOnline: false,
+      failure: null,
+      isReplacement,
+      inbox: Promise.resolve(),
+      outgoing: Promise.resolve(),
+      jobs: Promise.resolve(),
+    };
+    this.run = run;
+    this.finalFailure = null;
+    run.socket.start();
+    this.deps.log('mobile: session started');
+    this.emit();
+  }
+
+  /** 排进收件链。一条处理出错只记日志，不能卡住后面的。 */
+  private enqueue(run: Run, task: () => Promise<void>): void {
+    run.inbox = run.inbox
+      .then(task)
+      .catch((error: unknown) => this.deps.log(`mobile: failed to handle a relay frame: ${String(error)}`));
+  }
+
   private async handle(run: Run, frame: RelayToDesktop): Promise<void> {
     if (this.run !== run) {
       return;
@@ -197,6 +227,8 @@ export class MobileHost {
         run.isOpened = true;
         run.isRelayOnline = true;
         run.failure = null;
+        run.session.relayOpened();
+        run.socket.markReady();
         this.deps.log('mobile: session registered on the relay');
         this.emit();
         return;
@@ -218,7 +250,7 @@ export class MobileHost {
     }
   }
 
-  private async receive(run: Run, phone: string, body: Parameters<typeof openMessage>[3]): Promise<void> {
+  private async receive(run: Run, phone: string, body: SealedBody): Promise<void> {
     const message = parsePhoneMessage(await openMessage(await run.key, 'p2d', run.sessionId, body));
     if (!message) {
       this.deps.log('mobile: dropped a phone message that could not be decrypted or parsed');
@@ -226,20 +258,18 @@ export class MobileHost {
     }
     if (message.type === 'hello') {
       const reply = run.session.hello(phone, message);
+      // 设备描述来自手机，已去掉控制字符；写日志时仍加引号，看得出它是外来的文字。
+      const device = JSON.stringify(message.device);
       if (reply.kind === 'welcome') {
-        this.send(run, phone, {
-          type: 'welcome',
-          token: reply.token,
-          nonce: reply.nonce,
-          printer: this.deps.printerName(),
-        });
-        this.deps.log(`mobile: phone welcomed (${message.device})`);
-        this.emit();
+        const printer = await this.printerLabel();
+        this.send(run, phone, { type: 'welcome', token: reply.token, nonce: reply.nonce, printer });
+        this.deps.log(`mobile: phone welcomed ${device}`);
       } else {
         this.send(run, phone, { type: 'denied', reason: reply.reason });
-        this.enqueueFrame(run, { t: 'kick', phone });
-        this.deps.log(`mobile: turned away a phone (${reply.reason})`);
+        this.sendFrame(run, { t: 'kick', phone });
+        this.deps.log(`mobile: turned away a phone ${device} (${reply.reason})`);
       }
+      this.emit();
       return;
     }
     const decision = run.session.submit(phone, message);
@@ -251,7 +281,10 @@ export class MobileHost {
         return;
       case 'run':
         this.send(run, phone, decision.reply);
-        run.jobs = run.jobs.then(() => this.execute(run, decision.job, decision.raw, decision.force));
+        run.jobs = run.jobs
+          .then(() => this.execute(run, decision.job, decision.raw, decision.force))
+          .catch((error: unknown) => this.deps.log(`mobile: a phone job failed unexpectedly: ${String(error)}`));
+        this.emit();
         return;
     }
   }
@@ -281,12 +314,12 @@ export class MobileHost {
   }
 
   private async print(raw: string, force: boolean): Promise<PhonePrintResult> {
-    const printerName = this.deps.printerName();
-    if (printerName === null) {
-      return { status: 'no-printer' };
-    }
     try {
-      return await this.deps.print(raw, force, printerName);
+      const printer = await this.deps.selectedPrinter();
+      if (printer === null) {
+        return { status: 'no-printer' };
+      }
+      return await this.deps.print(raw, force, printer.name);
     } catch (error) {
       // PrintService 自己不抛错；走到这里是接线出了问题，按驱动报错回复，不让任务卡住。
       this.deps.log(`mobile: printing a phone job failed unexpectedly: ${String(error)}`);
@@ -294,19 +327,27 @@ export class MobileHost {
     }
   }
 
-  private handleRelayError(run: Run, code: Extract<RelayToDesktop, { t: 'error' }>['code']): void {
+  /** 告诉手机的打印机名：用界面上显示的名字。 */
+  private async printerLabel(): Promise<string | null> {
+    return (await this.deps.selectedPrinter())?.displayName ?? null;
+  }
+
+  private handleRelayError(run: Run, code: RelayErrorCode): void {
     this.deps.log(`mobile: relay error ${code}`);
     switch (code) {
       case 'version':
         // 中转服务不支持这个版本的协议：重试也没用，结束会话，界面提示更新软件。
-        this.stop('stopped');
-        this.finalFailure = 'version';
-        this.emit();
+        this.finish('version');
         return;
       case 'session-taken':
-        // 会话号被别人占了（128 位随机数，几乎不可能）：换一个新会话，二维码随之更新。
-        this.stop('stopped');
-        this.start();
+        // 会话号被占（128 位随机数，正常不会发生）：换一个新会话，二维码随之更新。
+        // 换过一次又被占，说明中转服务不正常：停下来报错，不来回重试。
+        if (run.isReplacement) {
+          this.finish('session-taken');
+        } else {
+          this.stop('stopped');
+          this.begin(true);
+        }
         return;
       case 'server-busy':
         run.failure = 'server-busy';
@@ -316,6 +357,13 @@ export class MobileHost {
       case 'bad-frame':
         return;
     }
+  }
+
+  /** 结束会话并留下一个不会自己恢复的失败。 */
+  private finish(failure: MobileFailure): void {
+    this.stop('stopped');
+    this.finalFailure = failure;
+    this.emit();
   }
 
   private send(run: Run, phone: string, message: DesktopMessage): void {
@@ -334,16 +382,23 @@ export class MobileHost {
   }
 
   /** 不加密的外层帧（踢出）也排进发送链，保证在它前面的消息先发出去。 */
-  private enqueueFrame(run: Run, frame: { t: 'kick'; phone: string }): void {
-    run.outgoing = run.outgoing.then(() => {
-      run.socket.send(frame);
-    });
+  private sendFrame(run: Run, frame: DesktopFrame): void {
+    run.outgoing = run.outgoing
+      .then(() => {
+        run.socket.send(frame);
+      })
+      .catch((error: unknown) => this.deps.log(`mobile: failed to send a relay frame: ${String(error)}`));
   }
 
+  /** 通知界面。一个监听者出错不影响别的监听者，也不打断会话。 */
   private emit(): void {
     const status = this.status();
     for (const listener of this.listeners) {
-      listener(status);
+      try {
+        listener(status);
+      } catch (error) {
+        this.deps.log(`mobile: a status listener failed: ${String(error)}`);
+      }
     }
   }
 }

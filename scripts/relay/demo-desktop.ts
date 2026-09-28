@@ -7,7 +7,7 @@
  * 按 Ctrl+C 结束会话。
  */
 import QRCode from 'qrcode';
-import { systemClock } from '../../src/core/types';
+import { type PrinterInfo, systemClock } from '../../src/core/types';
 import { MobileHost } from '../../src/main/mobile/mobile-host';
 import { resolveRelayBase } from '../../src/main/mobile/relay-endpoint';
 import type { MobileStatus } from '../../src/shared/mobile-status';
@@ -15,6 +15,9 @@ import type { SocketLike } from '../../src/shared/relay-socket';
 
 /** 和电脑端 tick 的间隔一致：检查二维码有没有过期、会话有没有闲置太久。 */
 const TICK_INTERVAL_MS = 5_000;
+/** 按 Ctrl+C 后等这么久再退出：够把「结束」消息发给中转服务。 */
+const EXIT_GRACE_MS = 500;
+const DEMO_PRINTER: PrinterInfo = { name: 'demo', displayName: '演示打印机（不出纸）' };
 
 const base = resolveRelayBase({ setting: process.argv[2] ?? null, buildDefault: null });
 if (!base) {
@@ -32,7 +35,7 @@ const host = new MobileHost({
     clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   },
   createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
-  printerName: () => '演示打印机（不出纸）',
+  selectedPrinter: async () => DEMO_PRINTER,
   print: async (raw, force) => {
     console.log(`${new Date().toLocaleTimeString('zh-CN')}  ${force ? '强制补打' : '打印'}：${raw}`);
     return { status: 'printed', ruleName: '演示', fields: [{ name: '内容', value: raw }] };
@@ -49,7 +52,8 @@ host.onStatus((status: MobileStatus) => {
   }
   if (status.state === 'active') {
     const phones = status.phones.map((phone) => `${phone.device}${phone.online ? '' : '（离线）'}`).join('、');
-    console.log(`  手机：${phones || '还没有'}；排队 ${status.queued} 张；已打印 ${status.printed} 张`);
+    const joining = status.joinLocked ? '；已暂停新手机加入' : '';
+    console.log(`  手机：${phones || '还没有'}；排队 ${status.queued} 张；已打印 ${status.printed} 张${joining}`);
   } else {
     console.log(`  状态：${status.state === 'failed' ? `失败（${status.error}）` : status.state}`);
   }
@@ -60,6 +64,5 @@ const ticker = setInterval(() => host.tick(), TICK_INTERVAL_MS);
 process.on('SIGINT', () => {
   clearInterval(ticker);
   host.stop('stopped');
-  // 给「结束」消息一点时间发出去。
-  setTimeout(() => process.exit(0), 500);
+  setTimeout(() => process.exit(0), EXIT_GRACE_MS);
 });

@@ -6,6 +6,7 @@ import {
   PREFERRED_ZOOM,
   startupConstraints,
   tapToVideoPoint,
+  visibleVideoRect,
 } from './camera-features';
 
 const ANDROID: CameraCapabilities = {
@@ -61,6 +62,44 @@ describe('hasTorch', () => {
   test('reads the torch capability', () => {
     expect(hasTorch(ANDROID)).toBe(true);
     expect(hasTorch({})).toBe(false);
+  });
+});
+
+describe('visibleVideoRect', () => {
+  test('keeps the whole frame when it fits the element exactly', () => {
+    expect(visibleVideoRect({ width: 200, height: 200 }, { width: 720, height: 720 })).toEqual({
+      x: 0,
+      y: 0,
+      width: 720,
+      height: 720,
+    });
+  });
+
+  test('crops the sides of a wide video shown in a square', () => {
+    expect(visibleVideoRect({ width: 360, height: 360 }, { width: 1280, height: 720 })).toEqual({
+      x: 280,
+      y: 0,
+      width: 720,
+      height: 720,
+    });
+  });
+
+  test('crops the top and bottom of a tall video shown in a wide box', () => {
+    expect(visibleVideoRect({ width: 400, height: 200 }, { width: 720, height: 1280 })).toEqual({
+      x: 0,
+      y: 460,
+      width: 720,
+      height: 360,
+    });
+  });
+
+  test('falls back to the whole frame before the element has a size', () => {
+    expect(visibleVideoRect({ width: 0, height: 0 }, { width: 1280, height: 720 })).toEqual({
+      x: 0,
+      y: 0,
+      width: 1280,
+      height: 720,
+    });
   });
 });
 

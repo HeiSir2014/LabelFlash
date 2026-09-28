@@ -2,7 +2,13 @@
  * 连接中转服务的 WebSocket：断线自动重连，应用层心跳发现半开连接。
  * 电脑（Electron 主进程的全局 WebSocket）和手机（浏览器）共用；WebSocket 和计时器由参数注入，便于测试。
  */
-import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, RECONNECT_DELAYS_MS } from './mobile-protocol';
+import {
+  CLOSE_CODES,
+  CONNECT_TIMEOUT_MS,
+  HEARTBEAT_INTERVAL_MS,
+  HEARTBEAT_TIMEOUT_MS,
+  RECONNECT_DELAYS_MS,
+} from './mobile-protocol';
 
 /**
  * 浏览器 WebSocket 和 Node 24 的全局 WebSocket 都满足的最小接口。
@@ -32,32 +38,28 @@ export interface RelaySocketOptions {
   url: string;
   createSocket: (url: string) => SocketLike;
   timers: SocketTimers;
+  /** 连接已建立：这时发出第一帧（open / join）。 */
   onOpen: () => void;
   onFrame: (text: string) => void;
-  /** 每次断线只报一次；连续重连失败不重复报，直到重新连上。 */
+  /** 每次断线只报一次；连续重连失败不重复报，直到 markReady 之后再断。 */
   onDown: () => void;
 }
 
 /** WebSocket.OPEN。 */
 const OPEN = 1;
-const CLOSE_NORMAL = 1000;
-/** 心跳超时由客户端主动关闭：4000–4999 是应用自定义的关闭码。 */
-const CLOSE_HEARTBEAT_TIMEOUT = 4000;
 
-export class RelaySocket {
+/** Outgoing：这条连接能发的帧（电脑是 DesktopFrame，手机是 PhoneFrame），都包含心跳 { t: 'ping' }。 */
+export class RelaySocket<Outgoing extends { t: string }> {
   private socket: SocketLike | null = null;
   private isStopped = true;
   private hasReportedDown = false;
   private attempt = 0;
+  private connectTimer: unknown = null;
   private heartbeatTimer: unknown = null;
   private deadlineTimer: unknown = null;
   private retryTimer: unknown = null;
 
   constructor(private readonly options: RelaySocketOptions) {}
-
-  get isOpen(): boolean {
-    return this.socket?.readyState === OPEN;
-  }
 
   start(): void {
     if (!this.isStopped) {
@@ -74,10 +76,24 @@ export class RelaySocket {
     this.clearTimers();
     const socket = this.socket;
     this.socket = null;
-    socket?.close(CLOSE_NORMAL, 'stopped');
+    socket?.close(CLOSE_CODES.normal, 'stopped');
   }
 
-  send(frame: object): boolean {
+  /**
+   * 对端接纳了这条连接（电脑收到 opened，手机收到 online / waiting）：退避从头算起，下次断线再报。
+   * 只连上还不算：中转服务可能刚连上就拒绝（满了、会话不存在），这时要继续按退避拉长间隔，不能每秒重连。
+   */
+  markReady(): void {
+    this.attempt = 0;
+    this.hasReportedDown = false;
+  }
+
+  /** 没连着时返回 false，帧丢弃：协议层靠重发兜底（见 phone-session.ts 的发件箱）。 */
+  send(frame: Outgoing): boolean {
+    return this.write(frame);
+  }
+
+  private write(frame: object): boolean {
     if (!this.socket || this.socket.readyState !== OPEN) {
       return false;
     }
@@ -95,11 +111,14 @@ export class RelaySocket {
       return;
     }
     this.socket = socket;
+    this.connectTimer = this.options.timers.setTimeout(
+      () => this.abandon(CLOSE_CODES.connectTimeout),
+      CONNECT_TIMEOUT_MS,
+    );
     // 旧连接的事件可能在新连接建立后才到：只处理当前这个连接的事件。
     socket.onopen = () => {
       if (socket === this.socket) {
-        this.attempt = 0;
-        this.hasReportedDown = false;
+        this.clearTimer('connectTimer');
         this.scheduleHeartbeat();
         this.options.onOpen();
       }
@@ -125,17 +144,23 @@ export class RelaySocket {
 
   private scheduleHeartbeat(): void {
     this.heartbeatTimer = this.options.timers.setTimeout(() => {
-      this.send({ t: 'ping' });
-      this.deadlineTimer = this.options.timers.setTimeout(() => this.dropSilentSocket(), HEARTBEAT_TIMEOUT_MS);
+      this.write({ t: 'ping' });
+      this.deadlineTimer = this.options.timers.setTimeout(
+        () => this.abandon(CLOSE_CODES.heartbeatTimeout),
+        HEARTBEAT_TIMEOUT_MS,
+      );
       this.scheduleHeartbeat();
     }, HEARTBEAT_INTERVAL_MS);
   }
 
-  /** 半开连接（对端已经不在，本机还没发现）可能很久都不触发 close：直接当作断线处理。 */
-  private dropSilentSocket(): void {
+  /**
+   * 放弃当前连接：握手卡住，或者半开连接（对端已经不在，本机还没发现）可能很久都不触发 close，
+   * 直接当作断线处理。
+   */
+  private abandon(code: number): void {
     const socket = this.socket;
     this.socket = null;
-    socket?.close(CLOSE_HEARTBEAT_TIMEOUT, 'heartbeat timeout');
+    socket?.close(code, 'abandoned');
     this.handleDown();
   }
 
@@ -156,12 +181,13 @@ export class RelaySocket {
   }
 
   private clearTimers(): void {
+    this.clearTimer('connectTimer');
     this.clearTimer('heartbeatTimer');
     this.clearTimer('deadlineTimer');
     this.clearTimer('retryTimer');
   }
 
-  private clearTimer(name: 'heartbeatTimer' | 'deadlineTimer' | 'retryTimer'): void {
+  private clearTimer(name: 'connectTimer' | 'heartbeatTimer' | 'deadlineTimer' | 'retryTimer'): void {
     if (this[name] !== null) {
       this.options.timers.clearTimeout(this[name]);
       this[name] = null;

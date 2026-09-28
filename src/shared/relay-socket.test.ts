@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS } from './mobile-protocol';
+import {
+  CLOSE_CODES,
+  CONNECT_TIMEOUT_MS,
+  type DesktopFrame,
+  HEARTBEAT_INTERVAL_MS,
+  HEARTBEAT_TIMEOUT_MS,
+} from './mobile-protocol';
 import { RelaySocket } from './relay-socket';
 import { FakeSocket, FakeTimers } from './testing/fake-socket';
 
@@ -8,7 +14,7 @@ const URL = 'wss://relay.test/ws/desktop';
 let timers: FakeTimers;
 let sockets: FakeSocket[];
 let events: string[];
-let relay: RelaySocket;
+let relay: RelaySocket<DesktopFrame>;
 
 function latest(): FakeSocket {
   const socket = sockets.at(-1);
@@ -53,7 +59,23 @@ describe('RelaySocket', () => {
     expect(sockets.map((socket) => socket.url)).toEqual([URL]);
     latest().open();
     expect(events).toEqual(['open']);
-    expect(relay.isOpen).toBe(true);
+  });
+
+  test('gives up on a handshake that hangs and tries again', () => {
+    relay.start();
+    const hanging = latest();
+    timers.advance(CONNECT_TIMEOUT_MS);
+    expect(hanging.closedWith?.code).toBe(CLOSE_CODES.connectTimeout);
+    expect(events).toEqual(['down']);
+    timers.advance(1_000);
+    expect(sockets).toHaveLength(2);
+  });
+
+  test('stops the handshake timer once connected', () => {
+    relay.start();
+    latest().open();
+    timers.advance(CONNECT_TIMEOUT_MS);
+    expect(latest().closedWith).toBeNull();
   });
 
   test('sends a heartbeat and stays connected while frames keep arriving', () => {
@@ -72,7 +94,7 @@ describe('RelaySocket', () => {
     const first = latest();
     first.open();
     timers.advance(HEARTBEAT_INTERVAL_MS + HEARTBEAT_TIMEOUT_MS);
-    expect(first.closedWith).not.toBeNull();
+    expect(first.closedWith?.code).toBe(CLOSE_CODES.heartbeatTimeout);
     expect(events).toEqual(['open', 'down']);
     timers.advance(1_000);
     expect(sockets).toHaveLength(2);
@@ -84,22 +106,34 @@ describe('RelaySocket', () => {
     expect(waits).toEqual([1_000, 2_000, 5_000, 10_000, 30_000, 30_000]);
   });
 
-  test('starts the back-off over after a successful connection', () => {
+  test('starts the back-off over once the other side accepts the connection', () => {
     relay.start();
     failAndMeasure();
     failAndMeasure();
     latest().open();
+    relay.markReady();
     expect(failAndMeasure()).toBe(1_000);
+  });
+
+  test('keeps backing off when the relay closes right after connecting', () => {
+    relay.start();
+    failAndMeasure();
+    failAndMeasure();
+    latest().open();
+    expect(failAndMeasure()).toBe(5_000);
   });
 
   test('reports each outage once, however many attempts fail', () => {
     relay.start();
     latest().open();
+    relay.markReady();
     failAndMeasure();
     failAndMeasure();
+    latest().open();
     failAndMeasure();
     expect(events.filter((event) => event === 'down')).toHaveLength(1);
     latest().open();
+    relay.markReady();
     latest().drop();
     expect(events.filter((event) => event === 'down')).toHaveLength(2);
   });
@@ -135,7 +169,7 @@ describe('RelaySocket', () => {
 
   test('treats a socket that cannot be created as a failed attempt', () => {
     let calls = 0;
-    const failing = new RelaySocket({
+    const failing = new RelaySocket<DesktopFrame>({
       url: 'not a url',
       timers,
       createSocket: () => {

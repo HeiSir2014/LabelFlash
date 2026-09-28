@@ -5,6 +5,7 @@
 | [设计：总设计](superpowers/specs/2026-09-28-label-flash-design.md) | 整体设计：打印、模板、防重门限、存储、架构、安全、界面、构建与发布、测试 |
 | [设计：通用识别规则](superpowers/specs/2026-09-28-generic-scan-rules-design.md) | 1.0.1 起的识别规则、加工步骤、通用模板、多行扫码、打印结果通知 |
 | [设计：工作台与配置中心](superpowers/specs/2026-09-29-config-center-layout-design.md) | 界面信息架构：工作台只留扫码、预览、打印机、打印记录，其余配置进全窗口的配置中心 |
+| [设计：手机扫码打印](superpowers/specs/2026-09-29-mobile-scan-relay-design.md) | 1.1.0：电脑按需连云端中转服务，手机网页扫码、确认后在电脑上打印；会话、端到端加密、协议、部署 |
 | [计划：Phase 1 桌面端](superpowers/plans/2026-09-28-label-flash-phase1-desktop.md) | Phase 1 的实施计划（Task 1–14，含 13A–13J） |
 | [计划：通用识别规则](superpowers/plans/2026-09-28-generic-scan-rules.md) | 通用识别规则的实施计划 |
 | [路线图](roadmap.md) | 功能评级与状态，包括 macOS 适配（打包、状态检测、标签机验证）的进度 |

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - name: End-to-end tests (Playwright + Electron)
+        run: bun run test:e2e
+
+  package:
+    needs: check
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CDL-LabelFlash-windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+  # 打 v* 标签时发布：electron-builder 上传安装包、latest.yml 和 blockmap，electron-updater 据此自动更新。
+  release:
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run release:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

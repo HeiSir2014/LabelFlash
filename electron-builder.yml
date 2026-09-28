@@ -1,0 +1,56 @@
+appId: com.cdl.labelflash
+productName: CDL-云签速印
+copyright: Copyright © 2026 CDL
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**
+  - resources/**
+  - "!resources/*.svg"
+  - "!resources/installer.nsh"
+  - package.json
+asarUnpack:
+  - resources/**
+extraResources:
+  - from: src/renderer/src/assets/fonts/SmileySans-OFL.txt
+    to: licenses/SmileySans-OFL.txt
+# 只保留中文和英文的 Chromium 语言包，安装包更小。
+electronLanguages:
+  - zh-CN
+  - en-US
+# 没有第三方原生模块（SQLite 是 Electron 内置的 node:sqlite），不需要重新编译。
+npmRebuild: false
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  # 界面通过 app:// 自定义协议加载，不需要 file:// 的额外特权。
+  grantFileProtocolExtraPrivileges: false
+# 自动更新：electron-updater 从 GitHub Releases 读取 latest.yml。只有 CI 在打 v* 标签时才发布（--publish always）。
+publish:
+  provider: github
+  owner: HeiSir2014
+  repo: LabelFlash
+  releaseType: release
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.png
+  executableName: CDL-LabelFlash
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  shortcutName: CDL-云签速印
+  uninstallDisplayName: CDL-云签速印
+  artifactName: CDL-LabelFlash-Setup-${version}.${ext}
+  installerLanguages:
+    - zh_CN
+  include: resources/installer.nsh

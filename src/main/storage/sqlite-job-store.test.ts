@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type { JobRecord } from '../../core/types';
 import { openDatabase } from './database';
 import { SqliteJobStore } from './sqlite-job-store';
+import { createTempDir, removeTempDir } from './testing/temp-dir';
 
 function job(n: number, overrides: Partial<JobRecord> = {}): JobRecord {
   return {
@@ -166,13 +165,11 @@ describe('SqliteJobStore persistence', () => {
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'labelflash-db-'));
+    dir = await createTempDir('labelflash-db-');
   });
 
   afterEach(async () => {
-    // Bun 的 node:sqlite 在 close() 后仍由未回收的预编译语句占着文件，Windows 上删目录会 EBUSY；先强制回收。
-    Bun.gc(true);
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDir(dir);
   });
 
   test('keeps history and the search index across reopen', () => {

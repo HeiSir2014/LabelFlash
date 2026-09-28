@@ -64,9 +64,17 @@ export class DedupGuard {
   }
 
   restore(key: string, printedAt: number): void {
+    const now = this.clock.now();
+    // 记录里的时间戳可能比现在还晚（时钟回拨、数据损坏），钳到当前时刻，
+    // 避免比窗口本身还长的门限。
+    const clampedPrintedAt = Math.min(printedAt, now);
+    if (now - clampedPrintedAt >= MAX_DEDUP_WINDOW_MS) {
+      // 已经超过最大窗口的记录没有意义：不存，等着下一次 commit 触发 pruneExpired 清理没有区别。
+      return;
+    }
     const current = this.printedAt.get(key);
-    if (current === undefined || printedAt > current) {
-      this.printedAt.set(key, printedAt);
+    if (current === undefined || clampedPrintedAt > current) {
+      this.printedAt.set(key, clampedPrintedAt);
     }
   }
 
@@ -82,5 +90,10 @@ export class DedupGuard {
 }
 
 function clampWindow(windowMs: number): number {
+  // NaN/Infinity 落进 Math.min/max 会悄悄失效：peek 里的窗口比较永远为 false，
+  // 去重形同虚设却没有任何报错，所以必须在这里就地拒绝。
+  if (!Number.isFinite(windowMs)) {
+    throw new RangeError(`dedup window must be a finite number, got ${windowMs}`);
+  }
   return Math.min(MAX_DEDUP_WINDOW_MS, Math.max(0, windowMs));
 }

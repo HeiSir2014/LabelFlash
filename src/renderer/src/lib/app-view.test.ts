@@ -1,0 +1,49 @@
+import { describe, expect, test } from 'bun:test';
+import {
+  backStep,
+  CONFIG_NAV,
+  CONFIG_PAGES,
+  configShortcutLabel,
+  isConfigShortcut,
+  pageLabel,
+  type ShortcutKey,
+  WORKBENCH,
+} from './app-view';
+
+const key = (overrides: Partial<ShortcutKey> = {}): ShortcutKey => ({
+  key: ',',
+  ctrlKey: false,
+  metaKey: false,
+  altKey: false,
+  shiftKey: false,
+  ...overrides,
+});
+
+describe('config navigation', () => {
+  test('lists every page exactly once, in four groups', () => {
+    const pages = CONFIG_NAV.flatMap((group) => group.pages.map((item) => item.page));
+    expect(pages).toEqual([...CONFIG_PAGES]);
+    expect(CONFIG_NAV.map((group) => group.label)).toEqual(['标签', '识别', '集成', '系统']);
+    expect(pageLabel('notes')).toBe('常用备注');
+  });
+});
+
+describe('backStep', () => {
+  test('closes an open editor first, then the config center, and does nothing on the workbench', () => {
+    expect(backStep({ kind: 'config', page: 'rules' }, true)).toBe('close-editor');
+    expect(backStep({ kind: 'config', page: 'rules' }, false)).toBe('close-config');
+    expect(backStep(WORKBENCH, false)).toBe('none');
+  });
+});
+
+describe('config shortcut', () => {
+  test('is Ctrl+, on Windows and ⌘, on macOS, without other modifiers', () => {
+    expect(isConfigShortcut(key({ ctrlKey: true }), 'other')).toBe(true);
+    expect(isConfigShortcut(key({ metaKey: true }), 'mac')).toBe(true);
+    expect(isConfigShortcut(key({ ctrlKey: true }), 'mac')).toBe(false);
+    expect(isConfigShortcut(key({ ctrlKey: true, shiftKey: true }), 'other')).toBe(false);
+    expect(isConfigShortcut(key(), 'other')).toBe(false);
+    expect(configShortcutLabel('mac')).toBe('⌘,');
+    expect(configShortcutLabel('other')).toBe('Ctrl+,');
+  });
+});

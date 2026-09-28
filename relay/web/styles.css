@@ -73,7 +73,9 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* hidden 属性必须压过 .screen、.job 等设置了 display 的类（它们的优先级和 [hidden] 一样），这是通行的做法。 */
 [hidden] {
+  /* biome-ignore lint/complexity/noImportantStyles: 见上面的说明 */
   display: none !important;
 }
 
@@ -220,7 +222,6 @@ h1 {
     linear-gradient(var(--frame-color), var(--frame-color)) bottom right / 28px 4px,
     linear-gradient(var(--frame-color), var(--frame-color)) bottom right / 4px 28px;
   background-repeat: no-repeat;
-  transition: --frame-color 0.2s;
 }
 
 .sweep {
@@ -240,6 +241,17 @@ h1 {
   to {
     top: 92%;
   }
+}
+
+/* 点按对焦的位置提示 */
+.focus-ring {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border: 2px solid var(--color-tape);
+  border-radius: 8px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 
 .torch {

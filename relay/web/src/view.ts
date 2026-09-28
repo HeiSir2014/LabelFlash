@@ -1,6 +1,7 @@
 /**
  * 把状态画到页面上。页面结构在 index.html 里，这里只切换区块、填文字（一律 textContent，不拼 HTML）。
  */
+import type { VideoPoint } from './camera-features';
 import type { JobEntry, PhoneState } from './phone-state';
 import { type JobAction, jobView, linkBanner, messageView } from './result-view';
 
@@ -9,6 +10,8 @@ export interface ViewHandlers {
   onPhoto(file: File): void;
   onManual(raw: string): void;
   onTorch(on: boolean): void;
+  /** 点了取景画面：tap 是点在元素上的位置（像素），element 是元素的尺寸。 */
+  onViewfinderTap(tap: VideoPoint, element: { width: number; height: number }): void;
 }
 
 export interface CameraExtras {
@@ -20,6 +23,9 @@ const ACTION_LABELS: Record<JobAction, string> = {
   retry: '重试',
   force: '强制补打',
 };
+
+/** 对焦圈的动画时长：够看清点到了哪里，又不挡住画面。 */
+const FOCUS_RING_MS = 700;
 
 const CAMERA_HINTS: Record<PhoneState['camera'], string> = {
   pending: '正在打开摄像头…',
@@ -40,6 +46,17 @@ export class PhoneView {
         handlers.onPhoto(file);
       }
     });
+    this.byId('viewfinder').addEventListener('click', (event) => {
+      // 手电筒按钮也在取景框里，点它不算点按对焦。
+      if ((event.target as HTMLElement).closest('button')) {
+        return;
+      }
+      const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      handlers.onViewfinderTap(
+        { x: event.clientX - box.left, y: event.clientY - box.top },
+        { width: box.width, height: box.height },
+      );
+    });
     this.byId<HTMLFormElement>('manual').addEventListener('submit', (event) => {
       event.preventDefault();
       const input = this.byId<HTMLInputElement>('manual-input');
@@ -50,6 +67,28 @@ export class PhoneView {
         handlers.onManual(raw);
       }
     });
+  }
+
+  /** 在点按处画一个对焦圈（位置用 CSSOM 设置，不受 CSP 的内联样式限制）。 */
+  showFocusRing(tap: VideoPoint): void {
+    const ring = this.byId('focus-ring');
+    ring.style.left = `${tap.x}px`;
+    ring.style.top = `${tap.y}px`;
+    ring.hidden = false;
+    const isReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const animation = ring.animate(
+      isReduced
+        ? [{ opacity: 1 }, { opacity: 0 }]
+        : [
+            { opacity: 1, transform: 'translate(-50%, -50%) scale(1.4)' },
+            { opacity: 1, transform: 'translate(-50%, -50%) scale(1)', offset: 0.4 },
+            { opacity: 0, transform: 'translate(-50%, -50%) scale(1)' },
+          ],
+      { duration: FOCUS_RING_MS, easing: 'ease-out' },
+    );
+    animation.onfinish = () => {
+      ring.hidden = true;
+    };
   }
 
   /**

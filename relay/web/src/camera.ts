@@ -1,17 +1,23 @@
 /**
- * 摄像头：打开后置摄像头、取帧、手电筒、屏幕常亮，以及拍照识别时读取照片。
- * 这些都是浏览器 API 的薄封装，由假摄像头的浏览器测试和真机验收覆盖。
+ * 摄像头：打开后置摄像头、对焦和变焦、取帧、手电筒、屏幕常亮，以及拍照识别时读取照片。
+ * 怎么设置由 camera-features.ts 按能力决定（有单元测试）；这里是浏览器 API 的薄封装，
+ * 由假摄像头的浏览器测试和真机验收覆盖。
  */
+import {
+  type CameraCapabilities,
+  type CameraConstraintSet,
+  focusAtConstraints,
+  hasTorch,
+  startupConstraints,
+  type VideoPoint,
+} from './camera-features';
 
 /** 取帧时把画面缩到最长边不超过这个值：再大解码更慢，识别率也不会更高。 */
 const MAX_FRAME_EDGE_PX = 1280;
 
-interface TorchCapabilities extends MediaTrackCapabilities {
-  torch?: boolean;
-}
-
 export class Camera {
   private stream: MediaStream | null = null;
+  private capabilities: CameraCapabilities = {};
   private readonly canvas = document.createElement('canvas');
   private wakeLock: WakeLockSentinel | null = null;
 
@@ -19,6 +25,21 @@ export class Camera {
 
   get isRunning(): boolean {
     return this.stream !== null;
+  }
+
+  get hasTorch(): boolean {
+    return hasTorch(this.capabilities);
+  }
+
+  /** 这台设备能不能点按对焦（安卓 Chrome 多数可以；iPhone 由系统自动对焦，不能也不需要）。 */
+  get canFocusAt(): boolean {
+    return focusAtConstraints(this.capabilities, supportsPointsOfInterest(), { x: 0.5, y: 0.5 }) !== null;
+  }
+
+  /** 视频画面本身的尺寸（点按对焦时换算坐标用）；还没有画面时为 null。 */
+  get frameSize(): { width: number; height: number } | null {
+    const { videoWidth, videoHeight } = this.video;
+    return videoWidth > 0 && videoHeight > 0 ? { width: videoWidth, height: videoHeight } : null;
   }
 
   /** 打不开（没授权、没有摄像头、浏览器不支持）时抛错，由调用方降级为拍照识别。 */
@@ -35,6 +56,10 @@ export class Camera {
     });
     this.video.srcObject = this.stream;
     await this.video.play();
+    this.capabilities = readCapabilities(this.track());
+    for (const set of startupConstraints(this.capabilities)) {
+      await this.apply(set);
+    }
     await this.keepScreenOn();
   }
 
@@ -43,29 +68,44 @@ export class Camera {
       track.stop();
     }
     this.stream = null;
+    this.capabilities = {};
     this.video.srcObject = null;
     void this.wakeLock?.release();
     this.wakeLock = null;
   }
 
-  get hasTorch(): boolean {
-    const track = this.stream?.getVideoTracks()[0];
-    const capabilities = track?.getCapabilities?.() as TorchCapabilities | undefined;
-    return capabilities?.torch === true;
+  /** 点按对焦：point 是视频画面里的归一化坐标。 */
+  async focusAt(point: VideoPoint): Promise<void> {
+    const set = focusAtConstraints(this.capabilities, supportsPointsOfInterest(), point);
+    if (set) {
+      await this.apply(set);
+    }
   }
 
   async setTorch(on: boolean): Promise<void> {
-    const track = this.stream?.getVideoTracks()[0];
-    await track?.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
+    await this.track()?.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
   }
 
   /** 当前画面；还没有画面时返回 null。 */
   grab(): ImageData | null {
-    const { videoWidth, videoHeight } = this.video;
-    if (!this.stream || videoWidth === 0 || videoHeight === 0) {
+    const size = this.frameSize;
+    if (!this.stream || !size) {
       return null;
     }
-    return drawToImageData(this.canvas, this.video, videoWidth, videoHeight);
+    return drawToImageData(this.canvas, this.video, size.width, size.height);
+  }
+
+  private track(): MediaStreamTrack | undefined {
+    return this.stream?.getVideoTracks()[0];
+  }
+
+  /** 每组约束单独应用：设备拒绝某一项（抛 OverconstrainedError）时记下来，不影响其他项和扫码。 */
+  private async apply(set: CameraConstraintSet): Promise<void> {
+    try {
+      await this.track()?.applyConstraints({ advanced: [set as MediaTrackConstraintSet] });
+    } catch (error) {
+      console.warn('[Camera] constraint not applied', set, error);
+    }
   }
 
   /** 取景时保持屏幕常亮；不支持或被拒绝都不影响扫码。 */
@@ -86,6 +126,22 @@ export async function imageFromFile(file: File): Promise<ImageData> {
   } finally {
     bitmap.close();
   }
+}
+
+/** getCapabilities 在一些浏览器上不存在（旧版 Firefox），有的会抛错：都当作「什么都不支持」。 */
+function readCapabilities(track: MediaStreamTrack | undefined): CameraCapabilities {
+  try {
+    return (track?.getCapabilities?.() as CameraCapabilities | undefined) ?? {};
+  } catch (error) {
+    console.warn('[Camera] capabilities unavailable', error);
+    return {};
+  }
+}
+
+/** 对焦点不是范围值，getCapabilities 里没有它，只能从浏览器支持的约束列表里看。 */
+function supportsPointsOfInterest(): boolean {
+  const supported = navigator.mediaDevices?.getSupportedConstraints?.() as Record<string, boolean> | undefined;
+  return supported?.['pointsOfInterest'] === true;
 }
 
 function drawToImageData(

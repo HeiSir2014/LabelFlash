@@ -5,6 +5,7 @@
 import { importSessionKey } from '../../../src/shared/mobile-crypto';
 import { MAX_PENDING_JOBS, parsePhoneFragment } from '../../../src/shared/mobile-protocol';
 import { Camera, imageFromFile } from './camera';
+import { tapToVideoPoint } from './camera-features';
 import { Decoder } from './decoder';
 import { deviceLabel } from './device-label';
 import { PhoneSession } from './phone-session';
@@ -41,6 +42,15 @@ const view = new PhoneView(document, {
     isTorchOn = on;
     void camera.setTorch(on).catch((error) => console.warn('[main] torch failed', error));
     render();
+  },
+  onViewfinderTap: (tap, element) => {
+    const frame = camera.frameSize;
+    // iPhone 等不支持点按对焦的设备由系统自动对焦，点了也不画对焦圈，免得让人以为对焦了。
+    if (!frame || !camera.canFocusAt) {
+      return;
+    }
+    view.showFocusRing(tap);
+    void camera.focusAt(tapToVideoPoint(tap, element, frame));
   },
 });
 

@@ -3,6 +3,7 @@ import { fitWindowToWorkArea } from './window-bounds';
 import {
   type DisplaySnapshot,
   isTitleBarReachable,
+  isWindowReachable,
   measureSizeError,
   parseWindowState,
   planWindowPlacement,
@@ -126,6 +127,31 @@ describe('isTitleBarReachable', () => {
     // 只剩一小角露在屏幕边缘，或者标题栏在屏幕上方。
     expect(isTitleBarReachable({ x: 1880, y: 100, width: 1280, height: 800 }, [PRIMARY])).toBe(false);
     expect(isTitleBarReachable({ x: 100, y: -60, width: 1280, height: 800 }, [PRIMARY])).toBe(false);
+  });
+});
+
+describe('isWindowReachable', () => {
+  /** macOS 的屏幕：顶部 25px 是菜单栏，不在可用区域里。 */
+  const MAC_DISPLAY: DisplaySnapshot = {
+    id: 3,
+    bounds: { x: 0, y: 0, width: 1512, height: 982 },
+    workArea: { x: 0, y: 25, width: 1512, height: 957 },
+    scaleFactor: 2,
+  };
+
+  test('keeps a full-screen window whose title bar sits where the menu bar was', () => {
+    // 全屏时窗口铺满整块屏幕，标题栏大半落在菜单栏的位置：它仍在屏幕上，不能被拉回去退出全屏。
+    expect(isTitleBarReachable(MAC_DISPLAY.bounds, [MAC_DISPLAY])).toBe(false);
+    expect(isWindowReachable(MAC_DISPLAY.bounds, [MAC_DISPLAY], true)).toBe(true);
+  });
+
+  test('moves a full-screen window back once its screen is gone', () => {
+    expect(isWindowReachable(SECONDARY.bounds, [PRIMARY], true)).toBe(false);
+  });
+
+  test('uses the title bar rule for windows that are not full screen', () => {
+    expect(isWindowReachable({ x: 100, y: 100, width: 1280, height: 800 }, [PRIMARY], false)).toBe(true);
+    expect(isWindowReachable({ x: 100, y: -60, width: 1280, height: 800 }, [PRIMARY], false)).toBe(false);
   });
 });
 

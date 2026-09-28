@@ -98,6 +98,25 @@ export function isTitleBarReachable(bounds: Rectangle, displays: readonly Displa
   });
 }
 
+/**
+ * 窗口还在用户够得着的地方吗：屏幕配置变化后据此决定要不要拉回默认位置。
+ * 全屏窗口铺满整块屏幕，macOS 上标题栏落在菜单栏的位置（不在可用区域里），
+ * 只要它还在某块接着的屏幕上就算够得着；否则进入全屏时会被当成「跑到屏幕外」立刻退出全屏。
+ */
+export function isWindowReachable(
+  bounds: Rectangle,
+  displays: readonly DisplaySnapshot[],
+  isFullScreen: boolean,
+): boolean {
+  if (!isFullScreen) {
+    return isTitleBarReachable(bounds, displays);
+  }
+  return displays.some((display) => {
+    const overlap = intersect(bounds, display.bounds);
+    return overlap.width >= MIN_REACHABLE_TITLE_BAR.width && overlap.height >= MIN_REACHABLE_TITLE_BAR.height;
+  });
+}
+
 /** 读取保存的窗口状态；任何字段不合法都当作没有保存过（打开在默认位置）。 */
 export function parseWindowState(value: unknown): SavedWindowState | null {
   if (!isRecord(value) || typeof value['isMaximized'] !== 'boolean' || !isRecord(value['display'])) {

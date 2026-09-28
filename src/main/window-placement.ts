@@ -3,7 +3,7 @@ import type { SqliteWindowStateStore } from './storage/sqlite-window-state-store
 import { fitWindowToWorkArea } from './window-bounds';
 import {
   type DisplaySnapshot,
-  isTitleBarReachable,
+  isWindowReachable,
   measureSizeError,
   planWindowPlacement,
   type WindowPlacement,
@@ -66,7 +66,7 @@ export function trackWindowPlacement(
   };
 
   const bringBackOnScreen = () => {
-    if (window.isDestroyed() || isTitleBarReachable(window.getBounds(), connectedDisplays())) {
+    if (window.isDestroyed() || isWindowReachable(window.getBounds(), connectedDisplays(), window.isFullScreen())) {
       return;
     }
     if (window.isFullScreen()) {

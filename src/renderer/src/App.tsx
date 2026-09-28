@@ -69,20 +69,28 @@ export function App() {
     onActiveTemplateChanged: () => void station.refreshPreview(),
   });
 
-  // 编辑模板时预览草稿；没有扫码时用示例标签展示当前生效的模板（含备注下拉框的选择）。
+  // 编辑模板时预览草稿；悬停在其他模板上时预览它；没有扫码时用示例标签展示当前生效的模板。
+  // 三种情况都套用备注下拉框的选择，看到的就是打出来的样子。
   const noteOverride = settings?.noteOverride ?? DEFAULT_SETTINGS.noteOverride;
   const effectiveTemplate = useMemo(
     () => (templates.active ? applyNoteOverride(templates.active, noteOverride) : null),
     [templates.active, noteOverride],
   );
-  const previewTemplate = templates.draft ?? (station.scan ? null : effectiveTemplate);
+  const [hoverTemplateId, setHoverTemplateId] = useState<string | null>(null);
+  const hoverTemplate = useMemo(() => {
+    const template = templates.templates.find((item) => item.id === hoverTemplateId);
+    return template && template.id !== templates.active?.id ? applyNoteOverride(template, noteOverride) : null;
+  }, [templates.templates, templates.active, hoverTemplateId, noteOverride]);
+  const previewTemplate = templates.draft ?? hoverTemplate ?? (station.scan ? null : effectiveTemplate);
   const previewRaw = station.scan?.preview.result.status === 'ok' ? station.scan.raw : SAMPLE_LABEL_RAW;
   const overrideHtml = usePreviewHtml(previewRaw, previewTemplate);
   const override: PreviewOverride | null = templates.draft
     ? { html: overrideHtml, badge: '模板编辑中 · 未保存不会用于打印' }
-    : previewTemplate && templates.active
-      ? { html: overrideHtml, badge: `示例 · ${templates.active.name}` }
-      : null;
+    : hoverTemplate
+      ? { html: overrideHtml, badge: `预览 · ${hoverTemplate.name} · 点「使用」后才会用于打印` }
+      : previewTemplate && templates.active
+        ? { html: overrideHtml, badge: `示例 · ${templates.active.name}` }
+        : null;
 
   const noteOptions = buildNoteOptions(settings?.notePresets ?? [], noteOverride);
   const selectNote = async (value: string) => {
@@ -176,8 +184,10 @@ export function App() {
                 <TemplatePanel
                   templates={templates.templates}
                   activeId={templates.active?.id ?? null}
+                  previewId={hoverTemplate?.id ?? null}
                   draft={templates.draft}
                   isDirty={templates.isDirty}
+                  onPreviewChange={setHoverTemplateId}
                   onActivate={(id) => void templates.activate(id)}
                   onDuplicate={(id) => void templates.duplicate(id)}
                   onEdit={templates.startEdit}

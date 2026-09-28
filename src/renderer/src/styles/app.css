@@ -845,6 +845,18 @@ input {
   background: linear-gradient(90deg, var(--color-tape) 0 4px, var(--color-tape-wash) 4px);
 }
 
+/* 悬停预览中的模板：虚线框，和「使用中」的实色标记区分开 */
+.template-row--previewing {
+  outline: 1px dashed var(--color-ink-soft);
+  outline-offset: -4px;
+}
+
+.badge--preview {
+  border: 1px dashed var(--color-ink-soft);
+  background: transparent;
+  color: var(--color-ink);
+}
+
 .template-row__head {
   display: flex;
   align-items: center;

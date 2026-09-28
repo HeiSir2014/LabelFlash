@@ -80,6 +80,29 @@ test('keeps a saved custom template and the note selection after a restart', asy
   await second.app.close();
 });
 
+test('previews a template after the pointer rests on it, without switching to it', async () => {
+  const { app, page } = await launch();
+  await page.getByRole('tab', { name: '模板' }).click();
+  const badge = page.locator('.label-badge');
+  await expect(badge).toHaveText('示例 · 标准（二维码在左）');
+
+  const rightRow = page.locator('.template-row', { hasText: '二维码在右' });
+  await rightRow.locator('.template-row__name').hover();
+  // 停留不到 1 秒不切换，满 1 秒后才预览。
+  await page.waitForTimeout(500);
+  await expect(badge).toHaveText('示例 · 标准（二维码在左）');
+  await expect(badge).toHaveText('预览 · 二维码在右 · 点「使用」后才会用于打印', { timeout: 2_000 });
+  await expect(rightRow).toContainText('预览中');
+  await expect(page.frameLocator('.label-frame').locator('body')).toHaveClass(/layout-qr-right/);
+  await expect(page.locator('.template-row', { hasText: '使用中' })).toContainText('标准（二维码在左）');
+
+  // 离开列表立即恢复成使用中的模板。
+  await page.locator('.scan-bar__input').hover();
+  await expect(badge).toHaveText('示例 · 标准（二维码在左）');
+  await expect(rightRow).not.toContainText('预览中');
+  await app.close();
+});
+
 test('keeps the page isolated from Node and blocks new windows', async () => {
   const { app, page } = await launch();
   const exposure = await page.evaluate(() => ({

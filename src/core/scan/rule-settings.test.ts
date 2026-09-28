@@ -18,6 +18,7 @@ const CUSTOM: ScanRule = {
   delimiter: '_',
   fields: ['a', 'b'],
   overflowIndex: 0,
+  steps: [],
 };
 
 describe('defaultRuleSettings', () => {

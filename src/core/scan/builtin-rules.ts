@@ -17,6 +17,7 @@ export const BUILT_IN_RULES: readonly ScanRule[] = [
     fields: ['编码', '颜色', '尺码'],
     // 编码本身可能带「-」（例如 CL5640-TK）：多出来的横杠都算编码的一部分。
     overflowIndex: 0,
+    steps: [],
   },
   {
     id: `${BUILT_IN_RULE_PREFIX}digits-order`,
@@ -26,6 +27,7 @@ export const BUILT_IN_RULES: readonly ScanRule[] = [
     charset: 'digits',
     minLength: 8,
     maxLength: 30,
+    steps: [],
   },
   {
     id: `${BUILT_IN_RULE_PREFIX}key-value`,
@@ -41,6 +43,7 @@ export const BUILT_IN_RULES: readonly ScanRule[] = [
     ],
     required: [],
     keepUnknown: true,
+    steps: [],
   },
   {
     id: RAW_RULE_ID,
@@ -50,6 +53,7 @@ export const BUILT_IN_RULES: readonly ScanRule[] = [
     charset: 'any',
     minLength: 1,
     maxLength: MAX_RAW_LENGTH,
+    steps: [],
   },
 ];
 

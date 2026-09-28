@@ -18,6 +18,7 @@ const UNDERSCORE = {
   delimiter: '_',
   fields: ['款号', '颜色', '尺码'],
   overflowIndex: 0,
+  steps: [],
 };
 
 function codeOf(action: () => unknown): string {

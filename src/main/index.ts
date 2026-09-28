@@ -7,6 +7,7 @@ import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
 import { PrintQueue } from '../core/print-queue';
 import { PrintService } from '../core/print-service';
+import { type EnrichDeps, enrich } from '../core/scan/enrich';
 import { recognize } from '../core/scan/recognize';
 import { RuleCatalog } from '../core/scan/rule-catalog';
 import { TemplateCatalog } from '../core/templates/template-catalog';
@@ -26,7 +27,7 @@ import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { createReadinessProbe, PrinterStatusMonitor } from './printing/printer-status';
-import { createSandboxedRegexRunner } from './scan/sandboxed-regex';
+import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './scan/sandboxed-regex';
 import { denyAllPermissions, hardenAllWebContents } from './security';
 import { openDatabase } from './storage/database';
 import { SqliteJobStore } from './storage/sqlite-job-store';
@@ -150,6 +151,13 @@ async function bootstrap(): Promise<void> {
   const templates = new TemplateCatalog(new SqliteTemplateRepository(database, systemClock), randomUUID);
   const rules = new RuleCatalog(new SqliteScanRuleRepository(database, systemClock), randomUUID);
   const runRegex = createSandboxedRegexRunner();
+  const enrichDeps: EnrichDeps = {
+    replace: createSandboxedRegexReplacer(),
+    // 查找表和 HTTP 查询分别在后续两个任务接入。
+    lookup: () => null,
+    http: async () => ({ ok: false, detail: 'HTTP 查询还没有接入' }),
+    now: () => performance.now(),
+  };
   const guard = new DedupGuard(systemClock, secondsToMs(settings.current.dedupWindowSeconds));
   // 打印机状态和驱动纸张都经这一个常驻 PowerShell 查询（只在 Windows 上有）。
   const probeHost =
@@ -171,6 +179,7 @@ async function bootstrap(): Promise<void> {
     queue: new PrintQueue(PRINT_TIMEOUT_MS),
     createId: randomUUID,
     recognize: (raw) => recognize(raw, activeRules(rules, settings.current), runRegex),
+    enrich: (scan) => enrich(scan, rules.get(scan.ruleId)?.steps ?? [], enrichDeps, new Date()),
     resolveTemplate: (scan) => resolvePrintTemplate(templates, settings.current, scan),
   });
   service.restore();

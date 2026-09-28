@@ -127,6 +127,7 @@ describe('recognize: regex and ordering', () => {
       kind: 'regex',
       pattern: '^(?<款号>\\w+)#(?<尺码>\\w+)$',
       flags: '',
+      steps: [],
     };
     expect(recognize('CL1#XL', [rule], runRegex)?.fields).toEqual([
       { name: '款号', value: 'CL1' },

@@ -1,3 +1,4 @@
+import type { EnrichStep } from './enrich-model';
 import { MAX_RAW_LENGTH } from './normalize-raw';
 
 /**
@@ -16,6 +17,8 @@ export type WholeCharset = (typeof WHOLE_CHARSETS)[number];
 interface RuleBase {
   id: string;
   name: string;
+  /** 识别之后依次执行的加工步骤（见 enrich-model.ts）。 */
+  steps: EnrichStep[];
 }
 
 export interface DelimitedRule extends RuleBase {

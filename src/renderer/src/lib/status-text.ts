@@ -75,6 +75,7 @@ const FAILURE_TITLES: Record<PrintFailureReason, string> = {
   PRINTER_NOT_READY: '打印机未就绪',
   PRINT_TIMEOUT: '打印机没有响应',
   PRINT_ERROR: '打印失败',
+  LOOKUP_FAILED: '数据查询失败，没有打印',
 };
 
 const FAILURE_SHORT: Record<PrintFailureReason, string> = {
@@ -82,6 +83,7 @@ const FAILURE_SHORT: Record<PrintFailureReason, string> = {
   PRINTER_NOT_READY: '未就绪',
   PRINT_TIMEOUT: '超时',
   PRINT_ERROR: '驱动报错',
+  LOOKUP_FAILED: '查询失败',
 };
 
 /** 这些失败确定没有出纸，可以直接重试；超时结果不确定，只能强制补打。 */
@@ -89,6 +91,7 @@ const RETRYABLE_FAILURES: ReadonlySet<PrintFailureReason> = new Set([
   'PRINTER_NOT_FOUND',
   'PRINTER_NOT_READY',
   'PRINT_ERROR',
+  'LOOKUP_FAILED',
 ]);
 
 const SOURCE_LABELS: Record<PrintSource, string> = {
@@ -135,7 +138,13 @@ function failureDetail(reason: PrintFailureReason, detail: string | undefined): 
       return `${PRINT_TIMEOUT_SECONDS} 秒内没有响应，可能已出纸或仍在排队；确认没有出纸再用「强制补打」`;
     case 'PRINT_ERROR':
       return '打印机驱动报错，检查打印机状态后重试';
+    case 'LOOKUP_FAILED':
+      return lookupFailureDetail(detail);
   }
+}
+
+function lookupFailureDetail(detail: string | undefined): string {
+  return `${detail ?? '接口没有返回需要的数据'}；规则设为查询失败时不打印，接口恢复后点「重试打印」`;
 }
 
 function describeRecent(recent: RecentPrint, now: number): string {
@@ -209,6 +218,12 @@ export function describeScan(scan: ScanSnapshot | null, context: ScanContext): S
         print: canRetry && context.hasPrinter ? 'retry' : null,
         forceReprint: canForce && context.hasPrinter,
       },
+    };
+  }
+  if (previewResult.lookupFailure !== null) {
+    return {
+      status: { tone: 'error', title: '数据查询失败', detail: lookupFailureDetail(previewResult.lookupFailure) },
+      actions: { print: context.hasPrinter ? 'retry' : null, forceReprint: false },
     };
   }
   if (!context.hasPrinter) {

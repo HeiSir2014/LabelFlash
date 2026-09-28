@@ -12,6 +12,7 @@ import {
   WHOLE_CHARSETS,
   type WholeRule,
 } from './rule-model';
+import { isStepIssue, sanitizeSteps } from './sanitize-steps';
 
 /** 规则不合法的原因（中文，直接展示给配置规则的人）。 */
 export interface RuleIssue {
@@ -25,6 +26,7 @@ export function isRuleIssue(value: ScanRule | RuleIssue): value is RuleIssue {
 class RuleInvalid extends Error {}
 
 type Loose = Record<string, unknown>;
+type Base = Pick<ScanRule, 'id' | 'name' | 'steps'>;
 
 /**
  * 校验来自界面、数据库或导入文件的规则。和模板不同，这里不做静默修正：
@@ -38,15 +40,20 @@ export function sanitizeRule(value: unknown, id: string): ScanRule | RuleIssue {
       throw new RuleInvalid('规则类型不对，只能是分隔符拆分、多行键值、整段匹配或正则');
     }
     const name = text(input['name'], RULE_LIMITS.nameLength, '规则名称');
+    const steps = sanitizeSteps(input['steps']);
+    if (isStepIssue(steps)) {
+      throw new RuleInvalid(steps.issue);
+    }
+    const base: Base = { id, name, steps };
     switch (kind as ScanRule['kind']) {
       case 'delimited':
-        return delimited(input, id, name);
+        return delimited(input, base);
       case 'keyValue':
-        return keyValue(input, id, name);
+        return keyValue(input, base);
       case 'whole':
-        return whole(input, id, name);
+        return whole(input, base);
       case 'regex':
-        return regex(input, id, name);
+        return regex(input, base);
     }
   } catch (error) {
     if (error instanceof RuleInvalid) {
@@ -56,7 +63,7 @@ export function sanitizeRule(value: unknown, id: string): ScanRule | RuleIssue {
   }
 }
 
-function delimited(input: Loose, id: string, name: string): DelimitedRule {
+function delimited(input: Loose, base: Base): DelimitedRule {
   const delimiter = input['delimiter'];
   if (typeof delimiter !== 'string' || delimiter.length === 0 || delimiter.length > RULE_LIMITS.delimiterLength) {
     throw new RuleInvalid(`分隔符要有 1–${RULE_LIMITS.delimiterLength} 个字符`);
@@ -70,10 +77,10 @@ function delimited(input: Loose, id: string, name: string): DelimitedRule {
   if (!Number.isInteger(overflowIndex) || (overflowIndex as number) < 0 || (overflowIndex as number) >= fields.length) {
     throw new RuleInvalid('多出来的分隔符要并入一个已有的字段');
   }
-  return { id, name, kind: 'delimited', delimiter, fields, overflowIndex: overflowIndex as number };
+  return { ...base, kind: 'delimited', delimiter, fields, overflowIndex: overflowIndex as number };
 }
 
-function keyValue(input: Loose, id: string, name: string): KeyValueRule {
+function keyValue(input: Loose, base: Base): KeyValueRule {
   const separators = list(input['separators']).map((separator) => {
     if (typeof separator !== 'string' || separator.length === 0 || separator.length > RULE_LIMITS.separatorLength) {
       throw new RuleInvalid(`键值分隔符要有 1–${RULE_LIMITS.separatorLength} 个字符`);
@@ -111,7 +118,7 @@ function keyValue(input: Loose, id: string, name: string): KeyValueRule {
   if (typeof keepUnknown !== 'boolean') {
     throw new RuleInvalid('没有说明是否保留未登记的键');
   }
-  return { id, name, kind: 'keyValue', separators, fields, required: [...new Set(required)], keepUnknown };
+  return { ...base, kind: 'keyValue', separators, fields, required: [...new Set(required)], keepUnknown };
 }
 
 function keyValueField(value: unknown): KeyValueField {
@@ -124,7 +131,7 @@ function keyValueField(value: unknown): KeyValueField {
   return { name, aliases };
 }
 
-function whole(input: Loose, id: string, name: string): WholeRule {
+function whole(input: Loose, base: Base): WholeRule {
   const field = fieldName(input['field']);
   const charset = input['charset'];
   if (typeof charset !== 'string' || !(WHOLE_CHARSETS as readonly string[]).includes(charset)) {
@@ -139,8 +146,7 @@ function whole(input: Loose, id: string, name: string): WholeRule {
     throw new RuleInvalid(`长度范围要在 ${min}–${max} 之间，且最短不能大于最长`);
   }
   return {
-    id,
-    name,
+    ...base,
     kind: 'whole',
     field,
     charset: charset as WholeRule['charset'],
@@ -149,7 +155,7 @@ function whole(input: Loose, id: string, name: string): WholeRule {
   };
 }
 
-function regex(input: Loose, id: string, name: string): RegexRule {
+function regex(input: Loose, base: Base): RegexRule {
   const pattern = input['pattern'];
   if (typeof pattern !== 'string' || pattern.length === 0) {
     throw new RuleInvalid('正则不能为空');
@@ -179,7 +185,7 @@ function regex(input: Loose, id: string, name: string): RegexRule {
       throw new RuleInvalid(`命名分组「${group}」不能作为字段名`);
     }
   }
-  return { id, name, kind: 'regex', pattern, flags: [...flags].sort().join('') };
+  return { ...base, kind: 'regex', pattern, flags: [...flags].sort().join('') };
 }
 
 function fieldNames(value: unknown): string[] {

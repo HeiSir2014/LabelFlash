@@ -15,7 +15,7 @@ export const MIGRATIONS: readonly string[] = [
     status         TEXT    NOT NULL CHECK (status IN ('printed', 'duplicate', 'invalid', 'failed')),
     forced         INTEGER NOT NULL CHECK (forced IN (0, 1)),
     failure_reason TEXT             CHECK (failure_reason IN
-      ('PRINTER_NOT_FOUND', 'PRINTER_NOT_READY', 'PRINT_TIMEOUT', 'PRINT_ERROR'))
+      ('PRINTER_NOT_FOUND', 'PRINTER_NOT_READY', 'PRINT_TIMEOUT', 'PRINT_ERROR', 'LOOKUP_FAILED'))
   ) STRICT;
 
   CREATE INDEX jobs_printed_at ON jobs (created_at) WHERE status = 'printed';

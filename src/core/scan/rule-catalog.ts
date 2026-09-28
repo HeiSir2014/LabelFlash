@@ -38,6 +38,7 @@ const STARTER_RULES: { [K in RuleKind]: RuleDraft<K> } = {
     delimiter: '_',
     fields: ['字段1', '字段2'],
     overflowIndex: 0,
+    steps: [],
   },
   keyValue: {
     kind: 'keyValue',
@@ -46,6 +47,7 @@ const STARTER_RULES: { [K in RuleKind]: RuleDraft<K> } = {
     fields: [{ name: '字段1', aliases: [] }],
     required: [],
     keepUnknown: true,
+    steps: [],
   },
   whole: {
     kind: 'whole',
@@ -54,8 +56,9 @@ const STARTER_RULES: { [K in RuleKind]: RuleDraft<K> } = {
     charset: 'any',
     minLength: 1,
     maxLength: MAX_RAW_LENGTH,
+    steps: [],
   },
-  regex: { kind: 'regex', name: '新规则（正则）', pattern: '^(?<字段1>.+)$', flags: '' },
+  regex: { kind: 'regex', name: '新规则（正则）', pattern: '^(?<字段1>.+)$', flags: '', steps: [] },
 };
 
 const LIMIT_MESSAGE = `自定义规则最多 ${RULE_LIMITS.customRules} 条，请先删除不用的规则`;

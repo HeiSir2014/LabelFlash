@@ -19,6 +19,8 @@ export const PRINT_FAILURE_REASONS = [
   'PRINTER_NOT_READY',
   'PRINT_TIMEOUT',
   'PRINT_ERROR',
+  /** 加工步骤里设为「拦下不打印」的 HTTP 查询失败。 */
+  'LOOKUP_FAILED',
 ] as const;
 export type PrintFailureReason = (typeof PRINT_FAILURE_REASONS)[number];
 
@@ -41,7 +43,14 @@ export type PrintStatus = PrintResult['status'];
 export const PRINT_STATUSES = ['printed', 'duplicate', 'invalid', 'failed'] as const satisfies readonly PrintStatus[];
 
 export type PreviewResult =
-  | { status: 'ok'; scan: ScanResult; recent: RecentPrint | null }
+  | {
+      status: 'ok';
+      /** 已执行加工步骤的结果。 */
+      scan: ScanResult;
+      recent: RecentPrint | null;
+      /** 设为「拦下不打印」的 HTTP 查询失败了：打印会被拦下，这里是原因。 */
+      lookupFailure: string | null;
+    }
   | { status: 'invalid'; reason: InvalidReason };
 
 export interface PrinterInfo {

@@ -4,6 +4,7 @@ import { PrintError } from './errors';
 import { PrintQueue } from './print-queue';
 import { PrintService, TEST_RAW } from './print-service';
 import { BUILT_IN_RULES, DASH_THREE_RULE_ID, RAW_RULE_ID } from './scan/builtin-rules';
+import type { EnrichResult } from './scan/enrich';
 import { MAX_RAW_LENGTH } from './scan/normalize-raw';
 import { recognize } from './scan/recognize';
 import type { ScanRule } from './scan/rule-model';
@@ -38,6 +39,7 @@ function createHarness(store = new InMemoryJobStore()) {
   let template: LabelTemplate = STANDARD_TEMPLATE;
   let rules: readonly ScanRule[] = BUILT_IN_RULES;
   const templateRequests: ScanResult[] = [];
+  let enrichScan: (scan: ScanResult) => Promise<EnrichResult> = async (scan) => ({ scan, traces: [], blocked: null });
   let nextId = 0;
   const service = new PrintService({
     adapter,
@@ -47,6 +49,7 @@ function createHarness(store = new InMemoryJobStore()) {
     queue: new PrintQueue(1_000),
     createId: () => `job-${++nextId}`,
     recognize: (raw) => recognize(raw, rules, noRegex),
+    enrich: (scan) => enrichScan(scan),
     resolveTemplate: (scan) => {
       templateRequests.push(scan);
       return template;
@@ -58,8 +61,23 @@ function createHarness(store = new InMemoryJobStore()) {
   const useRules = (next: readonly ScanRule[]) => {
     rules = next;
   };
-  return { clock, adapter, store, service, useTemplate, useRules, templateRequests };
+  const useEnrich = (next: (scan: ScanResult) => Promise<EnrichResult>) => {
+    enrichScan = next;
+  };
+  return { clock, adapter, store, service, useTemplate, useRules, useEnrich, templateRequests };
 }
+
+const withShelf = async (scan: ScanResult): Promise<EnrichResult> => ({
+  scan: { ...scan, fields: [...scan.fields, { name: '货架号', value: 'A-01' }] },
+  traces: [],
+  blocked: null,
+});
+
+const lookupFails = async (scan: ScanResult): Promise<EnrichResult> => ({
+  scan,
+  traces: [],
+  blocked: { stepIndex: 0, detail: '查询超时' },
+});
 
 function request(overrides: Partial<PrintRequest> = {}): PrintRequest {
   return { raw: RAW, printerName: PRINTER, source: 'desktop', ...overrides };
@@ -197,9 +215,9 @@ describe('PrintService.submit', () => {
 });
 
 describe('PrintService.preview', () => {
-  test('recognises the scan and reports no recent print', () => {
+  test('recognises the scan and reports no recent print', async () => {
     const { service } = createHarness();
-    expect(service.preview(RAW)).toEqual({ status: 'ok', scan: RAW_SCAN, recent: null });
+    expect(await service.preview(RAW)).toEqual({ status: 'ok', scan: RAW_SCAN, recent: null, lookupFailure: null });
   });
 
   test('reports a recent print inside the window', async () => {
@@ -207,14 +225,72 @@ describe('PrintService.preview', () => {
     await service.submit(request());
     const printedAt = clock.now();
     clock.advance(30_000);
-    expect(service.preview(RAW)).toMatchObject({ recent: { state: 'printed', at: printedAt } });
+    expect(await service.preview(RAW)).toMatchObject({ recent: { state: 'printed', at: printedAt } });
   });
 
-  test('rejects blank input and content no rule recognises', () => {
+  test('rejects blank input and content no rule recognises', async () => {
     const { service, useRules } = createHarness();
-    expect(service.preview('   ')).toEqual({ status: 'invalid', reason: 'INVALID_CONTENT' });
+    expect(await service.preview('   ')).toEqual({ status: 'invalid', reason: 'INVALID_CONTENT' });
     useRules([]);
-    expect(service.preview(RAW)).toEqual({ status: 'invalid', reason: 'NO_MATCHING_RULE' });
+    expect(await service.preview(RAW)).toEqual({ status: 'invalid', reason: 'NO_MATCHING_RULE' });
+  });
+
+  test('shows the processed fields and warns when a blocking lookup failed', async () => {
+    const { service, useEnrich } = createHarness();
+    useEnrich(withShelf);
+    expect(await service.preview(RAW)).toMatchObject({ scan: { fields: [{}, {}, {}, { name: '货架号' }] } });
+    useEnrich(lookupFails);
+    expect(await service.preview(RAW)).toMatchObject({ status: 'ok', lookupFailure: '查询超时' });
+  });
+});
+
+describe('PrintService processing steps', () => {
+  test('prints the processed scan but dedups on the raw content', async () => {
+    const { service, useEnrich, templateRequests } = createHarness();
+    useEnrich(withShelf);
+    const result = await service.submit(request());
+    expect(result).toMatchObject({ status: 'printed', scan: { raw: RAW } });
+    expect(templateRequests[0]?.fields.at(-1)).toEqual({ name: '货架号', value: 'A-01' });
+    expect((await service.submit(request())).status).toBe('duplicate');
+  });
+
+  test('a blocking lookup failure does not print, is recorded, and can be retried at once', async () => {
+    const { service, useEnrich, adapter, store } = createHarness();
+    useEnrich(lookupFails);
+    expect(await service.submit(request())).toEqual({ status: 'failed', reason: 'LOOKUP_FAILED', detail: '查询超时' });
+    expect(adapter.printed).toHaveLength(0);
+    expect(store.listRecent(1)[0]).toMatchObject({ status: 'failed', failureReason: 'LOOKUP_FAILED' });
+    useEnrich(withShelf);
+    expect((await service.submit(request())).status).toBe('printed');
+  });
+
+  test('a repeat scan is blocked before any lookup runs', async () => {
+    const { service, useEnrich, adapter } = createHarness();
+    let lookups = 0;
+    useEnrich(async (scan) => {
+      lookups += 1;
+      return { scan, traces: [], blocked: null };
+    });
+    const release = adapter.hold();
+    const first = service.submit(request());
+    expect((await service.submit(request())).status).toBe('duplicate');
+    release();
+    await first;
+    expect(lookups).toBe(1);
+  });
+
+  test('an unexpected error in the steps prints without them', async () => {
+    const { service, useEnrich } = createHarness();
+    useEnrich(async () => {
+      throw new Error('boom');
+    });
+    expect((await service.submit(request())).status).toBe('printed');
+  });
+
+  test('the test page skips the steps', async () => {
+    const { service, useEnrich } = createHarness();
+    useEnrich(lookupFails);
+    expect((await service.printTest(PRINTER)).status).toBe('printed');
   });
 });
 

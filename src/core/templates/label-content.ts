@@ -39,11 +39,14 @@ export function resolveFields(template: LabelTemplate, scan: ScanResult): Resolv
 function allFieldRows(template: LabelTemplate, scan: ScanResult): FieldRow[] {
   const { all } = template.fieldsArea;
   const style: TextStyle = { fontSizeMm: all.fontSizeMm, bold: all.bold };
-  const rows = scan.fields.map((field) => ({
-    prefix: all.showNames ? `${field.name}${all.separator}` : '',
-    value: field.value,
-    style,
-  }));
+  // 空值（例如查找表没查到）不占一行。
+  const rows = scan.fields
+    .filter((field) => field.value !== '')
+    .map((field) => ({
+      prefix: all.showNames ? `${field.name}${all.separator}` : '',
+      value: field.value,
+      style,
+    }));
   const maxRows = TEMPLATE_LIMITS.allFieldRows;
   if (rows.length <= maxRows) {
     return rows;

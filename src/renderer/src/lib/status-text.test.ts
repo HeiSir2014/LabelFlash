@@ -25,7 +25,7 @@ const SCAN: ScanResult = {
   ],
 };
 const OK_PREVIEW: LabelPreview = {
-  result: { status: 'ok', scan: SCAN, recent: null },
+  result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: null },
   html: '<html></html>',
   templateName: '样衣标准（二维码在左）',
   qrOmitted: false,
@@ -150,11 +150,28 @@ describe('describeScan', () => {
   test('manual mode still lets F2 submit a recently printed label (the threshold decides) and offers force', () => {
     const preview: LabelPreview = {
       ...OK_PREVIEW,
-      result: { status: 'ok', scan: SCAN, recent: { state: 'printed', at: NOW - 2 * MINUTE } },
+      result: { status: 'ok', scan: SCAN, recent: { state: 'printed', at: NOW - 2 * MINUTE }, lookupFailure: null },
     };
     const view = describeScan(snapshot({ preview }), context());
     expect(view.status).toMatchObject({ tone: 'warning', title: '2 分钟前已打印过' });
     expect(view.actions).toEqual({ print: 'print', forceReprint: true });
+  });
+
+  test('a lookup that failed during preview offers a retry instead of printing blank data', () => {
+    const preview: LabelPreview = {
+      ...OK_PREVIEW,
+      result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: '查询超时' },
+    };
+    const view = describeScan(snapshot({ preview }), context());
+    expect(view.status).toMatchObject({ tone: 'error', title: '数据查询失败' });
+    expect(view.status.detail).toContain('查询超时');
+    expect(view.actions).toEqual({ print: 'retry', forceReprint: false });
+  });
+
+  test('a blocked print explains the lookup failure', () => {
+    const view = describeResult({ status: 'failed', reason: 'LOOKUP_FAILED', detail: '返回 500' }, NOW);
+    expect(view).toMatchObject({ tone: 'error', title: '数据查询失败，没有打印' });
+    expect(view.detail).toContain('返回 500');
   });
 
   test('no printer selected blocks printing in both modes', () => {

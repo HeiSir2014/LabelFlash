@@ -2,6 +2,7 @@ import { type DedupGuard, MAX_DEDUP_WINDOW_MS } from './dedup-guard';
 import { type PrintFailure, toPrintFailure } from './errors';
 import type { JobStore } from './job-store';
 import type { PrintQueue } from './print-queue';
+import type { EnrichResult } from './scan/enrich';
 import { MAX_RAW_LENGTH, normalizeRaw } from './scan/normalize-raw';
 import type { ScanResult } from './scan/scan-result';
 import type { LabelTemplate } from './templates/template-model';
@@ -26,6 +27,8 @@ export interface PrintServiceDeps {
   createId: () => string;
   /** 按本机当前启用的规则识别；每次调用都读取最新规则，改规则立即生效。 */
   recognize: (raw: string) => ScanResult | null;
+  /** 执行命中规则的加工步骤。 */
+  enrich: (scan: ScanResult) => Promise<EnrichResult>;
   /** 本次识别结果用的模板（规则绑定的模板或当前模板）；每次打印时读取，切换模板立即生效。 */
   resolveTemplate: (scan: ScanResult) => LabelTemplate;
 }
@@ -44,13 +47,20 @@ export class PrintService {
     }
   }
 
-  preview(raw: string): PreviewResult {
+  /** 预览同样执行加工步骤（HTTP 查询的结果会被缓存，紧接着打印时直接用）。 */
+  async preview(raw: string): Promise<PreviewResult> {
     const recognition = this.recognize(raw);
     if (!recognition.ok) {
       return recognition.result;
     }
-    const { scan } = recognition;
-    return { status: 'ok', scan, recent: this.deps.guard.peek(scan.raw) };
+    const enriched = await this.enrich(recognition.scan);
+    const { scan } = enriched;
+    return {
+      status: 'ok',
+      scan,
+      recent: this.deps.guard.peek(scan.raw),
+      lookupFailure: enriched.blocked?.detail ?? null,
+    };
   }
 
   async submit(request: PrintRequest): Promise<PrintResult> {
@@ -60,15 +70,26 @@ export class PrintService {
       const truncated = request.raw.trim().slice(0, MAX_RAW_LENGTH);
       return this.finish(id, request, truncated, recognition.result);
     }
-    const { scan } = recognition;
-    const reservation = this.deps.guard.tryReserve(scan.raw, request.force === true);
+    const { raw } = recognition.scan;
+    // 先占住防重复窗口再加工：HTTP 查询要花时间，扫码枪连按的第二下必须在这里就被拦下。
+    const reservation = this.deps.guard.tryReserve(raw, request.force === true);
     if (!reservation.ok) {
-      return this.finish(id, request, scan.raw, {
+      return this.finish(id, request, raw, {
         status: 'duplicate',
         recent: reservation.recent,
         windowMs: this.deps.guard.windowMs,
       });
     }
+    const enriched = await this.enrich(recognition.scan);
+    if (enriched.blocked) {
+      this.deps.guard.release(raw);
+      return this.finish(id, request, raw, {
+        status: 'failed',
+        reason: 'LOOKUP_FAILED',
+        detail: enriched.blocked.detail,
+      });
+    }
+    const { scan } = enriched;
     try {
       await this.deps.queue.enqueue(request.printerName, (signal) =>
         this.deps.adapter.print(request.printerName, this.createJob(scan), signal),
@@ -88,7 +109,10 @@ export class PrintService {
     return this.finish(id, request, scan.raw, { status: 'printed', jobId: id, scan });
   }
 
-  /** 测试页同样按规则识别、按规则绑定的模板打印，所见即所得。 */
+  /**
+   * 测试页按规则识别、按规则绑定的模板打印，但不执行加工步骤：
+   * 测试页是检查打印机的，不应该因为 HTTP 接口不通而打不出来，也不该拿测试内容去查接口。
+   */
   async printTest(printerName: string): Promise<PrintResult> {
     const scan = this.deps.recognize(TEST_RAW) ?? TEST_FALLBACK_SCAN;
     try {
@@ -108,6 +132,16 @@ export class PrintService {
     }
     const scan = this.deps.recognize(raw);
     return scan ? { ok: true, scan } : { ok: false, result: { status: 'invalid', reason: 'NO_MATCHING_RULE' } };
+  }
+
+  /** 加工步骤里意外的异常（不是查询失败）不能拦住打印：记日志，按没有加工处理。 */
+  private async enrich(scan: ScanResult): Promise<EnrichResult> {
+    try {
+      return await this.deps.enrich(scan);
+    } catch (error) {
+      console.error('[PrintService] processing steps failed', error);
+      return { scan, traces: [], blocked: null };
+    }
   }
 
   private createJob(scan: ScanResult): LabelJob {

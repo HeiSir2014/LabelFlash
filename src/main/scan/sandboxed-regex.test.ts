@@ -1,5 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { createSandboxedRegexRunner } from './sandboxed-regex';
+import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './sandboxed-regex';
+
+describe('createSandboxedRegexReplacer', () => {
+  test('replaces the first match, or every match with the g flag, with $ references', () => {
+    const replace = createSandboxedRegexReplacer(50, () => {});
+    expect(replace('^SO-', '', 'SO-123', '')).toBe('123');
+    expect(replace('-', 'g', 'a-b-c', '/')).toBe('a/b/c');
+    expect(replace('(?<年>\\d{4})(?<月>\\d{2})', '', '202609', '$<月>/$<年>')).toBe('09/2026');
+    expect(replace('x', '', 'abc', 'y')).toBe('abc');
+  });
+
+  test('gives up on catastrophic backtracking', () => {
+    const replace = createSandboxedRegexReplacer(50, () => {});
+    expect(replace('^(a+)+$', '', `${'a'.repeat(40)}!`, '')).toBeNull();
+  });
+});
 
 describe('createSandboxedRegexRunner', () => {
   test('returns named groups on a match and null otherwise', () => {

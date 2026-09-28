@@ -52,6 +52,11 @@ describe('resolveFieldRows', () => {
     ]);
   });
 
+  test('skips empty fields, such as a lookup that found nothing', () => {
+    const scan: ScanResult = { ...ORDER, fields: [...ORDER.fields, { name: '货架号', value: '' }] };
+    expect(resolveFieldRows(GENERIC_TEMPLATE, scan).map((row) => row.value)).toEqual(['202609280001']);
+  });
+
   test('hides the names when the template says so', () => {
     const template: LabelTemplate = {
       ...GENERIC_TEMPLATE,

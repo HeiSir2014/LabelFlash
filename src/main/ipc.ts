@@ -91,12 +91,12 @@ export function registerIpc(deps: IpcDeps): void {
     return next;
   };
 
-  handle(IpcChannel.Preview, (raw) => {
-    const result = deps.service.preview(requireString(raw, 'raw'));
+  handle(IpcChannel.Preview, async (raw) => {
+    const result = await deps.service.preview(requireString(raw, 'raw'));
     return renderPreview(result, templateFor(result));
   });
-  handle(IpcChannel.PreviewTemplate, (raw, template) => {
-    const result = deps.service.preview(requireString(raw, 'raw'));
+  handle(IpcChannel.PreviewTemplate, async (raw, template) => {
+    const result = await deps.service.preview(requireString(raw, 'raw'));
     const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, templateFor(result));
     return renderPreview(result, draft);
   });

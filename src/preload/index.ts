@@ -55,6 +55,12 @@ const api: LabelFlashApi = {
   installUpdate: () => ipcRenderer.invoke(IpcChannel.InstallUpdate),
   onUpdateStatus: (listener) => subscribe(IpcChannel.UpdateStatusChanged, listener),
   getVoiceClip: (cue) => ipcRenderer.invoke(IpcChannel.VoiceClip, cue),
+  startMobile: () => ipcRenderer.invoke(IpcChannel.MobileStart),
+  stopMobile: () => ipcRenderer.invoke(IpcChannel.MobileStop),
+  getMobileStatus: () => ipcRenderer.invoke(IpcChannel.MobileStatus),
+  removeMobilePhone: (id) => ipcRenderer.invoke(IpcChannel.MobileRemovePhone, id),
+  setMobileJoinLocked: (locked) => ipcRenderer.invoke(IpcChannel.MobileSetJoinLocked, locked),
+  onMobileStatus: (listener) => subscribe(IpcChannel.MobileStatusChanged, listener),
 };
 
 const windowControls: WindowControlsApi = {

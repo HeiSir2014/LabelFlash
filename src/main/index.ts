@@ -16,6 +16,7 @@ import { systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { IpcChannel } from '../shared/ipc-contract';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
+import type { SocketLike } from '../shared/relay-socket';
 import { secondsToMs } from '../shared/settings';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
@@ -24,6 +25,8 @@ import { LOGS_DIR_NAME } from './log-files';
 import { setupLogging } from './logging';
 import { LookupTables } from './lookup/lookup-tables';
 import { BUILD_DEFAULT_RELAY_URL } from './mobile/build-defaults';
+import { MobileHost } from './mobile/mobile-host';
+import { MOBILE_TICK_INTERVAL_MS, MobileStation } from './mobile/mobile-station';
 import { WebhookOutbox } from './notify/webhook-outbox';
 import { createWebhookSender } from './notify/webhook-sender';
 import { activeRules, resolvePrintTemplate } from './print-template';
@@ -233,6 +236,30 @@ async function bootstrap(): Promise<void> {
       isQuitting = true;
     },
   });
+  const mobile = new MobileStation({
+    settings: () => settings.current,
+    buildDefaultRelayUrl: BUILD_DEFAULT_RELAY_URL,
+    listPrinters: () => adapter.listPrinters(),
+    submit: (request) => service.submit(request),
+    createHost: (hostDeps) =>
+      new MobileHost({
+        ...hostDeps,
+        clock: systemClock,
+        timers: {
+          setTimeout: (callback, ms) => setTimeout(callback, ms),
+          clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+        },
+        // 主进程（Node 24）自带 WebSocket，不需要额外的依赖；它不走系统代理（README 里写明）。
+        createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
+        // 日志行自带「mobile:」前缀。
+        log: (line) => console.info(line),
+      }),
+    onStatus: (status) => sendToMainWindow(IpcChannel.MobileStatusChanged, status),
+    log: (line) => console.info(line),
+  });
+  const mobileTicker = setInterval(() => mobile.tick(), MOBILE_TICK_INTERVAL_MS);
+  // 在 before-quit 就告诉手机「程序已退出」：到 will-quit 时进程马上结束，消息可能来不及发出。
+  app.on('before-quit', () => mobile.quit());
 
   registerIpc({
     service,
@@ -261,6 +288,7 @@ async function bootstrap(): Promise<void> {
     },
     updater,
     voice,
+    mobile,
     probeHost,
     getWindow: () => mainWindow,
     onSettingsChanged: async (next, previous) => {
@@ -280,6 +308,7 @@ async function bootstrap(): Promise<void> {
       if (JSON.stringify(next.webhooks) !== JSON.stringify(previous.webhooks)) {
         outbox.endpointsChanged();
       }
+      mobile.settingsChanged(next, previous);
     },
   });
   outbox.start();
@@ -317,6 +346,7 @@ async function bootstrap(): Promise<void> {
   updater.start();
   warmVoice();
   app.on('will-quit', () => {
+    clearInterval(mobileTicker);
     outbox.stop();
     status.stop();
     probeHost?.dispose();

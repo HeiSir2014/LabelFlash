@@ -6,6 +6,7 @@ import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
 import type { JobPage, JobQuery } from './job-history';
+import type { MobileStatus } from './mobile-status';
 import type { PrinterReadiness } from './printer-readiness';
 import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
@@ -62,6 +63,12 @@ export const IpcChannel = {
   WindowClose: 'window:close',
   WindowMaximizedChanged: 'window:maximized-changed',
   WindowFullScreenChanged: 'window:full-screen-changed',
+  MobileStart: 'mobile:start',
+  MobileStop: 'mobile:stop',
+  MobileStatus: 'mobile:status',
+  MobileRemovePhone: 'mobile:remove-phone',
+  MobileSetJoinLocked: 'mobile:set-join-locked',
+  MobileStatusChanged: 'mobile:status-changed',
 } as const;
 
 /** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
@@ -172,6 +179,16 @@ export interface LabelFlashApi {
   onUpdateStatus(listener: (status: UpdateStatus) => void): () => void;
   /** 当前音色、语速下这句播报的 mp3；离线且没有缓存时为 null。 */
   getVoiceClip(cue: VoiceCue): Promise<Uint8Array | null>;
+  /** 开始手机扫码（这时才连中转服务）；已在进行中时返回当前状态，二维码不变。 */
+  startMobile(): Promise<MobileStatus>;
+  /** 结束手机扫码：链接作废，已加入的手机收到「已结束」。 */
+  stopMobile(): Promise<void>;
+  getMobileStatus(): Promise<MobileStatus>;
+  /** 移除一部手机（id 取自状态里的手机列表）；同时暂停新手机加入。 */
+  removeMobilePhone(id: string): Promise<void>;
+  /** 暂停或重新允许新手机加入。 */
+  setMobileJoinLocked(locked: boolean): Promise<void>;
+  onMobileStatus(listener: (status: MobileStatus) => void): () => void;
 }
 
 export interface WindowControlsApi {

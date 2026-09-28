@@ -5,6 +5,7 @@ import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-mo
 import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
+import { isRandomId } from '../shared/mobile-protocol';
 import { isRecord } from '../shared/settings';
 import { isVoiceCue, type VoiceCue } from '../shared/voice';
 
@@ -110,6 +111,21 @@ export function requirePrintOptions(value: unknown): PrintOptions {
     throw new TypeError('Invalid print options');
   }
   return { source: source as RendererPrintSource, force };
+}
+
+export function requireBoolean(value: unknown, name: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`Invalid ${name}`);
+  }
+  return value;
+}
+
+/** 手机扫码状态里的手机 id：电脑生成的 16 字节随机数（不是令牌）。 */
+export function requireMobilePhoneId(value: unknown): string {
+  if (!isRandomId(value)) {
+    throw new TypeError('Invalid mobile phone id');
+  }
+  return value;
 }
 
 export function requireJobQuery(value: unknown): JobQuery {

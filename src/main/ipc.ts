@@ -27,8 +27,10 @@ import {
 import type { AppSettings } from '../shared/settings';
 import { logFailures } from './ipc-errors';
 import {
+  requireBoolean,
   requireJobQuery,
   requireLookupTableId,
+  requireMobilePhoneId,
   requirePositiveInteger,
   requirePrintOptions,
   requireRaw,
@@ -40,6 +42,7 @@ import {
   requireWebhookId,
 } from './ipc-validators';
 import type { LookupTables } from './lookup/lookup-tables';
+import type { MobileStation } from './mobile/mobile-station';
 import type { WebhookOutbox } from './notify/webhook-outbox';
 import { type PrintTemplate, resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
@@ -71,6 +74,7 @@ export interface IpcDeps {
   appInfo: AppInfo;
   updater: AppUpdater;
   voice: VoiceClips;
+  mobile: MobileStation;
   /** Windows 上的常驻打印机探测进程；其他平台为 null。 */
   probeHost: PrinterProbeHost | null;
   getWindow: () => BrowserWindow | null;
@@ -229,6 +233,11 @@ export function registerIpc(deps: IpcDeps): void {
     const { name, ratePercent } = deps.settings.current.voice;
     return deps.voice.get(requireVoiceCue(cue), { voice: name, ratePercent });
   });
+  handle(IpcChannel.MobileStart, () => deps.mobile.start());
+  handle(IpcChannel.MobileStop, () => deps.mobile.stop());
+  handle(IpcChannel.MobileStatus, () => deps.mobile.status());
+  handle(IpcChannel.MobileRemovePhone, (id) => deps.mobile.removePhone(requireMobilePhoneId(id)));
+  handle(IpcChannel.MobileSetJoinLocked, (locked) => deps.mobile.setJoinLocked(requireBoolean(locked, 'locked')));
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());
   on(IpcChannel.WindowToggleMaximize, () => {

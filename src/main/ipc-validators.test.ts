@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   MAX_IPC_STRING_LENGTH,
   MAX_RAW_INPUT_LENGTH,
+  requireBoolean,
   requireJobQuery,
   requireLookupTableId,
+  requireMobilePhoneId,
   requirePositiveInteger,
   requirePrintOptions,
   requireRaw,
@@ -84,6 +86,17 @@ describe('ipc validators', () => {
     expect(requireVoiceCue('printed')).toBe('printed');
     expect(() => requireVoiceCue('rm -rf')).toThrow(TypeError);
     expect(() => requireVoiceCue(1)).toThrow(TypeError);
+  });
+
+  test('requireBoolean accepts true and false only', () => {
+    expect(requireBoolean(false, 'locked')).toBe(false);
+    expect(() => requireBoolean('false', 'locked')).toThrow('Invalid locked');
+  });
+
+  test('requireMobilePhoneId accepts the random ids the desktop hands out only', () => {
+    expect(requireMobilePhoneId('PhonePhonePhonePhone01')).toBe('PhonePhonePhonePhone01');
+    expect(() => requireMobilePhoneId('p1')).toThrow(TypeError);
+    expect(() => requireMobilePhoneId(1)).toThrow(TypeError);
   });
 
   test('requireSecretName accepts names that fit in a {密钥:名称} reference only', () => {

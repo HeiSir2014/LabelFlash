@@ -39,6 +39,7 @@ const api: LabelFlashApi = {
   listLookupTables: () => ipcRenderer.invoke(IpcChannel.ListLookupTables),
   importLookupTable: (replaceId) => ipcRenderer.invoke(IpcChannel.ImportLookupTable, replaceId),
   deleteLookupTable: (id) => ipcRenderer.invoke(IpcChannel.DeleteLookupTable, id),
+  listLookupRows: (id) => ipcRenderer.invoke(IpcChannel.ListLookupRows, id),
   listSecrets: () => ipcRenderer.invoke(IpcChannel.ListSecrets),
   setSecret: (name, value) => ipcRenderer.invoke(IpcChannel.SetSecret, name, value),
   deleteSecret: (name) => ipcRenderer.invoke(IpcChannel.DeleteSecret, name),

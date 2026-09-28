@@ -3,7 +3,12 @@ import { basename, extname } from 'node:path';
 import { parseCsv } from '../../core/lookup/csv';
 import { decodeCsvBytes } from '../../core/lookup/decode-text';
 import { LookupIndex } from '../../core/lookup/lookup-index';
-import { LOOKUP_LIMITS, type LookupTableInfo } from '../../core/lookup/lookup-model';
+import {
+  LOOKUP_LIMITS,
+  LOOKUP_PREVIEW_ROWS,
+  type LookupTableData,
+  type LookupTableInfo,
+} from '../../core/lookup/lookup-model';
 import type { LookupImportResult } from '../../shared/ipc-contract';
 import type { SqliteLookupStore } from '../storage/sqlite-lookup-store';
 
@@ -22,6 +27,11 @@ export class LookupTables {
 
   list(): LookupTableInfo[] {
     return this.store.list();
+  }
+
+  /** 界面预览：列名和前 LOOKUP_PREVIEW_ROWS 行。 */
+  rows(id: string): LookupTableData | null {
+    return this.store.loadRows(id, LOOKUP_PREVIEW_ROWS);
   }
 
   find(tableId: string, keyColumn: string, key: string, ignoreCase: boolean): Readonly<Record<string, string>> | null {

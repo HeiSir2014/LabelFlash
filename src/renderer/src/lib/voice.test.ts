@@ -74,6 +74,7 @@ describe('describeFeedback', () => {
     expect(cueOf(failed('PRINT_TIMEOUT'))).toBe('timeout');
     expect(cueOf(failed('PRINT_ERROR'), 'test')).toBe('failed');
     expect(cueOf(failed('LOOKUP_FAILED'))).toBe('lookupFailed');
+    expect(describeFeedback({ kind: 'configuring' })).toEqual({ cue: 'configuring', tone: 'warning' });
   });
 
   test('covers events that are not print results, with a fallback tone per level', () => {
@@ -90,7 +91,7 @@ describe('describeFeedback', () => {
   });
 
   test('every cue has text and a level', () => {
-    expect(VOICE_CUES).toHaveLength(19);
+    expect(VOICE_CUES).toHaveLength(20);
     for (const cue of VOICE_CUES) {
       expect(VOICE_CUE_TEXT[cue].length).toBeGreaterThan(0);
       expect(VOICE_CUE_LEVEL[cue]).toBeDefined();

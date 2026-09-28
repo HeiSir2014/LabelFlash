@@ -1,4 +1,4 @@
-import type { LookupTableInfo } from '../core/lookup/lookup-model';
+import type { LookupTableData, LookupTableInfo } from '../core/lookup/lookup-model';
 import type { Delivery } from '../core/notify/delivery';
 import type { RuleKind, ScanRule } from '../core/scan/rule-model';
 import type { RuleSetting } from '../core/scan/rule-settings';
@@ -40,6 +40,7 @@ export const IpcChannel = {
   ImportRules: 'rules:import',
   ListLookupTables: 'lookup:list',
   ImportLookupTable: 'lookup:import',
+  ListLookupRows: 'lookup:rows',
   DeleteLookupTable: 'lookup:delete',
   ListSecrets: 'secrets:list',
   SetSecret: 'secrets:set',
@@ -131,6 +132,8 @@ export interface LabelFlashApi {
   /** 主进程弹出选择文件的对话框；replaceId 不为 null 时替换那张表的内容。 */
   importLookupTable(replaceId: string | null): Promise<LookupImportResult>;
   deleteLookupTable(id: string): Promise<void>;
+  /** 查找表页面的预览：列名和前 20 行；表已不存在时为 null。 */
+  listLookupRows(id: string): Promise<LookupTableData | null>;
   /** 只返回密钥名称；内容写进去以后界面上再也看不到。 */
   listSecrets(): Promise<string[]>;
   /** 新增或替换；名称或内容不合法、系统加密不可用时返回原因。 */

@@ -14,6 +14,7 @@ export const VOICE_CUES = [
   'stillPrinting',
   'invalid',
   'noPrinter',
+  'configuring',
   // 故障：需要去看打印机或程序。
   'paperOut',
   'paperJam',
@@ -38,6 +39,7 @@ export const VOICE_CUE_TEXT: Record<VoiceCue, string> = {
   stillPrinting: '正在打印，请稍候',
   invalid: '无法识别，请检查扫码内容',
   noPrinter: '请先选择打印机',
+  configuring: '正在配置，没有打印',
   paperOut: '打印机缺纸',
   paperJam: '打印机卡纸',
   doorOpen: '打印机盖没关好',
@@ -67,6 +69,7 @@ export const VOICE_CUE_LEVEL: Record<VoiceCue, VoiceLevel> = {
   stillPrinting: 'notice',
   invalid: 'notice',
   noPrinter: 'notice',
+  configuring: 'notice',
   paperOut: 'alert',
   paperJam: 'alert',
   doorOpen: 'alert',

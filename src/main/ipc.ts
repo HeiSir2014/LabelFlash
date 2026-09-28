@@ -176,6 +176,7 @@ export function registerIpc(deps: IpcDeps): void {
     return deps.lookupTables.importFile(path, tableId);
   });
   handle(IpcChannel.DeleteLookupTable, (id) => deps.lookupTables.remove(requireLookupTableId(id)));
+  handle(IpcChannel.ListLookupRows, (id) => deps.lookupTables.rows(requireLookupTableId(id)));
   handle(IpcChannel.ListSecrets, () => deps.secrets.names());
   handle(IpcChannel.SetSecret, (name, value) => {
     try {

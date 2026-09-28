@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { LOOKUP_PREVIEW_ROWS } from '../../core/lookup/lookup-model';
 import { systemClock } from '../../core/types';
 import { openDatabase } from '../storage/database';
 import { SqliteLookupStore } from '../storage/sqlite-lookup-store';
@@ -61,6 +62,16 @@ describe('LookupTables', () => {
       issue: '列名重复：「编码」',
     });
     expect(await tables.importFile(await file('ok.csv', '编码\n1'), 'gone')).toMatchObject({ status: 'invalid' });
+  });
+
+  test('previews the first rows of a table', async () => {
+    const tables = createTables();
+    const body = Array.from({ length: LOOKUP_PREVIEW_ROWS + 5 }, (_, index) => `CL${index},A-${index}`).join('\n');
+    await tables.importFile(await file('a.csv', `编码,货架\n${body}\n`), null);
+    const preview = tables.rows('t1');
+    expect(preview?.columns).toEqual(['编码', '货架']);
+    expect(preview?.rows).toHaveLength(LOOKUP_PREVIEW_ROWS);
+    expect(preview?.rows[0]).toEqual(['CL0', 'A-0']);
   });
 
   test('removing a table stops lookups', async () => {

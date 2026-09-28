@@ -9,6 +9,7 @@ export class SqliteLookupStore {
   private readonly selectAll: StatementSync;
   private readonly selectOne: StatementSync;
   private readonly selectRows: StatementSync;
+  private readonly selectFirstRows: StatementSync;
   private readonly insertTable: StatementSync;
   private readonly updateTable: StatementSync;
   private readonly insertRow: StatementSync;
@@ -23,6 +24,9 @@ export class SqliteLookupStore {
     this.selectAll = db.prepare(`SELECT ${info} FROM lookup_tables ORDER BY created_at, rowid`);
     this.selectOne = db.prepare(`SELECT ${info} FROM lookup_tables WHERE id = :id`);
     this.selectRows = db.prepare('SELECT cells FROM lookup_rows WHERE table_id = :id ORDER BY row_index');
+    this.selectFirstRows = db.prepare(
+      'SELECT cells FROM lookup_rows WHERE table_id = :id ORDER BY row_index LIMIT :limit',
+    );
     this.insertTable = db.prepare(`
       INSERT INTO lookup_tables (id, name, columns, row_count, created_at, updated_at)
       VALUES (:id, :name, :columns, :rowCount, :now, :now)`);
@@ -71,6 +75,16 @@ export class SqliteLookupStore {
       return null;
     }
     const rows = this.selectRows.all({ id }).map((row) => JSON.parse(readString(row, 'cells')) as string[]);
+    return { columns: info.columns, rows };
+  }
+
+  /** 表格的前 limit 行（界面预览用）；表不存在时返回 null。 */
+  loadRows(id: string, limit: number): LookupTableData | null {
+    const info = this.get(id);
+    if (!info) {
+      return null;
+    }
+    const rows = this.selectFirstRows.all({ id, limit }).map((row) => JSON.parse(readString(row, 'cells')) as string[]);
     return { columns: info.columns, rows };
   }
 

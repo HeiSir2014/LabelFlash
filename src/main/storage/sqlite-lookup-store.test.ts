@@ -34,6 +34,14 @@ describe('SqliteLookupStore', () => {
     expect(store.load('shelves')?.rows).toEqual([['CL9', 'C-03', '二号仓']]);
   });
 
+  test('loads only the first rows for a preview, in import order', () => {
+    const { store } = createStore();
+    const rows = Array.from({ length: 30 }, (_, index) => [`CL${index}`, `A-${index}`]);
+    store.create('shelves', '货架表', { columns: ['编码', '货架'], rows });
+    expect(store.loadRows('shelves', 20)).toEqual({ columns: ['编码', '货架'], rows: rows.slice(0, 20) });
+    expect(store.loadRows('missing', 20)).toBeNull();
+  });
+
   test('removes a table with its rows', () => {
     const { db, store } = createStore();
     store.create('shelves', '货架表', SHELVES);

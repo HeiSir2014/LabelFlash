@@ -18,6 +18,9 @@ export const LOOKUP_LIMITS = {
   tables: 20,
 } as const;
 
+/** 查找表页面上预览的行数。 */
+export const LOOKUP_PREVIEW_ROWS = 20;
+
 /** 解析好的表格：rows 的每一行长度都等于 columns。 */
 export interface LookupTableData {
   columns: string[];

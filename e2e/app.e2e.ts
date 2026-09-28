@@ -299,9 +299,11 @@ test('opens the config center over the workbench and comes back to the scan box'
   await app.close();
 });
 
-test('never prints from the config center, even with F2', async () => {
-  const { app, page } = await launch();
-  // 换掉主进程的打印处理：只计数，不碰真实打印机。
+/**
+ * 换掉主进程的打印处理：只计数，不碰真实打印机；再选一台假打印机，按 autoPrint 设好打印方式。
+ * 返回读取打印次数的函数。
+ */
+async function countPrints(app: ElectronApplication, page: Page, autoPrint: boolean): Promise<() => Promise<number>> {
   await app.evaluate(({ ipcMain }) => {
     const calls = { count: 0 };
     (globalThis as { e2ePrintCalls?: typeof calls }).e2ePrintCalls = calls;
@@ -311,15 +313,19 @@ test('never prints from the config center, even with F2', async () => {
       return { status: 'failed', reason: 'PRINT_ERROR' };
     });
   });
-  const printCalls = () =>
-    app.evaluate(() => (globalThis as { e2ePrintCalls?: { count: number } }).e2ePrintCalls?.count ?? -1);
-  await page.evaluate(() =>
-    (window as unknown as { api: { updateSettings(patch: object): Promise<unknown> } }).api.updateSettings({
-      selectedPrinter: 'E2E 打印机',
-      autoPrint: false,
-    }),
+  await page.evaluate(
+    (patch) =>
+      (window as unknown as { api: { updateSettings(patch: object): Promise<unknown> } }).api.updateSettings(patch),
+    { selectedPrinter: 'E2E 打印机', autoPrint },
   );
   await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  return () => app.evaluate(() => (globalThis as { e2ePrintCalls?: { count: number } }).e2ePrintCalls?.count ?? -1);
+}
+
+test('never prints from the config center, even with F2', async () => {
+  const { app, page } = await launch();
+  const printCalls = await countPrints(app, page, false);
   await scan(page, 'CL5640-TK-图片色-XL');
   await expect(page.locator('.status-strip__title')).toHaveText('待打印');
 
@@ -334,6 +340,62 @@ test('never prints from the config center, even with F2', async () => {
   await expect(page.locator('.scan-bar__input')).toBeFocused();
   await page.keyboard.press('F2');
   await expect.poll(printCalls).toBe(1);
+  await app.close();
+});
+
+test('sends scans in the config center to the try-it box, or announces that nothing was printed', async () => {
+  const { app, page } = await launch();
+  // 自动打印：在工作台扫码会立即打印，配置中心里扫码一次都不能打。
+  const printCalls = await countPrints(app, page, true);
+
+  // 识别规则页：焦点不在输入框时扫码，内容填进「试一试」（替换原有内容）。
+  await openConfig(page, '识别规则');
+  const tester = page.getByLabel('要识别的内容');
+  await tester.fill('旧内容');
+  await page.locator('.rules-page__main').click({ position: { x: 4, y: 4 } });
+  await page.keyboard.type('202609280001');
+  await page.keyboard.press('Enter');
+  await expect(tester).toHaveValue('202609280001');
+  await expect(page.locator('.rule-tester__result')).toContainText('命中「纯数字订单号」');
+
+  // 模板页：填进「预览内容」，预览跟着换。
+  await openConfig(page, '模板');
+  await page.locator('.template-list__intro').click();
+  await page.keyboard.type('CL5640-TK-图片色-XL');
+  await page.keyboard.press('Enter');
+  await expect(page.getByLabel('预览内容')).toHaveValue('CL5640-TK-图片色-XL');
+  await expect(page.frameLocator('.config-center .label-frame').locator('.value')).toHaveText([
+    'CL5640-TK',
+    '图片色',
+    'XL',
+  ]);
+
+  // 通用页没有测试框：哪个输入框都不改，「配置中不打印」闪烁提醒。
+  await openConfig(page, '通用');
+  await page.locator('.config-content').click({ position: { x: 4, y: 4 } });
+  await page.keyboard.type('CL5640-TK-图片色-XL');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.config-pill')).toHaveClass(/config-pill--flash/);
+  await expect(page.getByLabel('防重复打印')).toHaveValue('3');
+
+  // 回到工作台后扫码照常打印（对照）。
+  await page.getByRole('button', { name: '返回工作台' }).click();
+  expect(await printCalls()).toBe(0);
+  await scan(page, '202609280001');
+  await expect.poll(printCalls).toBe(1);
+  await app.close();
+});
+
+test('asks before following a link out of a rule with unsaved changes', async () => {
+  const { app, page } = await launch();
+  await openConfig(page, '识别规则');
+  await page.getByRole('button', { name: '新建规则' }).click();
+  await page.getByLabel('要添加的步骤类型').selectOption({ label: '查找表' });
+  await page.getByRole('button', { name: /添加步骤/ }).click();
+  await page.getByRole('button', { name: '「查找表」页' }).click();
+  const dialog = page.getByRole('alertdialog', { name: '有未保存的修改' });
+  await dialog.getByRole('button', { name: '放弃修改' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '查找表' })).toBeVisible();
   await app.close();
 });
 

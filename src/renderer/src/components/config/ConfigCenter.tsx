@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback } from 'react';
+import { type KeyboardEvent, type ReactNode, type RefObject, useCallback } from 'react';
 import { CONFIG_NAV, type ConfigPage, isFillPage, pageLabel } from '../../lib/app-view';
 
 /** 二级页面（编辑视图）的面包屑：「识别规则 / 编辑：下划线查货架」，第一段回到列表。 */
@@ -7,17 +7,37 @@ export interface Breadcrumb {
   onList: () => void;
 }
 
+/** 隐藏的扫码接收框（见 use-config-scan.ts）。 */
+export interface ScanSink {
+  sinkRef: RefObject<HTMLTextAreaElement | null>;
+  value: string;
+  onChange: (value: string) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+}
+
 interface ConfigCenterProps {
   page: ConfigPage;
   isLeaving: boolean;
   breadcrumb: Breadcrumb | null;
+  sink: ScanSink;
+  /** 在没有测试框的页面扫了码的次数：每变一次「配置中不打印」闪两下。 */
+  pillFlashes: number;
   onNavigate: (page: ConfigPage) => void;
   onClose: () => void;
   children: ReactNode;
 }
 
 /** 铺满标题栏以下的配置中心：左侧分组导航，右侧页头 + 页面内容。 */
-export function ConfigCenter({ page, isLeaving, breadcrumb, onNavigate, onClose, children }: ConfigCenterProps) {
+export function ConfigCenter({
+  page,
+  isLeaving,
+  breadcrumb,
+  sink,
+  pillFlashes,
+  onNavigate,
+  onClose,
+  children,
+}: ConfigCenterProps) {
   // 打开和切换页面时焦点移到页标题：读屏软件读出所在位置，Tab 从页面内容开始。
   // 标题按页面换 key，换页即重新挂载；回调保持同一个引用，其他重新渲染不会再次抢焦点。
   const focusTitle = useCallback((title: HTMLHeadingElement | null) => title?.focus(), []);
@@ -46,7 +66,21 @@ export function ConfigCenter({ page, isLeaving, breadcrumb, onNavigate, onClose,
             pageLabel(page)
           )}
         </h1>
-        <span className="config-pill">配置中不打印</span>
+        {/* 换 key 重新挂载，闪烁动画才会每次都从头播放。 */}
+        <span key={pillFlashes} className={`config-pill${pillFlashes > 0 ? ' config-pill--flash' : ''}`}>
+          配置中不打印
+        </span>
+        <textarea
+          ref={sink.sinkRef}
+          className="visually-hidden"
+          aria-label="扫码内容（配置中心里不打印）"
+          tabIndex={-1}
+          value={sink.value}
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(event) => sink.onChange(event.target.value)}
+          onKeyDown={sink.onKeyDown}
+        />
       </header>
       <nav className="config-nav" aria-label="配置">
         {CONFIG_NAV.map((group) => (

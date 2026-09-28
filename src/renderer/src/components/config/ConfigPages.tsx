@@ -3,6 +3,7 @@ import type { AppSettings } from '../../../../shared/settings';
 import type { VoiceCue } from '../../../../shared/voice';
 import type { ConfigPage } from '../../lib/app-view';
 import type { UpdateView } from '../../lib/update-text';
+import type { EndpointEditorModel } from '../../view-models/use-endpoint-editor';
 import { AboutPage } from './pages/AboutPage';
 import { GeneralPage } from './pages/GeneralPage';
 import { LookupTablesPage } from './pages/LookupTablesPage';
@@ -17,6 +18,7 @@ interface ConfigPagesProps {
   page: ConfigPage;
   templates: TemplatesPageProps;
   rules: RulesPageProps;
+  endpointEditor: EndpointEditorModel;
   settings: AppSettings;
   jobTotal: number;
   appInfo: AppInfo | null;
@@ -33,6 +35,7 @@ export function ConfigPages({
   page,
   templates,
   rules,
+  endpointEditor,
   settings,
   jobTotal,
   appInfo,
@@ -67,7 +70,9 @@ export function ConfigPages({
         <WebhooksPage
           webhooks={settings.webhooks}
           secretNames={vm.secretNames}
+          editor={endpointEditor}
           onChange={(webhooks) => onChange({ webhooks })}
+          onOpenPage={rules.onOpenPage}
         />
       );
     case 'voice':

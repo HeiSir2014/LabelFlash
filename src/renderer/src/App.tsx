@@ -19,12 +19,14 @@ import { reportError } from './lib/notices';
 import { describePaperCheck } from './lib/paper-text';
 import { describePreviewUsage } from './lib/preview-usage';
 import { describePrinterChip } from './lib/printer-chip';
-import { isWorkbenchActive } from './lib/scan-routing';
+import { isWorkbenchActive, scanTargetFor } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
 import { type EditorGuard, NO_EDITOR, useAppView } from './view-models/use-app-view';
+import { useConfigScan } from './view-models/use-config-scan';
 import { useDriverPaper } from './view-models/use-driver-paper';
+import { useEndpointEditor } from './view-models/use-endpoint-editor';
 import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
@@ -83,13 +85,16 @@ export function App() {
   // 规则、顺序、模板绑定变了：当前扫码的识别结果和用的模板都可能变，重新预览。
   const rules = useRules({ onRulesChanged: () => void station.refreshPreview() });
   const [testerRaw, setTesterRaw] = useState('');
+  const endpointEditor = useEndpointEditor();
 
-  // 开着的编辑器：模板草稿或规则草稿。离开编辑器时一定先关掉它，所以两者不会同时存在。
+  // 开着的编辑器：模板、规则或通知接口的草稿。离开编辑器时一定先关掉它，所以不会同时存在两个。
   const editor: EditorGuard = templates.draft
     ? { isEditing: true, isDirty: templates.isDirty, close: templates.cancelEdit }
     : rules.draft
       ? { isEditing: true, isDirty: rules.isDirty, close: rules.cancelEdit }
-      : NO_EDITOR;
+      : endpointEditor.draft
+        ? { isEditing: true, isDirty: endpointEditor.isDirty, close: endpointEditor.close }
+        : NO_EDITOR;
   const editingName = templates.draft?.name ?? rules.draft?.name ?? null;
   const platform = platformForChrome(window.windowControls.chrome);
   const appView = useAppView({ platform, editor: () => editor });
@@ -132,6 +137,22 @@ export function App() {
       ),
     [rules.ordered, templatePreview],
   );
+
+  // 配置中心里扫码：有测试框的页面填进测试框（替换原有内容），其他页面提醒「正在配置，没有打印」。永远不打印。
+  const [pillFlashes, setPillFlashes] = useState(0);
+  const configScan = useConfigScan({
+    isEnabled: appView.view.kind === 'config' && appView.leaveConfirm === null,
+    lineGapMs: settings?.scanLineGapMs ?? DEFAULT_SETTINGS.scanLineGapMs,
+    onScan: (raw) => {
+      const { view } = appView;
+      if (view.kind === 'config' && scanTargetFor(view) === 'test-box') {
+        (view.page === 'rules' ? setTesterRaw : templateSample.onChange)(raw);
+        return;
+      }
+      feedback.announce({ kind: 'configuring' });
+      setPillFlashes((count) => count + 1);
+    },
+  });
 
   const noteOptions = buildNoteOptions(settings?.notePresets ?? [], noteOverride);
   const selectNote = async (value: string) => {
@@ -237,6 +258,7 @@ export function App() {
             override,
             onPrint: () => station.printCurrent(false),
             onForceReprint: () => station.printCurrent(true),
+            onOpenPage: appView.open,
           }}
           printers={
             <PrinterList
@@ -278,6 +300,8 @@ export function App() {
               ? null
               : { current: `编辑：${editingName}`, onList: () => appView.requestLeave(() => undefined) }
           }
+          sink={configScan}
+          pillFlashes={pillFlashes}
           onNavigate={appView.open}
           onClose={appView.close}
         >
@@ -306,7 +330,9 @@ export function App() {
               templates: templates.templates,
               tester: { raw: testerRaw, onRawChange: setTesterRaw },
               isNarrow,
+              onOpenPage: appView.open,
             }}
+            endpointEditor={endpointEditor}
             settings={settings}
             jobTotal={jobLog.total}
             appInfo={appInfo}

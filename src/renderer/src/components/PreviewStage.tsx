@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { LABEL_PAPER_MM } from '../../../shared/label-paper';
+import type { ConfigPage } from '../lib/app-view';
 import type { ScanView } from '../lib/status-text';
 import type { ScanState } from '../view-models/use-scan-station';
 import { ConfirmButton } from './ConfirmButton';
@@ -23,9 +24,20 @@ export interface PreviewStageProps {
   override: PreviewOverride | null;
   onPrint: () => void;
   onForceReprint: () => void;
+  /** 状态条上的直达按钮：打开配置中心的对应页面。 */
+  onOpenPage: (page: ConfigPage) => void;
 }
 
-export function PreviewStage({ toolbar, scan, view, override, onPrint, onForceReprint }: PreviewStageProps) {
+export function PreviewStage({
+  toolbar,
+  scan,
+  view,
+  override,
+  onPrint,
+  onForceReprint,
+  onOpenPage,
+}: PreviewStageProps) {
+  const { link } = view.status;
   const html = override ? override.html : (scan?.preview.html ?? null);
   const isQrOmitted = override ? override.qrOmitted : (scan?.preview.qrOmitted ?? false);
   const feedKey = override ? `override-${override.feedKey}` : `scan-${scan?.seq ?? 0}`;
@@ -48,6 +60,11 @@ export function PreviewStage({ toolbar, scan, view, override, onPrint, onForceRe
           <span className="status-strip__detail">{view.status.detail}</span>
         </div>
         <div className="status-strip__actions">
+          {link && (
+            <button type="button" className="button button--quiet" onClick={() => onOpenPage(link.page)}>
+              {link.label}
+            </button>
+          )}
           {view.actions.forceReprint && (
             <ConfirmButton
               key={scan?.seq}

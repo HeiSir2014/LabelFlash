@@ -10,6 +10,7 @@ import type {
 } from '../../../core/types';
 import type { LabelPreview } from '../../../shared/ipc-contract';
 import { PRINT_TIMEOUT_SECONDS } from '../../../shared/print-timing';
+import type { ConfigPage } from './app-view';
 
 export type FeedbackTone = 'success' | 'warning' | 'error';
 export type StatusTone = FeedbackTone | 'idle' | 'pending';
@@ -18,6 +19,8 @@ export interface StatusView {
   tone: StatusTone;
   title: string;
   detail: string;
+  /** 要去配置中心的某一页才能解决时，状态条上给一个直达按钮。 */
+  link?: { page: ConfigPage; label: string };
 }
 
 export interface FeedbackStatusView extends StatusView {
@@ -66,7 +69,8 @@ const INVALID_VIEWS: Record<InvalidReason, FeedbackStatusView> = {
   NO_MATCHING_RULE: {
     tone: 'error',
     title: '没有匹配的识别规则',
-    detail: '在「识别规则」里启用「原样打印」，或新建一条能识别这种内容的规则',
+    detail: '在「配置 › 识别规则」里启用「原样打印」，或新建一条能识别这种内容的规则',
+    link: { page: 'rules', label: '打开「识别规则」' },
   },
 };
 /** 已打印时的详情最多列出几个字段值。 */

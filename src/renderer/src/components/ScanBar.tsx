@@ -1,8 +1,6 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { NoteOption } from '../lib/note-options';
-import { ScanAssembler } from '../lib/scan-assembler';
-import { WINDOW_TIMERS } from '../lib/timers';
 import { useScanFocus } from '../view-models/use-scan-focus';
+import { useScanInput } from '../view-models/use-scan-input';
 
 export interface NoteControl {
   options: NoteOption[];
@@ -23,60 +21,7 @@ export interface ScanBarProps {
 
 export function ScanBar({ isActive, autoPrint, lineGapMs, note, onAutoPrintChange, onScan }: ScanBarProps) {
   const inputRef = useScanFocus(isActive);
-  const [value, setValue] = useState('');
-  // 计时器回调里要读到最新的内容和回调，用 ref 保存。
-  const valueRef = useRef('');
-  const onScanRef = useRef(onScan);
-  onScanRef.current = onScan;
-  const setContent = (next: string) => {
-    valueRef.current = next;
-    setValue(next);
-  };
-  const [assembler] = useState(
-    () =>
-      new ScanAssembler(
-        lineGapMs,
-        () => {
-          const raw = valueRef.current;
-          setContent('');
-          if (raw.trim() !== '') {
-            onScanRef.current(raw);
-          }
-        },
-        WINDOW_TIMERS,
-      ),
-  );
-
-  useEffect(() => assembler.setGap(lineGapMs), [assembler, lineGapMs]);
-  useEffect(() => () => assembler.dispose(), [assembler]);
-
-  /**
-   * 回车和 Tab 都交给 ScanAssembler 判断是码里的换行还是扫码结束（Tab 因此不再移动焦点；
-   * Shift+Tab 仍可离开扫码框）。
-   */
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    const isBreakKey = event.key === 'Enter' || event.key === 'Tab';
-    const hasModifier = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
-    if (event.nativeEvent.isComposing || !isBreakKey || hasModifier) {
-      return;
-    }
-    event.preventDefault();
-    setContent(valueRef.current + assembler.breakKey(event.key === 'Enter' ? 'enter' : 'tab'));
-  };
-
-  /**
-   * 挂起期间内容变长了：说明刚才的回车 / Tab 是码里的，补上分隔符。
-   * 按内容变化判断而不是按键：中文往往不经过 keydown 送达（Windows 扫码枪的 Alt+小键盘码、输入法上屏）。
-   * 扫码枪总是在末尾输入，所以只处理「在原内容后面追加」的情况。
-   */
-  const handleChange = (next: string) => {
-    const previous = valueRef.current;
-    if (assembler.isPending && next.length > previous.length && next.startsWith(previous)) {
-      setContent(previous + assembler.character() + next.slice(previous.length));
-      return;
-    }
-    setContent(next);
-  };
+  const input = useScanInput(lineGapMs, onScan);
 
   return (
     <section className="scan-bar" aria-label="扫码">
@@ -88,9 +33,9 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, note, onAutoPrintChang
           className="scan-bar__input"
           rows={1}
           wrap="off"
-          value={value}
-          onChange={(event) => handleChange(event.target.value)}
-          onKeyDown={handleKeyDown}
+          value={input.value}
+          onChange={(event) => input.onChange(event.target.value)}
+          onKeyDown={input.onKeyDown}
           // 编码里有「-」，默认双击只选中一段；扫码框里的内容是一个整体，双击全选。
           onDoubleClick={(event) => event.currentTarget.select()}
           placeholder="用扫码枪扫标签二维码，或手动输入后回车"

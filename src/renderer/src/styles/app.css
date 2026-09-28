@@ -1918,6 +1918,31 @@ input {
   font-weight: 600;
 }
 
+/* 在没有测试框的页面扫了码：闪两下（每次 300ms）提醒这里不打印 */
+.config-pill--flash {
+  animation: config-pill-flash 300ms ease-in-out 2;
+}
+
+@keyframes config-pill-flash {
+  50% {
+    background: var(--color-warning);
+    color: var(--color-paper);
+  }
+}
+
+/* 看不见但能获得焦点（扫码接收框）：不能用 display: none，否则收不到按键 */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
 .config-nav {
   grid-area: nav;
   padding-bottom: var(--space-4);

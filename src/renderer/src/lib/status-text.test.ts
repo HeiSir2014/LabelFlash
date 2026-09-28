@@ -140,6 +140,14 @@ describe('describeScan', () => {
     expect(unreadable.status.title).toBe('扫码内容无法识别');
   });
 
+  test('points to the rules page when no rule recognises the content', () => {
+    const noRule = describeScan(snapshot({ preview: INVALID_PREVIEW('NO_MATCHING_RULE') }), context());
+    expect(noRule.status.link).toEqual({ page: 'rules', label: '打开「识别规则」' });
+    expect(noRule.status.detail).toContain('配置 › 识别规则');
+    const unreadable = describeScan(snapshot({ preview: INVALID_PREVIEW('INVALID_CONTENT') }), context());
+    expect(unreadable.status.link).toBeUndefined();
+  });
+
   test('printing is pending', () => {
     expect(describeScan(snapshot({ isPrinting: true }), context()).status.tone).toBe('pending');
   });

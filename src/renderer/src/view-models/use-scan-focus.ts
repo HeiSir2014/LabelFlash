@@ -7,7 +7,8 @@ const REFOCUS_DELAY_MS = 300;
 const TEXT_ENTRY_TYPES: ReadonlySet<string> = new Set(['text', 'search', 'number']);
 const ACTIVITY_EVENTS = ['pointermove', 'pointerdown', 'keydown', 'wheel'] as const;
 
-function isTextEntry(element: Element | null): boolean {
+/** 焦点在这些控件里时，按键是用户在填这个控件，不当作扫码。 */
+export function isTextEntry(element: Element | null): boolean {
   if (element instanceof HTMLInputElement) {
     return TEXT_ENTRY_TYPES.has(element.type);
   }

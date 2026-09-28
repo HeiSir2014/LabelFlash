@@ -1,7 +1,5 @@
-import { useState } from 'react';
 import type { Delivery, DeliveryState } from '../../../../../core/notify/delivery';
 import {
-  DEFAULT_WEBHOOK_EVENTS,
   isWebhookUrl,
   WEBHOOK_EVENTS,
   WEBHOOK_LIMITS,
@@ -9,10 +7,13 @@ import {
   type WebhookEvent,
   type WebhookEventType,
 } from '../../../../../core/notify/webhook-model';
+import type { ConfigPage } from '../../../lib/app-view';
 import { formatDateTime } from '../../../lib/status-text';
+import type { EndpointEditorModel } from '../../../view-models/use-endpoint-editor';
 import { useWebhookDeliveries } from '../../../view-models/use-webhook-deliveries';
 import { ConfirmButton } from '../../ConfirmButton';
 import { SelectField, TextInput, Toggle } from '../../form-controls';
+import { PageLink } from '../PageLink';
 
 const EVENT_LABELS: Record<WebhookEventType, string> = {
   printed: '已打印',
@@ -33,20 +34,23 @@ const NO_SIGNATURE = '';
 interface WebhooksPageProps {
   webhooks: readonly WebhookEndpoint[];
   secretNames: readonly string[];
+  /** 正在编辑的接口（草稿在页面之外，离开时才能确认未保存的修改）。 */
+  editor: EndpointEditorModel;
   onChange: (webhooks: WebhookEndpoint[]) => Promise<unknown>;
+  onOpenPage: (page: ConfigPage) => void;
 }
 
 /** 打印结果通知：接口列表、编辑、发送测试；下方是发送记录（打开这一页时每 10 秒刷新）。 */
-export function WebhooksPage({ webhooks, secretNames, onChange }: WebhooksPageProps) {
-  const [draft, setDraft] = useState<WebhookEndpoint | null>(null);
+export function WebhooksPage({ webhooks, secretNames, editor, onChange, onOpenPage }: WebhooksPageProps) {
+  const { draft } = editor;
   const deliveries = useWebhookDeliveries();
   const names = new Map(webhooks.map((endpoint) => [endpoint.id, endpoint.name]));
   const replace = (endpoint: WebhookEndpoint) => webhooks.map((item) => (item.id === endpoint.id ? endpoint : item));
+  const isNew = draft !== null && !webhooks.some((item) => item.id === draft.id);
 
   const save = async (endpoint: WebhookEndpoint) => {
-    const exists = webhooks.some((item) => item.id === endpoint.id);
-    await onChange(exists ? replace(endpoint) : [...webhooks, endpoint]);
-    setDraft(null);
+    await onChange(isNew ? [...webhooks, endpoint] : replace(endpoint));
+    editor.close();
   };
 
   return (
@@ -87,7 +91,7 @@ export function WebhooksPage({ webhooks, secretNames, onChange }: WebhooksPagePr
             >
               发送测试
             </button>
-            <button type="button" className="button button--small button--quiet" onClick={() => setDraft(endpoint)}>
+            <button type="button" className="button button--small button--quiet" onClick={() => editor.start(endpoint)}>
               编辑
             </button>
             <ConfirmButton
@@ -101,11 +105,13 @@ export function WebhooksPage({ webhooks, secretNames, onChange }: WebhooksPagePr
       </ul>
       {draft ? (
         <EndpointEditor
-          key={draft.id}
-          endpoint={draft}
+          draft={draft}
+          title={isNew ? '添加接口' : `编辑「${names.get(draft.id) ?? draft.name}」`}
           secretNames={secretNames}
+          onChange={editor.change}
           onSave={(endpoint) => void save(endpoint)}
-          onCancel={() => setDraft(null)}
+          onCancel={editor.close}
+          onOpenPage={onOpenPage}
         />
       ) : (
         <div>
@@ -113,16 +119,7 @@ export function WebhooksPage({ webhooks, secretNames, onChange }: WebhooksPagePr
             type="button"
             className="button button--primary"
             disabled={webhooks.length >= WEBHOOK_LIMITS.endpoints}
-            onClick={() =>
-              setDraft({
-                id: crypto.randomUUID(),
-                name: '',
-                url: 'https://',
-                secretName: null,
-                events: [...DEFAULT_WEBHOOK_EVENTS],
-                enabled: true,
-              })
-            }
+            onClick={editor.startNew}
           >
             添加接口（{webhooks.length}/{WEBHOOK_LIMITS.endpoints}）
           </button>
@@ -139,15 +136,25 @@ export function WebhooksPage({ webhooks, secretNames, onChange }: WebhooksPagePr
 }
 
 interface EndpointEditorProps {
-  endpoint: WebhookEndpoint;
+  draft: WebhookEndpoint;
+  title: string;
   secretNames: readonly string[];
+  onChange: (draft: WebhookEndpoint) => void;
   onSave: (endpoint: WebhookEndpoint) => void;
   onCancel: () => void;
+  onOpenPage: (page: ConfigPage) => void;
 }
 
 /** 编辑接口：在列表下方展开，不弹窗。 */
-function EndpointEditor({ endpoint, secretNames, onSave, onCancel }: EndpointEditorProps) {
-  const [draft, setDraft] = useState(endpoint);
+function EndpointEditor({
+  draft,
+  title,
+  secretNames,
+  onChange: setDraft,
+  onSave,
+  onCancel,
+  onOpenPage,
+}: EndpointEditorProps) {
   const toggleEvent = (event: WebhookEvent, isOn: boolean) =>
     setDraft({
       ...draft,
@@ -156,7 +163,7 @@ function EndpointEditor({ endpoint, secretNames, onSave, onCancel }: EndpointEdi
   const issue = endpointIssue(draft);
   return (
     <section className="config-card form-section" aria-label="编辑通知接口">
-      <h2 className="form-section__title">{endpoint.name === '' ? '添加接口' : `编辑「${endpoint.name}」`}</h2>
+      <h2 className="form-section__title">{title}</h2>
       <TextInput
         label="名称"
         value={draft.name}
@@ -183,7 +190,13 @@ function EndpointEditor({ endpoint, secretNames, onSave, onCancel }: EndpointEdi
         ]}
         onChange={(value) => setDraft({ ...draft, secretName: value === NO_SIGNATURE ? null : value })}
       />
-      <p className="form-hint">签名密钥在「密钥」页添加，和接收方约定同一个值。</p>
+      <p className="form-hint">
+        签名密钥在
+        <PageLink page="secrets" onOpen={onOpenPage}>
+          「密钥」页
+        </PageLink>
+        添加，和接收方约定同一个值。
+      </p>
       {WEBHOOK_EVENTS.map((event) => (
         <Toggle
           key={event}

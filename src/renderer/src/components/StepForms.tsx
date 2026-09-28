@@ -13,11 +13,15 @@ import {
   type TemplateStep,
 } from '../../../core/scan/enrich-model';
 import { RULE_LIMITS } from '../../../core/scan/rule-model';
+import type { ConfigPage } from '../lib/app-view';
+import { PageLink } from './config/PageLink';
 import { NumberField, Segmented, SelectField, TextAreaField, TextInput, Toggle } from './form-controls';
 
 export interface StepFormContext {
   lookupTables: readonly LookupTableInfo[];
   secretNames: readonly string[];
+  /** 跳到查找表、密钥等配置页（经过未保存修改的确认）。 */
+  openPage: (page: ConfigPage) => void;
 }
 
 interface StepFormProps<S extends EnrichStep> {
@@ -149,7 +153,15 @@ function RegexReplaceStepForm({ step, onChange }: StepFormProps<RegexReplaceStep
 function LookupStepForm({ step, context, onChange }: StepFormProps<LookupStep>) {
   const table = context.lookupTables.find((candidate) => candidate.id === step.tableId);
   if (context.lookupTables.length === 0) {
-    return <p className="form-hint form-hint--error">还没有查找表：先在「识别规则」页下方导入一个 CSV 表格。</p>;
+    return (
+      <p className="form-hint form-hint--error">
+        还没有查找表，先去
+        <PageLink page="lookup" onOpen={context.openPage}>
+          「查找表」页
+        </PageLink>
+        导入一个 CSV 表格。
+      </p>
+    );
   }
   const columnOptions = (table?.columns ?? []).map((column) => ({ value: column, label: column }));
   const setOutput = (index: number, patch: Partial<LookupStep['outputs'][number]>) =>
@@ -251,7 +263,10 @@ function HttpStepForm({ step, context, onChange }: StepFormProps<HttpStep>) {
       />
       <p className="form-hint">
         令牌请存成密钥，在这里写 {'{密钥:名称}'}：密钥只保存在这台电脑、加密存放，不会随规则导出。
-        {context.secretNames.length > 0 ? ` 已有密钥：${context.secretNames.join('、')}。` : ' 还没有密钥。'}
+        {context.secretNames.length > 0 ? `已有密钥：${context.secretNames.join('、')}。` : '还没有密钥，'}
+        <PageLink page="secrets" onOpen={context.openPage}>
+          {context.secretNames.length > 0 ? '管理密钥' : '去「密钥」页添加'}
+        </PageLink>
       </p>
       {step.method === 'POST' && (
         <TextAreaField

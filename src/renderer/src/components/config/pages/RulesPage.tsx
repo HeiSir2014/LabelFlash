@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { isBuiltInRuleId, RULE_KINDS, type RuleKind, type ScanRule } from '../../../../../core/scan/rule-model';
 import type { RuleSetting } from '../../../../../core/scan/rule-settings';
 import type { LabelTemplate } from '../../../../../core/templates/template-model';
+import type { ConfigPage } from '../../../lib/app-view';
 import { RULE_KIND_LABELS, ruleSummary } from '../../../lib/rule-text';
 import type { RulesViewModel } from '../../../view-models/use-rules';
 import { ConfirmButton } from '../../ConfirmButton';
@@ -22,6 +23,8 @@ export interface RulesPageProps {
   tester: TesterContent;
   /** 窗口较窄：编辑时「试一试」移到表单上方并收成一行。 */
   isNarrow: boolean;
+  /** 加工步骤里「去查找表」「去密钥」的跳转。 */
+  onOpenPage: (page: ConfigPage) => void;
 }
 
 /** 识别规则：列表（右侧固定「试一试」）；编辑时表单和只用草稿的「试一试」并排。 */
@@ -196,8 +199,8 @@ function RuleCard({ rule, setting, templates, isFirst, isLast, rules }: RuleCard
   );
 }
 
-function EditView({ rules, tester, isNarrow, draft }: RulesPageProps & { draft: ScanRule }) {
-  const context = { lookupTables: rules.lookupTables, secretNames: rules.secretNames };
+function EditView({ rules, tester, isNarrow, onOpenPage, draft }: RulesPageProps & { draft: ScanRule }) {
+  const context = { lookupTables: rules.lookupTables, secretNames: rules.secretNames, openPage: onOpenPage };
   return (
     <div className="rule-editing">
       <div className="rule-editing__form">

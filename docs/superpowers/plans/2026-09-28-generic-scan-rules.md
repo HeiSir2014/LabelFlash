@@ -207,6 +207,45 @@
 
 - [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check && bun run test:e2e` → 提交 `refactor(print): print from recognised scans with rule-bound templates`
 
+### Task 5A: 加工步骤核心（文本拼接、正则替换）与打印服务接入
+
+**Files:**
+- Create: `src/core/scan/enrich-model.ts`（步骤类型、上限）、`src/core/scan/sanitize-steps.ts`、`src/core/scan/enrich.ts`（执行器）
+- Modify: `rule-model.ts`（每条规则加 `steps`）、`sanitize-rule.ts`、`print-service.ts`（识别后 `await enrich`）、`label-content.ts`（空值字段不显示）、`src/main/index.ts`
+- Test: `enrich.test.ts`、`sanitize-steps.test.ts`、`print-service.test.ts`
+
+**Interfaces:**
+- `EnrichStep = TemplateStep | RegexReplaceStep | LookupStep | HttpStep`，公共字段 `{ kind; output… }`；`RULE_LIMITS.steps = 10`。
+- `EnrichDeps { runRegex: RegexRunner; lookup(tableId, column, key, ignoreCase): Record<string,string> | null; http(request): Promise<HttpOutcome> }`。
+- `enrich(scan, steps, deps, printedAt): Promise<EnrichResult>`，`EnrichResult = { ok: true; scan } | { ok: false; scan; failure: { stepIndex; detail } }`（只有 `onError: 'block'` 的 HTTP 步骤会让结果失败）。
+- `PrintServiceDeps.enrich(scan): Promise<EnrichResult>`；拦下时 `PrintResult` 为 `failed` / `LOOKUP_FAILED`。
+
+**测试要点:** 步骤按顺序执行、后一步能用前一步的输出；同名覆盖保持位置；正则替换不匹配输出原值、超时输出原值；非法步骤逐项报中文原因；拦下时不打印、记录失败；预览同样执行加工。
+
+- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): processing steps that derive new fields from a scan`
+
+### Task 5B: 查找表
+
+**Files:**
+- Create: `src/core/lookup/csv.ts`（RFC 4180 解析，含引号、换行、BOM）、`src/core/lookup/lookup-model.ts`、`src/main/storage/sqlite-lookup-store.ts`
+- Modify: `migrations.ts`（初始 schema 加两张表）、`enrich.ts`（`lookup` 步骤）、IPC（列出、导入 CSV 文件、删除）
+- Test: `csv.test.ts`、`sqlite-lookup-store.test.ts`、`enrich.test.ts`
+
+**测试要点:** 引号与转义、字段内换行、BOM、空行；列名重复或为空拒绝；超过行数 / 列数 / 大小拒绝；精确匹配、去空白、忽略大小写；替换表格保留 id。
+
+- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(lookup): local lookup tables imported from CSV`
+
+### Task 5C: HTTP 查询与密钥
+
+**Files:**
+- Create: `src/core/scan/json-path.ts`、`src/main/scan/http-step.ts`（`fetch` + `AbortSignal.timeout`、大小限制、缓存）、`src/main/storage/secret-store.ts`（`safeStorage`）
+- Modify: `enrich.ts`（`http` 步骤、变量按 URL / JSON 转义）、`settings.ts`（`secrets`）、IPC（密钥名称列表、设置、删除）
+- Test: `json-path.test.ts`、`http-step.test.ts`（本地 `Bun.serve` 测试服务器）、`enrich.test.ts`
+
+**测试要点:** 超时、非 2xx、非 JSON、超过 256KB、取不到值 → 按 `onError` 处理；缓存命中不再请求；只允许 http/https；密钥替换进请求头但不进日志和错误信息；URL 变量编码、JSON 请求体变量转义。
+
+- [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): HTTP lookups with cached results and encrypted secrets`
+
 ### Task 6: 规则 IPC 与导入导出文件
 
 **Files:**
@@ -219,9 +258,9 @@
 - IPC 通道：
   - `rules:list`：返回 `{ rules: ScanRule[]; settings: RuleSetting[] }`。
   - `rules:create`（参数为规则类型）、`rules:duplicate`、`rules:save`、`rules:delete`。
-  - `rules:test`：参数为原始内容，返回 `ScanResult | null`。
+  - `rules:test`：参数为原始内容，返回识别结果和每个加工步骤的结果（耗时、错误原因），识别不了时为 null。
   - `rules:export`：参数为规则 id 列表，主进程弹保存对话框，返回 `{ saved: boolean; count }`。
-  - `rules:import`：主进程弹打开对话框，返回 `{ imported: number; skipped: { index; issue }[] }`。
+  - `rules:import`：主进程弹打开对话框，返回 `{ imported: number; skipped: { index; issue }[]; httpHosts: string[] }`；含 HTTP 步骤的规则导入后默认停用。
 - 规则的顺序、启用和模板绑定，经 `settings:update` 的 `ruleSettings` 保存，由主进程校验。
 
 - [ ] 写测试 → 失败 → 实现 → 通过 → `bun run check` → 提交 `feat(scan): rule IPC with JSON import and export`
@@ -251,8 +290,8 @@
 ### Task 8: 「识别规则」页与模板编辑器
 
 **Files:**
-- Create: `src/renderer/src/components/RulePanel.tsx`, `RuleEditor.tsx`, `RuleTester.tsx`, `src/renderer/src/view-models/use-rules.ts`, `src/renderer/src/lib/rule-text.ts`（+ test）
-- Modify: `SidePanel.tsx`（新增第 5 个标签页「识别规则」）、`App.tsx`、`TemplateEditor.tsx`（字段区模式、指定字段、二维码内容来源）、`app.css`
+- Create: `src/renderer/src/components/RulePanel.tsx`, `RuleEditor.tsx`, `StepEditor.tsx`（四种加工步骤的表单）, `RuleTester.tsx`, `LookupTables.tsx`, `SecretList.tsx`, `src/renderer/src/view-models/use-rules.ts`, `src/renderer/src/lib/rule-text.ts`（+ test）
+- Modify: `SidePanel.tsx`（新增第 5 个标签页「识别规则」）、`App.tsx`、`app.css`（模板编辑器的字段区与二维码内容来源已在 Task 4 完成）
 
 **测试要点:**
 - `rule-text`：规则类型的中文名、规则摘要（例如「分隔符 - · 编码 / 颜色 / 尺码」）、识别结果的字段摘要。

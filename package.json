@@ -14,11 +14,12 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "bun test",
-    "test:e2e": "electron-vite build && playwright test",
+    "verify:bundle": "bun scripts/verify-bundle.ts",
+    "test:e2e": "electron-vite build && bun run verify:bundle && playwright test",
     "check": "bun run lint && bun run typecheck && bun test",
     "icons": "bun scripts/generate-icons.ts",
-    "dist:win": "electron-vite build && electron-builder --win --x64 --publish never",
-    "release:win": "electron-vite build && electron-builder --win --x64 --publish always"
+    "dist:win": "electron-vite build && bun run verify:bundle && electron-builder --win --x64 --publish never",
+    "release:win": "electron-vite build && bun run verify:bundle && electron-builder --win --x64 --publish always"
   },
   "dependencies": {
     "electron-log": "^5.4.4",

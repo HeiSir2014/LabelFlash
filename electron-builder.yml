@@ -4,11 +4,14 @@ copyright: Copyright © 2026 CDL
 directories:
   buildResources: resources
   output: dist
+# 主进程和 preload 都是自包含的 bundle（见 electron.vite.config.ts），安装包里不带 node_modules：
+# 不靠打包工具去收集传递依赖，也就没有「漏收一个、装完启动就崩」的可能。verify:bundle 在打包前把关。
 files:
   - out/**
   - resources/**
   - "!resources/*.svg"
   - "!resources/installer.nsh"
+  - "!node_modules/**"
   - package.json
 asarUnpack:
   - resources/**

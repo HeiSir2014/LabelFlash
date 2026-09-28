@@ -1,2 +1,3 @@
 [test]
-root = "src"
+# 单元测试在 src/ 和 scripts/ 下（*.test.ts）；e2e/*.e2e.ts 由 Playwright 运行，不在 bun test 的匹配范围内。
+root = "."

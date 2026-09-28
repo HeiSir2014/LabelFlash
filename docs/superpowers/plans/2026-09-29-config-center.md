@@ -17,6 +17,19 @@
 - 每个任务结束：`bun run check` 零问题，涉及界面的任务再跑 `bun run test:e2e` 并截图自查；提交后回填提交号。
 - 全部任务完成后做 §Task 8 的逐项视觉验收，需求方逐项确认后才合回 `feature/phase1-desktop-client`。
 
+## 执行记录
+
+| 任务 | 提交 | 与计划不同的地方（原因） |
+|---|---|---|
+| 1 纯逻辑 | d62acd9 | — |
+| 2 `lookup:rows`、第 20 句 | d535845 | — |
+| 3 工作台工具条、正在查询、扫码框 | e0e4882 | 工具条说明由 `lib/preview-usage.ts` 生成，分「规则」「模板」两段，放不下时先省略规则名（1280 宽时模板名和「规则指定」要完整可见）；「正在查询」放在 `ScanContext.queryingRaw`（查询中的是新扫的码，快照里还是上一张）；1024 宽时备注和自动打印整体换行（扫码框原来只剩 128px）。 |
+| 4 配置中心框架和四页 | 774aa7d | `.button--primary` 只管颜色，大号改用 `.button--large`（页面操作不该像工作台的打印按钮）；「配置」按钮用和打印机胶囊一样的全圆角。 |
+| 5 模板页 | cef4bc9 | `hover-intent.ts` 改名 `timers.ts`，只留计时器接口；配置中心打开时提示条抬到操作条上方（「已保存」曾挡住「使用」8 秒）；带候选的输入框里 Esc 只收起下拉。 |
+| 6 规则、查找表、密钥、通知 | 40615b7 | 查找表行预览、复制引用各用一个 view-model（`use-lookup-preview`、`use-copy-text`）；主进程只放行 `clipboard-sanitized-write` 权限；关闭配置中心时工作台立即恢复，配置中心只淡出（淡出期间扫的码曾丢失）。 |
+| 7 配置中心扫码、跳转链接 | 0faec25 | 扫码先进隐藏的接收框（和扫码框共用 `use-scan-input.ts`），拼好后替换测试框内容，而不是把焦点切进测试框（那样新码会接在旧内容后面，Tab 也会带走焦点）；通知接口的草稿也纳入未保存确认（`use-endpoint-editor.ts`）。 |
+| 8 视觉验收 | 0bc3baf、1ca2cc5 | 验收页面是手写的 HTML（读 `manifest.json` 和截图），不用脚本生成报告；需求方的确认保存在验收页面里。验收顺带发现并修好 macOS 全屏会被立刻退出的问题（0bc3baf）。 |
+
 ## Global Constraints
 
 - 规格：`docs/superpowers/specs/2026-09-29-config-center-layout-design.md`（下称「规格」）。

@@ -102,6 +102,8 @@ export interface AppInfo {
   dataPath: string;
   /** 日志目录：每天一个 labelflash-<日期>.log。 */
   logsDir: string;
+  /** 安装包自带的手机扫码中转地址（设置里没填时用它）；自己构建、没有注入时为 null。 */
+  defaultRelayUrl: string | null;
 }
 
 export interface LabelFlashApi {

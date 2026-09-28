@@ -4,6 +4,7 @@ import { defaultRuleSettings, type RuleSetting, sanitizeRuleSettings } from '../
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { DEFAULT_NOTE_OVERRIDE, type NoteOverride } from '../core/templates/note-override';
 import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
+import { sanitizeRelayUrl } from './relay-url';
 import { DEFAULT_VOICE_NAME, isVoiceName, VOICE_RATE_RANGE, type VoiceSettings } from './voice';
 
 export interface AppSettings {
@@ -26,6 +27,11 @@ export interface AppSettings {
   scanLineGapMs: number;
   /** 打印结果通知的接口（签名密钥只存名称，内容在密钥表里）。 */
   webhooks: WebhookEndpoint[];
+  /**
+   * 手机扫码的中转地址；null 表示用安装包自带的默认地址（官方安装包是官方中转服务，自己构建的没有默认值）。
+   * 规则见 src/shared/relay-url.ts。
+   */
+  mobileRelayUrl: string | null;
 }
 
 export const MS_PER_SECOND = 1_000;
@@ -51,6 +57,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ruleSettings: defaultRuleSettings(),
   scanLineGapMs: SCAN_LINE_GAP_RANGE.default,
   webhooks: [],
+  mobileRelayUrl: null,
 };
 
 export function sanitizeSettings(value: unknown): AppSettings {
@@ -83,6 +90,8 @@ export function sanitizeSettings(value: unknown): AppSettings {
       DEFAULT_SETTINGS.scanLineGapMs,
     ),
     webhooks: sanitizeWebhooks(input['webhooks']),
+    // 不合法的地址当作没填，回到默认地址：填错一次不该让手机扫码一直连不上。
+    mobileRelayUrl: sanitizeRelayUrl(input['mobileRelayUrl']),
   };
 }
 

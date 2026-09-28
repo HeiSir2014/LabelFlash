@@ -1,31 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { desktopSocketUrl, resolveRelayBase, sanitizeRelayUrl } from './relay-endpoint';
-
-describe('sanitizeRelayUrl', () => {
-  test('accepts an https address and adds the trailing slash', () => {
-    expect(sanitizeRelayUrl('https://relay.example.com/labelflash')).toBe('https://relay.example.com/labelflash/');
-    expect(sanitizeRelayUrl(' https://relay.example.com/ ')).toBe('https://relay.example.com/');
-  });
-
-  test('accepts plain http only on this machine, for development', () => {
-    expect(sanitizeRelayUrl('http://localhost:3180')).toBe('http://localhost:3180/');
-    expect(sanitizeRelayUrl('http://127.0.0.1:3180/')).toBe('http://127.0.0.1:3180/');
-    expect(sanitizeRelayUrl('http://relay.example.com/')).toBeNull();
-  });
-
-  test('rejects anything that is not an address without query or fragment', () => {
-    for (const value of [
-      '',
-      'relay.example.com',
-      'ftp://relay.example.com/',
-      'https://relay.example.com/?a=1',
-      42,
-      null,
-    ]) {
-      expect(sanitizeRelayUrl(value)).toBeNull();
-    }
-  });
-});
+import { desktopSocketUrl, resolveRelayBase } from './relay-endpoint';
 
 describe('resolveRelayBase', () => {
   const setting = 'https://mine.example.com/relay/';

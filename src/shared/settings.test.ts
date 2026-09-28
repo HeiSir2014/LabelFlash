@@ -44,8 +44,18 @@ describe('sanitizeSettings', () => {
           enabled: true,
         },
       ],
+      mobileRelayUrl: 'https://relay.example.com/labelflash/',
     };
     expect(sanitizeSettings(settings)).toEqual(settings);
+  });
+
+  test('uses the built-in relay unless a valid address is set', () => {
+    expect(DEFAULT_SETTINGS.mobileRelayUrl).toBeNull();
+    expect(sanitizeSettings({ mobileRelayUrl: 'https://relay.example.com/labelflash' }).mobileRelayUrl).toBe(
+      'https://relay.example.com/labelflash/',
+    );
+    expect(sanitizeSettings({ mobileRelayUrl: 'http://relay.example.com/' }).mobileRelayUrl).toBeNull();
+    expect(sanitizeSettings({ mobileRelayUrl: 42 }).mobileRelayUrl).toBeNull();
   });
 
   test('starts with every built-in scan rule enabled and an 80ms gap for multi-line scans', () => {

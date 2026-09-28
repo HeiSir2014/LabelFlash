@@ -23,6 +23,7 @@ import { registerIpc } from './ipc';
 import { LOGS_DIR_NAME } from './log-files';
 import { setupLogging } from './logging';
 import { LookupTables } from './lookup/lookup-tables';
+import { BUILD_DEFAULT_RELAY_URL } from './mobile/build-defaults';
 import { WebhookOutbox } from './notify/webhook-outbox';
 import { createWebhookSender } from './notify/webhook-sender';
 import { activeRules, resolvePrintTemplate } from './print-template';
@@ -256,6 +257,7 @@ async function bootstrap(): Promise<void> {
       version: app.getVersion(),
       dataPath,
       logsDir,
+      defaultRelayUrl: BUILD_DEFAULT_RELAY_URL,
     },
     updater,
     voice,

@@ -12,8 +12,17 @@ import { OPTIONAL_NATIVE_MODULES } from './scripts/bundle-policy';
  * window.ts 里写死了 ../preload/index.js。
  * 唯一的例外是 OPTIONAL_NATIVE_MODULES，理由见 scripts/bundle-policy.ts。
  */
+/**
+ * 手机扫码的默认中转地址，构建时从环境变量注入（代码里不写域名）：官方安装包由 CI 从 Actions 变量传入，
+ * 自己构建时不设就没有默认值，要在配置中心里填写。见 src/main/mobile/build-defaults.ts。
+ */
+const DEFAULT_RELAY_URL_ENV = 'CDL_LABELFLASH_DEFAULT_RELAY_URL';
+
 export default defineConfig({
   main: {
+    define: {
+      [DEFAULT_RELAY_URL_ENV]: JSON.stringify(process.env[DEFAULT_RELAY_URL_ENV] ?? ''),
+    },
     build: {
       externalizeDeps: false,
       rollupOptions: { external: [...OPTIONAL_NATIVE_MODULES], output: { format: 'cjs' } },

@@ -104,13 +104,14 @@ describe('PrintService.submit', () => {
     expect(adapter.printed).toHaveLength(1);
   });
 
-  test('a printer that is not ready fails with detail and can be retried immediately', async () => {
+  test('a printer that is not ready fails with detail and issue, and can be retried immediately', async () => {
     const { service, adapter } = createHarness();
-    adapter.failNext(new PrintError('PRINTER_NOT_READY', 'offline', '打印机离线'));
+    adapter.failNext(new PrintError('PRINTER_NOT_READY', 'offline', { detail: '打印机离线', issue: 'offline' }));
     expect(await service.submit(request())).toEqual({
       status: 'failed',
       reason: 'PRINTER_NOT_READY',
       detail: '打印机离线',
+      issue: 'offline',
     });
     expect((await service.submit(request())).status).toBe('printed');
   });

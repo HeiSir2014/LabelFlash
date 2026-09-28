@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type { PrintResult } from '../../../core/types';
 import type { LabelPreview, RendererPrintSource } from '../../../shared/ipc-contract';
-import type { FeedbackEvent } from '../lib/feedback-cues';
+import type { FeedbackEvent, PrintMode } from '../lib/feedback-cues';
 import { reportError } from '../lib/notices';
 import type { ScanSnapshot } from '../lib/status-text';
 
@@ -24,6 +24,14 @@ interface StationOptions {
 interface LoadMode {
   source: RendererPrintSource;
   printNow: boolean;
+}
+
+/** 播报要说清这张是怎么打出来的：补打、从记录重打，还是正常扫码。 */
+function printMode(source: RendererPrintSource, force: boolean): PrintMode {
+  if (force) {
+    return 'force';
+  }
+  return source === 'history' ? 'history' : 'scan';
 }
 
 export function useScanStation({ printerName, autoPrint, onJobRecorded, announce }: StationOptions) {
@@ -52,7 +60,7 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded, announce
       }
       patchIfCurrent(seq, { isPrinting: false, print: result });
       // 即使界面已切到更新的扫描，也要让操作员听到这一张的结果。
-      announce({ kind: 'result', result });
+      announce({ kind: 'result', result, mode: printMode(source, force) });
       onJobRecorded();
     },
     [printerName, patchIfCurrent, onJobRecorded, announce],

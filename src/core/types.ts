@@ -1,3 +1,4 @@
+import type { PrinterIssue } from '../shared/printer-readiness';
 import type { LabelTemplate } from './templates/template-model';
 
 export interface LabelData {
@@ -39,7 +40,7 @@ export type PrintResult =
   | { status: 'printed'; jobId: string; label: LabelData }
   | { status: 'duplicate'; recent: RecentPrint; windowMs: number }
   | { status: 'invalid'; reason: 'INVALID_FORMAT' }
-  | { status: 'failed'; reason: PrintFailureReason; detail?: string };
+  | { status: 'failed'; reason: PrintFailureReason; detail?: string; issue?: PrinterIssue };
 
 export type PrintStatus = PrintResult['status'];
 export const PRINT_STATUSES = ['printed', 'duplicate', 'invalid', 'failed'] as const satisfies readonly PrintStatus[];

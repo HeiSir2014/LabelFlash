@@ -16,7 +16,7 @@ describe('describePrinterChip', () => {
   test('shows readiness from the status monitor', () => {
     expect(describePrinterChip(base)).toEqual({ tone: 'unknown', text: '热敏标签机' });
     expect(describePrinterChip({ ...base, readiness: { ready: true } }).tone).toBe('ready');
-    expect(describePrinterChip({ ...base, readiness: { ready: false, detail: '缺纸' } })).toEqual({
+    expect(describePrinterChip({ ...base, readiness: { ready: false, detail: '缺纸', issue: 'paperOut' } })).toEqual({
       tone: 'error',
       text: '热敏标签机（缺纸）',
     });

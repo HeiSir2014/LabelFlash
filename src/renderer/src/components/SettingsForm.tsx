@@ -8,6 +8,7 @@ import {
   MAX_NOTE_PRESETS,
   sanitizeNoteText,
 } from '../../../shared/settings';
+import type { VoiceCue } from '../../../shared/voice';
 import type { UpdateView } from '../lib/update-text';
 import { ConfirmButton } from './ConfirmButton';
 import { VoiceSettingsSection } from './VoiceSettingsSection';
@@ -22,7 +23,7 @@ interface SettingsFormProps {
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
   onOpenLogFolder: () => void;
   onCheckForUpdates: () => void;
-  onPreviewVoice: () => void;
+  onPreviewVoice: (cue?: VoiceCue) => void;
 }
 
 export function SettingsForm({

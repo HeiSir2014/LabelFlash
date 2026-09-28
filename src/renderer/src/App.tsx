@@ -120,6 +120,13 @@ export function App() {
     return next;
   };
 
+  /** 测试页的结果也要播报：操作员通常站在打印机旁边，不看屏幕。 */
+  const printTest = async (name: string) => {
+    const result = await printers.printTest(name);
+    feedback.announce(result ? { kind: 'result', result, mode: 'test' } : { kind: 'internal-error' });
+    return result;
+  };
+
   const openLogFolder = () => {
     window.api.openLogFolder().catch((error: unknown) => reportError('打开日志目录', error));
   };
@@ -178,7 +185,7 @@ export function App() {
                   }}
                   onSelect={(name) => void update({ selectedPrinter: name })}
                   onRefresh={() => void printers.refresh()}
-                  onTestPrint={printers.printTest}
+                  onTestPrint={printTest}
                 />
               ),
               templates: (

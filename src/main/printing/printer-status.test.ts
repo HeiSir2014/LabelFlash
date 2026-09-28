@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { type PrinterReadiness, PrinterStatusMonitor, parsePrinterStatus } from './printer-status';
 
+const PAPER_OUT: PrinterReadiness = { ready: false, detail: '缺纸', issue: 'paperOut' };
+const PAPER_JAM: PrinterReadiness = { ready: false, detail: '卡纸', issue: 'paperJam' };
+
 describe('parsePrinterStatus', () => {
   test('treats Normal and busy states as ready', () => {
     expect(parsePrinterStatus('Normal\r\n')).toEqual({ ready: true });
@@ -8,20 +11,32 @@ describe('parsePrinterStatus', () => {
   });
 
   test('reports not-ready states in Chinese, including combined flags', () => {
-    expect(parsePrinterStatus('Offline')).toEqual({ ready: false, detail: '打印机离线' });
-    expect(parsePrinterStatus('Offline, PaperOut')).toEqual({ ready: false, detail: '打印机离线、缺纸' });
+    expect(parsePrinterStatus('Offline')).toEqual({ ready: false, detail: '打印机离线', issue: 'offline' });
+    expect(parsePrinterStatus('Offline, PaperOut')).toEqual({
+      ready: false,
+      detail: '打印机离线、缺纸',
+      issue: 'paperOut',
+    });
+  });
+
+  test('classifies the issue the operator has to fix first', () => {
+    expect(parsePrinterStatus('PaperJam')).toMatchObject({ issue: 'paperJam' });
+    expect(parsePrinterStatus('Offline, DoorOpen')).toMatchObject({ issue: 'doorOpen' });
+    expect(parsePrinterStatus('PaperProblem')).toMatchObject({ issue: 'paperOut' });
+    expect(parsePrinterStatus('NotAvailable')).toMatchObject({ issue: 'offline' });
+    expect(parsePrinterStatus('UserIntervention')).toMatchObject({ issue: 'other' });
   });
 });
 
 describe('PrinterStatusMonitor', () => {
   test('caches the watched printer and forgets it when switching', async () => {
     const answers = new Map<string, PrinterReadiness | null>([
-      ['A', { ready: false, detail: '缺纸' }],
+      ['A', PAPER_OUT],
       ['B', null],
     ]);
     const monitor = new PrinterStatusMonitor(async (name) => answers.get(name) ?? null);
     await monitor.watch('A');
-    expect(monitor.get('A')).toEqual({ ready: false, detail: '缺纸' });
+    expect(monitor.get('A')).toEqual(PAPER_OUT);
     await monitor.watch('B');
     expect(monitor.get('A')).toBeNull();
     expect(monitor.get('B')).toBeNull();
@@ -34,7 +49,7 @@ describe('PrinterStatusMonitor', () => {
     );
     const pending = monitor.watch('A');
     await monitor.watch('B');
-    release({ ready: false, detail: '卡纸' });
+    release(PAPER_JAM);
     await pending;
     expect(monitor.get('A')).toBeNull();
     expect(monitor.get('B')).toEqual({ ready: true });
@@ -43,11 +58,11 @@ describe('PrinterStatusMonitor', () => {
   test('reports a printer becoming not ready once per change, not on every poll', async () => {
     const answers: Array<PrinterReadiness | null> = [
       { ready: true },
-      { ready: false, detail: '缺纸' },
-      { ready: false, detail: '缺纸' },
-      { ready: false, detail: '卡纸' },
+      PAPER_OUT,
+      PAPER_OUT,
+      PAPER_JAM,
       { ready: true },
-      { ready: false, detail: '缺纸' },
+      PAPER_OUT,
     ];
     const alerts: string[] = [];
     const monitor = new PrinterStatusMonitor(

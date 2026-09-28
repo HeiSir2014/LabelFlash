@@ -38,7 +38,10 @@ export class ElectronDriverAdapter implements PrinterAdapter {
     }
     const readiness = this.status.get(printerName);
     if (readiness && !readiness.ready) {
-      throw new PrintError('PRINTER_NOT_READY', `Printer not ready: ${printerName}`, readiness.detail);
+      throw new PrintError('PRINTER_NOT_READY', `Printer not ready: ${printerName}`, {
+        detail: readiness.detail,
+        issue: readiness.issue,
+      });
     }
     const html = await renderLabelHtml(job);
     signal.throwIfAborted();

@@ -1,22 +1,29 @@
 import { PRINTER_STATUS_POLL_MS } from '../../shared/print-timing';
-import type { PrinterReadiness } from '../../shared/printer-readiness';
+import { PRINTER_ISSUES, type PrinterIssue, type PrinterReadiness } from '../../shared/printer-readiness';
 import type { PrinterProbeHost } from './printer-probe-host';
 
 export type { PrinterReadiness };
 
-/** Get-Printer 的 PrinterStatus 中表示「打不了」的状态 → 给操作员看的中文说明。 */
-const NOT_READY_STATUS: Readonly<Record<string, string>> = {
-  Offline: '打印机离线',
-  Error: '打印机报错',
-  PaperJam: '卡纸',
-  PaperOut: '缺纸',
-  PaperProblem: '纸张异常',
-  NotAvailable: '打印机不可用',
-  DoorOpen: '机盖未关',
-  UserIntervention: '需要人工处理',
-  Paused: '打印机已暂停',
-  NoToner: '碳带或墨粉耗尽',
-  OutOfMemory: '打印机内存不足',
+interface NotReadyStatus {
+  /** 给操作员看的中文说明。 */
+  detail: string;
+  issue: PrinterIssue;
+}
+
+/** Get-Printer 的 PrinterStatus 中表示「打不了」的状态。 */
+const NOT_READY_STATUS: Readonly<Record<string, NotReadyStatus>> = {
+  Offline: { detail: '打印机离线', issue: 'offline' },
+  Error: { detail: '打印机报错', issue: 'other' },
+  PaperJam: { detail: '卡纸', issue: 'paperJam' },
+  PaperOut: { detail: '缺纸', issue: 'paperOut' },
+  // 热敏标签机的「纸张异常」多半是标签纸用完或没装到位，处理方式和缺纸相同。
+  PaperProblem: { detail: '纸张异常', issue: 'paperOut' },
+  NotAvailable: { detail: '打印机不可用', issue: 'offline' },
+  DoorOpen: { detail: '机盖未关', issue: 'doorOpen' },
+  UserIntervention: { detail: '需要人工处理', issue: 'other' },
+  Paused: { detail: '打印机已暂停', issue: 'other' },
+  NoToner: { detail: '碳带或墨粉耗尽', issue: 'other' },
+  OutOfMemory: { detail: '打印机内存不足', issue: 'other' },
 };
 
 export const STATUS_POLL_INTERVAL_MS = PRINTER_STATUS_POLL_MS;
@@ -26,8 +33,14 @@ export function parsePrinterStatus(output: string): PrinterReadiness {
   const problems = output
     .split(/[\s,]+/)
     .map((flag) => NOT_READY_STATUS[flag])
-    .filter((detail): detail is string => detail !== undefined);
-  return problems.length === 0 ? { ready: true } : { ready: false, detail: [...new Set(problems)].join('、') };
+    .filter((status): status is NotReadyStatus => status !== undefined);
+  if (problems.length === 0) {
+    return { ready: true };
+  }
+  // PRINTER_ISSUES 按处理优先级排列：同时有几个问题时，播报排在最前面的那个。
+  const issue = PRINTER_ISSUES.find((candidate) => problems.some((status) => status.issue === candidate)) ?? 'other';
+  const detail = [...new Set(problems.map((status) => status.detail))].join('、');
+  return { ready: false, detail, issue };
 }
 
 /** 打印机状态查询：经常驻探测进程（见 printer-probe-host.ts）；没有探测进程（非 Windows）或查询失败返回 null（未知，不阻止打印）。 */

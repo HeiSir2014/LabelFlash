@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { VOICE_CUES, type VoiceName } from '../../shared/voice';
+import { VOICE_CUE_TEXT, VOICE_CUES, type VoiceName } from '../../shared/voice';
 import { type Synthesize, VoiceClips } from './voice-clips';
 
 const KEY = { voice: 'zh-CN-XiaoxiaoNeural' as VoiceName, ratePercent: 20 };
@@ -43,7 +43,7 @@ describe('VoiceClips', () => {
     const first = await clips.get('printed', KEY);
     fake.goOffline();
     const again = await new VoiceClips(dir, fake.synthesize).get('printed', KEY);
-    expect(new TextDecoder().decode(again ?? new Uint8Array())).toBe('mp3:打印成功:20');
+    expect(new TextDecoder().decode(again ?? new Uint8Array())).toBe(`mp3:${VOICE_CUE_TEXT.printed}:20`);
     expect(again).toEqual(first);
     expect(fake.calls).toHaveLength(1);
   });

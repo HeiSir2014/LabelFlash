@@ -371,6 +371,27 @@ test('sends scans in the config center to the try-it box, or announces that noth
   await app.close();
 });
 
+test('copies a secret reference through the main process', async () => {
+  const { app, page } = await launch();
+  // 不碰系统剪贴板：换成记录写入内容的假实现。
+  await app.evaluate(({ clipboard }) => {
+    const copied: string[] = [];
+    (globalThis as { e2eCopied?: string[] }).e2eCopied = copied;
+    clipboard.writeText = async (text: string) => {
+      copied.push(text);
+    };
+  });
+  await openConfig(page, '密钥');
+  await page.getByLabel('名称', { exact: true }).fill('仓库接口');
+  await page.getByLabel('内容', { exact: true }).fill('token-123');
+  await page.getByRole('button', { name: '保存密钥' }).click();
+  await page.getByRole('button', { name: '复制引用' }).click();
+  await expect
+    .poll(() => app.evaluate(() => (globalThis as { e2eCopied?: string[] }).e2eCopied ?? []))
+    .toEqual(['{密钥:仓库接口}']);
+  await app.close();
+});
+
 test('asks before following a link out of a rule with unsaved changes', async () => {
   const { app, page } = await launch();
   await openConfig(page, '识别规则');

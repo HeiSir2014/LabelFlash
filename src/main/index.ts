@@ -35,7 +35,7 @@ import { createHttpStepRunner } from './scan/http-step';
 import { RuleService } from './scan/rule-service';
 import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './scan/sandboxed-regex';
 import { safeStorageCipher } from './secrets/safe-storage-cipher';
-import { hardenAllWebContents, restrictPermissions } from './security';
+import { denyAllPermissions, hardenAllWebContents } from './security';
 import { openDatabase } from './storage/database';
 import { SqliteJobStore } from './storage/sqlite-job-store';
 import { SqliteLookupStore } from './storage/sqlite-lookup-store';
@@ -150,7 +150,7 @@ async function bootstrap(): Promise<void> {
     onGpuGone(details);
   });
   app.setAppUserModelId(BRAND.appId);
-  restrictPermissions();
+  denyAllPermissions();
   handleAppScheme(join(__dirname, '../renderer'));
 
   const dataPath = app.getPath('userData');

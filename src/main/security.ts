@@ -1,5 +1,4 @@
 import { app, session } from 'electron';
-import { isPermissionGranted } from './permissions';
 
 /**
  * 对所有 webContents（主窗口、打印窗口，以及将来新增的任何窗口）统一收紧：
@@ -15,10 +14,8 @@ export function hardenAllWebContents(): void {
   });
 }
 
-/** 网页权限只放行往剪贴板写纯文本（见 permissions.ts）；摄像头、通知、读取剪贴板等请求和检查一律拒绝。 */
-export function restrictPermissions(): void {
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) =>
-    callback(isPermissionGranted(permission)),
-  );
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => isPermissionGranted(permission));
+/** 本应用不需要任何网页权限（摄像头、通知、剪贴板读取……）：请求和检查一律拒绝。 */
+export function denyAllPermissions(): void {
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
 }

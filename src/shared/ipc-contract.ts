@@ -51,6 +51,7 @@ export const IpcChannel = {
   GetAppInfo: 'app:info',
   OpenLogFolder: 'app:open-log-folder',
   OpenShop: 'app:open-shop',
+  CopyText: 'clipboard:write-text',
   GetUpdateStatus: 'update:status',
   CheckForUpdates: 'update:check',
   InstallUpdate: 'update:install',
@@ -151,6 +152,8 @@ export interface LabelFlashApi {
   openLogFolder(): Promise<void>;
   /** 用系统浏览器打开出品方店铺（地址是主进程里的常量，页面不能指定网址）。 */
   openShop(): Promise<void>;
+  /** 把一段文字写进系统剪贴板（例如 {密钥:名称} 引用）。由主进程写：页面的网页权限一律拒绝。 */
+  copyText(text: string): Promise<void>;
   getUpdateStatus(): Promise<UpdateStatus>;
   checkForUpdates(): Promise<void>;
   /** 仅在新版本已下载（ready）时有效：重启并安装。 */

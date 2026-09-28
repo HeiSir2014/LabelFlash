@@ -1,5 +1,6 @@
 import {
   type BrowserWindow,
+  clipboard,
   dialog,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
@@ -205,6 +206,8 @@ export function registerIpc(deps: IpcDeps): void {
   });
   // 只打开固定的店铺地址：页面的新窗口和跳转一律被拦截（security.ts），外链只能走这里。
   handle(IpcChannel.OpenShop, () => shell.openExternal(BRAND.shop.url));
+  // 页面的剪贴板权限一律拒绝（security.ts），复制由主进程代写，只写纯文本。
+  handle(IpcChannel.CopyText, (text) => clipboard.writeText(requireString(text, 'text')));
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
   handle(IpcChannel.InstallUpdate, () => deps.updater.install());

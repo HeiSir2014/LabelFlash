@@ -1,4 +1,4 @@
-import { type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, ipcMain, shell } from 'electron';
+import { type BrowserWindow, clipboard, type IpcMainEvent, type IpcMainInvokeEvent, ipcMain, shell } from 'electron';
 import type { PrintService } from '../core/print-service';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
@@ -136,6 +136,8 @@ export function registerIpc(deps: IpcDeps): void {
   });
   // 只打开固定的店铺地址：页面的新窗口和跳转一律被拦截（security.ts），外链只能走这里。
   handle(IpcChannel.OpenShop, () => shell.openExternal(BRAND.shop.url));
+  // 页面没有剪贴板权限（security.ts 拒绝所有权限），复制也由主进程完成，内容同样是常量。
+  handle(IpcChannel.CopyShopUrl, () => clipboard.writeText(BRAND.shop.url));
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
   handle(IpcChannel.InstallUpdate, () => deps.updater.install());

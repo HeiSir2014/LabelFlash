@@ -24,6 +24,7 @@ interface SettingsFormProps {
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
   onOpenLogFolder: () => void;
   onOpenShop: () => void;
+  onCopyShopUrl: () => void;
   onCheckForUpdates: () => void;
   onPreviewVoice: (cue?: VoiceCue) => void;
 }
@@ -36,6 +37,7 @@ export function SettingsForm({
   onChange,
   onOpenLogFolder,
   onOpenShop,
+  onCopyShopUrl,
   onCheckForUpdates,
   onPreviewVoice,
 }: SettingsFormProps) {
@@ -181,6 +183,9 @@ export function SettingsForm({
                 {BRAND.shop.name}
               </button>
               <span className="about__path about__url">{BRAND.shop.url}</span>
+              <button type="button" className="button button--small button--quiet" onClick={onCopyShopUrl}>
+                复制链接
+              </button>
             </dd>
             <dt>数据目录</dt>
             <dd className="about__path">{appInfo.dataPath}</dd>

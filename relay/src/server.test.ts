@@ -9,6 +9,8 @@ import { type RunningRelay, startRelay } from './server';
 
 const ORIGIN = 'https://relay.example.com';
 const BODY = { iv: 'aaaaaaaaaaaaaaaa', ct: 'Y2lwaGVy' };
+/** 帧超过 maxPayloadLength 时 Bun 直接断开 TCP 连接，不发关闭帧，客户端看到的是 1006。 */
+const CLOSE_ABNORMAL = 1006;
 
 let webRoot: string;
 let relay: RunningRelay;
@@ -99,6 +101,12 @@ describe('http routes', () => {
   test('answers 404 elsewhere', async () => {
     expect((await fetch(new URL('/admin', relay.url))).status).toBe(404);
   });
+
+  test('answers a NUL in the path without leaking internals', async () => {
+    const response = await fetch(new URL('/m/%00', relay.url));
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe('Not Found');
+  });
 });
 
 describe('websockets', () => {
@@ -131,6 +139,25 @@ describe('websockets', () => {
   test('closes a connection that sends an oversized frame', async () => {
     const desktop = await connect('/ws/desktop');
     desktop.socket.send('x'.repeat(MAX_FRAME_BYTES + 1));
-    expect(await desktop.closed).not.toBe(1000);
+    expect(await desktop.closed).toBe(CLOSE_ABNORMAL);
+  });
+});
+
+describe('capacity', () => {
+  test('answers 503 instead of upgrading when full', async () => {
+    const full = startRelay(
+      { host: '127.0.0.1', port: 0, publicOrigin: ORIGIN, webRoot, version: 'test-1' },
+      () => {},
+      { maxConnections: 0 },
+    );
+    try {
+      const response = await fetch(new URL('/ws/desktop', full.url), {
+        headers: { Connection: 'Upgrade', Upgrade: 'websocket' },
+      });
+      expect(response.status).toBe(503);
+      expect(response.headers.get('retry-after')).toBe('30');
+    } finally {
+      await full.stop();
+    }
   });
 });

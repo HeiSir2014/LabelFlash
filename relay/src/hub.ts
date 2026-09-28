@@ -12,7 +12,7 @@ import {
   type DesktopFrame,
   type EndReason,
   FIRST_FRAME_TIMEOUT_MS,
-  MAX_FRAME_BYTES,
+  MAX_PENDING_JOBS,
   MAX_PHONES_PER_SESSION,
   MOBILE_PROTOCOL_VERSION,
   type PhoneFrame,
@@ -47,7 +47,7 @@ export interface HubDeps {
 }
 
 /**
- * 容量按 2 核、1.9G 内存、和其他服务共用的服务器估算：每个连接只占几 KB，远到不了内存上限；
+ * 容量按一台和其他服务共用的小型服务器估算：每个连接只占几 KB，远到不了内存上限；
  * 这些数字是防止被刷爆的闸门，不是性能极限。
  */
 const DEFAULT_LIMITS: HubLimits = {
@@ -60,12 +60,14 @@ const DEFAULT_LIMITS: HubLimits = {
   maxConnectionsPerIp: 20,
 };
 
-/** 手机每秒最多 5 帧：正常使用每扫一张只有两三帧加上心跳。 */
+/** 手机平均每秒最多 5 帧：正常使用每扫一张只有一帧，加上心跳。 */
 const PHONE_FRAMES_PER_SECOND = 5;
-const PHONE_FRAME_BURST = 20;
-/** 电脑要给多部手机回复，额度放宽。 */
+/** 手机重新被接纳时一次发出：hello 加上发件箱里所有还没结果的任务；留一倍余量。 */
+const PHONE_FRAME_BURST = 2 * (1 + MAX_PENDING_JOBS);
+/** 电脑平均每秒最多 50 帧：打印一张最多是一条结果加上每部手机一条排队更新，远低于这个数。 */
 const DESKTOP_FRAMES_PER_SECOND = 50;
-const DESKTOP_FRAME_BURST = 100;
+/** 电脑重连时一次回复所有手机：每部手机的 welcome 加上它每个任务的进度；留一倍余量。 */
+const DESKTOP_FRAME_BURST = 2 * MAX_PHONES_PER_SESSION * (1 + MAX_PENDING_JOBS);
 /** 超出限速累计这么多次就断开：偶尔超出只丢帧，持续刷就关掉。 */
 const MAX_RATE_VIOLATIONS = 50;
 /** 日志里只记会话号的前几个字符，够排查问题，又不能拿来加入会话。 */
@@ -106,13 +108,19 @@ export class RelayHub {
     this.limits = { ...DEFAULT_LIMITS, ...deps.limits };
   }
 
-  /** 超出容量时返回 false，由调用方以 1013 关闭。 */
+  /** 还能不能再接一个来自 ip 的连接：升级成 WebSocket 之前先问，满了直接回 HTTP 503。 */
+  hasRoom(ip: string): boolean {
+    const perIp = this.connectionsPerIp.get(ip) ?? 0;
+    return this.connections.size < this.limits.maxConnections && perIp < this.limits.maxConnectionsPerIp;
+  }
+
+  /** 超出容量时返回 false，由调用方以 1013 关闭（升级之前已经问过 hasRoom，这里是同时涌入时的最后一道闸）。 */
   attach(peer: Peer, role: PeerRole): boolean {
-    const perIp = this.connectionsPerIp.get(peer.ip) ?? 0;
-    if (this.connections.size >= this.limits.maxConnections || perIp >= this.limits.maxConnectionsPerIp) {
+    if (!this.hasRoom(peer.ip)) {
       this.deps.log(`refused ${role} ip=${peer.ip}: too many connections`);
       return false;
     }
+    const perIp = this.connectionsPerIp.get(peer.ip) ?? 0;
     const bucket =
       role === 'phone'
         ? new TokenBucket(PHONE_FRAMES_PER_SECOND, PHONE_FRAME_BURST, this.deps.clock)
@@ -129,13 +137,10 @@ export class RelayHub {
     return true;
   }
 
+  /** 一帧文本。帧的字节数上限由 server.ts 的 maxPayloadLength 把关，超了连接直接被关掉，到不了这里。 */
   receive(peer: Peer, text: string): void {
     const connection = this.connections.get(peer.id);
     if (!connection) {
-      return;
-    }
-    if (text.length > MAX_FRAME_BYTES) {
-      this.close(connection, CLOSE_POLICY, 'frame too large');
       return;
     }
     if (!connection.bucket.take()) {

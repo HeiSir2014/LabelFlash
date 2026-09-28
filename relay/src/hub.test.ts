@@ -106,6 +106,15 @@ describe('opening a session', () => {
     expect(hub.stats().sessions).toBe(1);
   });
 
+  test('ignores frames from a replaced desktop connection', () => {
+    const { desktop: stale, session, secret } = openDesktop();
+    const phone = joinPhone(session);
+    openDesktop(session, secret);
+    send(stale, { t: 'close', reason: 'stopped' });
+    expect(phone.types()).toEqual(['online', 'online']);
+    expect(hub.stats().sessions).toBe(1);
+  });
+
   test('refuses a session id held by someone else', () => {
     const { session } = openDesktop();
     const { desktop: intruder } = openDesktop(session, randomId());
@@ -257,8 +266,32 @@ describe('limits', () => {
   test('refuses connections beyond the per-address limit', () => {
     hub = createHub({ maxConnectionsPerIp: 1 });
     expect(hub.attach(peer('198.51.100.7'), 'phone')).toBe(true);
+    expect(hub.hasRoom('198.51.100.7')).toBe(false);
     expect(hub.attach(peer('198.51.100.7'), 'phone')).toBe(false);
     expect(hub.attach(peer('198.51.100.8'), 'phone')).toBe(true);
+  });
+
+  test('frees the slot of a closed connection', () => {
+    hub = createHub({ maxConnectionsPerIp: 1 });
+    const first = peer('198.51.100.7');
+    hub.attach(first, 'phone');
+    hub.detach(first);
+    expect(hub.hasRoom('198.51.100.7')).toBe(true);
+  });
+
+  test('refuses every connection when the relay is full', () => {
+    hub = createHub({ maxConnections: 1 });
+    hub.attach(peer('198.51.100.7'), 'desktop');
+    expect(hub.hasRoom('198.51.100.8')).toBe(false);
+  });
+
+  test('lets a desktop answer a burst from every phone after reconnecting', () => {
+    const { desktop, session } = openDesktop();
+    joinPhone(session);
+    for (let index = 0; index < 100; index += 1) {
+      send(desktop, { t: 'ping' });
+    }
+    expect(desktop.received).not.toContainEqual({ t: 'error', code: 'rate-limited' });
   });
 
   test('drops frames beyond the rate limit and closes a flooding connection', () => {

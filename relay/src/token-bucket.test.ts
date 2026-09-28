@@ -19,6 +19,13 @@ describe('TokenBucket', () => {
     expect(bucket.take()).toBe(false);
   });
 
+  test('keeps its tokens when the clock steps back', () => {
+    const clock = new FakeClock();
+    const bucket = new TokenBucket(5, 3, clock);
+    clock.advance(-60_000);
+    expect(bucket.take()).toBe(true);
+  });
+
   test('never holds more than the burst', () => {
     const clock = new FakeClock();
     const bucket = new TokenBucket(5, 3, clock);

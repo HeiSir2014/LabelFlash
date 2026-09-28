@@ -11,6 +11,7 @@ const HASHED_DIR = 'assets/';
 const CACHE_HASHED = 'public, max-age=31536000, immutable';
 /** 页面本身每次都向服务器确认，发布新版本后手机刷新就能拿到。 */
 const CACHE_PAGE = 'no-cache';
+const CONTROL_CHARACTER = /\p{Cc}/u;
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -68,7 +69,10 @@ export function securityHeaders(origin: string): Record<string, string> {
   };
 }
 
-/** 只接受 /m/ 下的相对路径；解码失败、含 .. 或反斜杠、以 / 开头的一律拒绝。 */
+/**
+ * 只接受 /m/ 下的相对路径；解码失败、含 .. 或反斜杠、以 / 开头、含控制字符的一律拒绝。
+ * 控制字符（例如 %00）要在碰文件系统之前挡掉：带 NUL 的路径会让文件 API 抛错。
+ */
 function toRelativePath(pathname: string): string | null {
   if (!pathname.startsWith(PAGE_PREFIX)) {
     return null;
@@ -82,7 +86,12 @@ function toRelativePath(pathname: string): string | null {
   if (relative === '') {
     return INDEX_FILE;
   }
-  if (relative.startsWith('/') || relative.includes('\\') || relative.split('/').includes('..')) {
+  if (
+    relative.startsWith('/') ||
+    relative.includes('\\') ||
+    CONTROL_CHARACTER.test(relative) ||
+    relative.split('/').includes('..')
+  ) {
     return null;
   }
   return relative;

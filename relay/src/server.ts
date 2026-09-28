@@ -2,11 +2,10 @@
  * 中转服务的接线：HTTP 路由（健康检查、扫码页）和 WebSocket → RelayHub。业务都在 hub.ts。
  */
 import type { Server, ServerWebSocket } from 'bun';
-import { systemClock } from '../../src/core/types';
 import { randomId } from '../../src/shared/mobile-crypto';
 import { MAX_FRAME_BYTES } from '../../src/shared/mobile-protocol';
 import type { RelayConfig } from './config';
-import { CLOSE_POLICY, CLOSE_TRY_LATER, type Peer, type PeerRole, RelayHub } from './hub';
+import { CLOSE_POLICY, CLOSE_TRY_LATER, type HubLimits, type Peer, type PeerRole, RelayHub } from './hub';
 import { serveStatic } from './static-files';
 
 export interface RunningRelay {
@@ -23,6 +22,13 @@ interface SocketData {
 }
 
 const TICK_INTERVAL_MS = 1_000;
+/** 连接满了时让客户端过这么久再试（HTTP 503 的 Retry-After，单位秒）；客户端本来就按退避重连。 */
+const RETRY_AFTER_SECONDS = 30;
+/**
+ * 中转服务只比较时间差（限速、第一帧超时、宽限期），用单调时钟：服务器校时把系统时间往回拨时，
+ * 限速额度不会被扣光，宽限期也不会被拉长或缩短。
+ */
+const monotonicClock = { now: () => performance.now() };
 /**
  * 协议层的兜底：应用层心跳是 25 秒一次，超过这么久没有任何数据就断开。
  * Bun 按秒计；反向代理的读超时（nginx 的 proxy_read_timeout）也要不少于 120 秒。
@@ -33,14 +39,27 @@ const SOCKET_PATHS: Record<string, PeerRole> = {
   '/ws/phone': 'phone',
 };
 
-export function startRelay(config: RelayConfig, log: (line: string) => void): RunningRelay {
-  const hub = new RelayHub({ clock: systemClock, log });
+export function startRelay(
+  config: RelayConfig,
+  log: (line: string) => void,
+  limits?: Partial<HubLimits>,
+): RunningRelay {
+  const hub = new RelayHub({ clock: monotonicClock, log, limits });
 
   const server = Bun.serve({
     hostname: config.host,
     port: config.port,
+    // 生产模式：出错时不把堆栈和源码路径写进响应。
+    development: false,
     fetch(request, server) {
       return route(request, server, config, hub);
+    },
+    error(error) {
+      log(`http error: ${error.message}`);
+      return new Response('Internal Server Error', {
+        status: 500,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
     },
     websocket: {
       data: {} as SocketData,
@@ -97,7 +116,7 @@ async function route(
   const { pathname } = new URL(request.url);
   const role = SOCKET_PATHS[pathname];
   if (role) {
-    return upgrade(request, server, config, role);
+    return upgrade(request, server, config, hub, role);
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response('Method Not Allowed', { status: 405 });
@@ -116,6 +135,7 @@ function upgrade(
   request: Request,
   server: Server<SocketData>,
   config: RelayConfig,
+  hub: RelayHub,
   role: PeerRole,
 ): Response | undefined {
   // 手机页面只能来自我们自己的站点；电脑端不是浏览器，没有 Origin。
@@ -124,6 +144,13 @@ function upgrade(
   }
   // 服务只经反向代理访问（容器端口只映射到宿主机的 127.0.0.1），X-Real-IP 由反向代理设置。
   const ip = request.headers.get('x-real-ip') ?? server.requestIP(request)?.address ?? 'unknown';
+  // 满了就不升级：客户端看到的是连接失败，按退避重连，不会先连上再被踢、立刻重连。
+  if (!hub.hasRoom(ip)) {
+    return new Response('Service Unavailable', {
+      status: 503,
+      headers: { 'Retry-After': String(RETRY_AFTER_SECONDS) },
+    });
+  }
   const data: SocketData = { role, id: randomId(), ip, peer: null };
   if (server.upgrade(request, { data })) {
     return undefined;

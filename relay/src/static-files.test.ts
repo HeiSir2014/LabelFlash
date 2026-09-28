@@ -57,6 +57,9 @@ describe('serveStatic', () => {
       '/m/%2e%2e/server.js',
       '/m/assets/..%2f..%2fserver.js',
       '/m//etc/passwd',
+      '/m/%00',
+      '/m/index.html%00.js',
+      '/m/assets/%0a.js',
     ]) {
       expect((await serveStatic(root, pathname, ORIGIN)).status).toBe(404);
     }

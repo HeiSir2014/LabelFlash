@@ -5,6 +5,8 @@ FROM oven/bun:1.4.2-alpine
 WORKDIR /app
 COPY dist/ /app/
 
+ENV NODE_ENV=production
+
 # 以镜像自带的非 root 用户运行；容器以只读文件系统启动（见 scripts/relay/deploy.ts）。
 USER bun
 EXPOSE 3180

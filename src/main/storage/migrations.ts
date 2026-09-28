@@ -50,5 +50,22 @@ export const MIGRATIONS: readonly string[] = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   ) STRICT;
+
+  -- 查找表（从 CSV 导入）：columns 是列名的 JSON 数组，每行的 cells 是同样长度的 JSON 数组。
+  CREATE TABLE lookup_tables (
+    id         TEXT    PRIMARY KEY,
+    name       TEXT    NOT NULL,
+    columns    TEXT    NOT NULL,
+    row_count  INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  ) STRICT;
+
+  CREATE TABLE lookup_rows (
+    table_id  TEXT    NOT NULL REFERENCES lookup_tables (id) ON DELETE CASCADE,
+    row_index INTEGER NOT NULL,
+    cells     TEXT    NOT NULL,
+    PRIMARY KEY (table_id, row_index)
+  ) STRICT, WITHOUT ROWID;
   `,
 ];

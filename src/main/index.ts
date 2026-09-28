@@ -21,6 +21,7 @@ import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback
 import { registerIpc } from './ipc';
 import { LOGS_DIR_NAME } from './log-files';
 import { setupLogging } from './logging';
+import { LookupTables } from './lookup/lookup-tables';
 import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
@@ -31,6 +32,7 @@ import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './scan
 import { denyAllPermissions, hardenAllWebContents } from './security';
 import { openDatabase } from './storage/database';
 import { SqliteJobStore } from './storage/sqlite-job-store';
+import { SqliteLookupStore } from './storage/sqlite-lookup-store';
 import { SqliteScanRuleRepository } from './storage/sqlite-scan-rule-repository';
 import { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import { SqliteTemplateRepository } from './storage/sqlite-template-repository';
@@ -151,10 +153,11 @@ async function bootstrap(): Promise<void> {
   const templates = new TemplateCatalog(new SqliteTemplateRepository(database, systemClock), randomUUID);
   const rules = new RuleCatalog(new SqliteScanRuleRepository(database, systemClock), randomUUID);
   const runRegex = createSandboxedRegexRunner();
+  const lookupTables = new LookupTables(new SqliteLookupStore(database, systemClock), randomUUID);
   const enrichDeps: EnrichDeps = {
     replace: createSandboxedRegexReplacer(),
-    // 查找表和 HTTP 查询分别在后续两个任务接入。
-    lookup: () => null,
+    lookup: (tableId, keyColumn, key, ignoreCase) => lookupTables.find(tableId, keyColumn, key, ignoreCase),
+    // HTTP 查询在下一个任务接入。
     http: async () => ({ ok: false, detail: 'HTTP 查询还没有接入' }),
     now: () => performance.now(),
   };
@@ -204,6 +207,7 @@ async function bootstrap(): Promise<void> {
     jobs,
     settings,
     templates,
+    lookupTables,
     status,
     appInfo: {
       productName: BRAND.productName,

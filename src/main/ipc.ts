@@ -1,4 +1,12 @@
-import { type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, ipcMain, shell } from 'electron';
+import {
+  type BrowserWindow,
+  dialog,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
+  ipcMain,
+  type OpenDialogOptions,
+  shell,
+} from 'electron';
 import type { PrintService } from '../core/print-service';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
@@ -7,17 +15,20 @@ import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/te
 import type { PreviewResult } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { checkDriverPaper } from '../shared/driver-paper';
-import { type AppInfo, IpcChannel, type LabelPreview } from '../shared/ipc-contract';
+import { type AppInfo, IpcChannel, type LabelPreview, type LookupImportResult } from '../shared/ipc-contract';
 import type { AppSettings } from '../shared/settings';
 import { logFailures } from './ipc-errors';
 import {
   requireJobQuery,
+  requireLookupTableId,
   requirePrintOptions,
+  requireRaw,
   requireRecord,
   requireString,
   requireTemplateId,
   requireVoiceCue,
 } from './ipc-validators';
+import type { LookupTables } from './lookup/lookup-tables';
 import { resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
 import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
@@ -37,6 +48,7 @@ export interface IpcDeps {
   jobs: SqliteJobStore;
   settings: SqliteSettingsStore;
   templates: TemplateCatalog;
+  lookupTables: LookupTables;
   status: PrinterStatusMonitor;
   appInfo: AppInfo;
   updater: AppUpdater;
@@ -92,17 +104,17 @@ export function registerIpc(deps: IpcDeps): void {
   };
 
   handle(IpcChannel.Preview, async (raw) => {
-    const result = await deps.service.preview(requireString(raw, 'raw'));
+    const result = await deps.service.preview(requireRaw(raw));
     return renderPreview(result, templateFor(result));
   });
   handle(IpcChannel.PreviewTemplate, async (raw, template) => {
-    const result = await deps.service.preview(requireString(raw, 'raw'));
+    const result = await deps.service.preview(requireRaw(raw));
     const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, templateFor(result));
     return renderPreview(result, draft);
   });
   handle(IpcChannel.Print, (raw, printerName, options) =>
     deps.service.submit({
-      raw: requireString(raw, 'raw'),
+      raw: requireRaw(raw),
       printerName: requireString(printerName, 'printerName'),
       ...requirePrintOptions(options),
     }),
@@ -132,6 +144,25 @@ export function registerIpc(deps: IpcDeps): void {
       ? updateSettings({ activeTemplateId: DEFAULT_TEMPLATE_ID })
       : deps.settings.current;
   });
+  handle(IpcChannel.ListLookupTables, () => deps.lookupTables.list());
+  handle(IpcChannel.ImportLookupTable, async (replaceId): Promise<LookupImportResult> => {
+    const tableId = replaceId === null ? null : requireLookupTableId(replaceId);
+    const window = deps.getWindow();
+    const options: OpenDialogOptions = {
+      title: tableId === null ? '导入查找表' : '用新文件替换查找表',
+      filters: [{ name: 'CSV 表格', extensions: ['csv', 'txt'] }],
+      properties: ['openFile'],
+    };
+    const { canceled, filePaths } = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options);
+    const [path] = filePaths;
+    if (canceled || path === undefined) {
+      return { status: 'canceled' };
+    }
+    return deps.lookupTables.importFile(path, tableId);
+  });
+  handle(IpcChannel.DeleteLookupTable, (id) => deps.lookupTables.remove(requireLookupTableId(id)));
   handle(IpcChannel.GetAppInfo, () => deps.appInfo);
   handle(IpcChannel.OpenLogFolder, async () => {
     const error = await shell.openPath(deps.appInfo.logsDir);

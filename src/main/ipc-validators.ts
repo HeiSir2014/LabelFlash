@@ -1,3 +1,5 @@
+import { LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
+import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
@@ -8,9 +10,26 @@ import { isVoiceCue, type VoiceCue } from '../shared/voice';
 export const MAX_IPC_STRING_LENGTH = 1_024;
 const RENDERER_PRINT_SOURCES: ReadonlySet<string> = new Set<RendererPrintSource>(['desktop', 'history']);
 
-export function requireString(value: unknown, name: string): string {
-  if (typeof value !== 'string' || value.length > MAX_IPC_STRING_LENGTH) {
+/**
+ * 扫码内容在规范化之前的长度上限：规范化后最多 1000 字符，但换行可能是 CRLF、首尾可能有空白，
+ * 这里留足余量，超长的交给业务层判为「无法识别」并记录，而不是在 IPC 层直接报错。
+ */
+export const MAX_RAW_INPUT_LENGTH = 4 * MAX_RAW_LENGTH;
+
+export function requireString(value: unknown, name: string, maxLength = MAX_IPC_STRING_LENGTH): string {
+  if (typeof value !== 'string' || value.length > maxLength) {
     throw new TypeError(`Invalid ${name}`);
+  }
+  return value;
+}
+
+export function requireRaw(value: unknown): string {
+  return requireString(value, 'raw', MAX_RAW_INPUT_LENGTH);
+}
+
+export function requireLookupTableId(value: unknown): string {
+  if (typeof value !== 'string' || !LOOKUP_TABLE_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid lookup table id');
   }
   return value;
 }

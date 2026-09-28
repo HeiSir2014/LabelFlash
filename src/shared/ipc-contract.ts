@@ -1,3 +1,4 @@
+import type { LookupTableInfo } from '../core/lookup/lookup-model';
 import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
@@ -24,6 +25,9 @@ export const IpcChannel = {
   DuplicateTemplate: 'templates:duplicate',
   SaveTemplate: 'templates:save',
   DeleteTemplate: 'templates:delete',
+  ListLookupTables: 'lookup:list',
+  ImportLookupTable: 'lookup:import',
+  DeleteLookupTable: 'lookup:delete',
   GetAppInfo: 'app:info',
   OpenLogFolder: 'app:open-log-folder',
   OpenShop: 'app:open-shop',
@@ -57,6 +61,11 @@ export interface LabelPreview {
   qrOmitted: boolean;
 }
 
+export type LookupImportResult =
+  | { status: 'imported'; table: LookupTableInfo }
+  | { status: 'canceled' }
+  | { status: 'invalid'; issue: string };
+
 export interface AppInfo {
   productName: string;
   brandOwner: string;
@@ -86,6 +95,10 @@ export interface LabelFlashApi {
   saveTemplate(template: LabelTemplate): Promise<LabelTemplate>;
   /** 删除后若它正在使用，自动切回标准模板；返回最新设置。 */
   deleteTemplate(id: string): Promise<AppSettings>;
+  listLookupTables(): Promise<LookupTableInfo[]>;
+  /** 主进程弹出选择文件的对话框；replaceId 不为 null 时替换那张表的内容。 */
+  importLookupTable(replaceId: string | null): Promise<LookupImportResult>;
+  deleteLookupTable(id: string): Promise<void>;
   getAppInfo(): Promise<AppInfo>;
   openLogFolder(): Promise<void>;
   /** 用系统浏览器打开出品方店铺（地址是主进程里的常量，页面不能指定网址）。 */

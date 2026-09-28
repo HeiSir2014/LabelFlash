@@ -22,13 +22,14 @@
 
 **Verified:**
 - 本计划的全部代码都来自一个已跑通的参考工程。
-- `bun run check`（lint + 三个 tsconfig + 186 个单元测试）全部通过；`bun run test:e2e`（Playwright 驱动 Electron）3 个用例通过；`electron-vite build` 成功。
+- `bun run check`（lint + 三个 tsconfig + 201 个单元测试）全部通过；`bun run test:e2e`（Playwright 驱动 Electron）3 个用例通过；`electron-vite build` 成功。
 - 开发版走过"复制模板 → 编辑 → 保存 → 使用 → 扫码"和"添加常用备注 → 下拉框切换 → 扫码"。
 - 语音预热在 Electron 中真实生成 6 段 mp3 缓存。
 - `electron-builder --mac dir` 打包后能启动，fuses 生效。
 
 **v3 修订（最终 review）：**
-- 任务顺序：Task 0–13 → Task 13A–13E（本版新增）→ Task 14。
+- 任务顺序：Task 0–13 → Task 13A–13F（本版新增）→ Task 14。
+- 13F 驱动纸张检测来自标签机适配调研：驱动出厂默认纸张不是 60×40 是现场最可能出现的问题。Windows 读取脚本已在 Windows 真机上验证，macOS 读取和提示界面已在接了真实打印机的 Mac 上验证。
 - 新增：`app://` 自定义协议、全局 webContents 加固、主 frame 校验、自动更新、E2E、语音播报、打印机异常系统通知。
 - Task 14 的 electron-builder / CI / README 改为发布到 GitHub Releases 的版本。
 
@@ -75,12 +76,13 @@ src/core/                         纯业务层（不依赖 Electron）
 src/shared/                       主进程与界面共用
   brand.ts  label-paper.ts  print-timing.ts  printer-readiness.ts  job-history.ts
   settings.ts  ipc-contract.ts  sample-label.ts                                        （Task 5、8、10）
-  update-status.ts（13B）  voice.ts（13C）
+  update-status.ts（13B）  voice.ts（13C）  driver-paper.ts（13F）
 src/main/
   storage/    database.ts  migrations.ts  row-readers.ts  sqlite-job-store.ts
               sqlite-settings-store.ts  sqlite-template-repository.ts                  （Task 6–8）
   printing/   label-html.ts  printer-status.ts  electron-driver-adapter.ts             （Task 9）
               alert-throttle.ts  printer-alerts.ts                                     （13D）
+              driver-paper.ts                                                          （13F）
   voice/      voice-clips.ts  edge-synthesizer.ts                                      （13C）
   bundle-path.ts  app-protocol.ts  security.ts                                         （13A）
   updater.ts                                                                           （13B）
@@ -93,8 +95,8 @@ src/renderer/
         styles/        tokens.css  app.css
         lib/           status-text  notices  printer-chip  list-filters  repeat-filter
                        note-options  feedback-sound                                    （Task 11）
-                       update-text（13B）  feedback-cues  voice-player（13C）
-        view-models/   use-*.ts                                                        （Task 12；13B/13C 新增两个）
+                       update-text（13B）  feedback-cues  voice-player（13C）  paper-text（13F）
+        view-models/   use-*.ts                                                        （Task 12；13B/13C/13F 各新增一个）
         components/    TitleBar  ScanBar  PreviewStage  Ruler  PrinterList  SidePanel
                        JobLog  NoticeBar  TemplatePanel  TemplateEditor  SettingsForm
                        ConfirmButton  ErrorBoundary  form-controls                     （Task 13）
@@ -9410,6 +9412,623 @@ git commit -m "test: Playwright end-to-end tests against the built Electron app"
 
 ---
 
+### Task 13F: 驱动纸张检测（Windows CIM / macOS IPP）
+
+热敏标签机驱动的出厂默认纸张通常不是 60×40。Chromium 静默打印传入的自定义纸张尺寸，有的驱动会忽略，结果是缩放、跳纸或出空白标签。本任务读取驱动默认纸张：不是 60×40 时，在选中的打印机下面提示，并提供按钮打开打印机设置。读不到时按未知处理，不提示，也不阻止打印。不引入新依赖。
+
+**Files:**
+- Create: `src/shared/driver-paper.ts`, `src/shared/driver-paper.test.ts`, `src/main/printing/driver-paper.ts`, `src/main/printing/driver-paper.test.ts`, `src/renderer/src/lib/paper-text.ts`, `src/renderer/src/lib/paper-text.test.ts`, `src/renderer/src/view-models/use-driver-paper.ts`
+- Modify: `src/main/printing/printer-status.ts`（导出 `PRINTER_NAME_ENV`），`src/main/printing/electron-driver-adapter.ts`（`hasPrinter`），`src/shared/ipc-contract.ts`，`src/preload/index.ts`，`src/main/ipc.ts`，`src/renderer/src/components/PrinterList.tsx`，`src/renderer/src/App.tsx`，`src/renderer/src/styles/app.css`
+
+**Interfaces:**
+- `DriverPaper { widthMm; heightMm; dpi: number | null }`；`PAPER_TOLERANCE_MM = 1`；`PaperCheck = { status: 'unknown' } | { status: 'ok'; paper } | { status: 'mismatch'; paper }`；`checkDriverPaper(paper | null): PaperCheck`；`formatPaperSize(paper): string`。
+- 主进程：`parseCimPaper(output)`、`parseIppPaper(output)`、`cupsPrinterUri(name)`、`queryDriverPaper(name): Promise<DriverPaper | null>`、`openPrinterPreferences(name): Promise<void>`。
+  - Windows：PowerShell `Get-CimInstance Win32_PrinterConfiguration`（单位 0.1mm）；打印机名走环境变量 `CDL_PRINTER_NAME`，用 `Where-Object` 精确匹配，不拼进 WQL。设置窗口用 `rundll32 printui.dll,PrintUIEntry /e /n <name>`，窗口关闭后 Promise 才完成。
+  - macOS：`/usr/bin/ipptool -tv ipp://localhost/printers/<name> get-printer-attributes.test`，读 `media-col-default`（单位 0.01mm）和 `printer-resolution-default`。设置入口是系统设置「打印机与扫描仪」。
+  - 两个平台都用 `execFile` 按数组传参，不经过 shell。
+- `ElectronDriverAdapter.hasPrinter(name): Promise<boolean>`：页面传来的打印机名必须在系统打印机列表里，才会交给系统命令。
+- IPC：`printer:driver-paper`（invoke）→ `PaperCheck`；`printer:open-preferences`（invoke）→ `void`。页面接口为 `checkDriverPaper(printerName)` 和 `openPrinterPreferences(printerName)`。
+- 渲染层：`describePaperCheck(check | null): PaperCheckView | null`（`{ tone: 'ok' | 'warning'; text }`）；`useDriverPaper(printerName, isListed) → { check, isOpening, openPreferences }`。选中打印机时检测一次，窗口重新获得焦点、设置窗口关闭后再检测；切换打印机后丢弃迟到的结果。
+
+- [ ] **Step 1: 写失败的测试 `src/shared/driver-paper.test.ts`**
+
+```ts
+import { describe, expect, test } from 'bun:test';
+import { checkDriverPaper, formatPaperSize } from './driver-paper';
+
+describe('checkDriverPaper', () => {
+  test('is unknown when the driver paper could not be read', () => {
+    expect(checkDriverPaper(null)).toEqual({ status: 'unknown' });
+  });
+
+  test('accepts 60×40mm within the rounding tolerance', () => {
+    expect(checkDriverPaper({ widthMm: 60, heightMm: 40, dpi: 203 }).status).toBe('ok');
+    expect(checkDriverPaper({ widthMm: 60.9, heightMm: 39.2, dpi: null }).status).toBe('ok');
+  });
+
+  test('flags other sizes, including the rotated 40×60mm', () => {
+    const factoryDefault = { widthMm: 76, heightMm: 130, dpi: 203 };
+    expect(checkDriverPaper(factoryDefault)).toEqual({ status: 'mismatch', paper: factoryDefault });
+    expect(checkDriverPaper({ widthMm: 40, heightMm: 60, dpi: 203 }).status).toBe('mismatch');
+    expect(checkDriverPaper({ widthMm: 62, heightMm: 40, dpi: 203 }).status).toBe('mismatch');
+  });
+});
+
+describe('formatPaperSize', () => {
+  test('prints millimetres with at most one decimal', () => {
+    expect(formatPaperSize({ widthMm: 76, heightMm: 130 })).toBe('76×130mm');
+    expect(formatPaperSize({ widthMm: 50.8, heightMm: 25.4 })).toBe('50.8×25.4mm');
+    expect(formatPaperSize({ widthMm: 60.04, heightMm: 40 })).toBe('60×40mm');
+  });
+});
+```
+
+Run: `bun test src/shared/driver-paper.test.ts` → FAIL（模块不存在）。
+
+- [ ] **Step 2: 实现 `src/shared/driver-paper.ts`**
+
+```ts
+import { LABEL_PAPER_MM } from './label-paper';
+
+/**
+ * 打印机驱动的默认纸张。热敏标签机驱动的出厂默认纸张通常不是 60×40，
+ * 而 Chromium 传入的自定义纸张尺寸有的驱动会忽略，结果是缩放、跳纸或出空白标签。
+ */
+export interface DriverPaper {
+  widthMm: number;
+  heightMm: number;
+  /** 驱动报告的打印分辨率；读不到时为 null。 */
+  dpi: number | null;
+}
+
+/** 驱动以 0.1mm 为单位保存纸张尺寸，四舍五入后可能差零点几毫米。 */
+export const PAPER_TOLERANCE_MM = 1;
+
+/** unknown = 读不到（非 Windows、查询失败或驱动没有报告）：不提示，也不阻止打印。 */
+export type PaperCheck =
+  | { status: 'unknown' }
+  | { status: 'ok'; paper: DriverPaper }
+  | { status: 'mismatch'; paper: DriverPaper };
+
+export function checkDriverPaper(paper: DriverPaper | null): PaperCheck {
+  if (paper === null) {
+    return { status: 'unknown' };
+  }
+  const isMatch =
+    Math.abs(paper.widthMm - LABEL_PAPER_MM.width) <= PAPER_TOLERANCE_MM &&
+    Math.abs(paper.heightMm - LABEL_PAPER_MM.height) <= PAPER_TOLERANCE_MM;
+  return { status: isMatch ? 'ok' : 'mismatch', paper };
+}
+
+/** 例如 76×130mm、60×40mm（保留最多一位小数）。 */
+export function formatPaperSize(paper: Pick<DriverPaper, 'widthMm' | 'heightMm'>): string {
+  const format = (mm: number) => String(Math.round(mm * 10) / 10);
+  return `${format(paper.widthMm)}×${format(paper.heightMm)}mm`;
+}
+```
+
+Run: `bun test src/shared/driver-paper.test.ts` → PASS（4 个）。
+
+- [ ] **Step 3: 写失败的测试 `src/main/printing/driver-paper.test.ts`**
+
+两段样例输出都来自真机：Windows 上的「Microsoft Print to PDF」，以及 macOS 上的一台 USB 打印机。
+
+```ts
+import { describe, expect, test } from 'bun:test';
+import { cupsPrinterUri, parseCimPaper, parseIppPaper } from './driver-paper';
+
+describe('parseCimPaper (Windows)', () => {
+  test('converts tenths of a millimetre and keeps the resolution', () => {
+    expect(parseCimPaper('{"PaperWidth":600,"PaperLength":400,"HorizontalResolution":203}\r\n')).toEqual({
+      widthMm: 60,
+      heightMm: 40,
+      dpi: 203,
+    });
+    // 在 Windows 真机上对「Microsoft Print to PDF」实测的输出（A4、600dpi）。
+    expect(parseCimPaper('{"PaperWidth":2100,"PaperLength":2970,"HorizontalResolution":600}')).toEqual({
+      widthMm: 210,
+      heightMm: 297,
+      dpi: 600,
+    });
+  });
+
+  test('keeps the size when the driver does not report a resolution', () => {
+    expect(parseCimPaper('{"PaperWidth":600,"PaperLength":400,"HorizontalResolution":null}')).toEqual({
+      widthMm: 60,
+      heightMm: 40,
+      dpi: null,
+    });
+  });
+
+  test('returns null when the printer or its paper size is missing', () => {
+    expect(parseCimPaper('')).toBeNull();
+    expect(parseCimPaper('{"PaperWidth":null,"PaperLength":400,"HorizontalResolution":203}')).toBeNull();
+    expect(parseCimPaper('{"PaperWidth":0,"PaperLength":0,"HorizontalResolution":203}')).toBeNull();
+  });
+
+  test('returns null for output that is not the expected JSON object', () => {
+    expect(parseCimPaper('Get-CimInstance : Access denied')).toBeNull();
+    expect(parseCimPaper('null')).toBeNull();
+    expect(parseCimPaper('"600"')).toBeNull();
+  });
+});
+
+describe('parseIppPaper (macOS)', () => {
+  // 在 macOS 真机上对一台 USB 打印机实测的 ipptool 输出片段（A4、360dpi）。
+  const A4_OUTPUT = [
+    '        printer-state (enum) = idle',
+    '        media-default (keyword) = iso_a4_210x297mm',
+    '        media-col-default (collection) = {media-size={x-dimension=20997 y-dimension=29697} media-bottom-margin=296 media-left-margin=296 media-right-margin=296 media-top-margin=296}',
+    '        printer-resolution-default (resolution) = 360dpi',
+  ].join('\n');
+
+  test('converts hundredths of a millimetre and reads the resolution', () => {
+    expect(parseIppPaper(A4_OUTPUT)).toEqual({ widthMm: 209.97, heightMm: 296.97, dpi: 360 });
+  });
+
+  test('reads a 60×40mm label and an asymmetric resolution', () => {
+    const output = [
+      'media-col-default (collection) = {media-size={x-dimension=6000 y-dimension=4000} media-top-margin=0}',
+      'printer-resolution-default (resolution) = 203x203dpi',
+    ].join('\n');
+    expect(parseIppPaper(output)).toEqual({ widthMm: 60, heightMm: 40, dpi: 203 });
+  });
+
+  test('returns null when the printer reports no default media size', () => {
+    expect(parseIppPaper('')).toBeNull();
+    expect(parseIppPaper('printer-resolution-default (resolution) = 203dpi')).toBeNull();
+  });
+});
+
+describe('cupsPrinterUri', () => {
+  test('encodes the queue name into a local IPP URI', () => {
+    expect(cupsPrinterUri('Label_Printer')).toBe('ipp://localhost/printers/Label_Printer');
+    expect(cupsPrinterUri('a/b?c#d')).toBe('ipp://localhost/printers/a%2Fb%3Fc%23d');
+  });
+});
+```
+
+Run: `bun test src/main/printing/driver-paper.test.ts` → FAIL。
+
+- [ ] **Step 4: 实现 `src/main/printing/driver-paper.ts`**
+
+先把 `src/main/printing/printer-status.ts` 里的 `const PRINTER_NAME_ENV = 'CDL_PRINTER_NAME';` 改成 `export const`，两处探测共用同一个环境变量名。
+
+```ts
+import { execFile } from 'node:child_process';
+import type { DriverPaper } from '../../shared/driver-paper';
+import { PRINTER_NAME_ENV } from './printer-status';
+
+/** 读驱动设置要启动 PowerShell（加载 CIM 模块）或 ipptool，比状态查询慢，给足时间。 */
+const PAPER_PROBE_TIMEOUT_MS = 8_000;
+/** ipptool 会返回打印机的全部属性（通常十几 KB），留足余量。 */
+const PROBE_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
+
+/** Windows：Win32_PrinterConfiguration 的纸张宽高以 0.1mm 为单位。 */
+const CIM_UNITS_PER_MM = 10;
+/** 用 Where-Object 按名称精确匹配，不把打印机名拼进 WQL 过滤条件，避免注入。 */
+const CIM_PAPER_SCRIPT = [
+  `$config = Get-CimInstance -ClassName Win32_PrinterConfiguration -ErrorAction Stop |`,
+  `  Where-Object Name -eq $env:${PRINTER_NAME_ENV} | Select-Object -First 1`,
+  `if ($config) { $config | Select-Object PaperWidth, PaperLength, HorizontalResolution | ConvertTo-Json -Compress }`,
+].join('\n');
+
+/** macOS：CUPS 的 media-col-default 以 0.01mm 为单位（PWG 5100.3）。 */
+const IPP_UNITS_PER_MM = 100;
+const IPP_MEDIA_SIZE_PATTERN =
+  /media-col-default \(collection\) = .*?media-size=\{x-dimension=(\d+) y-dimension=(\d+)\}/;
+const IPP_RESOLUTION_PATTERN = /printer-resolution-default \(resolution\) = (\d+)(?:x\d+)?dpi/;
+/** macOS 自带的 CUPS 测试文件：请求打印机的全部属性。 */
+const IPP_ATTRIBUTES_TEST = 'get-printer-attributes.test';
+const MAC_PRINTERS_SETTINGS_URL = 'x-apple.systempreferences:com.apple.Print-Scan-Settings.extension';
+
+function positiveNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** 解析 Windows PowerShell 输出的 JSON；没有这台打印机或驱动没有报告纸张时返回 null。 */
+export function parseCimPaper(output: string): DriverPaper | null {
+  const text = output.trim();
+  if (text === '') {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  const width = positiveNumber(record['PaperWidth']);
+  const length = positiveNumber(record['PaperLength']);
+  if (width === null || length === null) {
+    return null;
+  }
+  return {
+    widthMm: width / CIM_UNITS_PER_MM,
+    heightMm: length / CIM_UNITS_PER_MM,
+    dpi: positiveNumber(record['HorizontalResolution']),
+  };
+}
+
+/** 解析 macOS `ipptool -tv … get-printer-attributes.test` 的输出。 */
+export function parseIppPaper(output: string): DriverPaper | null {
+  const size = IPP_MEDIA_SIZE_PATTERN.exec(output);
+  const width = positiveNumber(Number(size?.[1]));
+  const length = positiveNumber(Number(size?.[2]));
+  if (width === null || length === null) {
+    return null;
+  }
+  const resolution = IPP_RESOLUTION_PATTERN.exec(output);
+  return {
+    widthMm: width / IPP_UNITS_PER_MM,
+    heightMm: length / IPP_UNITS_PER_MM,
+    dpi: positiveNumber(Number(resolution?.[1])),
+  };
+}
+
+/** CUPS 本机队列地址；队列名做 URL 编码，参数按数组传给 ipptool，不经过 shell。 */
+export function cupsPrinterUri(printerName: string): string {
+  return `ipp://localhost/printers/${encodeURIComponent(printerName)}`;
+}
+
+function runProbe(
+  file: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  parse: (output: string) => DriverPaper | null,
+  printerName: string,
+): Promise<DriverPaper | null> {
+  return new Promise((resolve) => {
+    execFile(
+      file,
+      args,
+      { timeout: PAPER_PROBE_TIMEOUT_MS, maxBuffer: PROBE_MAX_BUFFER_BYTES, windowsHide: true, env },
+      (error, stdout) => {
+        if (error) {
+          console.warn(`[driver-paper] probe failed for "${printerName}": ${error.message}`);
+          resolve(null);
+          return;
+        }
+        resolve(parse(stdout));
+      },
+    );
+  });
+}
+
+/** 读取驱动默认纸张；不支持的平台或查询失败返回 null（未知）。 */
+export function queryDriverPaper(printerName: string): Promise<DriverPaper | null> {
+  switch (process.platform) {
+    case 'win32':
+      return runProbe(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', CIM_PAPER_SCRIPT],
+        { ...process.env, [PRINTER_NAME_ENV]: printerName },
+        parseCimPaper,
+        printerName,
+      );
+    case 'darwin':
+      return runProbe(
+        '/usr/bin/ipptool',
+        ['-tv', cupsPrinterUri(printerName), IPP_ATTRIBUTES_TEST],
+        process.env,
+        parseIppPaper,
+        printerName,
+      );
+    default:
+      return Promise.resolve(null);
+  }
+}
+
+/**
+ * 打开这台打印机的设置，让操作员把默认纸张改成 60×40。参数按数组传入，不经过 shell。
+ * - Windows：驱动自己的「打印首选项」窗口，关闭后 Promise 才完成，调用方据此重新检测。
+ * - macOS：系统设置的「打印机与扫描仪」，打开后立即完成（回到程序时按窗口焦点重新检测）。
+ */
+export function openPrinterPreferences(printerName: string): Promise<void> {
+  switch (process.platform) {
+    case 'win32':
+      return runCommand('rundll32.exe', ['printui.dll,PrintUIEntry', '/e', '/n', printerName]);
+    case 'darwin':
+      return runCommand('/usr/bin/open', [MAC_PRINTERS_SETTINGS_URL]);
+    default:
+      return Promise.reject(new Error(`Printer settings are not supported on ${process.platform}`));
+  }
+}
+
+function runCommand(file: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+```
+
+Run: `bun test src/main/printing/driver-paper.test.ts` → PASS（8 个）。
+
+- [ ] **Step 5: 适配器、IPC 契约、preload、主进程处理**
+
+`src/main/printing/electron-driver-adapter.ts`：在 `knownPrinters()` 前加入 `hasPrinter`，`print()` 里的存在性检查改为调用它：
+
+```ts
+  /** 渲染进程传来的打印机名在交给系统命令之前，必须是系统里真实存在的打印机。 */
+  async hasPrinter(printerName: string): Promise<boolean> {
+    return (await this.knownPrinters()).some((printer) => printer.name === printerName);
+  }
+```
+
+```ts
+    if (!(await this.hasPrinter(printerName))) {
+      throw new PrintError('PRINTER_NOT_FOUND', `Printer not found: ${printerName}`);
+    }
+```
+
+`src/shared/ipc-contract.ts`：
+
+```ts
+import type { PaperCheck } from './driver-paper';
+// IpcChannel 中 PrinterStatus 之后：
+  CheckDriverPaper: 'printer:driver-paper',
+  OpenPrinterPreferences: 'printer:open-preferences',
+// LabelFlashApi 中 printerStatus 之后：
+  /** 驱动默认纸张是否为 60×40（每次调用都重新读取驱动设置）。 */
+  checkDriverPaper(printerName: string): Promise<PaperCheck>;
+  /** 打开驱动的「打印首选项」窗口；窗口关闭后才完成。 */
+  openPrinterPreferences(printerName: string): Promise<void>;
+```
+
+`src/preload/index.ts`（`printerStatus` 之后）：
+
+```ts
+  checkDriverPaper: (printerName) => ipcRenderer.invoke(IpcChannel.CheckDriverPaper, printerName),
+  openPrinterPreferences: (printerName) => ipcRenderer.invoke(IpcChannel.OpenPrinterPreferences, printerName),
+```
+
+`src/main/ipc.ts`：新增导入 `import { checkDriverPaper } from '../shared/driver-paper';`、`import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';`。在 `activeTemplate` 之前定义 `requireKnownPrinter`，并在 `PrinterStatus` 处理之后注册两个通道：
+
+```ts
+  const requireKnownPrinter = async (value: unknown): Promise<string> => {
+    const printerName = requireString(value, 'printerName');
+    if (!(await deps.adapter.hasPrinter(printerName))) {
+      throw new Error(`Printer not found: ${printerName}`);
+    }
+    return printerName;
+  };
+```
+
+```ts
+  handle(IpcChannel.CheckDriverPaper, async (printerName) =>
+    checkDriverPaper(await queryDriverPaper(await requireKnownPrinter(printerName))),
+  );
+  handle(IpcChannel.OpenPrinterPreferences, async (printerName) =>
+    openPrinterPreferences(await requireKnownPrinter(printerName)),
+  );
+```
+
+- [ ] **Step 6: 写失败的测试 `src/renderer/src/lib/paper-text.test.ts`**
+
+```ts
+import { describe, expect, test } from 'bun:test';
+import { describePaperCheck } from './paper-text';
+
+describe('describePaperCheck', () => {
+  test('shows nothing until the driver paper is known', () => {
+    expect(describePaperCheck(null)).toBeNull();
+    expect(describePaperCheck({ status: 'unknown' })).toBeNull();
+  });
+
+  test('confirms a matching driver paper, with the resolution when reported', () => {
+    expect(describePaperCheck({ status: 'ok', paper: { widthMm: 60, heightMm: 40, dpi: 203 } })).toEqual({
+      tone: 'ok',
+      text: '驱动纸张 60×40mm · 203dpi',
+    });
+    expect(describePaperCheck({ status: 'ok', paper: { widthMm: 60, heightMm: 40, dpi: null } })?.text).toBe(
+      '驱动纸张 60×40mm',
+    );
+  });
+
+  test('warns with the actual size and how to fix it', () => {
+    const view = describePaperCheck({ status: 'mismatch', paper: { widthMm: 76, heightMm: 130, dpi: 203 } });
+    expect(view?.tone).toBe('warning');
+    expect(view?.text).toContain('驱动默认纸张是 76×130mm，不是 60×40mm');
+    expect(view?.text).toContain('纸张类型选间隙纸');
+  });
+});
+```
+
+- [ ] **Step 7: 实现 `src/renderer/src/lib/paper-text.ts` 与 `src/renderer/src/view-models/use-driver-paper.ts`**
+
+```ts
+import { formatPaperSize, type PaperCheck } from '../../../shared/driver-paper';
+import { LABEL_PAPER_MM } from '../../../shared/label-paper';
+
+export interface PaperCheckView {
+  tone: 'ok' | 'warning';
+  text: string;
+}
+
+const LABEL_SIZE_TEXT = formatPaperSize({ widthMm: LABEL_PAPER_MM.width, heightMm: LABEL_PAPER_MM.height });
+
+/** 当前打印机的驱动纸张说明；读不到时不显示（null）。 */
+export function describePaperCheck(check: PaperCheck | null): PaperCheckView | null {
+  if (check === null || check.status === 'unknown') {
+    return null;
+  }
+  const { paper } = check;
+  if (check.status === 'ok') {
+    const dpi = paper.dpi === null ? '' : ` · ${paper.dpi}dpi`;
+    return { tone: 'ok', text: `驱动纸张 ${formatPaperSize(paper)}${dpi}` };
+  }
+  return {
+    tone: 'warning',
+    text: `驱动默认纸张是 ${formatPaperSize(paper)}，不是 ${LABEL_SIZE_TEXT}，打印会被缩放、跳纸或出空白标签。请在打印首选项里把纸张设为 ${LABEL_SIZE_TEXT}，纸张类型选间隙纸。`,
+  };
+}
+```
+
+```ts
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PaperCheck } from '../../../shared/driver-paper';
+import { reportError } from '../lib/notices';
+
+/**
+ * 当前打印机的驱动纸张检测。选中打印机时查一次；窗口重新获得焦点、打印首选项关闭后再查，
+ * 操作员改完驱动设置回到程序，提示会自动消失。
+ */
+export function useDriverPaper(printerName: string | null, isListed: boolean) {
+  const [check, setCheck] = useState<PaperCheck | null>(null);
+  const [isOpening, setIsOpening] = useState(false);
+  const target = printerName !== null && isListed ? printerName : null;
+  // 切换打印机后，上一台打印机迟到的查询结果要丢掉。
+  const currentTarget = useRef(target);
+  currentTarget.current = target;
+
+  const refresh = useCallback(async (): Promise<void> => {
+    if (target === null) {
+      return;
+    }
+    try {
+      const next = await window.api.checkDriverPaper(target);
+      if (currentTarget.current === target) {
+        setCheck(next);
+      }
+    } catch (error) {
+      console.error('[renderer] driver paper check failed', error);
+    }
+  }, [target]);
+
+  useEffect(() => {
+    setCheck(null);
+    if (target === null) {
+      return;
+    }
+    void refresh();
+    const onFocus = () => void refresh();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [target, refresh]);
+
+  const openPreferences = useCallback(async (): Promise<void> => {
+    if (target === null) {
+      return;
+    }
+    setIsOpening(true);
+    try {
+      await window.api.openPrinterPreferences(target);
+      await refresh();
+    } catch (error) {
+      reportError('打开打印首选项', error);
+    } finally {
+      setIsOpening(false);
+    }
+  }, [target, refresh]);
+
+  return { check, isOpening, openPreferences };
+}
+```
+
+Run: `bun test src/renderer/src/lib/paper-text.test.ts` → PASS（3 个）。
+
+- [ ] **Step 8: 界面接入**
+
+`src/renderer/src/components/PrinterList.tsx`：新增 `paper` 属性，只在选中的那一行显示。
+
+```tsx
+import type { PaperCheckView } from '../lib/paper-text';
+
+/** 当前打印机的驱动纸张检测结果（只显示在选中的那一行）。 */
+export interface DriverPaperProps {
+  view: PaperCheckView | null;
+  isOpening: boolean;
+  onOpenPreferences: () => void;
+}
+// PrinterListProps 增加 `paper: DriverPaperProps;`，组件参数解构里加上 `paper`。
+// 每一行测试页消息之后：
+              {isSelected && paper.view?.tone === 'ok' && <p className="printer-row__message">{paper.view.text}</p>}
+              {isSelected && paper.view?.tone === 'warning' && (
+                <div className="paper-warning" role="alert">
+                  <p className="paper-warning__text">{paper.view.text}</p>
+                  <button
+                    type="button"
+                    className="button button--small"
+                    onClick={paper.onOpenPreferences}
+                    disabled={paper.isOpening}
+                  >
+                    {paper.isOpening ? '打印首选项已打开…' : '打开打印首选项'}
+                  </button>
+                </div>
+              )}
+```
+
+`src/renderer/src/App.tsx`：导入 `describePaperCheck`、`useDriverPaper`；把 `isListed` 的计算提成 `isPrinterListed`，胶囊和纸张检测共用：
+
+```tsx
+  const isPrinterListed = printers.printers.some((printer) => printer.name === printerName);
+  const printerChip = describePrinterChip({
+    printerName,
+    isLoading: printers.isLoading,
+    isListed: isPrinterListed,
+    readiness,
+  });
+  const driverPaper = useDriverPaper(printerName, isPrinterListed);
+```
+
+```tsx
+                  paper={{
+                    view: describePaperCheck(driverPaper.check),
+                    isOpening: driverPaper.isOpening,
+                    onOpenPreferences: () => void driverPaper.openPreferences(),
+                  }}
+```
+
+`src/renderer/src/styles/app.css`（接在 `.printer-row__message` 之后）：
+
+```css
+/* 驱动默认纸张不是 60×40：贴在选中的打印机下面，附处理按钮 */
+.paper-warning {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius);
+  background: var(--color-warning-wash);
+}
+
+.paper-warning__text {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+```
+
+- [ ] **Step 9: 验证并提交**
+
+Run: `bun run check && bun run test:e2e` → 201 个单元测试、3 个 E2E 全部通过。
+
+真机冒烟：
+- Windows：选中标签机，如果驱动默认纸张不是 60×40，选中行下面出现橙色提示。点「打开打印首选项」，打开的是该打印机的首选项窗口；改成 60×40 并关闭后，提示变为「驱动纸张 60×40mm · 203dpi」。
+- macOS：选中一台默认 A4 的打印机，提示「驱动默认纸张是 210×297mm…」（已在真机验证）。
+
+```bash
+git add src
+git commit -m "feat: warn when the printer driver's default paper is not 60x40"
+```
+
+---
+
 ### Task 14: 打包、CI、README、Windows 验收、推送与 PR
 
 **Files:**
@@ -9631,7 +10250,7 @@ docs/          设计文档、实施计划与路线图
 - [ ] **Step 5: 本地全量检查**
 
 Run: `bun run check && bun run test:e2e`
-Expected: Biome 无问题，三个 tsconfig 零错误，186 个单元测试和 3 个 E2E 全部通过，构建成功。
+Expected: Biome 无问题，三个 tsconfig 零错误，201 个单元测试和 3 个 E2E 全部通过，构建成功。
 
 - [ ] **Step 6: Commit 并推送，确认 CI 通过**
 
@@ -9678,7 +10297,8 @@ Expected: `check`（含 E2E）和 `package` 两个 job 都成功，产物 `CDL-L
 24. **异常通知**：标签机缺纸或断开后，弹出系统通知「打印机需要处理：…」，点击回到主窗口；30 分钟内同类问题不重复弹。
 25. **自动更新**：发布一个更高版本的 `v*` 标签后，已安装的客户端在 15 秒到 4 小时内下载完成，标题栏出现「重启更新」，确认后完成升级，数据保留。
 26. **驱动纸张**：
-    - 先把驱动默认纸张设成非 60×40（例如出厂默认），打一张，记录是否缩放、跳纸或出空白；再设成 60×40、纸张类型设为间隙纸，打一张对比。结论决定路线图里「驱动纸张检测」的优先级。
+    - 先把驱动默认纸张设成非 60×40（例如出厂默认）：打印机面板里选中行下面出现橙色提示，写着实际尺寸。打一张，记录是否缩放、跳纸或出空白。
+    - 点「打开打印首选项」，确认打开的是这台打印机的首选项窗口。改成 60×40、纸张类型设为间隙纸，关闭窗口后提示变成「驱动纸张 60×40mm · 203dpi」。再打一张对比。结论决定路线图里「自动设置驱动纸张」的优先级。
     - 用 `Get-CimInstance Win32_PrinterConfiguration` 读出 `PaperWidth`、`PaperLength`（单位 0.1mm，期望 600、400）和 `HorizontalResolution`（203 或 300），并确认读到的是当前用户的默认值还是全局默认值。
 27. **连续出纸**：驱动纸张为 60×40 时连续打印 20 张，没有累计偏移、空白或跳张；内容不旋转、不裁切。
 28. **浓度与速度**：在驱动首选项里试几组浓度和速度组合，找出二维码清晰、不糊，手机和扫码枪在 5–20cm 距离内都能一次扫出的组合，写进记录。

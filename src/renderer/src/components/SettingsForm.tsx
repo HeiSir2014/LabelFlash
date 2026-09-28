@@ -11,6 +11,7 @@ import {
 } from '../../../shared/settings';
 import type { VoiceCue } from '../../../shared/voice';
 import type { UpdateView } from '../lib/update-text';
+import { useQrImage } from '../view-models/use-qr-image';
 import { ConfirmButton } from './ConfirmButton';
 import { VoiceSettingsSection } from './VoiceSettingsSection';
 
@@ -24,7 +25,6 @@ interface SettingsFormProps {
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
   onOpenLogFolder: () => void;
   onOpenShop: () => void;
-  onCopyShopUrl: () => void;
   onCheckForUpdates: () => void;
   onPreviewVoice: (cue?: VoiceCue) => void;
 }
@@ -37,12 +37,12 @@ export function SettingsForm({
   onChange,
   onOpenLogFolder,
   onOpenShop,
-  onCopyShopUrl,
   onCheckForUpdates,
   onPreviewVoice,
 }: SettingsFormProps) {
   const [pendingHistoryLimit, setPendingHistoryLimit] = useState<number | null>(null);
   const [newNote, setNewNote] = useState('');
+  const shopQr = useQrImage(BRAND.shop.mobileUrl);
   const newNoteText = sanitizeNoteText(newNote);
   const canAddNote =
     newNoteText !== null &&
@@ -183,9 +183,12 @@ export function SettingsForm({
                 {BRAND.shop.name}
               </button>
               <span className="about__path about__url">{BRAND.shop.url}</span>
-              <button type="button" className="button button--small button--quiet" onClick={onCopyShopUrl}>
-                复制链接
-              </button>
+              {shopQr && (
+                <figure className="about__qr">
+                  <img src={shopQr} alt={`${BRAND.shop.name}店铺二维码`} width={132} height={132} />
+                  <figcaption>手机淘宝扫一扫进店</figcaption>
+                </figure>
+              )}
             </dd>
             <dt>数据目录</dt>
             <dd className="about__path">{appInfo.dataPath}</dd>

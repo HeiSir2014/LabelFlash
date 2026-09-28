@@ -12,7 +12,7 @@ import { SidePanel, type SideTab } from './components/SidePanel';
 import { TemplatePanel } from './components/TemplatePanel';
 import { TitleBar } from './components/TitleBar';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
-import { notices as noticeCenter, reportError } from './lib/notices';
+import { reportError } from './lib/notices';
 import { describePaperCheck } from './lib/paper-text';
 import { describePrinterChip } from './lib/printer-chip';
 import { describeScan } from './lib/status-text';
@@ -131,13 +131,6 @@ export function App() {
     window.api.openShop().catch((error: unknown) => reportError('打开店铺', error));
   };
 
-  const copyShopUrl = () => {
-    window.api.copyShopUrl().then(
-      () => noticeCenter.push('info', '已复制店铺链接，可以发到手机上用淘宝打开'),
-      (error: unknown) => reportError('复制店铺链接', error),
-    );
-  };
-
   const openLogFolder = () => {
     window.api.openLogFolder().catch((error: unknown) => reportError('打开日志目录', error));
   };
@@ -240,7 +233,6 @@ export function App() {
                   onChange={changeSettings}
                   onOpenLogFolder={openLogFolder}
                   onOpenShop={openShop}
-                  onCopyShopUrl={copyShopUrl}
                   onCheckForUpdates={updates.check}
                   onPreviewVoice={feedback.preview}
                 />

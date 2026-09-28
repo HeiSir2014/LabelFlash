@@ -30,7 +30,6 @@ const api: LabelFlashApi = {
   getAppInfo: () => ipcRenderer.invoke(IpcChannel.GetAppInfo),
   openLogFolder: () => ipcRenderer.invoke(IpcChannel.OpenLogFolder),
   openShop: () => ipcRenderer.invoke(IpcChannel.OpenShop),
-  copyShopUrl: () => ipcRenderer.invoke(IpcChannel.CopyShopUrl),
   getUpdateStatus: () => ipcRenderer.invoke(IpcChannel.GetUpdateStatus),
   checkForUpdates: () => ipcRenderer.invoke(IpcChannel.CheckForUpdates),
   installUpdate: () => ipcRenderer.invoke(IpcChannel.InstallUpdate),

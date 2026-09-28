@@ -15,6 +15,16 @@
 
 **设计文档:** `docs/superpowers/specs/2026-09-29-mobile-scan-relay-design.md`（下称「设计」）。
 
+## 变更记录
+
+- **2026-09-29 中转地址不写进代码**：项目开源，中转地址改为设置项，官方安装包的默认值在构建时注入；中转服务的 `PUBLIC_ORIGIN` 必填、没有默认值。
+- **2026-09-29 扫码即打 + 幂等任务**：需求方要求界面上扫到就打，协议按正规做法设计。
+  - 内层消息改为 `hello` / `submit`（手机 → 电脑）和 `welcome` / `taken` / `printer` / `accepted` / `result` / `refused`（电脑 → 手机），去掉 `preview`、`busy` 和请求超时。
+  - 任务号是幂等键；手机的发件箱在重连后原样重发；排队执行，超出上限明确拒绝（设计 4.3、4.4、5.2）。
+  - Task 1、7、8 下面的契约是最初版本，已被取代，以 `src/shared/mobile-protocol.ts`、`relay/web/src/phone-state.ts`、`relay/web/src/phone-session.ts` 为准。
+- **2026-09-29 摄像头对焦**：显式设置持续对焦、点按对焦、适度变焦（设计 6.2），见 Task 10a。
+- **进度**：Task 1–10 已完成并提交。
+
 ---
 
 ## 全局约束
@@ -565,6 +575,35 @@ export const READER_OPTIONS = {
 - [ ] **Step 4: 运行测试，确认通过**；再运行 `bun run relay:dev`，用电脑的 Edge 打开 `http://localhost:3180/m/`，确认显示「在电脑上点「手机扫码」…」。
 - [ ] **Step 5: 提交**：`feat(phone): camera page and relay build`。
 
+### Task 10a: 摄像头对焦与变焦
+
+**Files:**
+- Create: `relay/web/src/camera-features.ts`
+- Modify: `relay/web/src/camera.ts`、`relay/web/src/main.ts`、`relay/web/src/view.ts`、`relay/web/index.html`、`relay/web/styles.css`
+- Test: `relay/web/src/camera-features.test.ts`
+
+- [ ] **Step 1: 写失败的测试：**
+  - `startupConstraints(capabilities)`：
+    - 支持 `continuous` 对焦时包含 `focusMode: 'continuous'`；
+    - 支持变焦且上限不小于 1.5 时包含 `zoom: 1.5`，并按 `step` 对齐、不超出 `min` / `max`；上限小于 1.5 时用上限；
+    - 什么都不支持（iPhone）时返回空数组。
+  - `focusAtConstraints(capabilities, point)`：
+    - 支持对焦点和持续对焦时，保持持续对焦并设对焦点；
+    - 只支持单次对焦时，用单次对焦；
+    - 不支持对焦点时返回 null。
+  - `tapToVideoPoint(tap, element, video)`：
+    - 元素和视频比例相同时，就是简单的比例换算；
+    - 视频比元素宽（`object-fit: cover` 裁掉左右）时，横坐标按可见部分换算；
+    - 视频比元素高（裁掉上下）时，纵坐标同理；
+    - 结果限制在 0–1。
+- [ ] **Step 2: 运行，确认失败。**
+- [ ] **Step 3: 实现。**
+  - `camera.ts` 打开摄像头后读取 `getCapabilities()`，依次应用 `startupConstraints` 的每一项。一项失败不影响其他项，只记日志。
+  - 取景画面上的点按调用 `focusAt`，并在点按处显示对焦圈（CSS 动画，减少动态效果时不动）。
+  - 手电筒的能力判断也移到 `camera-features.ts`。
+- [ ] **Step 4: 运行，确认通过；`bun run relay:dev` 后用安卓 Chrome 真机确认持续对焦、点按对焦生效（记入验收）。**
+- [ ] **Step 5: 提交**：`feat(phone): continuous focus, tap to focus and a moderate zoom`。
+
 ---
 
 ## 阶段 3：电脑端模块（先不接线）
@@ -584,21 +623,20 @@ export const READER_OPTIONS = {
   - `MobileSession`（假时钟）：
     - 第一部手机 `hello(null)` 得到 `welcome`，令牌为 22 位，`status().phone.device` 为它的描述；
     - 同一部手机带正确令牌再 `hello`，得到新的 `nonce`，令牌不变；
-    - 第二部手机 → `rejected` + 需要踢出；
-    - 认领前的 `preview` 被忽略；
-    - `nonce` 不对或 `id` 不递增时被忽略；
-    - 上一个请求未完成时回复 `busy`；
-    - 一分钟内第 31 次打印回复 `rate-limited`，预览不计数；
-    - `expiry()`：未认领满 10 分钟返回 `idle`；认领后 30 分钟没有请求返回 `idle`；有请求就顺延。
-  - `toPhonePreview`：
-    - 字段超过 30 个或值超过 300 字符时截断，`truncated` 为 true；
-    - `recent`、`lookupFailure`、`windowMs` 原样带上。
-  - `toPhonePrintResult`：
-    - `printed` 去掉 `scan`；
-    - `failed` 的 `detail` / `issue` 缺失时为 null。
+    - 第二部手机 → `taken` + 需要踢出；
+    - 认领前的 `submit` 被忽略；
+    - `nonce` 不对或 `seq` 不严格递增时被忽略；
+    - 新任务号 → 回复 `accepted` 并交给执行；同一个任务号再来：还没结果时再回 `accepted`，已有结果时回同一个 `result`，都不再执行；
+    - 等结果的任务达到 10 个时，新任务回复 `refused: too-many-pending`；一分钟内第 61 个新任务回复 `refused: rate-limited`；被拒绝的任务号以后还能重新提交；
+    - 任务结果最多保留 1000 个，最早的先删；
+    - `expiry()`：未认领满 10 分钟返回 `idle`；认领后 30 分钟没有任务返回 `idle`；有任务就顺延。
+  - `toPhonePrintResult(result)`：
+    - `printed` 换成规则名加字段摘要：最多 30 个字段，每个值最多 300 字符；
+    - `failed` 的 `detail` / `issue` 缺失时为 null；
+    - `duplicate`、`invalid` 原样带上需要的字段。
 
 - [ ] **Step 2: 运行，确认失败。**
-- [ ] **Step 3: 实现。** 常量：`UNCLAIMED_TTL_MS = 10 * 60_000`、`IDLE_END_MS = 30 * 60_000`、`MAX_PRINTS_PER_MINUTE = 30`、`PHONE_FIELD_LIMIT = 30`、`PHONE_VALUE_LIMIT = 300`，各带一句取值依据。`MobileStatus`：
+- [ ] **Step 3: 实现。** 常量：`UNCLAIMED_TTL_MS = 10 * 60_000`、`IDLE_END_MS = 30 * 60_000`、`MAX_JOBS_PER_MINUTE = 60`、`JOB_MEMORY = 1_000`、`PHONE_FIELD_LIMIT = 30`、`PHONE_VALUE_LIMIT = 300`，各带一句取值依据；`MAX_PENDING_JOBS` 用协议里的。`MobileStatus`：
 
 ```ts
 export type MobileStatus =
@@ -617,7 +655,7 @@ export type MobileStatus =
 ```
 
 - [ ] **Step 4: 运行，确认通过。**
-- [ ] **Step 5: 提交**：`feat(mobile): desktop session state, relay endpoint and phone replies`。
+- [ ] **Step 5: 提交**：`feat(mobile): desktop session state with idempotent jobs`。
 
 ### Task 12: 电脑端编排 + 经真实中转服务的集成测试
 
@@ -627,12 +665,14 @@ export type MobileStatus =
 
 - [ ] **Step 1: 写失败的测试：**
   - `start()` 连上中转服务后，状态为 `active`，`url` 能被 `parsePhoneFragment` 解析。
-  - 脚本手机 join + hello → 状态里有手机。
-  - `preview` → 注入的 `preview` 被调用一次，手机收到 `PhonePreview`。
-  - `print` → 注入的 `print(raw, force)` 被调用，手机收到结果，`printed` 计数加 1。
-  - 没选打印机（注入的 `printerName()` 返回 null）→ 手机收到 `no-printer`，`print` 不被调用。
+  - 真实的 `PhoneSession`（手机端代码本身）join + hello → 状态里有手机。
+  - `submit` → 注入的 `print(raw, force)` 被调用，手机先后收到 `accepted` 和 `result`，`printed` 计数加 1。
+  - 连续提交三张 → 注入的 `print` 按提交顺序依次执行（上一张完成才开始下一张）。
+  - 同一个任务号重发（模拟网络重传）→ `print` 只被调用一次，手机拿到同一个结果。
+  - 没选打印机（注入的 `printerName()` 返回 null）→ 结果是 `no-printer`，`print` 不被调用。
+  - 打印机变了（调用 `printerChanged()`）→ 手机收到 `printer`。
   - 第二部手机被拒绝，并被中转服务断开。
-  - 中转服务重启（`stop()` 后在同一端口 `startRelay`）：电脑自动重新 `open`，手机重连后 hello 仍被接纳。
+  - 中转服务重启（`stop()` 后在同一端口 `startRelay`）：电脑自动重新 `open`，手机重连后仍被接纳；重启期间提交的任务在重连后执行一次。
   - `stop('stopped')`：手机收到 `ended: stopped`，状态为 `off`。
   - 中转服务不可达：状态变为 `failed: unreachable`，并继续按退避重试。
 
@@ -645,7 +685,7 @@ export interface MobileHostDeps {
   clock: Clock;
   timers: SocketTimers;
   createSocket: (url: string) => SocketLike;
-  preview: (raw: string) => Promise<PhonePreview>;
+  /** 执行一个打印任务：PrintService.submit 加结果换算（阶段 5 由 mobile-station 提供）。 */
   print: (raw: string, force: boolean) => Promise<PhonePrintResult>;
   printerName: () => string | null;
   log: (line: string) => void;
@@ -656,10 +696,15 @@ export class MobileHost {
   stop(reason: CloseReason): void;
   status(): MobileStatus;
   onStatus(listener: (status: MobileStatus) => void): () => void;
+  /** 设置里的打印机变了：推给已连接的手机。 */
+  printerChanged(): void;
   /** 每 5 秒调用：检查 10 / 30 分钟到期。 */
   tick(): void;
 }
 ```
+
+  - 加密和解密各串成一条链：按收到的顺序处理，按顺序发出。
+  - 任务按收到的顺序串行执行，执行中抛出的异常记日志并回复 `failed: PRINT_ERROR`，不让任务卡住。
 
 - [ ] **Step 4: 运行，确认通过。**
 - [ ] **Step 5: 提交**：`feat(mobile): desktop mobile host over the relay`。
@@ -677,8 +722,8 @@ export class MobileHost {
 - [ ] **Step 1: 写测试：**
   - 生成 640×480、30 帧的 Y4M：白底，中间是 `CL5640-TK-图片色-XL` 的二维码。Y 平面按像素灰度，U、V 平面填 128。
   - 用 `channel: 'msedge'` 启动，参数为 `--use-fake-ui-for-media-stream`、`--use-fake-device-for-media-stream`、`--use-file-for-fake-video-capture=<y4m>`。
-  - 本机启动中转服务（`PUBLIC_ORIGIN=http://localhost:<端口>`），用 `MobileHost` 当电脑端（中转地址填本机，注入假的预览和打印），打开它给出的 `url`。
-  - 断言：页面进入确认状态并显示字段；点「打印」后显示「已发送打印」；注入的 `print` 收到原文。
+  - 本机启动中转服务（`PUBLIC_ORIGIN=http://localhost:<端口>`），用 `MobileHost` 当电脑端（中转地址填本机，注入假的打印），打开它给出的 `url`。
+  - 断言：假摄像头画面里的码被自动扫到，任务列表里出现「已发送打印」和字段摘要；注入的 `print` 只被调用一次（画面一直是同一张，防抖生效）。
 - [ ] **Step 2: 运行 `bun run test:relay-browser`，确认通过。**
 - [ ] **Step 3: 提交**：`test(phone): camera scan through a fake video device`。
 
@@ -741,7 +786,7 @@ export class MobileHost {
 1. **主进程**：
    - 设置项 `mobileRelayUrl`（`src/shared/settings.ts`，清洗用 `sanitizeRelayUrl`）；配置中心「手机扫码」一节的地址输入框和「恢复默认」；
    - `electron.vite.config.ts` 用 `define` 注入 `CDL_LABELFLASH_DEFAULT_RELAY_URL`；CI 的发布作业从 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL` 读取；
-   - `src/main/mobile/mobile-station.ts` 创建 `MobileHost`，接上 `PrintService.preview` / `submit`（`source: 'mobile'`）、`resolveTemplate`（模板名）、设置里的 `selectedPrinter` 和 `dedupWindowSeconds`、打印机显示名；
+   - `src/main/mobile/mobile-station.ts` 创建 `MobileHost`，接上 `PrintService.submit`（`source: 'mobile'`）、`toPhonePrintResult`、设置里的 `selectedPrinter`、打印机显示名；设置里的打印机变了时调用 `printerChanged()`；
    - 程序退出时 `stop('quit')`；每 5 秒 `tick()`。
 2. **IPC**：
    - `mobile:start` / `mobile:stop` / `mobile:status`，以及推送 `mobile:status-changed`；
@@ -769,4 +814,4 @@ export class MobileHost {
   - 第 8 节部署：Task 14；
   - 第 11 节测试：各任务的测试，以及 Task 13、15；
   - 第 12 节分阶段：本计划的五个阶段。
-- **类型一致**：`PhonePreview`、`PhonePrintResult`、`CloseReason`、`MobileStatus`、`SocketLike`、`SocketTimers` 只在 Task 1、4、11 定义，后续任务直接引用。
+- **类型一致**：`PhonePrintResult`、`RefusalReason`、`CloseReason`、`MobileStatus`、`SocketLike`、`SocketTimers` 只在 Task 1、4、11 定义，后续任务直接引用。

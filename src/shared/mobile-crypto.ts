@@ -21,7 +21,7 @@ export function toBase64Url(bytes: Uint8Array): string {
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
 }
 
-export function fromBase64Url(text: string): Uint8Array | null {
+export function fromBase64Url(text: string): Uint8Array<ArrayBuffer> | null {
   if (!BASE64URL.test(text)) {
     return null;
   }
@@ -90,6 +90,6 @@ export async function openMessage(
   }
 }
 
-function additionalData(direction: Direction, session: string): Uint8Array {
+function additionalData(direction: Direction, session: string): Uint8Array<ArrayBuffer> {
   return textEncoder.encode(`labelflash/${MOBILE_PROTOCOL_VERSION}/${direction}/${session}`);
 }

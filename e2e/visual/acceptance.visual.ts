@@ -18,6 +18,7 @@ import {
 } from '../support/app-helpers';
 import { APP_ROOT } from '../support/electron-app';
 import { expect, test } from '../support/fixtures';
+import { connectTestPhone, type LocalRelay, startLocalRelay, type TestPhone } from '../support/relay-server';
 import {
   ALL_SIZES,
   addJobs,
@@ -821,7 +822,81 @@ const ITEMS: Item[] = [
       await expect(page.locator('.update-pill')).toBeVisible();
     },
   },
+  {
+    id: 'V32',
+    title: '标题栏 · 手机扫码按钮与浮层',
+    points:
+      '「手机扫码」按钮在「配置」和打印机胶囊之间，同高、同样式，状态点随会话变化；浮层挂在按钮下方，不遮挡扫码框；二维码、有效期、手机列表、操作按钮完整显示，无横向滚动',
+    setup: async (ctx) => {
+      const relay = await startLocalRelay();
+      ctx.cleanups.push(relay.stop);
+      mobileRelay = relay;
+      mobilePhone = null;
+      await callApi(ctx.page, 'updateSettings', { mobileRelayUrl: relay.baseUrl, selectedPrinter: FAKE_PRINTER });
+      await ctx.page.reload();
+      ctx.cleanups.push(async () => mobilePhone?.session.stop());
+    },
+    shots: [
+      {
+        label: '按钮常态',
+        prepare: async ({ page }) => {
+          if (await page.getByRole('dialog', { name: '手机扫码' }).isVisible()) {
+            await page.keyboard.press('Escape');
+          }
+          await page.locator('.title-bar__name').hover();
+        },
+      },
+      {
+        label: '浮层 · 二维码（还没有手机加入）',
+        prepare: async ({ page }) => {
+          await page.getByRole('button', { name: '手机扫码' }).click();
+          await expect(page.getByRole('img', { name: '手机扫码的二维码' })).toBeVisible();
+        },
+      },
+      {
+        label: '浮层 · 一部手机已加入',
+        prepare: async ({ page }) => {
+          if (!mobilePhone && mobileRelay) {
+            const status = await callApi(page, 'getMobileStatus');
+            if (status.state === 'active') {
+              mobilePhone = await connectTestPhone(mobileRelay, status.url, 'iPhone · 微信');
+            }
+          }
+          await expect(page.locator('.mobile-phone__device')).toHaveText(['iPhone · 微信']);
+        },
+      },
+    ],
+  },
+  {
+    id: 'V33',
+    title: '配置中心 · 手机扫码',
+    points: '中转地址输入框和「恢复默认」一行；说明文字不截断；格式不对时的提示；当前状态',
+    shots: [
+      {
+        label: '默认',
+        prepare: async ({ page }) => {
+          if ((await page.getByLabel('中转地址').count()) === 0) {
+            await openConfig(page, '手机扫码');
+          }
+          await page.getByLabel('中转地址').fill('');
+          await blurActiveElement(page);
+        },
+      },
+      {
+        label: '地址格式不对',
+        prepare: async ({ page }) => {
+          await page.getByLabel('中转地址').fill('http://relay.example.com/');
+          await page.getByLabel('中转地址').press('Enter');
+          await expect(page.getByRole('alert')).toBeVisible();
+        },
+      },
+    ],
+  },
 ];
+
+/** V32：本机中转服务和一部测试手机（每种尺寸共用，只连一次）。 */
+let mobileRelay: LocalRelay | null = null;
+let mobilePhone: TestPhone | null = null;
 
 // 不用 serial：一项没过也继续截后面的项。某项失败后 Playwright 会换一个工作进程，
 // 所以每项的结果各写一个文件，manifest 每次都从这些文件重新汇总。

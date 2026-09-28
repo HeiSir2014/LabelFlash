@@ -12,14 +12,11 @@ const outDir = join(ROOT, 'relay', 'dist');
 const version = await relayVersion();
 await buildRelay({ outDir, version });
 
-const relay = startRelay(
-  {
-    host: '127.0.0.1',
-    port: DEFAULT_PORT,
-    publicOrigin: `http://localhost:${DEFAULT_PORT}`,
-    webRoot: join(outDir, 'web'),
-    version,
-  },
+const publicOrigin = `http://localhost:${DEFAULT_PORT}`;
+startRelay(
+  { host: '127.0.0.1', port: DEFAULT_PORT, publicOrigin, webRoot: join(outDir, 'web'), version },
   (line) => console.log(`${new Date().toISOString()} ${line}`),
 );
-console.log(`扫码页：${new URL('/m/', relay.url).href}`);
+// 手机页面的 Origin 必须和 publicOrigin 一致：要用 localhost 打开，不能用 127.0.0.1。
+console.log(`扫码页：${publicOrigin}/m/`);
+console.log(`电脑端：bun scripts/relay/demo-desktop.ts ${publicOrigin}/`);

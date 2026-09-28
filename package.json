@@ -23,6 +23,7 @@
     "test:relay-browser": "bun test ./relay/test/phone-page.browser.ts",
     "relay:build": "bun scripts/relay/build.ts",
     "relay:dev": "bun scripts/relay/dev.ts",
+    "relay:deploy": "bun scripts/relay/deploy.ts",
     "release:win": "electron-vite build && bun run verify:bundle && bun scripts/installer/build-installer.ts --publish always"
   },
   "dependencies": {

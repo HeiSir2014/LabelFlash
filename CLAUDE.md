@@ -6,6 +6,7 @@
 - `src/main/CLAUDE.md`：主进程
 - `src/renderer/CLAUDE.md`：界面
 - `resources/installer/CLAUDE.md`：安装包
+- `relay/CLAUDE.md`：手机扫码的中转服务和扫码页
 
 ## 项目
 
@@ -42,12 +43,16 @@
 | `bun run dist:win` | Windows 安装包（两段构建，见 `resources/installer/CLAUDE.md`），输出到 `dist/` |
 | `bun run installer:skin` | 只生成安装界面的皮肤，调界面时用 |
 | `bun run icons` | 改了 `resources/*.svg` 后重新生成 PNG 图标 |
+| `bun run relay:dev` | 本机构建并启动手机扫码的中转服务（http://localhost:3180） |
+| `bun run test:relay-browser` | 用 Edge 的假摄像头跑一遍扫码页（需要本机有 Edge） |
+| `bun run relay:deploy` | 发布中转服务，目标服务器从环境变量读取（见 `relay/README.md`） |
 
 ## 提交前必须通过
 
 - 任何改动：`bun run check`。Biome 零问题，类型检查零错误，单元测试全过。
 - 改了界面或主进程：再跑 `bun run test:e2e`。
 - 改了打包或安装界面：`bun run dist:win`，并在 Windows 上实际装一次、更新一次、卸载一次。
+- 改了扫码页或手机扫码协议：再跑 `bun run test:relay-browser`。
 - 改了平台相关的代码（打印、窗口、托盘、快捷键、系统命令）：在 Windows 和 macOS 上各跑一次。
 
 CI（GitHub Actions，windows-latest）会在 PR 和 `master` 上跑 check、E2E 和 `dist:win`。macOS 上没有 CI，需要在 Mac 上手动跑 `bun run check` 和 `bun run test:e2e`。
@@ -60,9 +65,10 @@ src/shared    主进程和界面共用：IPC 契约、设置的校验、品牌�
 src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新
 src/preload   contextBridge，只暴露类型化 API
 src/renderer  界面：React 19，MVVM（lib → view-models → components）
-scripts       构建脚本（bundle 检查、图标、安装包）
+scripts       构建脚本（bundle 检查、图标、安装包、中转服务的构建与发布）
 resources     图标、托盘图标、安装包资源
 e2e           Playwright 端到端测试
+relay         手机扫码：云端中转服务（Bun）和手机扫码页，单独部署，不进安装包
 ```
 
 依赖方向：renderer → preload → main → core。shared 可以被任何一层引用，它自己只依赖 core。
@@ -70,6 +76,7 @@ e2e           Playwright 端到端测试
 - 界面只通过 `window.api` 调主进程。
 - 主进程的业务都经过 core 的服务（`PrintService`、`TemplateCatalog`、`RuleCatalog` 等）。
 - core 需要外部能力时定义接口，由主进程实现，测试里用 `src/core/testing` 的假实现。
+- 手机扫码：电脑（`src/main/mobile/`）、中转服务（`relay/src/`）、扫码页（`relay/web/`）三方共用 `src/shared/` 里的协议、加密和重连代码；中转地址是设置项，代码里不写域名。
 
 ## 编码约定
 
@@ -140,7 +147,7 @@ e2e           Playwright 端到端测试
 
 | 文档 | 内容 |
 |---|---|
-| `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心 |
+| `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心、手机扫码打印 |
 | `docs/superpowers/plans/` | 实施计划 |
 | `docs/roadmap.md` | 路线图 |
 | `docs/windows-acceptance.md` | Windows 验收记录 |

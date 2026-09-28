@@ -200,7 +200,7 @@ function LookupStepForm({ step, context, onChange }: StepFormProps<LookupStep>) 
             max={STEP_LIMITS.outputs}
             renderFirst={(value, index) => (
               <select
-                className="text-field"
+                className="select-field select-field--fill"
                 aria-label={`第 ${index + 1} 个取出的列`}
                 value={value}
                 onChange={(event) => setOutput(index, { column: event.target.value })}

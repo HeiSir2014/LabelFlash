@@ -1,9 +1,11 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { PrintResult } from '../../../core/types';
 import type { LabelPreview, RendererPrintSource } from '../../../shared/ipc-contract';
 import type { FeedbackEvent, PrintMode } from '../lib/feedback-cues';
 import { reportError } from '../lib/notices';
+import { QueryIndicator } from '../lib/query-indicator';
 import type { ScanSnapshot } from '../lib/status-text';
+import { WINDOW_TIMERS } from '../lib/timers';
 
 const NO_PREVIEW: LabelPreview = {
   result: { status: 'invalid', reason: 'INVALID_CONTENT' },
@@ -43,9 +45,10 @@ function printMode(source: RendererPrintSource, force: boolean): PrintMode {
 }
 
 export function useScanStation({ printerName, autoPrint, onJobRecorded, announce }: StationOptions) {
-  const latestSeq = useRef(0);
   const [scan, setScan] = useState<ScanState | null>(null);
   const [queryingRaw, setQueryingRaw] = useState<string | null>(null);
+  // 查询慢时先说「正在查询」，上一张的预览留着，不清空成白板。
+  const [querying] = useState(() => new QueryIndicator(QUERYING_DELAY_MS, setQueryingRaw, WINDOW_TIMERS));
 
   const patchIfCurrent = useCallback((seq: number, patch: Partial<ScanState>) => {
     setScan((current) => (current && current.seq === seq ? { ...current, ...patch } : current));
@@ -77,28 +80,20 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded, announce
 
   const load = useCallback(
     async (raw: string, mode: LoadMode) => {
-      latestSeq.current += 1;
-      const seq = latestSeq.current;
+      const seq = querying.start(raw);
       let preview = NO_PREVIEW;
       let hasIpcError = false;
-      // 查询慢时先说「正在查询」，上一张的预览留着，不清空成白板。
-      const queryingTimer = window.setTimeout(() => {
-        if (seq === latestSeq.current) {
-          setQueryingRaw(raw);
-        }
-      }, QUERYING_DELAY_MS);
       try {
         preview = await window.api.preview(raw);
       } catch (error) {
         reportError('生成预览', error);
         hasIpcError = true;
       } finally {
-        window.clearTimeout(queryingTimer);
+        querying.finish(seq);
       }
       const isValid = !hasIpcError && preview.result.status === 'ok';
       const willPrint = mode.printNow && isValid && printerName !== null;
-      if (seq === latestSeq.current) {
-        setQueryingRaw(null);
+      if (querying.isLatest(seq)) {
         setScan({ seq, raw, preview, source: mode.source, print: null, isPrinting: willPrint, hasIpcError });
       }
       if (!isValid) {
@@ -113,7 +108,7 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded, announce
         announce({ kind: 'scanned' });
       }
     },
-    [printerName, print, announce],
+    [printerName, print, announce, querying],
   );
 
   // 扫码枪连按由主进程的防重复窗口统一拦截（设置里可调，默认 3 秒），拦截结果会显示、播报并记入打印记录。

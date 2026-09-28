@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
@@ -13,20 +13,17 @@ import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
-import { fieldNameSuggestions } from './lib/field-names';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
 import { describePaperCheck } from './lib/paper-text';
 import { describePreviewUsage } from './lib/preview-usage';
 import { describePrinterChip } from './lib/printer-chip';
-import { isWorkbenchActive, scanTargetFor } from './lib/scan-routing';
+import { isWorkbenchActive } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
-import { type EditorGuard, NO_EDITOR, useAppView } from './view-models/use-app-view';
-import { useConfigScan } from './view-models/use-config-scan';
+import { useConfigCenter } from './view-models/use-config-center';
 import { useDriverPaper } from './view-models/use-driver-paper';
-import { useEndpointEditor } from './view-models/use-endpoint-editor';
 import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
@@ -35,12 +32,12 @@ import { useNotices } from './view-models/use-notices';
 import { usePrinterStatus } from './view-models/use-printer-status';
 import { usePrinters } from './view-models/use-printers';
 import { useRules } from './view-models/use-rules';
-import { useSampleContent } from './view-models/use-sample-content';
 import { useScanStation } from './view-models/use-scan-station';
 import { useSettings } from './view-models/use-settings';
 import { useTemplatePreview } from './view-models/use-template-preview';
 import { useTemplates } from './view-models/use-templates';
 import { useUpdateStatus } from './view-models/use-update-status';
+import { windowChrome } from './view-models/use-window-controls';
 
 /** 与 app.css 里编辑视图改成上下排列的断点一致。 */
 const NARROW_QUERY = '(max-width: 1099px)';
@@ -54,6 +51,7 @@ export function App() {
   const updates = useUpdateStatus();
   const updateView = describeUpdate(updates.status);
   const isNarrow = useMediaQuery(NARROW_QUERY);
+  const platform = platformForChrome(windowChrome());
 
   const printerName = settings?.selectedPrinter ?? null;
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
@@ -84,75 +82,34 @@ export function App() {
   });
   // 规则、顺序、模板绑定变了：当前扫码的识别结果和用的模板都可能变，重新预览。
   const rules = useRules({ onRulesChanged: () => void station.refreshPreview() });
-  const [testerRaw, setTesterRaw] = useState('');
-  const endpointEditor = useEndpointEditor();
-
-  // 开着的编辑器：模板、规则或通知接口的草稿。离开编辑器时一定先关掉它，所以不会同时存在两个。
-  const editor: EditorGuard = templates.draft
-    ? { isEditing: true, isDirty: templates.isDirty, close: templates.cancelEdit }
-    : rules.draft
-      ? { isEditing: true, isDirty: rules.isDirty, close: rules.cancelEdit }
-      : endpointEditor.draft
-        ? { isEditing: true, isDirty: endpointEditor.isDirty, close: endpointEditor.close }
-        : NO_EDITOR;
-  const editingName = templates.draft?.name ?? rules.draft?.name ?? null;
-  const platform = platformForChrome(window.windowControls.chrome);
-  const appView = useAppView({ platform, editor: () => editor });
+  const config = useConfigCenter({
+    settings,
+    platform,
+    templates,
+    rules,
+    latestScanRaw: station.scan?.raw ?? null,
+    // 查找表、密钥、规则指定的模板改了都会影响这一张：回到工作台时统一按新配置刷新一次。
+    onClosed: () => void station.refreshPreview(),
+    onScanIgnored: () => feedback.announce({ kind: 'configuring' }),
+  });
+  const { appView } = config;
   const isWorkbench = isWorkbenchActive(appView.view);
-  // 配置中心显示的页面：打开时是当前页，关闭后淡出期间仍是刚才那一页。
-  const configPage = appView.view.kind === 'config' ? appView.view.page : appView.leavingPage;
 
-  // 没有扫码时用示例标签展示当前模板；模板页里预览选中的模板或草稿。
-  // 都套用备注下拉框的选择（草稿除外：正在编辑的就是备注本身），看到的就是打出来的样子。
+  // 没有扫码时用示例标签展示当前模板，套用备注下拉框的选择：看到的就是打出来的样子。
   const noteOverride = settings?.noteOverride ?? DEFAULT_SETTINGS.noteOverride;
   const effectiveTemplate = useMemo(
     () => (templates.active ? applyNoteOverride(templates.active, noteOverride) : null),
     [templates.active, noteOverride],
   );
-  const sampleTemplate = station.scan ? null : effectiveTemplate;
-  const samplePreview = useTemplatePreview(SAMPLE_LABEL_RAW, sampleTemplate);
-  const override: PreviewOverride | null = sampleTemplate
-    ? {
-        html: samplePreview?.html ?? null,
-        qrOmitted: samplePreview?.qrOmitted ?? false,
-        feedKey: sampleTemplate.id,
-      }
-    : null;
-
-  const isTemplatesPage = appView.view.kind === 'config' && appView.view.page === 'templates';
-  const templateSample = useSampleContent(station.scan?.raw ?? null);
-  const selectedTemplate = useMemo(
-    () => (templates.selected ? applyNoteOverride(templates.selected, noteOverride) : null),
-    [templates.selected, noteOverride],
-  );
-  const templatePreview = useTemplatePreview(
-    templateSample.value,
-    isTemplatesPage ? (templates.draft ?? selectedTemplate) : null,
-  );
-  const fieldNames = useMemo(
-    () =>
-      fieldNameSuggestions(
-        rules.ordered.map((item) => item.rule),
-        templatePreview?.result.status === 'ok' ? templatePreview.result.scan : null,
-      ),
-    [rules.ordered, templatePreview],
-  );
-
-  // 配置中心里扫码：有测试框的页面填进测试框（替换原有内容），其他页面提醒「正在配置，没有打印」。永远不打印。
-  const [pillFlashes, setPillFlashes] = useState(0);
-  const configScan = useConfigScan({
-    isEnabled: appView.view.kind === 'config' && appView.leaveConfirm === null,
-    lineGapMs: settings?.scanLineGapMs ?? DEFAULT_SETTINGS.scanLineGapMs,
-    onScan: (raw) => {
-      const { view } = appView;
-      if (view.kind === 'config' && scanTargetFor(view) === 'test-box') {
-        (view.page === 'rules' ? setTesterRaw : templateSample.onChange)(raw);
-        return;
-      }
-      feedback.announce({ kind: 'configuring' });
-      setPillFlashes((count) => count + 1);
-    },
-  });
+  const samplePreview = useTemplatePreview(SAMPLE_LABEL_RAW, station.scan ? null : effectiveTemplate);
+  const override: PreviewOverride | null =
+    station.scan || !effectiveTemplate
+      ? null
+      : {
+          html: samplePreview?.html ?? null,
+          qrOmitted: samplePreview?.qrOmitted ?? false,
+          feedKey: samplePreview?.templateId ?? effectiveTemplate.id,
+        };
 
   const noteOptions = buildNoteOptions(settings?.notePresets ?? [], noteOverride);
   const selectNote = async (value: string) => {
@@ -166,7 +123,7 @@ export function App() {
     }
   };
 
-  const view = describeScan(station.scan, {
+  const scanView = describeScan(station.scan, {
     autoPrint,
     hasPrinter: printerName !== null,
     now: Date.now(),
@@ -177,7 +134,7 @@ export function App() {
   useHotkey(
     'F2',
     () => {
-      if (view.actions.print) {
+      if (scanView.actions.print) {
         station.printCurrent(false);
       }
     },
@@ -254,7 +211,7 @@ export function App() {
               />
             ),
             scan: station.scan,
-            view,
+            view: scanView,
             override,
             onPrint: () => station.printCurrent(false),
             onForceReprint: () => station.printCurrent(true),
@@ -291,31 +248,26 @@ export function App() {
           }
         />
       )}
-      {settings !== null && configPage !== null && (
+      {settings !== null && config.page !== null && (
         <ConfigCenter
-          page={configPage}
-          isLeaving={appView.view.kind !== 'config'}
-          breadcrumb={
-            editingName === null
-              ? null
-              : { current: `编辑：${editingName}`, onList: () => appView.requestLeave(() => undefined) }
-          }
-          sink={configScan}
-          pillFlashes={pillFlashes}
+          page={config.page}
+          isLeaving={isWorkbench}
+          breadcrumb={config.breadcrumb}
+          sink={config.sink}
+          pillFlashes={config.pillFlashes}
           onNavigate={appView.open}
           onClose={appView.close}
         >
           <ConfigPages
-            page={configPage}
+            page={config.page}
+            settings={settings}
             templates={{
               templates: templates.templates,
               activeId: templates.active?.id ?? null,
               selected: templates.selected,
               draft: templates.draft,
               isDirty: templates.isDirty,
-              sample: templateSample,
-              preview: templatePreview,
-              fieldNames,
+              ...config.templatePage,
               onSelect: templates.select,
               onActivate: (id) => void templates.activate(id),
               onDuplicate: (id) => void templates.duplicate(id),
@@ -325,23 +277,38 @@ export function App() {
               onSave: () => void templates.saveDraft(),
               onCancel: templates.cancelEdit,
             }}
-            rules={{
-              rules,
-              templates: templates.templates,
-              tester: { raw: testerRaw, onRawChange: setTesterRaw },
-              isNarrow,
-              onOpenPage: appView.open,
+            rules={{ rules, templates: templates.templates, tester: config.tester, isNarrow }}
+            lookup={{
+              tables: rules.lookupTables,
+              preview: config.lookupPreview,
+              onImport: rules.importLookupTable,
+              onDelete: rules.deleteLookupTable,
             }}
-            endpointEditor={endpointEditor}
-            settings={settings}
-            jobTotal={jobLog.total}
-            appInfo={appInfo}
-            update={updateView}
+            secrets={{
+              names: rules.secretNames,
+              onSave: rules.setSecret,
+              onDelete: rules.deleteSecret,
+              onCopyReference: (name) => void config.copySecretReference(name),
+            }}
+            webhooks={{
+              secretNames: rules.secretNames,
+              editor: config.endpointEditor,
+              deliveries: config.deliveries,
+              onEdit: (endpoint) =>
+                appView.requestLeave(() =>
+                  endpoint ? config.endpointEditor.start(endpoint) : config.endpointEditor.startNew(),
+                ),
+            }}
+            general={{
+              jobTotal: jobLog.total,
+              update: updateView,
+              onCheckForUpdates: updates.check,
+              onOpenLogFolder: openLogFolder,
+            }}
+            about={{ appInfo, shopQr: config.shopQr, onOpenShop: openShop }}
             onChange={changeSettings}
-            onCheckForUpdates={updates.check}
-            onOpenLogFolder={openLogFolder}
-            onOpenShop={openShop}
             onPreviewVoice={feedback.preview}
+            onOpenPage={appView.open}
           />
         </ConfigCenter>
       )}

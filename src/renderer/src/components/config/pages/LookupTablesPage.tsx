@@ -1,17 +1,18 @@
-import type { LookupTableData, LookupTableInfo } from '../../../../../core/lookup/lookup-model';
+import { LOOKUP_PREVIEW_ROWS, type LookupTableInfo } from '../../../../../core/lookup/lookup-model';
 import { formatDateTime } from '../../../lib/status-text';
-import { useLookupPreview } from '../../../view-models/use-lookup-preview';
-import { ConfirmButton } from '../../ConfirmButton';
+import type { LookupPreviewModel, LookupRows } from '../../../view-models/use-lookup-preview';
+import { DeleteButton } from '../../ConfirmButton';
 
-interface LookupTablesPageProps {
+export interface LookupTablesPageProps {
   tables: readonly LookupTableInfo[];
+  /** 点开的那张表和它的前几行。 */
+  preview: LookupPreviewModel;
   onImport: (replaceId: string | null) => void;
   onDelete: (id: string) => void;
 }
 
 /** 查找表：从 CSV 导入的本机表格（例如 编码 → 货架号），供加工步骤「查找表」使用。 */
-export function LookupTablesPage({ tables, onImport, onDelete }: LookupTablesPageProps) {
-  const { openId, rows, toggle } = useLookupPreview(tables);
+export function LookupTablesPage({ tables, preview, onImport, onDelete }: LookupTablesPageProps) {
   return (
     <div className="config-page">
       <div className="config-page__head">
@@ -28,7 +29,7 @@ export function LookupTablesPage({ tables, onImport, onDelete }: LookupTablesPag
       ) : (
         <ul className="config-list">
           {tables.map((table) => {
-            const isOpen = table.id === openId;
+            const isOpen = table.id === preview.openId;
             // 列多时放不下，省略后完整内容在悬停提示里。
             const meta = `${table.rowCount} 行 · 列：${table.columns.join('、')} · 更新于 ${formatDateTime(table.updatedAt)}`;
             return (
@@ -44,9 +45,9 @@ export function LookupTablesPage({ tables, onImport, onDelete }: LookupTablesPag
                     type="button"
                     className="button button--small button--quiet"
                     aria-expanded={isOpen}
-                    onClick={() => toggle(table.id)}
+                    onClick={() => preview.toggle(table.id)}
                   >
-                    {isOpen ? '收起' : '查看前 20 行'}
+                    {isOpen ? '收起' : `查看前 ${LOOKUP_PREVIEW_ROWS} 行`}
                   </button>
                   <button
                     type="button"
@@ -55,14 +56,9 @@ export function LookupTablesPage({ tables, onImport, onDelete }: LookupTablesPag
                   >
                     替换
                   </button>
-                  <ConfirmButton
-                    className="button button--small button--quiet"
-                    label="删除"
-                    confirmLabel="确认删除"
-                    onConfirm={() => onDelete(table.id)}
-                  />
+                  <DeleteButton onConfirm={() => onDelete(table.id)} />
                 </div>
-                {isOpen && <RowsPreview name={table.name} rows={rows} />}
+                {isOpen && <RowsPreview name={table.name} rows={preview.rows} />}
               </li>
             );
           })}
@@ -72,17 +68,21 @@ export function LookupTablesPage({ tables, onImport, onDelete }: LookupTablesPag
   );
 }
 
-/** 前 20 行：表头固定；列多时表格自己横向滚动，页面不跟着变宽。 */
-function RowsPreview({ name, rows }: { name: string; rows: LookupTableData | null }) {
-  if (rows === null) {
+/** 前几行：表头固定；列多时表格自己横向滚动，页面不跟着变宽。 */
+function RowsPreview({ name, rows }: { name: string; rows: LookupRows }) {
+  if (rows.state === 'loading') {
     return <p className="config-empty">正在读取…</p>;
   }
+  if (rows.state === 'failed') {
+    return <p className="config-empty">读取表格内容失败，详情已写入日志。可以收起后再点开重试。</p>;
+  }
+  const { columns, rows: cells } = rows.data;
   return (
     <div className="data-table" data-allow-x-scroll>
-      <table aria-label={`「${name}」前 20 行`}>
+      <table aria-label={`「${name}」前 ${LOOKUP_PREVIEW_ROWS} 行`}>
         <thead>
           <tr>
-            {rows.columns.map((column) => (
+            {columns.map((column) => (
               <th key={column} scope="col">
                 {column}
               </th>
@@ -90,11 +90,11 @@ function RowsPreview({ name, rows }: { name: string; rows: LookupTableData | nul
           </tr>
         </thead>
         <tbody>
-          {rows.rows.map((cells, rowIndex) => (
+          {cells.map((row, rowIndex) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: 只读预览，行号就是身份
             <tr key={rowIndex}>
-              {rows.columns.map((column, cellIndex) => (
-                <td key={column}>{cells[cellIndex] ?? ''}</td>
+              {columns.map((column, cellIndex) => (
+                <td key={column}>{row[cellIndex] ?? ''}</td>
               ))}
             </tr>
           ))}

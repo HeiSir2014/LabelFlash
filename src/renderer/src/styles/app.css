@@ -17,8 +17,11 @@ body {
   user-select: none;
 }
 
+/* 表单控件默认用浏览器自己的字体（textarea 还是等宽字体），统一跟随正文；要等宽的地方单独指定。 */
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -26,6 +29,35 @@ input {
 :focus-visible {
   outline: 2px solid var(--color-ink);
   outline-offset: 2px;
+}
+
+/* 墨色标题栏上墨色的焦点框看不见，改用胶带黄。 */
+.title-bar :focus-visible {
+  outline-color: var(--color-tape);
+}
+
+/*
+ * 下拉框：所有下拉框同一外观，和输入框同高、同描边、同底色；各处只按位置调整宽高。
+ * 写在前面：后面按位置调整的规则优先级相同，靠顺序覆盖这里。
+ */
+.select-field {
+  height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-field);
+  cursor: pointer;
+}
+
+.select-field:focus {
+  outline: 2px solid var(--color-ink);
+  outline-offset: -1px;
+}
+
+/* 放在一行输入框里时和它们一起分宽度 */
+.select-field--fill {
+  flex: 1;
+  min-width: 0;
 }
 
 .app {
@@ -129,7 +161,7 @@ input {
 }
 
 .title-bar__version {
-  color: rgb(251 251 248 / 0.55);
+  color: var(--color-on-ink-soft);
   font-family: var(--font-data);
   font-size: 11px;
   user-select: text;
@@ -143,7 +175,7 @@ input {
   height: 28px;
   margin-left: var(--space-3);
   padding: 0 var(--space-3);
-  border: 1px solid rgb(251 251 248 / 0.25);
+  border: 1px solid var(--color-on-ink-rule);
   border-radius: 999px;
   background: transparent;
   font-size: 12px;
@@ -157,7 +189,7 @@ input {
 }
 
 .title-bar__shop-label {
-  color: rgb(251 251 248 / 0.6);
+  color: var(--color-on-ink-soft);
 }
 
 .title-bar__shop-name {
@@ -184,7 +216,7 @@ input {
   max-width: 420px;
   height: 28px;
   padding: 0 var(--space-3);
-  border: 1px solid rgb(251 251 248 / 0.25);
+  border: 1px solid var(--color-on-ink-rule);
   border-radius: 999px;
   font-size: 12px;
 }
@@ -197,7 +229,7 @@ input {
   gap: var(--space-1);
   height: 28px;
   padding: 0 var(--space-3);
-  border: 1px solid rgb(251 251 248 / 0.25);
+  border: 1px solid var(--color-on-ink-rule);
   border-radius: 999px;
   background: transparent;
   font-size: 12px;
@@ -245,7 +277,7 @@ input {
 
 .printer-chip--muted .printer-chip__dot {
   background: transparent;
-  box-shadow: inset 0 0 0 1px rgb(251 251 248 / 0.6);
+  box-shadow: inset 0 0 0 1px var(--color-on-ink-soft);
 }
 
 .printer-chip--error {
@@ -272,7 +304,7 @@ input {
 }
 
 .window-button:hover {
-  background: rgb(251 251 248 / 0.12);
+  background: var(--color-on-ink-wash);
 }
 
 .window-button--close:hover {
@@ -496,13 +528,6 @@ input {
 /* 宽度随最长的模板名，最宽 220px：窄窗口下把地方留给右侧说明。 */
 .preview-toolbar__select {
   max-width: 220px;
-  height: 32px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius);
-  background: #fff;
-  font: inherit;
-  cursor: pointer;
 }
 
 .preview-toolbar__usage {
@@ -602,27 +627,21 @@ input {
   position: relative;
   grid-area: label;
   overflow: hidden;
-  background: #fff;
+  background: var(--color-field);
 }
 
+/* 标签上的提示（目前只有「二维码放不下」）：贴在标签底边，不挡住标签内容的主体 */
 .label-badge {
   position: absolute;
   z-index: 1;
-  top: 6px;
   right: 6px;
+  bottom: 6px;
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--color-ink);
-  color: var(--color-tape);
-  font-size: 12px;
-  pointer-events: none;
-}
-
-.label-badge--warning {
-  top: auto;
-  bottom: 6px;
   background: var(--color-warning);
   color: var(--color-ink);
+  font-size: 12px;
+  pointer-events: none;
 }
 
 .label-feed {
@@ -644,7 +663,7 @@ input {
   width: 60mm;
   height: 40mm;
   border: 0;
-  background: #fff;
+  background: var(--color-field);
   pointer-events: none;
   transform: scale(var(--preview-scale));
   transform-origin: 0 0;
@@ -824,7 +843,7 @@ input {
   padding: 0 var(--space-3);
   border: 1px solid var(--color-rule);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--color-field);
   user-select: text;
 }
 
@@ -997,12 +1016,15 @@ input {
   gap: var(--space-1);
 }
 
+/* 编辑表单的一个分区：做成卡片，和配置中心其他卡片一致 */
 .form-section {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
-  border-bottom: 1px solid var(--color-housing);
+  padding: var(--space-4);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-paper);
 }
 
 .form-section__title {
@@ -1014,7 +1036,7 @@ input {
 
 .form-row {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
+  grid-template-columns: var(--config-label-width) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2);
 }
@@ -1117,7 +1139,7 @@ input {
   height: 30px;
   border: 0;
   border-left: 1px solid var(--color-rule);
-  background: #fff;
+  background: var(--color-field);
   font-size: 12px;
   cursor: pointer;
 }
@@ -1153,7 +1175,7 @@ input {
   padding: 0 var(--space-2);
   border: 1px dashed var(--color-rule);
   border-radius: 999px;
-  background: #fff;
+  background: var(--color-field);
   font: 12px var(--font-body);
   cursor: pointer;
 }
@@ -1186,7 +1208,7 @@ input {
 /* 通知 */
 .notice-bar {
   position: fixed;
-  z-index: 10;
+  z-index: var(--layer-notice);
   right: var(--space-5);
   bottom: var(--space-5);
   display: flex;
@@ -1259,15 +1281,10 @@ input {
   white-space: nowrap;
 }
 
+/* 与扫码框旁的开关同高；最宽 200px，扫码框才不会被挤窄。 */
 .note-picker__select {
   max-width: 200px;
   height: 36px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius);
-  background: #fff;
-  font: inherit;
-  cursor: pointer;
 }
 
 /* 语音播报页：语速滑块、数值和试听排成一行 */
@@ -1480,6 +1497,7 @@ input {
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
+  /* 窄窗口里「试一试」移到表单上方：最多占窗口高度的四成，表单仍有一半以上的地方 */
   .rule-editing__tester {
     max-height: 40vh;
     padding: var(--space-3) var(--space-5);
@@ -1533,7 +1551,7 @@ input {
   padding: var(--space-2);
   border: 1px solid var(--color-rule);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--color-field);
   font-size: 12px;
   word-break: break-all;
 }
@@ -1573,7 +1591,7 @@ input {
   gap: var(--space-2);
 }
 
-.step-add .text-field {
+.step-add .select-field {
   flex: 0 1 140px;
 }
 
@@ -1646,13 +1664,16 @@ input {
   white-space: nowrap;
 }
 
-/* 只读表格：表头固定；列多时表格自己横向滚动，页面不跟着变宽 */
+/*
+ * 只读表格：表头固定；列多时表格自己横向滚动，页面不跟着变宽。
+ * 查找表预览最高 360px（约 10 行，展开一张表不把下面的表挤出屏幕）；发送记录用 --tall，最高 480px（约 14 行）。
+ */
 .data-table {
   max-height: 360px;
   overflow: auto;
   border: 1px solid var(--color-rule);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--color-field);
 }
 
 .data-table--tall {
@@ -1704,9 +1725,10 @@ input {
   user-select: text;
 }
 
+/* 名称和内容的输入框最宽 360px：密钥名最多 30 个字，再宽也用不上 */
 .secret-form {
   display: grid;
-  grid-template-columns: 120px minmax(0, 360px);
+  grid-template-columns: var(--config-label-width) minmax(0, 360px);
   align-items: center;
   gap: var(--space-3) var(--space-4);
 }
@@ -1794,12 +1816,7 @@ input {
   justify-content: space-between;
 }
 
-.delivery-log__title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 700;
-}
-
+/* 错误原因最宽 280px：结果列不把后面的状态码、重试挤出表格，完整内容在单元格的悬停提示里 */
 .delivery-log__error {
   display: block;
   max-width: 280px;
@@ -1829,14 +1846,14 @@ input {
 /* ── 配置中心：铺满标题栏以下；工作台留在下面，设为 inert ── */
 .config-center {
   position: absolute;
-  z-index: 5;
+  z-index: var(--layer-config);
   inset: var(--title-bar-height) 0 0 0;
   display: grid;
   grid-template-areas:
     "back header"
     "nav content";
   grid-template-columns: var(--config-nav-width) minmax(0, 1fr);
-  grid-template-rows: 56px minmax(0, 1fr);
+  grid-template-rows: var(--config-header-height) minmax(0, 1fr);
   background: var(--color-housing);
   animation: config-enter var(--config-duration) ease-out;
 }
@@ -1917,7 +1934,7 @@ input {
 
 .config-pill {
   flex: none;
-  padding: 2px var(--space-3);
+  padding: var(--space-1) var(--space-3);
   border-radius: 999px;
   background: var(--color-warning-wash);
   color: var(--color-ink);
@@ -1995,6 +2012,16 @@ input {
   font-weight: 600;
 }
 
+/*
+ * 导航和模板列表会滚动、页标题会省略，这些容器把溢出的部分裁掉，外侧的焦点框也跟着被裁：
+ * 这几处把焦点框画在按钮里面。
+ */
+.config-nav__item:focus-visible,
+.template-item:focus-visible,
+.config-header__crumb:focus-visible {
+  outline-offset: -2px;
+}
+
 .config-content {
   grid-area: content;
   min-width: 0;
@@ -2035,6 +2062,11 @@ input {
   font-weight: 700;
 }
 
+/* 发送记录的标题和「刷新」按钮排在一行，去掉卡片标题的下边距（写在卡片标题之后才能覆盖） */
+.delivery-log__title {
+  margin: 0;
+}
+
 .config-card__text {
   margin: 0;
   font-size: 13px;
@@ -2062,20 +2094,10 @@ input {
   list-style: none;
 }
 
-.select-field {
-  min-width: 200px;
-  height: 32px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius);
-  background: #fff;
-  font: inherit;
-}
-
-/* 一项设置：左边 120px 标签，右边控件，控件下方是说明 */
+/* 一项设置：左边标签，右边控件，控件下方是说明 */
 .setting-row {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
+  grid-template-columns: var(--config-label-width) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-1) var(--space-4);
   padding: var(--space-3) 0;
@@ -2205,7 +2227,7 @@ input {
   padding: var(--space-2);
   border: 1px solid var(--color-rule);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--color-field);
 }
 
 .about-card__qr img {
@@ -2263,18 +2285,6 @@ input {
   color: var(--color-error);
 }
 
-/* 配置中心里的表单：标签列加宽，分区做成卡片 */
-.config-center .form-row {
-  grid-template-columns: 120px minmax(0, 1fr);
-}
-
-.config-center .form-section {
-  padding: var(--space-4);
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius);
-  background: var(--color-paper);
-}
-
 /* 「预览内容」：模板页的试用输入框 */
 .sample-input {
   display: grid;
@@ -2284,8 +2294,9 @@ input {
   gap: var(--space-3);
 }
 
+/* 与文本框第一行文字对齐：文本框的 1px 边框加上下内边距 */
 .sample-input__label {
-  padding-top: 6px;
+  padding-top: calc(var(--space-2) + 1px);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -2299,7 +2310,7 @@ input {
 .templates-page {
   display: grid;
   flex: 1;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: var(--template-list-width) minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -2354,7 +2365,7 @@ input {
   background: var(--color-housing);
 }
 
-.template-item[aria-current="true"] {
+.template-item[aria-pressed="true"] {
   border-left-color: var(--color-tape);
   background: var(--color-tape-wash);
 }
@@ -2448,6 +2459,7 @@ input {
     border-left: 0;
   }
 
+  /* 预览内容框固定 280px，标签预览占剩下的宽度 */
   .template-editing__preview .sample-input {
     flex: 0 0 280px;
     grid-template-columns: minmax(0, 1fr);
@@ -2455,24 +2467,24 @@ input {
   }
 }
 
-/* ── 应用内确认框 ── */
-.dialog-backdrop {
-  position: fixed;
-  z-index: 20;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: var(--space-5);
-  background: color-mix(in srgb, var(--color-ink) 45%, transparent);
-}
-
+/* ── 应用内确认框（原生模态 dialog，浏览器负责居中和置顶） ── */
 .dialog {
-  width: 400px;
-  max-width: 100%;
+  width: var(--dialog-width);
+  max-width: calc(100% - 2 * var(--space-5));
   padding: var(--space-5);
+  border: none;
   border-radius: var(--radius);
+  color: inherit;
   background: var(--color-paper);
   box-shadow: 0 12px 32px color-mix(in srgb, var(--color-ink) 30%, transparent);
+}
+
+.dialog:focus-visible {
+  outline: none;
+}
+
+.dialog::backdrop {
+  background: color-mix(in srgb, var(--color-ink) 45%, transparent);
 }
 
 .dialog__title {

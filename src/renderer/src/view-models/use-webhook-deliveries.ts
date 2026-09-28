@@ -5,8 +5,8 @@ import { notices, reportError } from '../lib/notices';
 /** 发送记录多久自动刷新一次：通知在后台发送，界面上要能看到进展。 */
 const REFRESH_INTERVAL_MS = 10_000;
 
-/** 打印结果通知的发送记录、发送测试、立即重试。 */
-export function useWebhookDeliveries() {
+/** 打印结果通知的发送记录、发送测试、立即重试。isActive（这一页开着）时读取并定时刷新。 */
+export function useWebhookDeliveries(isActive: boolean) {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
 
   const refresh = useCallback(async () => {
@@ -18,10 +18,13 @@ export function useWebhookDeliveries() {
   }, []);
 
   useEffect(() => {
+    if (!isActive) {
+      return;
+    }
     void refresh();
     const timer = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [isActive, refresh]);
 
   const sendTest = useCallback(
     async (endpointId: string) => {
@@ -51,3 +54,5 @@ export function useWebhookDeliveries() {
 
   return { deliveries, refresh, sendTest, retry };
 }
+
+export type WebhookDeliveriesModel = ReturnType<typeof useWebhookDeliveries>;

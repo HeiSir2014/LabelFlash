@@ -1,16 +1,16 @@
 import { BRAND } from '../../../../../shared/brand';
 import type { AppInfo } from '../../../../../shared/ipc-contract';
-import { useQrImage } from '../../../view-models/use-qr-image';
+import { QR_IMAGE_SIZE_PX } from '../../../view-models/use-qr-image';
 
-interface AboutPageProps {
+export interface AboutPageProps {
   appInfo: AppInfo | null;
+  /** 店铺二维码（data URL）；生成前为 null。 */
+  shopQr: string | null;
   onOpenShop: () => void;
 }
 
 /** 关于：产品名、版本、出品方、淘宝店铺（链接和二维码）、数据目录。 */
-export function AboutPage({ appInfo, onOpenShop }: AboutPageProps) {
-  const shopQr = useQrImage(BRAND.shop.url);
-
+export function AboutPage({ appInfo, shopQr, onOpenShop }: AboutPageProps) {
   if (!appInfo) {
     return <p className="config-empty">正在读取版本信息…</p>;
   }
@@ -23,7 +23,9 @@ export function AboutPage({ appInfo, onOpenShop }: AboutPageProps) {
             {appInfo.productName} v{appInfo.version}
           </dd>
           <dt>出品</dt>
-          <dd>{appInfo.brandOwner}（CDL）</dd>
+          <dd>
+            {appInfo.brandOwner}（{BRAND.mark}）
+          </dd>
           <dt>淘宝店铺</dt>
           <dd>
             <button type="button" className="link-button" onClick={onOpenShop}>
@@ -36,7 +38,7 @@ export function AboutPage({ appInfo, onOpenShop }: AboutPageProps) {
         </dl>
         {shopQr && (
           <figure className="about-card__qr">
-            <img src={shopQr} alt={`${BRAND.shop.name}店铺二维码`} width={132} height={132} />
+            <img src={shopQr} alt={`${BRAND.shop.name}店铺二维码`} width={QR_IMAGE_SIZE_PX} height={QR_IMAGE_SIZE_PX} />
             <figcaption>手机淘宝扫一扫进店</figcaption>
           </figure>
         )}

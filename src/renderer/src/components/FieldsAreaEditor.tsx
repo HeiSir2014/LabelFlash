@@ -35,7 +35,7 @@ export function FieldsAreaEditor({ area, onChange }: FieldsAreaEditorProps) {
 
   return (
     <section className="form-section">
-      <h3 className="form-section__title">字段</h3>
+      <h2 className="form-section__title">字段</h2>
       <Segmented
         label="显示"
         value={area.mode}

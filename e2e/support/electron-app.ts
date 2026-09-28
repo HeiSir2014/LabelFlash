@@ -10,6 +10,14 @@ import { type ElectronApplication, _electron as electron, expect, type Page } fr
 export const APP_ROOT = join(__dirname, '..', '..');
 /** 与 src/main/index.ts 中的 USER_DATA_OVERRIDE_ENV 一致：只在未打包时生效。 */
 const USER_DATA_ENV = 'CDL_LABELFLASH_USER_DATA';
+/**
+ * macOS 上 safeStorage 默认读写登录钥匙串里的「<应用名> Safe Storage」：这一项在临时数据目录之外，
+ * 测试结束也不会删，还可能弹授权框。改用 Chromium 的模拟钥匙串，只在这次运行里有效。
+ */
+const MAC_TEST_ARGS: readonly string[] = ['--use-mock-keychain'];
+/** Windows 上 SQLite 关掉连接后还会占用文件一小会儿（oven-sh/bun#40001）：删除数据目录时重试几次。 */
+const REMOVE_RETRIES = 5;
+const REMOVE_RETRY_DELAY_MS = 200;
 
 export interface LaunchedApp {
   app: ElectronApplication;
@@ -19,9 +27,17 @@ export interface LaunchedApp {
   close: () => Promise<void>;
 }
 
-/** 用一个全新的数据目录启动构建好的程序，等到扫码框出现。 */
+export async function createUserDataDir(): Promise<string> {
+  return mkdtemp(join(tmpdir(), 'cdl-labelflash-e2e-'));
+}
+
+export async function removeUserDataDir(dir: string): Promise<void> {
+  await rm(dir, { recursive: true, force: true, maxRetries: REMOVE_RETRIES, retryDelay: REMOVE_RETRY_DELAY_MS });
+}
+
+/** 用指定的数据目录（不传则新建一个）启动构建好的程序，等到扫码框出现。 */
 export async function launchApp(userData?: string): Promise<LaunchedApp> {
-  const dataDir = userData ?? (await mkdtemp(join(tmpdir(), 'cdl-labelflash-e2e-')));
+  const dataDir = userData ?? (await createUserDataDir());
   // 不带 ELECTRON_RENDERER_URL：界面必须走 app:// 协议，和安装版一致。
   const env: Record<string, string> = { [USER_DATA_ENV]: dataDir };
   for (const [key, value] of Object.entries(process.env)) {
@@ -29,7 +45,8 @@ export async function launchApp(userData?: string): Promise<LaunchedApp> {
       env[key] = value;
     }
   }
-  const app = await electron.launch({ args: [APP_ROOT], env });
+  const platformArgs = process.platform === 'darwin' ? MAC_TEST_ARGS : [];
+  const app = await electron.launch({ args: [APP_ROOT, ...platformArgs], env });
   const page = await app.firstWindow();
   await expect(page.locator('.scan-bar__input')).toBeVisible();
   return {
@@ -37,8 +54,11 @@ export async function launchApp(userData?: string): Promise<LaunchedApp> {
     page,
     userData: dataDir,
     close: async () => {
-      await app.close();
-      await rm(dataDir, { recursive: true, force: true });
+      try {
+        await app.close();
+      } finally {
+        await removeUserDataDir(dataDir);
+      }
     },
   };
 }

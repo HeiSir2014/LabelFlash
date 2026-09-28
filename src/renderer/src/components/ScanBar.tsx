@@ -1,6 +1,7 @@
 import type { NoteOption } from '../lib/note-options';
 import { useScanFocus } from '../view-models/use-scan-focus';
 import { useScanInput } from '../view-models/use-scan-input';
+import { Switch } from './form-controls';
 
 export interface NoteControl {
   options: NoteOption[];
@@ -48,7 +49,7 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, note, onAutoPrintChang
         <label className="note-picker">
           <span className="note-picker__label">备注</span>
           <select
-            className="note-picker__select"
+            className="select-field note-picker__select"
             value={note.selected}
             onChange={(event) => {
               note.onSelect(event.target.value);
@@ -63,19 +64,7 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, note, onAutoPrintChang
             ))}
           </select>
         </label>
-        <label className="switch">
-          <input
-            type="checkbox"
-            role="switch"
-            aria-checked={autoPrint}
-            checked={autoPrint}
-            onChange={(event) => onAutoPrintChange(event.target.checked)}
-          />
-          <span className="switch__track" aria-hidden="true">
-            <span className="switch__thumb" />
-          </span>
-          <span className="switch__text">{autoPrint ? '自动打印' : '手动打印'}</span>
-        </label>
+        <Switch checked={autoPrint} onChange={onAutoPrintChange} text={autoPrint ? '自动打印' : '手动打印'} />
       </div>
     </section>
   );

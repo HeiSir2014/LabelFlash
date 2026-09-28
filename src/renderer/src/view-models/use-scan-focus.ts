@@ -1,26 +1,30 @@
 import { type RefObject, useEffect, useRef } from 'react';
-import { IdleWatcher, isScannerCharacter, SCAN_FOCUS_IDLE_MS } from '../lib/scan-focus';
+import {
+  type FocusTarget,
+  IdleWatcher,
+  isScannerCharacter,
+  isTypingField,
+  keepsFocus,
+  SCAN_FOCUS_IDLE_MS,
+} from '../lib/scan-focus';
 import { WINDOW_TIMERS } from '../lib/timers';
 
 /** 焦点落到按钮、开关、空白处后，稍等一下再拉回：让点击和下拉框先完成自己的操作。 */
 const REFOCUS_DELAY_MS = 300;
-const TEXT_ENTRY_TYPES: ReadonlySet<string> = new Set(['text', 'search', 'number']);
 const ACTIVITY_EVENTS = ['pointermove', 'pointerdown', 'keydown', 'wheel'] as const;
 
-/** 焦点在这些控件里时，按键是用户在填这个控件，不当作扫码。 */
-export function isTextEntry(element: Element | null): boolean {
-  if (element instanceof HTMLInputElement) {
-    return TEXT_ENTRY_TYPES.has(element.type);
-  }
-  return element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement;
+/** 当前焦点所在的元素，交给 lib/scan-focus 的规则判断。 */
+export function activeFocusTarget(): FocusTarget | null {
+  const active = document.activeElement;
+  return active instanceof HTMLElement ? active : null;
 }
 
 /**
  * 扫码框的焦点管理：扫码枪只会往当前焦点里「打字」，焦点不在扫码框，扫到的内容就丢了。
  * - 焦点落到按钮、开关、空白处：0.3 秒后拉回（否则扫码枪的回车会「点击」刚才的按钮）。
- * - 焦点不在任何输入框时按下可打印字符：立即切到扫码框，这个字符也落进扫码框，一个都不丢。
- * - 窗口在前台、鼠标和键盘都 10 秒没动：回到扫码框（设置、模板编辑里也一样，已填的内容不会丢）。
- * - 窗口重新获得焦点、焦点不在输入框：回到扫码框。
+ * - 焦点不在输入框（下拉框也不算）时按下可打印字符：立即切到扫码框，这个字符也落进扫码框，一个都不丢。
+ * - 窗口在前台、鼠标和键盘都 10 秒没动：回到扫码框（已填的内容不会丢）。
+ * - 窗口重新获得焦点、焦点不在输入框和下拉框：回到扫码框。
  * 自动回焦只移动焦点，不改动框里的内容和选区；全选只在操作员双击扫码框时发生。
  *
  * isActive 为 false（配置中心打开）时以上规则全部停用：管理员在填表，焦点留在他放的位置。
@@ -55,22 +59,21 @@ export function useScanFocus(isActive: boolean): RefObject<HTMLTextAreaElement |
 
     const onFocusOut = () => {
       window.setTimeout(() => {
-        const active = document.activeElement;
-        if (active !== inputRef.current && !isTextEntry(active)) {
+        if (!keepsFocus(activeFocusTarget())) {
           focusScanInput();
         }
       }, REFOCUS_DELAY_MS);
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.isComposing && isScannerCharacter(event) && !isTextEntry(document.activeElement)) {
+      if (!event.isComposing && isScannerCharacter(event) && !isTypingField(activeFocusTarget())) {
         // 在 keydown 阶段切换焦点：浏览器随后把这个字符输入到新的焦点里。
         focusScanInput();
       }
     };
 
     const onWindowFocus = () => {
-      if (!isTextEntry(document.activeElement)) {
+      if (!keepsFocus(activeFocusTarget())) {
         focusScanInput();
       }
     };

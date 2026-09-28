@@ -17,7 +17,7 @@ export function RuleEditor({ draft, context, onChange }: RuleEditorProps) {
   return (
     <div className="rule-form">
       <section className="form-section">
-        <h3 className="form-section__title">基本</h3>
+        <h2 className="form-section__title">基本</h2>
         <TextInput
           label="规则名称"
           value={draft.name}
@@ -56,7 +56,7 @@ function StepList({ steps, context, onChange }: StepListProps) {
   };
   return (
     <section className="form-section">
-      <h3 className="form-section__title">加工步骤</h3>
+      <h2 className="form-section__title">加工步骤</h2>
       <p className="form-hint">
         识别出字段后依次执行，每一步产出一个或几个字段，后面的步骤能用前面的结果；模板、备注和二维码内容都能用这些字段。
       </p>
@@ -109,7 +109,7 @@ function StepList({ steps, context, onChange }: StepListProps) {
       ))}
       <div className="step-add">
         <select
-          className="text-field"
+          className="select-field"
           aria-label="要添加的步骤类型"
           value={kindToAdd}
           onChange={(event) => setKindToAdd(event.target.value as StepKind)}

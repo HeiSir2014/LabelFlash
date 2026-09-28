@@ -1,7 +1,49 @@
-import type { IntentTimers } from './timers';
+import type { Timers } from './timers';
 
-/** 鼠标和键盘都这么久没动，就把焦点还给扫码框（设置、模板编辑里也一样）。 */
+/** 工作台上鼠标和键盘都这么久没动，就把焦点还给扫码框。 */
 export const SCAN_FOCUS_IDLE_MS = 10_000;
+
+/** 焦点所在的元素，只取判断需要的几项（DOM 元素本身就满足这个形状）。 */
+export interface FocusTarget {
+  tagName: string;
+  /** input 的 type；其他元素为空串或 undefined。 */
+  type?: string;
+  isContentEditable: boolean;
+}
+
+/** 不接收文字的 input：开关、按钮、滑块、文件选择等，按键是在操作它们，不是在打字。 */
+const NON_TEXT_INPUT_TYPES: ReadonlySet<string> = new Set([
+  'checkbox',
+  'radio',
+  'range',
+  'button',
+  'submit',
+  'reset',
+  'image',
+  'file',
+  'color',
+  'hidden',
+]);
+
+/**
+ * 用户正在往里打字的控件：按键属于它，不当作扫码。
+ * 用排除法判断 input，密码、邮箱、网址这类输入框也算；下拉框不算：
+ * 下拉框只会把字母当作跳选，扫码内容进去就丢了，还可能悄悄改掉选项。
+ */
+export function isTypingField(target: FocusTarget | null): boolean {
+  if (target === null) {
+    return false;
+  }
+  if (target.tagName === 'INPUT') {
+    return !NON_TEXT_INPUT_TYPES.has(target.type ?? '');
+  }
+  return target.tagName === 'TEXTAREA' || target.isContentEditable;
+}
+
+/** 焦点留在这里时不自动拉回扫码框：用户在打字，或者正在下拉框里选。 */
+export function keepsFocus(target: FocusTarget | null): boolean {
+  return isTypingField(target) || target?.tagName === 'SELECT';
+}
 
 export interface KeyInfo {
   key: string;
@@ -29,7 +71,7 @@ export class IdleWatcher {
   constructor(
     private readonly idleMs: number,
     private readonly onIdle: () => void,
-    private readonly timers: IntentTimers,
+    private readonly timers: Timers,
     private readonly now: () => number = Date.now,
   ) {}
 

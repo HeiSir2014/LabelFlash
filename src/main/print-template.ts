@@ -17,14 +17,10 @@ export function activeRules(rules: RuleCatalog, settings: AppSettings): ScanRule
   return orderedEnabledRules(merged, all);
 }
 
-/** 命中的规则指定的模板；没有指定或指定的模板已被删除时为 null。 */
-export function boundTemplate(
-  templates: TemplateCatalog,
-  settings: AppSettings,
-  scan: ScanResult | null,
-): LabelTemplate | null {
-  const boundId = scan ? templateIdFor(settings.ruleSettings, scan.ruleId) : null;
-  return boundId ? templates.get(boundId) : null;
+export interface PrintTemplate {
+  template: LabelTemplate;
+  /** 模板由命中的规则指定；规则没指定、指定的模板已被删除或没有识别结果时为 false（用的是当前模板）。 */
+  isBound: boolean;
 }
 
 /**
@@ -35,7 +31,11 @@ export function resolvePrintTemplate(
   templates: TemplateCatalog,
   settings: AppSettings,
   scan: ScanResult | null,
-): LabelTemplate {
-  const bound = boundTemplate(templates, settings, scan);
-  return applyNoteOverride(bound ?? templates.resolve(settings.activeTemplateId), settings.noteOverride);
+): PrintTemplate {
+  const boundId = scan ? templateIdFor(settings.ruleSettings, scan.ruleId) : null;
+  const bound = boundId ? templates.get(boundId) : null;
+  return {
+    template: applyNoteOverride(bound ?? templates.resolve(settings.activeTemplateId), settings.noteOverride),
+    isBound: bound !== null,
+  };
 }

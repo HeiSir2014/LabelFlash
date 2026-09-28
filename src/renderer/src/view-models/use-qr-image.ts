@@ -2,7 +2,7 @@ import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 
 /** 二维码边长（CSS 像素）：手机在正常距离能一次扫出，又不占用太多「关于」的空间。 */
-const QR_IMAGE_SIZE_PX = 132;
+export const QR_IMAGE_SIZE_PX = 132;
 
 /** 在本机把文本生成二维码图片（data URL），不请求任何在线服务；生成前为 null。 */
 export function useQrImage(text: string): string | null {

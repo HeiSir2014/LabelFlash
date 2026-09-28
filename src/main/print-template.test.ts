@@ -6,7 +6,7 @@ import { GENERIC_TEMPLATE, STANDARD_TEMPLATE } from '../core/templates/builtin-t
 import { TemplateCatalog } from '../core/templates/template-catalog';
 import { InMemoryRuleRepository, InMemoryTemplateRepository } from '../core/testing/in-memory-repositories';
 import { DEFAULT_SETTINGS } from '../shared/settings';
-import { activeRules, boundTemplate, resolvePrintTemplate } from './print-template';
+import { activeRules, resolvePrintTemplate } from './print-template';
 
 function scanOf(ruleId: string): ScanResult {
   return { raw: 'x', ruleId, ruleName: 'r', fields: [{ name: '内容', value: 'x' }] };
@@ -19,14 +19,29 @@ function createTemplates() {
 
 describe('resolvePrintTemplate', () => {
   test('uses the template bound to the matched rule', () => {
-    const template = resolvePrintTemplate(createTemplates(), DEFAULT_SETTINGS, scanOf(DASH_THREE_RULE_ID));
-    expect(template.id).toBe(STANDARD_TEMPLATE.id);
+    const resolved = resolvePrintTemplate(createTemplates(), DEFAULT_SETTINGS, scanOf(DASH_THREE_RULE_ID));
+    expect(resolved.template.id).toBe(STANDARD_TEMPLATE.id);
+    expect(resolved.isBound).toBe(true);
   });
 
   test('uses the active template for rules without a binding and when nothing was recognised', () => {
     const templates = createTemplates();
-    expect(resolvePrintTemplate(templates, DEFAULT_SETTINGS, scanOf(RAW_RULE_ID)).id).toBe(GENERIC_TEMPLATE.id);
-    expect(resolvePrintTemplate(templates, DEFAULT_SETTINGS, null).id).toBe(GENERIC_TEMPLATE.id);
+    expect(resolvePrintTemplate(templates, DEFAULT_SETTINGS, scanOf(RAW_RULE_ID))).toMatchObject({
+      template: { id: GENERIC_TEMPLATE.id },
+      isBound: false,
+    });
+    expect(resolvePrintTemplate(templates, DEFAULT_SETTINGS, null)).toMatchObject({
+      template: { id: GENERIC_TEMPLATE.id },
+      isBound: false,
+    });
+  });
+
+  test('says the rule chose it even when the bound template is also the active one', () => {
+    const settings = { ...DEFAULT_SETTINGS, activeTemplateId: STANDARD_TEMPLATE.id };
+    expect(resolvePrintTemplate(createTemplates(), settings, scanOf(DASH_THREE_RULE_ID))).toMatchObject({
+      template: { id: STANDARD_TEMPLATE.id },
+      isBound: true,
+    });
   });
 
   test('falls back to the active template when the bound one was deleted', () => {
@@ -37,20 +52,18 @@ describe('resolvePrintTemplate', () => {
       activeTemplateId: copy.id,
       ruleSettings: DEFAULT_SETTINGS.ruleSettings.map((setting) => ({ ...setting, templateId: 'custom:deleted' })),
     };
-    expect(resolvePrintTemplate(templates, settings, scanOf(DASH_THREE_RULE_ID)).id).toBe(copy.id);
-    expect(boundTemplate(templates, settings, scanOf(DASH_THREE_RULE_ID))).toBeNull();
-  });
-
-  test('tells whether the template came from the rule', () => {
-    const templates = createTemplates();
-    expect(boundTemplate(templates, DEFAULT_SETTINGS, scanOf(DASH_THREE_RULE_ID))?.id).toBe(STANDARD_TEMPLATE.id);
-    expect(boundTemplate(templates, DEFAULT_SETTINGS, scanOf(RAW_RULE_ID))).toBeNull();
-    expect(boundTemplate(templates, DEFAULT_SETTINGS, null)).toBeNull();
+    expect(resolvePrintTemplate(templates, settings, scanOf(DASH_THREE_RULE_ID))).toMatchObject({
+      template: { id: copy.id },
+      isBound: false,
+    });
   });
 
   test('applies the note chosen on the main screen', () => {
     const settings = { ...DEFAULT_SETTINGS, noteOverride: { kind: 'text', text: '返修' } as const };
-    expect(resolvePrintTemplate(createTemplates(), settings, null).note).toMatchObject({ visible: true, text: '返修' });
+    expect(resolvePrintTemplate(createTemplates(), settings, null).template.note).toMatchObject({
+      visible: true,
+      text: '返修',
+    });
   });
 });
 

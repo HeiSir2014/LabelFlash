@@ -1,7 +1,7 @@
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
-import { LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
+import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
-import { RULE_ID_PATTERN, RULE_KINDS, type RuleKind } from '../core/scan/rule-model';
+import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-model';
 import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
@@ -47,10 +47,10 @@ export function requireRuleIds(value: unknown): string[] {
 }
 
 export function requireRuleKind(value: unknown): RuleKind {
-  if (typeof value !== 'string' || !(RULE_KINDS as readonly string[]).includes(value)) {
+  if (typeof value !== 'string' || !isRuleKind(value)) {
     throw new TypeError('Invalid rule kind');
   }
-  return value as RuleKind;
+  return value;
 }
 
 export function requirePositiveInteger(value: unknown, name: string): number {
@@ -63,6 +63,13 @@ export function requirePositiveInteger(value: unknown, name: string): number {
 export function requireWebhookId(value: unknown): string {
   if (typeof value !== 'string' || !WEBHOOK_ID_PATTERN.test(value)) {
     throw new TypeError('Invalid webhook id');
+  }
+  return value;
+}
+
+export function requireSecretName(value: unknown): string {
+  if (typeof value !== 'string' || !isValidSecretName(value)) {
+    throw new TypeError('Invalid secret name');
   }
   return value;
 }

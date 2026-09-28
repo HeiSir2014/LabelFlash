@@ -9,15 +9,21 @@ import {
   shell,
 } from 'electron';
 import type { PrintService } from '../core/print-service';
-import { SECRET_LIMITS } from '../core/scan/enrich-model';
+import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
-import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
+import { CUSTOM_TEMPLATE_PREFIX } from '../core/templates/template-model';
 import type { PreviewResult } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { checkDriverPaper } from '../shared/driver-paper';
-import { type AppInfo, IpcChannel, type LabelPreview, type LookupImportResult } from '../shared/ipc-contract';
+import {
+  type AppInfo,
+  IpcChannel,
+  type LabelPreview,
+  type LookupImportResult,
+  RECENT_DELIVERY_COUNT,
+} from '../shared/ipc-contract';
 import type { AppSettings } from '../shared/settings';
 import { logFailures } from './ipc-errors';
 import {
@@ -27,6 +33,7 @@ import {
   requirePrintOptions,
   requireRaw,
   requireRecord,
+  requireSecretName,
   requireString,
   requireTemplateId,
   requireVoiceCue,
@@ -34,7 +41,7 @@ import {
 } from './ipc-validators';
 import type { LookupTables } from './lookup/lookup-tables';
 import type { WebhookOutbox } from './notify/webhook-outbox';
-import { boundTemplate, resolvePrintTemplate } from './print-template';
+import { type PrintTemplate, resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
 import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { renderLabelHtml } from './printing/label-html';
@@ -49,8 +56,6 @@ import type { AppUpdater } from './updater';
 import type { VoiceClips } from './voice/voice-clips';
 
 const DRAFT_TEMPLATE_ID = `${CUSTOM_TEMPLATE_PREFIX}draft`;
-/** 设置页显示的通知发送记录条数。 */
-const RECENT_DELIVERIES = 100;
 
 export interface IpcDeps {
   service: PrintService;
@@ -109,7 +114,7 @@ export function registerIpc(deps: IpcDeps): void {
     return printerName;
   };
   const scanOf = (result: PreviewResult) => (result.status === 'ok' ? result.scan : null);
-  const templateFor = (result: PreviewResult) =>
+  const printTemplateFor = (result: PreviewResult) =>
     resolvePrintTemplate(deps.templates, deps.settings.current, scanOf(result));
   const updateSettings = async (patch: Partial<AppSettings>): Promise<AppSettings> => {
     const previous = deps.settings.current;
@@ -120,13 +125,14 @@ export function registerIpc(deps: IpcDeps): void {
 
   handle(IpcChannel.Preview, async (raw) => {
     const result = await deps.service.preview(requireRaw(raw));
-    const isBound = boundTemplate(deps.templates, deps.settings.current, scanOf(result)) !== null;
-    return renderPreview(result, templateFor(result), isBound);
+    return renderPreview(result, printTemplateFor(result));
   });
   handle(IpcChannel.PreviewTemplate, async (raw, template) => {
     const result = await deps.service.preview(requireRaw(raw));
-    const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, templateFor(result));
-    return renderPreview(result, draft, false);
+    const fallback = printTemplateFor(result).template;
+    const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, fallback);
+    // 模板页指定了要看的模板，不是规则选的。
+    return renderPreview(result, { template: draft, isBound: false });
   });
   handle(IpcChannel.Print, (raw, printerName, options) =>
     deps.service.submit({
@@ -194,7 +200,16 @@ export function registerIpc(deps: IpcDeps): void {
     }
   });
   handle(IpcChannel.DeleteSecret, (name) => deps.secrets.remove(requireString(name, 'secret name')));
-  handle(IpcChannel.ListWebhookDeliveries, () => deps.outbox.recent(RECENT_DELIVERIES));
+  // 页面的剪贴板权限一律拒绝（security.ts）。复制由主进程代写，而且只写已有密钥的引用：
+  // 页面被攻破也不能借这里随时改掉操作员的剪贴板。
+  handle(IpcChannel.CopySecretReference, (value) => {
+    const name = requireSecretName(value);
+    if (!deps.secrets.names().includes(name)) {
+      throw new Error('Unknown secret');
+    }
+    return clipboard.writeText(secretReference(name));
+  });
+  handle(IpcChannel.ListWebhookDeliveries, () => deps.outbox.recent(RECENT_DELIVERY_COUNT));
   handle(IpcChannel.RetryWebhookDelivery, (id) => deps.outbox.retryNow(requirePositiveInteger(id, 'delivery id')));
   handle(IpcChannel.SendTestWebhook, (endpointId) => deps.outbox.sendTest(requireWebhookId(endpointId)));
   handle(IpcChannel.GetAppInfo, () => deps.appInfo);
@@ -206,8 +221,6 @@ export function registerIpc(deps: IpcDeps): void {
   });
   // 只打开固定的店铺地址：页面的新窗口和跳转一律被拦截（security.ts），外链只能走这里。
   handle(IpcChannel.OpenShop, () => shell.openExternal(BRAND.shop.url));
-  // 页面的剪贴板权限一律拒绝（security.ts），复制由主进程代写，只写纯文本。
-  handle(IpcChannel.CopyText, (text) => clipboard.writeText(requireString(text, 'text')));
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
   handle(IpcChannel.InstallUpdate, () => deps.updater.install());
@@ -229,10 +242,10 @@ export function registerIpc(deps: IpcDeps): void {
   on(IpcChannel.WindowClose, () => deps.getWindow()?.close());
 }
 
-function renderPreview(result: PreviewResult, template: LabelTemplate, isTemplateBound: boolean): LabelPreview {
+function renderPreview(result: PreviewResult, { template, isBound }: PrintTemplate): LabelPreview {
   if (result.status !== 'ok') {
     return { result, html: null, templateName: null, isTemplateBound: false, qrOmitted: false };
   }
   const { html, qrOmitted } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() });
-  return { result, html, templateName: template.name, isTemplateBound, qrOmitted };
+  return { result, html, templateName: template.name, isTemplateBound: isBound, qrOmitted };
 }

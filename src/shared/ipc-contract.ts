@@ -45,13 +45,13 @@ export const IpcChannel = {
   ListSecrets: 'secrets:list',
   SetSecret: 'secrets:set',
   DeleteSecret: 'secrets:delete',
+  CopySecretReference: 'secrets:copy-reference',
   ListWebhookDeliveries: 'webhooks:deliveries',
   RetryWebhookDelivery: 'webhooks:retry',
   SendTestWebhook: 'webhooks:test',
   GetAppInfo: 'app:info',
   OpenLogFolder: 'app:open-log-folder',
   OpenShop: 'app:open-shop',
-  CopyText: 'clipboard:write-text',
   GetUpdateStatus: 'update:status',
   CheckForUpdates: 'update:check',
   InstallUpdate: 'update:install',
@@ -72,13 +72,19 @@ export interface PrintOptions {
   force: boolean;
 }
 
+/** 「打印结果通知」页显示的发送记录条数。 */
+export const RECENT_DELIVERY_COUNT = 100;
+
 export interface LabelPreview {
   result: PreviewResult;
   /** 与实际打印相同的标签 HTML；识别不了时为 null。 */
   html: string | null;
   /** 这次用的模板（规则指定的模板或当前模板）；识别不了时为 null。 */
   templateName: string | null;
-  /** 模板是命中的规则指定的（不是当前模板）。 */
+  /**
+   * 模板由命中的规则指定（即使它恰好也是当前模板）；规则没指定、指定的模板已删除、
+   * 识别不了或在模板页预览时为 false。
+   */
   isTemplateBound: boolean;
   /** 内容太长，二维码放不下被省略了。 */
   qrOmitted: boolean;
@@ -135,14 +141,19 @@ export interface LabelFlashApi {
   /** 主进程弹出选择文件的对话框；replaceId 不为 null 时替换那张表的内容。 */
   importLookupTable(replaceId: string | null): Promise<LookupImportResult>;
   deleteLookupTable(id: string): Promise<void>;
-  /** 查找表页面的预览：列名和前 20 行；表已不存在时为 null。 */
+  /** 查找表页面的预览：列名和前 LOOKUP_PREVIEW_ROWS 行；表已不存在时为 null。 */
   listLookupRows(id: string): Promise<LookupTableData | null>;
   /** 只返回密钥名称；内容写进去以后界面上再也看不到。 */
   listSecrets(): Promise<string[]>;
   /** 新增或替换；名称或内容不合法、系统加密不可用时返回原因。 */
   setSecret(name: string, value: string): Promise<{ ok: true } | { ok: false; issue: string }>;
   deleteSecret(name: string): Promise<void>;
-  /** 最近的通知发送记录（新的在前）。接口本身在设置的 webhooks 里增删改。 */
+  /**
+   * 把已有密钥的引用 {密钥:名称} 写进系统剪贴板。只接受已保存的密钥名称，文字由主进程拼好再写：
+   * 页面的剪贴板权限一律拒绝，页面也不能借这个接口往剪贴板里写任意内容。
+   */
+  copySecretReference(name: string): Promise<void>;
+  /** 最近 RECENT_DELIVERY_COUNT 条通知发送记录（新的在前）。接口本身在设置的 webhooks 里增删改。 */
   listWebhookDeliveries(): Promise<Delivery[]>;
   /** 失败或正在等待重试的通知立即重发；已送达的返回 false。 */
   retryWebhookDelivery(id: number): Promise<boolean>;
@@ -152,8 +163,6 @@ export interface LabelFlashApi {
   openLogFolder(): Promise<void>;
   /** 用系统浏览器打开出品方店铺（地址是主进程里的常量，页面不能指定网址）。 */
   openShop(): Promise<void>;
-  /** 把一段文字写进系统剪贴板（例如 {密钥:名称} 引用）。由主进程写：页面的网页权限一律拒绝。 */
-  copyText(text: string): Promise<void>;
   getUpdateStatus(): Promise<UpdateStatus>;
   checkForUpdates(): Promise<void>;
   /** 仅在新版本已下载（ready）时有效：重启并安装。 */

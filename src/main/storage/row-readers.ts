@@ -17,6 +17,15 @@ export function readInteger(row: Row, column: string): number {
   return value;
 }
 
+/** 以 JSON 字符串数组存放的列（例如查找表的列名和每行的单元格）。 */
+export function readStringArray(row: Row, column: string): string[] {
+  const value: unknown = JSON.parse(readString(row, column));
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new TypeError(`Column "${column}" is not a JSON string array`);
+  }
+  return value;
+}
+
 export function readEnum<T extends string>(row: Row, column: string, allowed: readonly T[]): T {
   const value = readString(row, column);
   if (!(allowed as readonly string[]).includes(value)) {

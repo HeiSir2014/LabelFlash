@@ -1,8 +1,41 @@
 import { describe, expect, test } from 'bun:test';
-import { IdleWatcher, isScannerCharacter, SCAN_FOCUS_IDLE_MS } from './scan-focus';
-import type { IntentTimers } from './timers';
+import { IdleWatcher, isScannerCharacter, isTypingField, keepsFocus, SCAN_FOCUS_IDLE_MS } from './scan-focus';
+import type { Timers } from './timers';
 
 const KEY = { ctrlKey: false, altKey: false, metaKey: false };
+
+const input = (type: string) => ({ tagName: 'INPUT', type, isContentEditable: false });
+const element = (tagName: string, isContentEditable = false) => ({ tagName, type: '', isContentEditable });
+
+describe('isTypingField', () => {
+  test('treats every input that takes text as a field the user is typing in', () => {
+    for (const type of ['text', 'search', 'number', 'password', 'email', 'url', 'tel']) {
+      expect(isTypingField(input(type))).toBe(true);
+    }
+    expect(isTypingField(element('TEXTAREA'))).toBe(true);
+    expect(isTypingField(element('DIV', true))).toBe(true);
+  });
+
+  test('leaves switches, buttons, dropdowns and plain elements to the scanner', () => {
+    for (const type of ['checkbox', 'radio', 'range', 'button', 'submit', 'file', 'color']) {
+      expect(isTypingField(input(type))).toBe(false);
+    }
+    expect(isTypingField(element('SELECT'))).toBe(false);
+    expect(isTypingField(element('BUTTON'))).toBe(false);
+    expect(isTypingField(element('BODY'))).toBe(false);
+    expect(isTypingField(null)).toBe(false);
+  });
+});
+
+describe('keepsFocus', () => {
+  test('keeps focus in typing fields and open dropdowns, and pulls it back from everything else', () => {
+    expect(keepsFocus(input('password'))).toBe(true);
+    expect(keepsFocus(element('SELECT'))).toBe(true);
+    expect(keepsFocus(input('checkbox'))).toBe(false);
+    expect(keepsFocus(element('BUTTON'))).toBe(false);
+    expect(keepsFocus(null)).toBe(false);
+  });
+});
 
 describe('isScannerCharacter', () => {
   test('accepts the printable characters a scanner types', () => {
@@ -27,7 +60,7 @@ function createClock() {
   let now = 0;
   let nextHandle = 1;
   const pending = new Map<number, { at: number; callback: () => void }>();
-  const timers: IntentTimers = {
+  const timers: Timers = {
     set(callback, ms) {
       const handle = nextHandle++;
       pending.set(handle, { at: now + ms, callback });

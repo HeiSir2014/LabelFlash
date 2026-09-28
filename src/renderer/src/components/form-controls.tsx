@@ -46,29 +46,60 @@ export function NumberField({ label, value, min, max, step, unit = 'mm', onChang
   );
 }
 
+interface SwitchProps {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  /** 旁边的标签文字用 htmlFor 指向开关时传入。 */
+  id?: string;
+  /** 旁边没有可见的标签文字时，读屏软件念的名称。 */
+  ariaLabel?: string;
+  disabled?: boolean;
+  /** 开关右边的状态文字，例如「开启 / 关闭」。 */
+  text?: string;
+  /** 不带底色，放在设置行、卡片里时用。 */
+  isBare?: boolean;
+  className?: string;
+}
+
+/** 开关：原生复选框（role=switch）加上画出来的滑轨，各页共用这一份结构。 */
+export function Switch({ checked, onChange, id, ariaLabel, disabled, text, isBare = false, className }: SwitchProps) {
+  const classes = ['switch', isBare ? 'switch--bare' : null, className].filter(Boolean).join(' ');
+  return (
+    <label className={classes}>
+      <input
+        id={id}
+        type="checkbox"
+        role="switch"
+        aria-label={ariaLabel}
+        aria-checked={checked}
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="switch__track" aria-hidden="true">
+        <span className="switch__thumb" />
+      </span>
+      {text && <span className="switch__text">{text}</span>}
+    </label>
+  );
+}
+
 interface ToggleProps {
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }
 
+/** 表单里的一行开关：左边标签，右边开关。 */
 export function Toggle({ label, checked, onChange }: ToggleProps) {
+  const id = useId();
   return (
-    <label className="form-row">
-      <span className="form-row__label">{label}</span>
-      <span className="switch switch--bare">
-        <input
-          type="checkbox"
-          role="switch"
-          aria-checked={checked}
-          checked={checked}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        <span className="switch__track" aria-hidden="true">
-          <span className="switch__thumb" />
-        </span>
-      </span>
-    </label>
+    <div className="form-row">
+      <label className="form-row__label" htmlFor={id}>
+        {label}
+      </label>
+      <Switch id={id} isBare checked={checked} onChange={onChange} />
+    </div>
   );
 }
 
@@ -147,7 +178,7 @@ export function SelectField<T extends string>({ label, value, options, onChange 
       <label className="form-row__label" htmlFor={id}>
         {label}
       </label>
-      <select id={id} className="text-field" value={value} onChange={(event) => onChange(event.target.value as T)}>
+      <select id={id} className="select-field" value={value} onChange={(event) => onChange(event.target.value as T)}>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}

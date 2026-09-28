@@ -11,6 +11,10 @@ import { MAX_RAW_LENGTH } from './normalize-raw';
 export const RULE_KINDS = ['delimited', 'keyValue', 'whole', 'regex'] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 
+export function isRuleKind(value: string): value is RuleKind {
+  return (RULE_KINDS as readonly string[]).includes(value);
+}
+
 export const WHOLE_CHARSETS = ['digits', 'alphanumeric', 'any'] as const;
 export type WholeCharset = (typeof WHOLE_CHARSETS)[number];
 

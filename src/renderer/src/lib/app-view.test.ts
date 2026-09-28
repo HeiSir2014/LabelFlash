@@ -48,6 +48,9 @@ describe('config shortcut', () => {
     expect(isConfigShortcut(key({ metaKey: true }), 'mac')).toBe(true);
     expect(isConfigShortcut(key({ ctrlKey: true }), 'mac')).toBe(false);
     expect(isConfigShortcut(key({ ctrlKey: true, shiftKey: true }), 'other')).toBe(false);
+    expect(isConfigShortcut(key({ ctrlKey: true, altKey: true }), 'other')).toBe(false);
+    expect(isConfigShortcut(key({ metaKey: true, ctrlKey: true }), 'mac')).toBe(false);
+    expect(isConfigShortcut(key({ metaKey: true }), 'other')).toBe(false);
     expect(isConfigShortcut(key(), 'other')).toBe(false);
     expect(configShortcutLabel('mac')).toBe('⌘,');
     expect(configShortcutLabel('other')).toBe('Ctrl+,');

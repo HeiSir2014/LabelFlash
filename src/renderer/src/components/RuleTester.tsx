@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { RuleTestResult } from '../../../shared/rule-api';
 import { fieldsSummary, STEP_KIND_LABELS } from '../lib/rule-text';
 
@@ -24,12 +24,16 @@ interface RuleTesterProps {
 
 /** 试一试：粘贴或扫一段内容，实时显示命中的规则、识别出的字段和每个加工步骤的结果。 */
 export function RuleTester({ hint, raw, onRawChange, onTest, isCompact = false }: RuleTesterProps) {
+  const titleId = useId();
+  const hintId = useId();
   const [result, setResult] = useState<RuleTestResult | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     if (raw.trim() === '') {
+      // 内容清空后下一次结果先显示摘要，不沿用上一次的展开状态。
       setResult(null);
+      setIsExpanded(false);
       return;
     }
     let isCurrent = true;
@@ -48,6 +52,7 @@ export function RuleTester({ hint, raw, onRawChange, onTest, isCompact = false }
   const input = (
     <textarea
       aria-label="要识别的内容"
+      aria-describedby={hintId}
       className="text-field text-area rule-tester__input"
       rows={isCompact ? 1 : 3}
       value={raw}
@@ -59,9 +64,15 @@ export function RuleTester({ hint, raw, onRawChange, onTest, isCompact = false }
 
   if (isCompact) {
     return (
-      <section className="rule-tester rule-tester--compact" aria-label="试一试">
+      <section className="rule-tester rule-tester--compact" aria-labelledby={titleId}>
+        {/* 窄窗口里说明不占一行：鼠标悬停在标题上显示，读屏软件随输入框念出。 */}
+        <p id={hintId} className="visually-hidden">
+          {hint}
+        </p>
         <div className="rule-tester__bar">
-          <h2 className="rule-tester__title">试一试</h2>
+          <h2 id={titleId} className="rule-tester__title" title={hint}>
+            试一试
+          </h2>
           {input}
           <button
             type="button"
@@ -83,9 +94,13 @@ export function RuleTester({ hint, raw, onRawChange, onTest, isCompact = false }
     );
   }
   return (
-    <section className="rule-tester" aria-label="试一试">
-      <h2 className="rule-tester__title">试一试</h2>
-      <p className="form-hint">{hint}</p>
+    <section className="rule-tester" aria-labelledby={titleId}>
+      <h2 id={titleId} className="rule-tester__title">
+        试一试
+      </h2>
+      <p id={hintId} className="form-hint">
+        {hint}
+      </p>
       {input}
       {result && <TestResultView result={result} />}
     </section>

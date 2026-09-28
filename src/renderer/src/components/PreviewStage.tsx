@@ -8,7 +8,7 @@ import { LabelPreview } from './LabelPreview';
 
 const MAX_PREVIEW_SCALE = 2.8;
 
-/** 不按扫码结果、而是按指定模板预览（示例内容、模板草稿）。 */
+/** 不按扫码结果、而是按指定模板预览：还没扫码时用示例内容展示当前模板。 */
 export interface PreviewOverride {
   html: string | null;
   qrOmitted: boolean;

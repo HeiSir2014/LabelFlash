@@ -5,12 +5,17 @@ import { reportError } from '../lib/notices';
 
 const PREVIEW_DEBOUNCE_MS = 150;
 
+/** 某个模板的预览结果，带上生成它的模板 id：出纸动画按结果换，而不是按刚点选的模板换。 */
+export interface TemplatePreview extends LabelPreview {
+  templateId: string;
+}
+
 /**
- * 用指定模板渲染 raw：用于没有扫码时的示例标签、悬停预览，以及编辑模板时的草稿效果。
- * template 需要是稳定引用（useMemo），变化时才重新生成。
+ * 用指定模板渲染 raw：用于没有扫码时的示例标签，以及模板页里选中的模板或草稿。
+ * template 需要是稳定引用（useMemo），变化时才重新生成；生成期间保留上一次的结果，第一次生成前为 null。
  */
-export function useTemplatePreview(raw: string, template: LabelTemplate | null): LabelPreview | null {
-  const [preview, setPreview] = useState<LabelPreview | null>(null);
+export function useTemplatePreview(raw: string, template: LabelTemplate | null): TemplatePreview | null {
+  const [preview, setPreview] = useState<TemplatePreview | null>(null);
 
   useEffect(() => {
     if (!template) {
@@ -22,7 +27,7 @@ export function useTemplatePreview(raw: string, template: LabelTemplate | null):
       try {
         const next = await window.api.previewTemplate(raw, template);
         if (isActive) {
-          setPreview(next);
+          setPreview({ ...next, templateId: template.id });
         }
       } catch (error) {
         reportError('生成预览', error);

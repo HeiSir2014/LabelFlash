@@ -1,23 +1,21 @@
 import { useId, useState } from 'react';
-import { SECRET_LIMITS } from '../../../../../core/scan/enrich-model';
-import { useCopyText } from '../../../view-models/use-copy-text';
-import { ConfirmButton } from '../../ConfirmButton';
+import { SECRET_LIMITS, secretReference } from '../../../../../core/scan/enrich-model';
+import { DeleteButton } from '../../ConfirmButton';
 
-interface SecretsPageProps {
+export interface SecretsPageProps {
   names: readonly string[];
   /** 保存成功返回 null，否则返回原因。 */
   onSave: (name: string, value: string) => Promise<string | null>;
   onDelete: (name: string) => void;
+  /** 把 {密钥:名称} 复制到剪贴板。 */
+  onCopyReference: (name: string) => void;
 }
-
-const reference = (name: string) => `{密钥:${name}}`;
 
 /**
  * 密钥：接口令牌、通知签名密钥。只保存在这台电脑、用系统加密存放；保存后界面上再也看不到内容，
  * 只能重新设置。HTTP 查询的请求头里写 {密钥:名称} 引用。
  */
-export function SecretsPage({ names, onSave, onDelete }: SecretsPageProps) {
-  const copy = useCopyText();
+export function SecretsPage({ names, onSave, onDelete, onCopyReference }: SecretsPageProps) {
   const nameId = useId();
   const valueId = useId();
   const [name, setName] = useState('');
@@ -37,7 +35,7 @@ export function SecretsPage({ names, onSave, onDelete }: SecretsPageProps) {
     <div className="config-page">
       <p className="config-page__intro">
         接口令牌、通知签名这类敏感内容存成密钥：用系统加密保存在这台电脑，不随规则导出，保存后也不再显示。在 HTTP
-        查询的请求头里写 <span className="config-code">{'{密钥:名称}'}</span> 引用；同名再保存一次即可更换。
+        查询的请求头里写 <span className="config-code">{secretReference('名称')}</span> 引用；同名再保存一次即可更换。
       </p>
       {names.length === 0 ? (
         <p className="config-empty">还没有密钥。</p>
@@ -45,20 +43,15 @@ export function SecretsPage({ names, onSave, onDelete }: SecretsPageProps) {
         <ul className="config-list">
           {names.map((secretName) => (
             <li key={secretName} className="config-card secret-card">
-              <code className="secret-card__reference">{reference(secretName)}</code>
+              <code className="secret-card__reference">{secretReference(secretName)}</code>
               <button
                 type="button"
                 className="button button--small button--quiet"
-                onClick={() => void copy(reference(secretName))}
+                onClick={() => onCopyReference(secretName)}
               >
                 复制引用
               </button>
-              <ConfirmButton
-                className="button button--small button--quiet"
-                label="删除"
-                confirmLabel="确认删除"
-                onConfirm={() => onDelete(secretName)}
-              />
+              <DeleteButton onConfirm={() => onDelete(secretName)} />
             </li>
           ))}
         </ul>

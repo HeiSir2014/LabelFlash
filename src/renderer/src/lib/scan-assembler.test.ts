@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { ScanAssembler } from './scan-assembler';
-import type { IntentTimers } from './timers';
+import type { Timers } from './timers';
 
 /** 假计时器：记录挂起的回调和时长，由测试决定何时到期。 */
 function fakeTimers() {
   let next = 0;
   const pending = new Map<number, { callback: () => void; ms: number }>();
-  const timers: IntentTimers = {
+  const timers: Timers = {
     set: (callback, ms) => {
       next += 1;
       pending.set(next, { callback, ms });

@@ -12,6 +12,12 @@
   --color-warning-wash: #fbe6d7;
   --color-error: #c8372d;
   --color-error-wash: #f8dedb;
+  /* 输入框、下拉框和表格的底色：比热敏纸更白，一眼看出哪里可以填、可以看数据 */
+  --color-field: #fff;
+  /* 标题栏（墨色底）上的次要文字、描边和悬停底色：热敏纸色按不同透明度叠在墨色上 */
+  --color-on-ink-soft: rgb(251 251 248 / 0.6);
+  --color-on-ink-rule: rgb(251 251 248 / 0.25);
+  --color-on-ink-wash: rgb(251 251 248 / 0.12);
 
   /* 标题与正文都用系统正体中文字体（不打包字体文件）；标题靠字重区分层级。 */
   --font-body: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
@@ -31,11 +37,22 @@
   --traffic-light-inset: 80px;
   --side-width: 380px;
   --config-nav-width: 184px;
+  /* 配置中心页头：放得下 20px 的页标题和「配置中不打印」胶囊，上下各留 12px */
+  --config-header-height: 56px;
   --config-actions-height: 64px;
+  /* 配置中心表单和设置行的标签列：最长的标签（例如「防重复打印」「多行扫码等待」）一行放得下 */
+  --config-label-width: 120px;
+  /* 模板页左侧列表：放得下最长的内置模板名和「使用中」徽标 */
+  --template-list-width: 320px;
   /* 识别规则页右侧「试一试」的宽度 */
   --tester-width: 360px;
+  /* 确认框：两个按钮和两行说明不换行的宽度 */
+  --dialog-width: 400px;
+  /* 叠放层级：配置中心盖住工作台，提示条在配置中心之上；确认框是原生模态，浏览器放在最上层 */
+  --layer-config: 5;
+  --layer-notice: 10;
   --feed-duration: 180ms;
-  /* 配置中心进出的时长；改动时同步 view-models/use-app-view.ts 的 CONFIG_TRANSITION_MS。 */
+  /* 配置中心进出的时长：view-models/use-app-view.ts 读取它来等淡出结束。 */
   --config-duration: 160ms;
 }
 

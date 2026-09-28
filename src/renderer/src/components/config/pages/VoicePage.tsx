@@ -11,6 +11,7 @@ import {
   type VoiceCue,
   type VoiceSettings,
 } from '../../../../../shared/voice';
+import { Switch } from '../../form-controls';
 import { SettingRow } from '../SettingRow';
 
 interface VoicePageProps {
@@ -44,20 +45,13 @@ export function VoicePage({ voice, onChange, onPreview }: VoicePageProps) {
       </p>
       <section className="config-card" aria-label="播报设置">
         <SettingRow label="播报">
-          <label className="switch switch--bare">
-            <input
-              type="checkbox"
-              role="switch"
-              aria-label="扫码、打印后播报"
-              aria-checked={voice.enabled}
-              checked={voice.enabled}
-              onChange={(event) => onChange({ ...voice, enabled: event.target.checked })}
-            />
-            <span className="switch__track" aria-hidden="true">
-              <span className="switch__thumb" />
-            </span>
-            <span className="switch__text">{voice.enabled ? '开启' : '关闭'}</span>
-          </label>
+          <Switch
+            isBare
+            ariaLabel="扫码、打印后播报"
+            checked={voice.enabled}
+            text={voice.enabled ? '开启' : '关闭'}
+            onChange={(enabled) => onChange({ ...voice, enabled })}
+          />
         </SettingRow>
         <SettingRow label="音色" htmlFor={voiceId}>
           <select

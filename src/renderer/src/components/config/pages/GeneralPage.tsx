@@ -7,15 +7,18 @@ import {
 } from '../../../../../shared/settings';
 import type { UpdateView } from '../../../lib/update-text';
 import { ConfirmButton } from '../../ConfirmButton';
+import { Switch } from '../../form-controls';
 import { SettingRow } from '../SettingRow';
 
 const NUMBER_FORMAT = new Intl.NumberFormat('zh-CN');
+
+type SettingsChange = (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
 
 interface GeneralPageProps {
   settings: AppSettings;
   jobTotal: number;
   update: UpdateView;
-  onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
+  onChange: SettingsChange;
   onCheckForUpdates: () => void;
   onOpenLogFolder: () => void;
 }
@@ -29,17 +32,6 @@ export function GeneralPage({
   onCheckForUpdates,
   onOpenLogFolder,
 }: GeneralPageProps) {
-  const [pendingHistoryLimit, setPendingHistoryLimit] = useState<number | null>(null);
-
-  const commitHistoryLimit = async (historyLimit: number): Promise<number | null> => {
-    // 调小到当前记录数以下会永久删除旧记录：先确认。
-    if (historyLimit < jobTotal) {
-      setPendingHistoryLimit(historyLimit);
-      return null;
-    }
-    return (await onChange({ historyLimit }))?.historyLimit ?? null;
-  };
-
   return (
     <div className="config-page">
       <section className="config-card" aria-label="扫码与打印">
@@ -61,57 +53,15 @@ export function GeneralPage({
           max={SCAN_LINE_GAP_RANGE.max}
           onCommit={async (scanLineGapMs) => (await onChange({ scanLineGapMs }))?.scanLineGapMs ?? null}
         />
-        <NumberSetting
-          label="打印记录保留"
-          unit="条"
-          hint={`超出后自动删除最早的记录；当前 ${NUMBER_FORMAT.format(jobTotal)} 条，10 万条约占 20 MB`}
-          value={settings.historyLimit}
-          min={HISTORY_LIMIT_RANGE.min}
-          max={HISTORY_LIMIT_RANGE.max}
-          onCommit={commitHistoryLimit}
-        />
-        {pendingHistoryLimit !== null && (
-          <div className="confirm-row" role="alert">
-            <p>
-              调到 {NUMBER_FORMAT.format(pendingHistoryLimit)} 条会删除最早的{' '}
-              {NUMBER_FORMAT.format(jobTotal - pendingHistoryLimit)} 条记录，删除后无法恢复。
-            </p>
-            <div className="confirm-row__actions">
-              <button
-                type="button"
-                className="button button--small button--quiet"
-                onClick={() => setPendingHistoryLimit(null)}
-              >
-                取消
-              </button>
-              <ConfirmButton
-                className="button button--small"
-                label="删除旧记录"
-                confirmLabel="再点一次确认删除"
-                onConfirm={() => {
-                  const historyLimit = pendingHistoryLimit;
-                  setPendingHistoryLimit(null);
-                  void onChange({ historyLimit });
-                }}
-              />
-            </div>
-          </div>
-        )}
-        <SettingRow label="开机自动启动" hint="登录 Windows 后自动打开窗口，可以直接扫码">
-          <label className="switch switch--bare">
-            <input
-              type="checkbox"
-              role="switch"
-              aria-label="开机自动启动"
-              aria-checked={settings.launchAtLogin}
-              checked={settings.launchAtLogin}
-              onChange={(event) => void onChange({ launchAtLogin: event.target.checked })}
-            />
-            <span className="switch__track" aria-hidden="true">
-              <span className="switch__thumb" />
-            </span>
-            <span className="switch__text">{settings.launchAtLogin ? '开启' : '关闭'}</span>
-          </label>
+        <HistoryLimitSetting value={settings.historyLimit} jobTotal={jobTotal} onChange={onChange} />
+        <SettingRow label="开机自动启动" hint="登录系统后自动打开窗口，可以直接扫码">
+          <Switch
+            isBare
+            ariaLabel="开机自动启动"
+            checked={settings.launchAtLogin}
+            text={settings.launchAtLogin ? '开启' : '关闭'}
+            onChange={(launchAtLogin) => void onChange({ launchAtLogin })}
+          />
         </SettingRow>
       </section>
       <section className="config-card" aria-label="软件">
@@ -135,6 +85,63 @@ export function GeneralPage({
         </SettingRow>
       </section>
     </div>
+  );
+}
+
+interface HistoryLimitSettingProps {
+  value: number;
+  jobTotal: number;
+  onChange: SettingsChange;
+}
+
+/** 打印记录保留条数：调小到当前记录数以下会永久删除旧记录，先在下方确认。 */
+function HistoryLimitSetting({ value, jobTotal, onChange }: HistoryLimitSettingProps) {
+  const [pending, setPending] = useState<number | null>(null);
+
+  const commit = async (historyLimit: number): Promise<number | null> => {
+    // 每次提交都先收起上一次的确认：否则之后点「删除旧记录」会按旧的数值删除。
+    setPending(null);
+    if (historyLimit < jobTotal) {
+      setPending(historyLimit);
+      return null;
+    }
+    return (await onChange({ historyLimit }))?.historyLimit ?? null;
+  };
+
+  return (
+    <>
+      <NumberSetting
+        label="打印记录保留"
+        unit="条"
+        hint={`超出后自动删除最早的记录；当前 ${NUMBER_FORMAT.format(jobTotal)} 条，10 万条约占 20 MB`}
+        value={value}
+        min={HISTORY_LIMIT_RANGE.min}
+        max={HISTORY_LIMIT_RANGE.max}
+        onCommit={commit}
+      />
+      {pending !== null && (
+        <div className="confirm-row" role="alert">
+          <p>
+            调到 {NUMBER_FORMAT.format(pending)} 条会删除最早的 {NUMBER_FORMAT.format(jobTotal - pending)}{' '}
+            条记录，删除后无法恢复。
+          </p>
+          <div className="confirm-row__actions">
+            <button type="button" className="button button--small button--quiet" onClick={() => setPending(null)}>
+              取消
+            </button>
+            <ConfirmButton
+              className="button button--small"
+              label="删除旧记录"
+              confirmLabel="确认删除"
+              onConfirm={() => {
+                setPending(null);
+                void onChange({ historyLimit: pending });
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

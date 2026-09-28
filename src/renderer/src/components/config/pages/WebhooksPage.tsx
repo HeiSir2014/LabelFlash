@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { Delivery, DeliveryState } from '../../../../../core/notify/delivery';
 import {
   isWebhookUrl,
@@ -7,12 +8,13 @@ import {
   type WebhookEvent,
   type WebhookEventType,
 } from '../../../../../core/notify/webhook-model';
+import { RECENT_DELIVERY_COUNT } from '../../../../../shared/ipc-contract';
 import type { ConfigPage } from '../../../lib/app-view';
 import { formatDateTime } from '../../../lib/status-text';
 import type { EndpointEditorModel } from '../../../view-models/use-endpoint-editor';
-import { useWebhookDeliveries } from '../../../view-models/use-webhook-deliveries';
-import { ConfirmButton } from '../../ConfirmButton';
-import { SelectField, TextInput, Toggle } from '../../form-controls';
+import type { WebhookDeliveriesModel } from '../../../view-models/use-webhook-deliveries';
+import { DeleteButton } from '../../ConfirmButton';
+import { SelectField, Switch, TextInput, Toggle } from '../../form-controls';
 import { PageLink } from '../PageLink';
 
 const EVENT_LABELS: Record<WebhookEventType, string> = {
@@ -31,26 +33,39 @@ const STATE_LABELS: Record<DeliveryState, string> = {
 
 const NO_SIGNATURE = '';
 
-interface WebhooksPageProps {
+export interface WebhooksPageProps {
   webhooks: readonly WebhookEndpoint[];
   secretNames: readonly string[];
   /** 正在编辑的接口（草稿在页面之外，离开时才能确认未保存的修改）。 */
   editor: EndpointEditorModel;
-  onChange: (webhooks: WebhookEndpoint[]) => Promise<unknown>;
+  deliveries: WebhookDeliveriesModel;
+  /** 返回是否保存成功。 */
+  onChange: (webhooks: WebhookEndpoint[]) => Promise<boolean>;
+  /** 编辑某个接口，null 表示新建。正在编辑的草稿有修改时先确认。 */
+  onEdit: (endpoint: WebhookEndpoint | null) => void;
   onOpenPage: (page: ConfigPage) => void;
 }
 
 /** 打印结果通知：接口列表、编辑、发送测试；下方是发送记录（打开这一页时每 10 秒刷新）。 */
-export function WebhooksPage({ webhooks, secretNames, editor, onChange, onOpenPage }: WebhooksPageProps) {
+export function WebhooksPage({
+  webhooks,
+  secretNames,
+  editor,
+  deliveries,
+  onChange,
+  onEdit,
+  onOpenPage,
+}: WebhooksPageProps) {
   const { draft } = editor;
-  const deliveries = useWebhookDeliveries();
   const names = new Map(webhooks.map((endpoint) => [endpoint.id, endpoint.name]));
   const replace = (endpoint: WebhookEndpoint) => webhooks.map((item) => (item.id === endpoint.id ? endpoint : item));
   const isNew = draft !== null && !webhooks.some((item) => item.id === draft.id);
 
+  // 保存失败时编辑卡片留着，草稿不丢。
   const save = async (endpoint: WebhookEndpoint) => {
-    await onChange(isNew ? [...webhooks, endpoint] : replace(endpoint));
-    editor.close();
+    if (await onChange(isNew ? [...webhooks, endpoint] : replace(endpoint))) {
+      editor.close();
+    }
   };
 
   return (
@@ -62,51 +77,53 @@ export function WebhooksPage({ webhooks, secretNames, editor, onChange, onOpenPa
       </p>
       {webhooks.length === 0 && draft === null && <p className="config-empty">还没有通知接口。</p>}
       <ul className="config-list">
-        {webhooks.map((endpoint) => (
-          <li key={endpoint.id} className={`config-card webhook-card${endpoint.enabled ? '' : ' webhook-card--off'}`}>
-            <div className="webhook-card__text">
-              <strong className="webhook-card__name">{endpoint.name}</strong>
-              <span className="webhook-card__url">{endpoint.url}</span>
-              <span className="webhook-card__events">
-                {endpoint.events.map((event) => EVENT_LABELS[event]).join('、') || '没有勾选事件'}
-              </span>
-            </div>
-            <label className="switch switch--bare webhook-card__switch">
-              <input
-                type="checkbox"
-                role="switch"
-                aria-label={`启用「${endpoint.name}」`}
-                aria-checked={endpoint.enabled}
+        {webhooks.map((endpoint) => {
+          // 正在编辑的这一个：开关、删除、编辑都停用，免得和编辑卡片里的草稿互相覆盖。
+          const isEditing = draft?.id === endpoint.id;
+          return (
+            <li key={endpoint.id} className={`config-card webhook-card${endpoint.enabled ? '' : ' webhook-card--off'}`}>
+              <div className="webhook-card__text">
+                <strong className="webhook-card__name">{endpoint.name}</strong>
+                <span className="webhook-card__url">{endpoint.url}</span>
+                <span className="webhook-card__events">
+                  {endpoint.events.map((event) => EVENT_LABELS[event]).join('、') || '没有勾选事件'}
+                </span>
+              </div>
+              <Switch
+                isBare
+                className="webhook-card__switch"
+                ariaLabel={`启用「${endpoint.name}」`}
                 checked={endpoint.enabled}
-                onChange={(event) => void onChange(replace({ ...endpoint, enabled: event.target.checked }))}
+                disabled={isEditing}
+                onChange={(enabled) => void onChange(replace({ ...endpoint, enabled }))}
               />
-              <span className="switch__track" aria-hidden="true">
-                <span className="switch__thumb" />
-              </span>
-            </label>
-            <button
-              type="button"
-              className="button button--small button--quiet"
-              onClick={() => void deliveries.sendTest(endpoint.id)}
-            >
-              发送测试
-            </button>
-            <button type="button" className="button button--small button--quiet" onClick={() => editor.start(endpoint)}>
-              编辑
-            </button>
-            <ConfirmButton
-              className="button button--small button--quiet"
-              label="删除"
-              confirmLabel="确认删除"
-              onConfirm={() => void onChange(webhooks.filter((item) => item.id !== endpoint.id))}
-            />
-          </li>
-        ))}
+              <button
+                type="button"
+                className="button button--small button--quiet"
+                onClick={() => void deliveries.sendTest(endpoint.id)}
+              >
+                发送测试
+              </button>
+              <button
+                type="button"
+                className="button button--small button--quiet"
+                disabled={isEditing}
+                onClick={() => onEdit(endpoint)}
+              >
+                {isEditing ? '编辑中' : '编辑'}
+              </button>
+              {!isEditing && (
+                <DeleteButton onConfirm={() => void onChange(webhooks.filter((item) => item !== endpoint))} />
+              )}
+            </li>
+          );
+        })}
       </ul>
       {draft ? (
         <EndpointEditor
           draft={draft}
           title={isNew ? '添加接口' : `编辑「${names.get(draft.id) ?? draft.name}」`}
+          isDirty={editor.isDirty}
           secretNames={secretNames}
           onChange={editor.change}
           onSave={(endpoint) => void save(endpoint)}
@@ -119,7 +136,7 @@ export function WebhooksPage({ webhooks, secretNames, editor, onChange, onOpenPa
             type="button"
             className="button button--primary"
             disabled={webhooks.length >= WEBHOOK_LIMITS.endpoints}
-            onClick={editor.startNew}
+            onClick={() => onEdit(null)}
           >
             添加接口（{webhooks.length}/{WEBHOOK_LIMITS.endpoints}）
           </button>
@@ -138,6 +155,7 @@ export function WebhooksPage({ webhooks, secretNames, editor, onChange, onOpenPa
 interface EndpointEditorProps {
   draft: WebhookEndpoint;
   title: string;
+  isDirty: boolean;
   secretNames: readonly string[];
   onChange: (draft: WebhookEndpoint) => void;
   onSave: (endpoint: WebhookEndpoint) => void;
@@ -145,16 +163,18 @@ interface EndpointEditorProps {
   onOpenPage: (page: ConfigPage) => void;
 }
 
-/** 编辑接口：在列表下方展开，不弹窗。 */
+/** 编辑接口：在列表下方展开，不弹窗。按钮和状态文字与模板、规则的编辑器一致。 */
 function EndpointEditor({
   draft,
   title,
+  isDirty,
   secretNames,
   onChange: setDraft,
   onSave,
   onCancel,
   onOpenPage,
 }: EndpointEditorProps) {
+  const titleId = useId();
   const toggleEvent = (event: WebhookEvent, isOn: boolean) =>
     setDraft({
       ...draft,
@@ -162,8 +182,10 @@ function EndpointEditor({
     });
   const issue = endpointIssue(draft);
   return (
-    <section className="config-card form-section" aria-label="编辑通知接口">
-      <h2 className="form-section__title">{title}</h2>
+    <section className="config-card form-section" aria-labelledby={titleId}>
+      <h2 id={titleId} className="form-section__title">
+        {title}
+      </h2>
       <TextInput
         label="名称"
         value={draft.name}
@@ -207,14 +229,18 @@ function EndpointEditor({
       ))}
       <Toggle label="启用" checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} />
       <div className="webhook-editor__actions">
-        {issue && <p className="form-hint form-hint--error">{issue}</p>}
+        {issue && isDirty ? (
+          <p className="form-hint form-hint--error">{issue}</p>
+        ) : (
+          <p className="form-hint">{isDirty ? '有未保存的修改，保存后才会发送' : '还没有修改'}</p>
+        )}
         <button type="button" className="button button--quiet" onClick={onCancel}>
-          取消
+          {isDirty ? '放弃修改' : '收起'}
         </button>
         <button
           type="button"
           className="button button--primary"
-          disabled={issue !== null}
+          disabled={!isDirty || issue !== null}
           onClick={() => onSave({ ...draft, name: draft.name.trim() })}
         >
           保存接口
@@ -231,12 +257,15 @@ interface DeliveryTableProps {
   onRefresh: () => void;
 }
 
-/** 发送记录：表头固定，最近 100 条；列多时表格自己横向滚动。 */
+/** 发送记录：表头固定，最近 RECENT_DELIVERY_COUNT 条；列多时表格自己横向滚动。 */
 function DeliveryTable({ deliveries, endpointName, onRetry, onRefresh }: DeliveryTableProps) {
+  const titleId = useId();
   return (
-    <section className="config-card delivery-log" aria-label="发送记录">
+    <section className="config-card delivery-log" aria-labelledby={titleId}>
       <div className="delivery-log__head">
-        <h2 className="delivery-log__title">发送记录（最近 100 条）</h2>
+        <h2 id={titleId} className="config-card__title delivery-log__title">
+          发送记录（最近 {RECENT_DELIVERY_COUNT} 条）
+        </h2>
         <button type="button" className="button button--small button--quiet" onClick={onRefresh}>
           刷新
         </button>
@@ -245,7 +274,7 @@ function DeliveryTable({ deliveries, endpointName, onRetry, onRefresh }: Deliver
         <p className="config-empty">还没有发送记录。</p>
       ) : (
         <div className="data-table data-table--tall" data-allow-x-scroll>
-          <table aria-label="发送记录">
+          <table aria-labelledby={titleId}>
             <thead>
               <tr>
                 <th scope="col">时间</th>

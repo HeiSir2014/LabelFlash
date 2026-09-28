@@ -1,4 +1,4 @@
-import type { IntentTimers } from './timers';
+import type { Timers } from './timers';
 
 export type BreakKind = 'enter' | 'tab';
 
@@ -18,7 +18,7 @@ export class ScanAssembler {
   constructor(
     private gapMs: number,
     private readonly submit: () => void,
-    private readonly timers: IntentTimers,
+    private readonly timers: Timers,
   ) {}
 
   /** 按下回车或 Tab。返回要先补进内容的分隔符（上一个挂起的回车 / Tab），没有则为空串。 */

@@ -33,9 +33,7 @@ export function LabelPreview({ html, qrOmitted, feedKey, maxScale, placeholder }
         <Ruler orientation="horizontal" lengthMm={LABEL_PAPER_MM.width} />
         <Ruler orientation="vertical" lengthMm={LABEL_PAPER_MM.height} />
         <div className="label-slot">
-          {html && qrOmitted && (
-            <span className="label-badge label-badge--warning">内容太长，二维码放不下，这张标签不印二维码</span>
-          )}
+          {html && qrOmitted && <span className="label-badge">内容太长，二维码放不下，这张标签不印二维码</span>}
           {html ? (
             <div key={feedKey} className="label-feed">
               <iframe className="label-frame" title="标签预览" sandbox="" srcDoc={html} tabIndex={-1} />

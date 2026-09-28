@@ -214,7 +214,7 @@ async function bootstrap(): Promise<void> {
     createId: randomUUID,
     recognize: (raw) => recognize(raw, activeRules(rules, settings.current), runRegex),
     enrich: (scan) => enrich(scan, rules.get(scan.ruleId)?.steps ?? [], enrichDeps, new Date()),
-    resolveTemplate: (scan) => resolvePrintTemplate(templates, settings.current, scan),
+    resolveTemplate: (scan) => resolvePrintTemplate(templates, settings.current, scan).template,
     onRecorded: (job, scan) => outbox.enqueueResult(job, scan),
   });
   service.restore();

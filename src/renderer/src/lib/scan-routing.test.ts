@@ -7,9 +7,9 @@ describe('scanTargetFor', () => {
     expect(scanTargetFor(WORKBENCH)).toBe('scan-box');
   });
 
-  test('fills the try-it box on pages that have one, and swallows scans elsewhere', () => {
-    expect(scanTargetFor({ kind: 'config', page: 'rules' })).toBe('test-box');
-    expect(scanTargetFor({ kind: 'config', page: 'templates' })).toBe('test-box');
+  test('fills the test box of the page that has one, and swallows scans elsewhere', () => {
+    expect(scanTargetFor({ kind: 'config', page: 'rules' })).toBe('rule-tester');
+    expect(scanTargetFor({ kind: 'config', page: 'templates' })).toBe('template-sample');
     expect(scanTargetFor({ kind: 'config', page: 'general' })).toBe('sink');
     expect(scanTargetFor({ kind: 'config', page: 'secrets' })).toBe('sink');
   });

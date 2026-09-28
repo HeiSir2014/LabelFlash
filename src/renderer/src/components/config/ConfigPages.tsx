@@ -1,52 +1,56 @@
-import type { AppInfo } from '../../../../shared/ipc-contract';
 import type { AppSettings } from '../../../../shared/settings';
 import type { VoiceCue } from '../../../../shared/voice';
 import type { ConfigPage } from '../../lib/app-view';
 import type { UpdateView } from '../../lib/update-text';
-import type { EndpointEditorModel } from '../../view-models/use-endpoint-editor';
-import { AboutPage } from './pages/AboutPage';
+import { AboutPage, type AboutPageProps } from './pages/AboutPage';
 import { GeneralPage } from './pages/GeneralPage';
-import { LookupTablesPage } from './pages/LookupTablesPage';
+import { LookupTablesPage, type LookupTablesPageProps } from './pages/LookupTablesPage';
 import { NotePresetsPage } from './pages/NotePresetsPage';
 import { RulesPage, type RulesPageProps } from './pages/RulesPage';
-import { SecretsPage } from './pages/SecretsPage';
+import { SecretsPage, type SecretsPageProps } from './pages/SecretsPage';
 import { TemplatesPage, type TemplatesPageProps } from './pages/TemplatesPage';
 import { VoicePage } from './pages/VoicePage';
-import { WebhooksPage } from './pages/WebhooksPage';
+import { WebhooksPage, type WebhooksPageProps } from './pages/WebhooksPage';
+
+/** 通用页除设置本身以外要的东西。 */
+export interface GeneralPageExtras {
+  jobTotal: number;
+  update: UpdateView;
+  onCheckForUpdates: () => void;
+  onOpenLogFolder: () => void;
+}
 
 interface ConfigPagesProps {
   page: ConfigPage;
-  templates: TemplatesPageProps;
-  rules: RulesPageProps;
-  endpointEditor: EndpointEditorModel;
   settings: AppSettings;
-  jobTotal: number;
-  appInfo: AppInfo | null;
-  update: UpdateView;
+  templates: TemplatesPageProps;
+  rules: Omit<RulesPageProps, 'onOpenPage'>;
+  lookup: LookupTablesPageProps;
+  secrets: SecretsPageProps;
+  webhooks: Omit<WebhooksPageProps, 'webhooks' | 'onChange' | 'onOpenPage'>;
+  general: GeneralPageExtras;
+  about: AboutPageProps;
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
-  onCheckForUpdates: () => void;
-  onOpenLogFolder: () => void;
-  onOpenShop: () => void;
   onPreviewVoice: (cue?: VoiceCue) => void;
+  /** 页面里「去查找表」「去密钥」这类跳转。 */
+  onOpenPage: (page: ConfigPage) => void;
 }
 
 /** 配置中心当前页的内容。 */
 export function ConfigPages({
   page,
+  settings,
   templates,
   rules,
-  endpointEditor,
-  settings,
-  jobTotal,
-  appInfo,
-  update,
+  lookup,
+  secrets,
+  webhooks,
+  general,
+  about,
   onChange,
-  onCheckForUpdates,
-  onOpenLogFolder,
-  onOpenShop,
   onPreviewVoice,
+  onOpenPage,
 }: ConfigPagesProps) {
-  const vm = rules.rules;
   switch (page) {
     case 'templates':
       return <TemplatesPage {...templates} />;
@@ -58,21 +62,18 @@ export function ConfigPages({
         />
       );
     case 'rules':
-      return <RulesPage {...rules} />;
+      return <RulesPage {...rules} onOpenPage={onOpenPage} />;
     case 'lookup':
-      return (
-        <LookupTablesPage tables={vm.lookupTables} onImport={vm.importLookupTable} onDelete={vm.deleteLookupTable} />
-      );
+      return <LookupTablesPage {...lookup} />;
     case 'secrets':
-      return <SecretsPage names={vm.secretNames} onSave={vm.setSecret} onDelete={vm.deleteSecret} />;
+      return <SecretsPage {...secrets} />;
     case 'webhooks':
       return (
         <WebhooksPage
+          {...webhooks}
           webhooks={settings.webhooks}
-          secretNames={vm.secretNames}
-          editor={endpointEditor}
-          onChange={(webhooks) => onChange({ webhooks })}
-          onOpenPage={rules.onOpenPage}
+          onChange={async (next) => (await onChange({ webhooks: next })) !== null}
+          onOpenPage={onOpenPage}
         />
       );
     case 'voice':
@@ -80,17 +81,8 @@ export function ConfigPages({
         <VoicePage voice={settings.voice} onChange={(voice) => void onChange({ voice })} onPreview={onPreviewVoice} />
       );
     case 'general':
-      return (
-        <GeneralPage
-          settings={settings}
-          jobTotal={jobTotal}
-          update={update}
-          onChange={onChange}
-          onCheckForUpdates={onCheckForUpdates}
-          onOpenLogFolder={onOpenLogFolder}
-        />
-      );
+      return <GeneralPage {...general} settings={settings} onChange={onChange} />;
     case 'about':
-      return <AboutPage appInfo={appInfo} onOpenShop={onOpenShop} />;
+      return <AboutPage {...about} />;
   }
 }

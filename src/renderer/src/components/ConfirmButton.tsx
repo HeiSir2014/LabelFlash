@@ -36,3 +36,13 @@ export function ConfirmButton({ label, confirmLabel, onConfirm, className = 'but
     </button>
   );
 }
+
+interface DeleteButtonProps {
+  onConfirm: () => void;
+  className?: string;
+}
+
+/** 删除：各页统一的「删除 → 确认删除」两步确认。 */
+export function DeleteButton({ onConfirm, className = 'button button--small button--quiet' }: DeleteButtonProps) {
+  return <ConfirmButton className={className} label="删除" confirmLabel="确认删除" onConfirm={onConfirm} />;
+}

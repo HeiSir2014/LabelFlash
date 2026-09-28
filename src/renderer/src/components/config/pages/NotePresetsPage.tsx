@@ -1,8 +1,9 @@
 import { useId, useState } from 'react';
 import { NOTE_VARIABLES } from '../../../../../core/templates/note-text';
 import { MAX_NOTE_PRESETS, sanitizeNoteText } from '../../../../../shared/settings';
+import { DeleteButton } from '../../ConfirmButton';
 
-interface NotePresetsPageProps {
+export interface NotePresetsPageProps {
   presets: readonly string[];
   /** 返回是否保存成功。 */
   onChange: (presets: string[]) => Promise<boolean>;
@@ -43,13 +44,7 @@ export function NotePresetsPage({ presets, onChange }: NotePresetsPageProps) {
           {presets.map((preset) => (
             <li key={preset} className="config-card note-card">
               <span className="note-card__text">{preset}</span>
-              <button
-                type="button"
-                className="button button--small button--quiet"
-                onClick={() => void onChange(presets.filter((item) => item !== preset))}
-              >
-                删除
-              </button>
+              <DeleteButton onConfirm={() => void onChange(presets.filter((item) => item !== preset))} />
             </li>
           ))}
         </ul>

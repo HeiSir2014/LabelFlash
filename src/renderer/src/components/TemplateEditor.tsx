@@ -79,7 +79,7 @@ export function TemplateEditor({ draft, onChange }: SectionProps) {
 function BasicSection({ draft, onChange }: SectionProps) {
   return (
     <section className="form-section">
-      <h3 className="form-section__title">基本</h3>
+      <h2 className="form-section__title">基本</h2>
       <TextInput
         label="模板名称"
         value={draft.name}
@@ -131,7 +131,7 @@ function QrSection({ draft, onChange }: SectionProps) {
 
   return (
     <section className="form-section">
-      <h3 className="form-section__title">二维码</h3>
+      <h2 className="form-section__title">二维码</h2>
       <Toggle
         label="显示二维码"
         checked={draft.qr.visible}
@@ -191,7 +191,7 @@ function BottomSection({ draft, onChange }: SectionProps) {
 
   return (
     <section className="form-section">
-      <h3 className="form-section__title">底部整行</h3>
+      <h2 className="form-section__title">底部整行</h2>
       <p className="form-hint">
         显示完整内容，多行用「 / 」连起来；只识别出一个字段、且它就是完整内容时（例如纯数字订单号）自动不显示。
       </p>
@@ -216,7 +216,7 @@ function NoteSection({ draft, onChange }: SectionProps) {
 
   return (
     <section className="form-section">
-      <h3 className="form-section__title">备注</h3>
+      <h2 className="form-section__title">备注</h2>
       <Toggle label="显示备注" checked={draft.note.visible} onChange={(visible) => setNote({ visible })} />
       <div className="form-row form-row--stacked">
         <label className="form-row__label" htmlFor={noteId}>

@@ -16,7 +16,7 @@ export function PreviewToolbar({ templates, activeTemplateId, usage, onActivate 
       <label className="preview-toolbar__template">
         <span className="preview-toolbar__label">当前模板</span>
         <select
-          className="preview-toolbar__select"
+          className="select-field preview-toolbar__select"
           value={activeTemplateId ?? ''}
           onChange={(event) => {
             onActivate(event.target.value);

@@ -1,11 +1,17 @@
 import { useState } from 'react';
-import { isBuiltInRuleId, RULE_KINDS, type RuleKind, type ScanRule } from '../../../../../core/scan/rule-model';
+import {
+  isBuiltInRuleId,
+  isRuleKind,
+  RULE_KINDS,
+  type RuleKind,
+  type ScanRule,
+} from '../../../../../core/scan/rule-model';
 import type { RuleSetting } from '../../../../../core/scan/rule-settings';
 import type { LabelTemplate } from '../../../../../core/templates/template-model';
 import type { ConfigPage } from '../../../lib/app-view';
 import { RULE_KIND_LABELS, ruleSummary } from '../../../lib/rule-text';
 import type { RulesViewModel } from '../../../view-models/use-rules';
-import { ConfirmButton } from '../../ConfirmButton';
+import { DeleteButton } from '../../ConfirmButton';
 import { RuleEditor } from '../../RuleEditor';
 import { RuleTester } from '../../RuleTester';
 
@@ -74,7 +80,11 @@ function RuleToolbar({ rules }: { rules: RulesViewModel }) {
         className="select-field"
         aria-label="新规则的类型"
         value={kind}
-        onChange={(event) => setKind(event.target.value as RuleKind)}
+        onChange={(event) => {
+          if (isRuleKind(event.target.value)) {
+            setKind(event.target.value);
+          }
+        }}
       >
         {RULE_KINDS.map((option) => (
           <option key={option} value={option}>
@@ -186,12 +196,7 @@ function RuleCard({ rule, setting, templates, isFirst, isLast, rules }: RuleCard
             >
               导出
             </button>
-            <ConfirmButton
-              className="button button--small button--quiet"
-              label="删除"
-              confirmLabel="确认删除"
-              onConfirm={() => rules.remove(rule.id)}
-            />
+            <DeleteButton onConfirm={() => rules.remove(rule.id)} />
           </>
         )}
       </div>

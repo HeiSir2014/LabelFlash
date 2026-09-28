@@ -2,7 +2,7 @@ import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { LookupTableData, LookupTableInfo } from '../../core/lookup/lookup-model';
 import type { Clock } from '../../core/types';
 import { runInTransaction } from './database';
-import { readInteger, readString } from './row-readers';
+import { readInteger, readString, readStringArray } from './row-readers';
 
 /** 查找表的存取。整表导入、整表替换，没有逐行编辑（改表格请改 CSV 再导入）。 */
 export class SqliteLookupStore {
@@ -74,7 +74,7 @@ export class SqliteLookupStore {
     if (!info) {
       return null;
     }
-    const rows = this.selectRows.all({ id }).map((row) => JSON.parse(readString(row, 'cells')) as string[]);
+    const rows = this.selectRows.all({ id }).map((row) => readStringArray(row, 'cells'));
     return { columns: info.columns, rows };
   }
 
@@ -84,7 +84,7 @@ export class SqliteLookupStore {
     if (!info) {
       return null;
     }
-    const rows = this.selectFirstRows.all({ id, limit }).map((row) => JSON.parse(readString(row, 'cells')) as string[]);
+    const rows = this.selectFirstRows.all({ id, limit }).map((row) => readStringArray(row, 'cells'));
     return { columns: info.columns, rows };
   }
 
@@ -111,7 +111,7 @@ function toInfo(row: Record<string, unknown>): LookupTableInfo {
   return {
     id: readString(row, 'id'),
     name: readString(row, 'name'),
-    columns: JSON.parse(readString(row, 'columns')) as string[],
+    columns: readStringArray(row, 'columns'),
     rowCount: readInteger(row, 'row_count'),
     updatedAt: readInteger(row, 'updated_at'),
   };

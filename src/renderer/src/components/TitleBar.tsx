@@ -59,6 +59,7 @@ export function TitleBar({
             onConfirm={onInstallUpdate}
           />
         )}
+        {/* 切换按钮：状态只由 aria-pressed 和按下的样式表达，名称始终是「配置」。 */}
         <button
           type="button"
           className="config-button"
@@ -67,7 +68,7 @@ export function TitleBar({
           onClick={config.onToggle}
         >
           <GearIcon />
-          {config.isOpen ? '配置中' : '配置'}
+          配置
         </button>
         <div className={`printer-chip printer-chip--${printerChip.tone}`} title="当前打印机">
           <span className="printer-chip__dot" aria-hidden="true" />

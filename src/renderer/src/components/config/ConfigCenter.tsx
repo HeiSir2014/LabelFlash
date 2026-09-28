@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, type RefObject, useCallback } from 'react';
+import { type KeyboardEvent, type ReactNode, type RefObject, useCallback, useId } from 'react';
 import { CONFIG_NAV, type ConfigPage, isFillPage, pageLabel } from '../../lib/app-view';
 
 /** 二级页面（编辑视图）的面包屑：「识别规则 / 编辑：下划线查货架」，第一段回到列表。 */
@@ -38,9 +38,14 @@ export function ConfigCenter({
   onClose,
   children,
 }: ConfigCenterProps) {
-  // 打开和切换页面时焦点移到页标题：读屏软件读出所在位置，Tab 从页面内容开始。
-  // 标题按页面换 key，换页即重新挂载；回调保持同一个引用，其他重新渲染不会再次抢焦点。
+  const navId = useId();
+  const titleId = useId();
+  // 打开、切换页面、进出编辑视图时焦点移到页标题：读屏软件读出所在位置，Tab 从页面内容开始。
+  // 标题按「页面 + 列表或编辑 + 是否在淡出」换 key，这些变化都会重新挂载它：
+  // 淡出中又打开同一页、关掉编辑器回到列表时，焦点也不会掉到 body 上。
+  // 回调保持同一个引用，其他重新渲染不会再次抢焦点；淡出时这一层是 inert，聚焦不会生效。
   const focusTitle = useCallback((title: HTMLHeadingElement | null) => title?.focus(), []);
+  const titleKey = `${page}:${breadcrumb ? 'edit' : 'list'}:${isLeaving ? 'leaving' : 'open'}`;
 
   return (
     // 淡出期间工作台已经恢复：这一层不再接收焦点和点击。
@@ -50,8 +55,9 @@ export function ConfigCenter({
           <span aria-hidden="true">←</span> 返回工作台
         </button>
       </div>
-      <header className="config-header">
-        <h1 key={page} ref={focusTitle} className="config-header__title" tabIndex={-1}>
+      {/* 不用 <header>：标题栏已经是页面的 banner，这里只是配置中心的页头。 */}
+      <div className="config-header">
+        <h1 key={titleKey} id={titleId} ref={focusTitle} className="config-header__title" tabIndex={-1}>
           {breadcrumb ? (
             <>
               <button type="button" className="link-button config-header__crumb" onClick={breadcrumb.onList}>
@@ -81,12 +87,14 @@ export function ConfigCenter({
           onChange={(event) => sink.onChange(event.target.value)}
           onKeyDown={sink.onKeyDown}
         />
-      </header>
+      </div>
       <nav className="config-nav" aria-label="配置">
         {CONFIG_NAV.map((group) => (
-          <div key={group.label} className="config-nav__group">
-            <p className="config-nav__heading">{group.label}</p>
-            <ul className="config-nav__list">
+          <div key={group.label}>
+            <p id={`${navId}-${group.label}`} className="config-nav__heading">
+              {group.label}
+            </p>
+            <ul className="config-nav__list" aria-labelledby={`${navId}-${group.label}`}>
               {group.pages.map((item) => (
                 <li key={item.page}>
                   <button
@@ -103,9 +111,9 @@ export function ConfigCenter({
           </div>
         ))}
       </nav>
-      <div className={`config-content${isFillPage(page) ? ' config-content--fill' : ''}`}>
+      <main className={`config-content${isFillPage(page) ? ' config-content--fill' : ''}`} aria-labelledby={titleId}>
         <div className="config-content__inner">{children}</div>
-      </div>
+      </main>
     </div>
   );
 }

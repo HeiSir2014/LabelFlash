@@ -50,7 +50,7 @@ function DelimitedForm({ rule, onChange }: KindFormProps<DelimitedRule>) {
   const { min, max } = RULE_LIMITS.delimitedFields;
   return (
     <section className="form-section">
-      <h3 className="form-section__title">分隔符拆分</h3>
+      <h2 className="form-section__title">分隔符拆分</h2>
       <SelectField
         label="分隔符"
         value={preset}
@@ -109,7 +109,7 @@ function KeyValueForm({ rule, onChange }: KindFormProps<KeyValueRule>) {
     });
   return (
     <section className="form-section">
-      <h3 className="form-section__title">多行键值</h3>
+      <h2 className="form-section__title">多行键值</h2>
       <StringList
         label="键和值之间的分隔符"
         values={rule.separators}
@@ -179,7 +179,7 @@ const CHARSET_OPTIONS: ReadonlyArray<{ value: WholeCharset; label: string }> = W
 function WholeForm({ rule, onChange }: KindFormProps<WholeRule>) {
   return (
     <section className="form-section">
-      <h3 className="form-section__title">整段匹配</h3>
+      <h2 className="form-section__title">整段匹配</h2>
       <TextInput
         label="字段名"
         value={rule.field}
@@ -226,7 +226,7 @@ function RegexForm({ rule, onChange }: KindFormProps<RegexRule>) {
     onChange({ ...rule, flags: isOn ? `${rule.flags}${flag}` : rule.flags.replace(flag, '') });
   return (
     <section className="form-section">
-      <h3 className="form-section__title">正则</h3>
+      <h2 className="form-section__title">正则</h2>
       <TextAreaField
         label="正则"
         value={rule.pattern}

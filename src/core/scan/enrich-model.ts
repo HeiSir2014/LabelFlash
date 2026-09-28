@@ -103,6 +103,11 @@ export const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 /** 请求头里引用本机密钥：{密钥:名称}。 */
 export const SECRET_REFERENCE_PATTERN = /\{密钥:([^{}\n]{1,30})\}/g;
 
+/** 写进请求头的密钥引用，和 SECRET_REFERENCE_PATTERN 对应。 */
+export function secretReference(name: string): string {
+  return `{密钥:${name}}`;
+}
+
 export const SECRET_LIMITS = { nameLength: 30, valueLength: 4_096 } as const;
 
 /** 密钥名称：1–30 个字符，不含花括号和控制字符，首尾没有空白（要能写进 {密钥:名称}）。 */

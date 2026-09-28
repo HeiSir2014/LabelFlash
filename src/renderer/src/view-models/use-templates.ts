@@ -131,3 +131,5 @@ export function useTemplates({
     remove,
   };
 }
+
+export type TemplatesViewModel = ReturnType<typeof useTemplates>;

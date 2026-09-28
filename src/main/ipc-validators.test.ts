@@ -10,6 +10,7 @@ import {
   requireRuleId,
   requireRuleIds,
   requireRuleKind,
+  requireSecretName,
   requireString,
   requireTemplateId,
   requireVoiceCue,
@@ -83,5 +84,12 @@ describe('ipc validators', () => {
     expect(requireVoiceCue('printed')).toBe('printed');
     expect(() => requireVoiceCue('rm -rf')).toThrow(TypeError);
     expect(() => requireVoiceCue(1)).toThrow(TypeError);
+  });
+
+  test('requireSecretName accepts names that fit in a {密钥:名称} reference only', () => {
+    expect(requireSecretName('仓库接口')).toBe('仓库接口');
+    expect(() => requireSecretName('')).toThrow(TypeError);
+    expect(() => requireSecretName('a}b')).toThrow(TypeError);
+    expect(() => requireSecretName(1)).toThrow(TypeError);
   });
 });

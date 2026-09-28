@@ -236,8 +236,8 @@ describe('parseDesktopMessage', () => {
 
 describe('phone link', () => {
   test('puts the session id and key after the hash', () => {
-    expect(buildPhoneUrl('https://yterm.cn/labelflash/', SESSION, KEY)).toBe(
-      `https://yterm.cn/labelflash/m/#${SESSION}.${KEY}`,
+    expect(buildPhoneUrl('https://relay.example.com/labelflash/', SESSION, KEY)).toBe(
+      `https://relay.example.com/labelflash/m/#${SESSION}.${KEY}`,
     );
   });
 

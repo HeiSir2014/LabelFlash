@@ -83,13 +83,12 @@ input {
   color: var(--color-paper);
 }
 
-.brand-mark {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--color-tape);
-  color: var(--color-ink);
-  font: 700 13px / 1.4 var(--font-data);
-  letter-spacing: 0.08em;
+.title-bar__logo {
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  user-select: none;
 }
 
 .title-bar__name {

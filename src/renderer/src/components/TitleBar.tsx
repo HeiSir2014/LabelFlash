@@ -1,3 +1,4 @@
+import brandIcon from '../../../../resources/tray.svg';
 import { BRAND } from '../../../shared/brand';
 import type { PrinterChipView } from '../lib/printer-chip';
 import { useWindowControls } from '../view-models/use-window-controls';
@@ -16,7 +17,7 @@ export function TitleBar({ printerChip, readyUpdateVersion, onInstallUpdate }: T
   return (
     <header className="title-bar">
       <div className="title-bar__brand">
-        <span className="brand-mark">{BRAND.mark}</span>
+        <img className="title-bar__logo" src={brandIcon} alt={BRAND.mark} width={28} height={28} draggable={false} />
         <span className="title-bar__name">{BRAND.productName.replace(`${BRAND.mark}-`, '')}</span>
       </div>
       {readyUpdateVersion && (

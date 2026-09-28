@@ -88,16 +88,17 @@ src/
 │   ├── dedup-guard.ts       时间窗口门限：peek / 检查并占位 / 提交 / 释放
 │   ├── serial-queue.ts      Promise 串行队列
 │   ├── print-queue.ts       每台打印机一个串行队列，单任务超时 30s
-│   ├── ring-buffer.ts       固定容量环形缓冲区
-│   ├── job-store.ts         JobStore 接口 + 内存实现（均基于 RingBuffer）
+│   ├── job-store.ts         JobStore 接口（同步）
 │   └── print-service.ts     对外唯一入口：preview(raw) / submit(request) / printTest(printer)
 ├── shared/                主进程与界面共用：IPC 契约、设置类型与校验
 ├── main/                  Electron 主进程
 │   ├── printing/
 │   │   ├── label-template.ts           生成标签 HTML（打印和预览共用）
 │   │   └── electron-driver-adapter.ts  隐藏窗口渲染并静默打印
-│   ├── storage/jsonl-job-store.ts      JSONL 追加写（无原生模块）
-│   ├── settings-store.ts               %APPDATA%\LabelFlash\settings.json
+│   ├── storage/database.ts             node:sqlite 打开数据库、pragma、user_version 迁移、事务
+│   ├── storage/migrations.ts           只追加的 schema 迁移列表
+│   ├── storage/sqlite-job-store.ts     打印记录（环形保留）
+│   ├── storage/sqlite-settings-store.ts 设置（key/JSON value）
 │   ├── window.ts / tray.ts / ipc.ts / index.ts
 │   ├── server/ net/                    （Phase 2）HTTPS 服务、局域网地址、自签证书
 ├── preload/index.ts       contextBridge 暴露类型化 API
@@ -149,7 +150,7 @@ interface PrinterAdapter {
    - 打印成功：`commit(key, now)` 并持久化。
    - 打印失败：`release(key)`，允许立即重试。
    - `force: true`：跳过检查，打印成功后刷新时间戳；日志里标记为强制补打。
-   - 启动时从打印记录（JSONL）回放最近 24 小时的成功打印，重启后窗口仍然有效。时钟通过 `Clock` 接口注入，方便测试。
+   - 启动时从 `jobs` 表回放最近 24 小时每个码的最后一次成功打印，重启后窗口仍然有效。时钟通过 `Clock` 接口注入，方便测试。
    - `peek(key)` 只读查询，供预览显示"窗口内已打印过"的提示，不占位。
 
 ## 6. 数据流
@@ -158,7 +159,7 @@ interface PrinterAdapter {
 输入框（常驻焦点，焦点落到空白处 300ms 后自动拉回）→ 回车 → 清空输入框 → `window.api.preview(raw)` → **立即显示标签预览**（与实际打印同一份 HTML）：
 - **自动打印（勾选）**：预览出来的同时调用 `window.api.print(raw, printer)`，结果以状态条 + 提示音反馈（成功 / 重复 / 失败三种声音）。
 - **手动打印（不勾选）**：只预览；如果门限窗口内已经打印过，预览上会显示"x 分钟前已打印"。操作员点"打印"按钮（或按 F2）才提交；提交时仍然经过门限。
-- 两种模式下，`duplicate` 结果都提供"强制补打"（需二次确认）。
+- 两种模式下，`duplicate` 结果都提供"强制补打"：界面内确认（第一次点击变为"再点一次确认补打"，3 秒内再点才执行），不弹系统对话框。
 - 自动/手动的选择持久化到设置。
 
 **手机：**
@@ -193,14 +194,18 @@ interface PrinterAdapter {
 - **打印记录（可回溯）**：按时间倒序显示（时间、来源、内容、打印机、结果），可以按内容搜索。每条记录有两个操作：
   - "预览"：把这条标签重新加载到预览区。
   - "重打"：预览并立即打印，同样经过门限；被拦截时可以强制补打。来源记为"记录重打"。
-- **环形池**：打印记录用固定容量的环形缓冲区（`RingBuffer`）保存。容量可在设置里调整，默认 500 条，范围 50–5000，超出后自动淘汰最旧的记录。`jobs.jsonl` 行数超过容量 2 倍时，重写文件，只保留环形池里的记录。
+- **环形池**：`jobs` 表只保留最新的 N 条。每次插入都在同一个事务里删除超出容量的最旧记录（按自增 `seq` 排序）；调小容量时立即裁剪。N 可在设置里调整，默认 500，范围 50–5000。
   - 注意：重启后的门限回放只能覆盖环形池里还保留的记录。
 
 ### 持久化
 
 `userData` 显式设为 `%APPDATA%\LabelFlash`（英文路径，避开中文目录问题）：
-- `settings.json`：`selectedPrinter`、`autoPrint`、`dedupWindowMinutes`、`historyLimit`、`launchAtLogin`
-- `jobs.jsonl`：打印记录
+- `labelflash.db`：SQLite 数据库，使用 Electron 内置 Node 的 `node:sqlite`（`DatabaseSync`，Electron 44 / Node 24.21 / SQLite 3.53.4 已验证）。
+  - pragma：`journal_mode = WAL`、`synchronous = NORMAL`、`foreign_keys = ON`、`busy_timeout = 5000`
+  - 迁移：`MIGRATIONS` 数组只追加不修改；`PRAGMA user_version` 记录已应用的版本；每个迁移在独立事务中执行；数据库版本比程序新时拒绝启动。
+  - `jobs`（STRICT）：`seq` 自增主键、`id`、`created_at`、`raw`、`printer_name`、`source`、`status`、`forced`、`failure_reason`，枚举字段用 CHECK 约束；另有一个 `status = 'printed'` 的部分索引，按 `created_at` 建，用于门限回放。
+  - `settings`（STRICT）：`key` → JSON `value`，内容为 `selectedPrinter`、`autoPrint`、`dedupWindowMinutes`、`historyLimit`、`launchAtLogin`；读取时经 `sanitizeSettings` 校验。
+  - 退出时（`will-quit`）关闭数据库。
 
 ### 视觉方向
 
@@ -223,7 +228,7 @@ interface PrinterAdapter {
 
 - 用 electron-builder 打 NSIS 安装包（x64）。安装时执行 `netsh advfirewall firewall add rule` 放行 8443 入站，卸载时删除。
 - 窗口关闭时最小化到托盘，服务继续运行。
-- 无原生模块依赖，不需要 electron-rebuild。
+- 无第三方原生模块（SQLite 是 Electron 内置 Node 自带的 `node:sqlite`），不需要 electron-rebuild。
 
 ## 10. 技术栈
 
@@ -234,7 +239,7 @@ interface PrinterAdapter {
 | 打包 | electron-builder（NSIS） |
 | 语言 | TypeScript strict |
 | 服务端 | Fastify + @fastify/static + @fastify/cookie |
-| 存储 | JSONL 文件（超过 5000 行时压缩为最近 2000 行） |
+| 存储 | `node:sqlite`（Electron 内置，WAL，`user_version` 迁移） |
 | 二维码生成 | qrcode |
 | 手机扫码 | barcode-detector（zxing-wasm polyfill） |
 | 自签证书 | selfsigned |

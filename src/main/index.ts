@@ -22,7 +22,8 @@ import { resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
-import { PrinterStatusMonitor, queryPrinterReadiness } from './printing/printer-status';
+import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
+import { createReadinessProbe, PrinterStatusMonitor } from './printing/printer-status';
 import { denyAllPermissions, hardenAllWebContents } from './security';
 import { openDatabase } from './storage/database';
 import { SqliteJobStore } from './storage/sqlite-job-store';
@@ -135,8 +136,13 @@ async function bootstrap(): Promise<void> {
   await jobs.initialize();
   const templates = new TemplateCatalog(new SqliteTemplateRepository(database, systemClock), randomUUID);
   const guard = new DedupGuard(systemClock, minutesToMs(settings.current.dedupWindowMinutes));
+  // 打印机状态和驱动纸张都经这一个常驻 PowerShell 查询（只在 Windows 上有）。
+  const probeHost =
+    process.platform === 'win32'
+      ? new PrinterProbeHost(spawnPowerShellProbe, PROBE_QUERY_TIMEOUT_MS, (message) => console.warn(message))
+      : null;
   const status = new PrinterStatusMonitor(
-    queryPrinterReadiness,
+    createReadinessProbe(probeHost),
     createPrinterAlertNotifier(new AlertThrottle(systemClock), showMainWindow),
   );
   status.start();
@@ -183,6 +189,7 @@ async function bootstrap(): Promise<void> {
     },
     updater,
     voice,
+    probeHost,
     getWindow: () => mainWindow,
     onSettingsChanged: async (next, previous) => {
       guard.setWindowMs(minutesToMs(next.dedupWindowMinutes));
@@ -220,6 +227,7 @@ async function bootstrap(): Promise<void> {
   warmVoice();
   app.on('will-quit', () => {
     status.stop();
+    probeHost?.dispose();
     tray?.destroy();
     closeDatabase();
   });

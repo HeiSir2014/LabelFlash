@@ -1,20 +1,14 @@
 import { execFile } from 'node:child_process';
 import type { DriverPaper } from '../../shared/driver-paper';
-import { PRINTER_NAME_ENV } from './printer-status';
+import type { PrinterProbeHost } from './printer-probe-host';
 
-/** 读驱动设置要启动 PowerShell（加载 CIM 模块）或 ipptool，比状态查询慢，给足时间。 */
-const PAPER_PROBE_TIMEOUT_MS = 8_000;
+/** ipptool 要连 CUPS 取全部属性，给足时间。 */
+const IPP_PROBE_TIMEOUT_MS = 8_000;
 /** ipptool 会返回打印机的全部属性（通常十几 KB），留足余量。 */
 const PROBE_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
 
-/** Windows：Win32_PrinterConfiguration 的纸张宽高以 0.1mm 为单位。 */
+/** Windows：Win32_PrinterConfiguration 的纸张宽高以 0.1mm 为单位（查询脚本见 printer-probe-host.ts）。 */
 const CIM_UNITS_PER_MM = 10;
-/** 用 Where-Object 按名称精确匹配，不把打印机名拼进 WQL 过滤条件，避免注入。 */
-const CIM_PAPER_SCRIPT = [
-  `$config = Get-CimInstance -ClassName Win32_PrinterConfiguration -ErrorAction Stop |`,
-  `  Where-Object Name -eq $env:${PRINTER_NAME_ENV} | Select-Object -First 1`,
-  `if ($config) { $config | Select-Object PaperWidth, PaperLength, HorizontalResolution | ConvertTo-Json -Compress }`,
-].join('\n');
 
 /** macOS：CUPS 的 media-col-default 以 0.01mm 为单位（PWG 5100.3）。 */
 const IPP_UNITS_PER_MM = 100;
@@ -78,51 +72,41 @@ export function cupsPrinterUri(printerName: string): string {
   return `ipp://localhost/printers/${encodeURIComponent(printerName)}`;
 }
 
-function runProbe(
-  file: string,
-  args: string[],
-  env: NodeJS.ProcessEnv,
-  parse: (output: string) => DriverPaper | null,
-  printerName: string,
-): Promise<DriverPaper | null> {
+function queryIppPaper(printerName: string): Promise<DriverPaper | null> {
   return new Promise((resolve) => {
     execFile(
-      file,
-      args,
-      { timeout: PAPER_PROBE_TIMEOUT_MS, maxBuffer: PROBE_MAX_BUFFER_BYTES, windowsHide: true, env },
+      '/usr/bin/ipptool',
+      ['-tv', cupsPrinterUri(printerName), IPP_ATTRIBUTES_TEST],
+      { timeout: IPP_PROBE_TIMEOUT_MS, maxBuffer: PROBE_MAX_BUFFER_BYTES },
       (error, stdout) => {
         if (error) {
           console.warn(`[driver-paper] probe failed for "${printerName}": ${error.message}`);
           resolve(null);
           return;
         }
-        resolve(parse(stdout));
+        resolve(parseIppPaper(stdout));
       },
     );
   });
 }
 
-/** 读取驱动默认纸张；不支持的平台或查询失败返回 null（未知）。 */
-export function queryDriverPaper(printerName: string): Promise<DriverPaper | null> {
+/**
+ * 读取驱动默认纸张；不支持的平台或查询失败返回 null（未知）。
+ * Windows 经常驻探测进程查询（host 为 null 时按未知处理），macOS 用 ipptool。
+ */
+export async function queryDriverPaper(
+  printerName: string,
+  host: PrinterProbeHost | null,
+): Promise<DriverPaper | null> {
   switch (process.platform) {
-    case 'win32':
-      return runProbe(
-        'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command', CIM_PAPER_SCRIPT],
-        { ...process.env, [PRINTER_NAME_ENV]: printerName },
-        parseCimPaper,
-        printerName,
-      );
+    case 'win32': {
+      const output = host ? await host.query('paper', printerName) : null;
+      return output === null ? null : parseCimPaper(output);
+    }
     case 'darwin':
-      return runProbe(
-        '/usr/bin/ipptool',
-        ['-tv', cupsPrinterUri(printerName), IPP_ATTRIBUTES_TEST],
-        process.env,
-        parseIppPaper,
-        printerName,
-      );
+      return queryIppPaper(printerName);
     default:
-      return Promise.resolve(null);
+      return null;
   }
 }
 

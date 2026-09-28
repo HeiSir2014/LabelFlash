@@ -1,6 +1,6 @@
-import { execFile } from 'node:child_process';
 import { PRINTER_STATUS_POLL_MS } from '../../shared/print-timing';
 import type { PrinterReadiness } from '../../shared/printer-readiness';
+import type { PrinterProbeHost } from './printer-probe-host';
 
 export type { PrinterReadiness };
 
@@ -19,11 +19,6 @@ const NOT_READY_STATUS: Readonly<Record<string, string>> = {
   OutOfMemory: '打印机内存不足',
 };
 
-const PROBE_TIMEOUT_MS = 3_000;
-/** 打印机名通过环境变量传入，不拼接进命令行，避免注入。 */
-export const PRINTER_NAME_ENV = 'CDL_PRINTER_NAME';
-const PROBE_SCRIPT = `(Get-Printer -Name $env:${PRINTER_NAME_ENV} -ErrorAction Stop).PrinterStatus.ToString()`;
-
 export const STATUS_POLL_INTERVAL_MS = PRINTER_STATUS_POLL_MS;
 
 /** PrinterStatus 可能是单个状态（Normal），也可能是组合（Offline, PaperOut）。 */
@@ -35,26 +30,14 @@ export function parsePrinterStatus(output: string): PrinterReadiness {
   return problems.length === 0 ? { ready: true } : { ready: false, detail: [...new Set(problems)].join('、') };
 }
 
-/** 查询打印机状态；非 Windows 或查询失败返回 null（未知，不阻止打印）。 */
-export function queryPrinterReadiness(printerName: string): Promise<PrinterReadiness | null> {
-  if (process.platform !== 'win32') {
-    return Promise.resolve(null);
-  }
-  return new Promise((resolve) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', PROBE_SCRIPT],
-      { timeout: PROBE_TIMEOUT_MS, windowsHide: true, env: { ...process.env, [PRINTER_NAME_ENV]: printerName } },
-      (error, stdout) => {
-        if (error) {
-          console.warn(`[printer-status] probe failed for "${printerName}": ${error.message}`);
-          resolve(null);
-          return;
-        }
-        resolve(parsePrinterStatus(stdout));
-      },
-    );
-  });
+/** 打印机状态查询：经常驻探测进程（见 printer-probe-host.ts）；没有探测进程（非 Windows）或查询失败返回 null（未知，不阻止打印）。 */
+export function createReadinessProbe(
+  host: PrinterProbeHost | null,
+): (printerName: string) => Promise<PrinterReadiness | null> {
+  return async (printerName) => {
+    const status = host ? await host.query('status', printerName) : null;
+    return status === null ? null : parsePrinterStatus(status);
+  };
 }
 
 /** 打印机从「可用 / 未知」变为「不能打印」（或不能打印的原因变了）时通知。 */

@@ -21,6 +21,7 @@ import { resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
 import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { renderLabelHtml } from './printing/label-html';
+import type { PrinterProbeHost } from './printing/printer-probe-host';
 import type { PrinterStatusMonitor } from './printing/printer-status';
 import type { SqliteJobStore } from './storage/sqlite-job-store';
 import type { SqliteSettingsStore } from './storage/sqlite-settings-store';
@@ -39,6 +40,8 @@ export interface IpcDeps {
   appInfo: AppInfo;
   updater: AppUpdater;
   voice: VoiceClips;
+  /** Windows 上的常驻打印机探测进程；其他平台为 null。 */
+  probeHost: PrinterProbeHost | null;
   getWindow: () => BrowserWindow | null;
   onSettingsChanged: (next: AppSettings, previous: AppSettings) => Promise<void>;
 }
@@ -102,7 +105,7 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.ListPrinters, () => deps.adapter.listPrinters());
   handle(IpcChannel.PrinterStatus, (printerName) => deps.status.get(requireString(printerName, 'printerName')));
   handle(IpcChannel.CheckDriverPaper, async (printerName) =>
-    checkDriverPaper(await queryDriverPaper(await requireKnownPrinter(printerName))),
+    checkDriverPaper(await queryDriverPaper(await requireKnownPrinter(printerName), deps.probeHost)),
   );
   handle(IpcChannel.OpenPrinterPreferences, async (printerName) =>
     openPrinterPreferences(await requireKnownPrinter(printerName)),

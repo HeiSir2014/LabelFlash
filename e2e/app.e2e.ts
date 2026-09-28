@@ -45,6 +45,7 @@ test('loads the UI over app:// and previews a scanned label', async () => {
   await expect(page).toHaveTitle('CDL-云签速印');
   expect(page.url()).toBe('app://bundle/index.html');
   const { version } = JSON.parse(await readFile(join(APP_ROOT, 'package.json'), 'utf8')) as { version: string };
+  await expect(page.locator('.title-bar__name')).toHaveText('CDL-云签速印');
   await expect(page.locator('.title-bar__version')).toHaveText(`v${version}`);
 
   await scan(page, 'CL5640-TK-图片色-XXL');

@@ -9,6 +9,7 @@ import type { PreviewResult } from '../core/types';
 import { checkDriverPaper } from '../shared/driver-paper';
 import { type AppInfo, IpcChannel, type LabelPreview } from '../shared/ipc-contract';
 import type { AppSettings } from '../shared/settings';
+import { logFailures } from './ipc-errors';
 import {
   requireJobQuery,
   requirePrintOptions,
@@ -51,17 +52,23 @@ export function registerIpc(deps: IpcDeps): void {
   const isTrusted = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     event.sender === deps.getWindow()?.webContents && event.senderFrame === event.sender.mainFrame;
   const handle = (channel: string, listener: (...args: unknown[]) => unknown) => {
+    const logged = logFailures(channel, listener, (message, error) => console.error(message, error));
     ipcMain.handle(channel, (event, ...args: unknown[]) => {
       if (!isTrusted(event)) {
+        console.warn(
+          `[ipc] rejected ${channel} from an untrusted sender: ${event.senderFrame?.url ?? 'unknown frame'}`,
+        );
         throw new Error(`Rejected IPC from untrusted sender on ${channel}`);
       }
-      return listener(...args);
+      return logged(...args);
     });
   };
   const on = (channel: string, listener: () => void) => {
     ipcMain.on(channel, (event) => {
       if (isTrusted(event)) {
         listener();
+      } else {
+        console.warn(`[ipc] ignored ${channel} from an untrusted sender: ${event.senderFrame?.url ?? 'unknown frame'}`);
       }
     });
   };

@@ -10,9 +10,11 @@ export function useDriverPaper(printerName: string | null, isListed: boolean) {
   const [check, setCheck] = useState<PaperCheck | null>(null);
   const [isOpening, setIsOpening] = useState(false);
   const target = printerName !== null && isListed ? printerName : null;
-  // 切换打印机后，上一台打印机迟到的查询结果要丢掉。
+  // 切换打印机后，上一台打印机迟到的查询结果要丢掉。在 effect 里更新，不在渲染过程中改 ref。
   const currentTarget = useRef(target);
-  currentTarget.current = target;
+  useEffect(() => {
+    currentTarget.current = target;
+  }, [target]);
 
   const refresh = useCallback(async (): Promise<void> => {
     if (target === null) {

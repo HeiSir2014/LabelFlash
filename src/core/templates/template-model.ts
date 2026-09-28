@@ -15,33 +15,59 @@ export type QrErrorLevel = (typeof QR_ERROR_LEVELS)[number];
 export const NOTE_PLACEMENTS = ['beside-qr', 'bottom'] as const;
 export type NotePlacement = (typeof NOTE_PLACEMENTS)[number];
 
-/** code / color / size 排在二维码旁；raw（完整编码）排在底部。 */
-export const SIDE_FIELD_KEYS = ['code', 'color', 'size'] as const;
-export const FIELD_KEYS = [...SIDE_FIELD_KEYS, 'raw'] as const;
-export type FieldKey = (typeof FIELD_KEYS)[number];
+/** all = 按识别顺序列出全部字段；pick = 只显示模板里指定的字段。 */
+export const FIELDS_MODES = ['all', 'pick'] as const;
+export type FieldsMode = (typeof FIELDS_MODES)[number];
 
 export interface TextStyle {
   fontSizeMm: number;
   bold: boolean;
 }
 
-export interface FieldConfig extends TextStyle {
-  visible: boolean;
+/** 「指定字段」模式的一行：显示识别结果里名为 field 的字段。 */
+export interface FieldSlot extends TextStyle {
+  field: string;
   /** 字段前缀，例如「编码：」。 */
   prefix: string;
 }
 
+/** inline = 横向：前缀和值在同一行（前缀一列、值一列）；stacked = 垂直：前缀单独一行，值在下一行。 */
+export const FIELD_ARRANGEMENTS = ['inline', 'stacked'] as const;
+export type FieldArrangement = (typeof FIELD_ARRANGEMENTS)[number];
+
+/** 二维码旁的字段区。两种模式的配置都保留，切换模式不丢另一种的设置。 */
+export interface FieldsArea {
+  mode: FieldsMode;
+  arrangement: FieldArrangement;
+  /** 全部字段：前缀是「字段名 + 分隔符」，showNames 关掉时只显示值。 */
+  all: TextStyle & { showNames: boolean; separator: string };
+  slots: FieldSlot[];
+}
+
+/** 底部整行：完整原始内容，多行用「 / 」连起来。 */
+export interface BottomLine extends TextStyle {
+  visible: boolean;
+}
+
 export interface NoteConfig extends TextStyle {
   visible: boolean;
-  /** 支持变量：{编码} {颜色} {尺码} {完整编码} {日期} {时间}；可以多行。 */
+  /** 支持变量：{字段名} {完整内容} {规则} {日期} {时间}；可以多行。 */
   text: string;
   placement: NotePlacement;
 }
 
+export const QR_CONTENT_KINDS = ['raw', 'field', 'text'] as const;
+export type QrContentKind = (typeof QR_CONTENT_KINDS)[number];
+
+/** 二维码内容：原始内容、某个字段，或带变量的文本；取不到内容时退回原始内容。 */
+export type QrContent = { kind: 'raw' } | { kind: 'field'; field: string } | { kind: 'text'; text: string };
+
 export interface QrConfig {
   visible: boolean;
   sizeMm: number;
+  /** 首选的容错等级；内容太长放不下时逐级降低。 */
   errorCorrection: QrErrorLevel;
+  content: QrContent;
 }
 
 export interface LabelTemplate {
@@ -51,12 +77,13 @@ export interface LabelTemplate {
   layout: QrLayout;
   /**
    * 对齐按区域统一设置，保证同一列文字对齐：
-   * side = 二维码旁的字段（前缀列 + 值列的网格，对齐作用于值列）和旁边的备注；bottom = 底部完整编码和底部备注。
+   * side = 二维码旁的字段（前缀列 + 值列的网格，对齐作用于值列）和旁边的备注；bottom = 底部整行和底部备注。
    */
   sideAlign: TextAlign;
   bottomAlign: TextAlign;
   qr: QrConfig;
-  fields: Record<FieldKey, FieldConfig>;
+  fieldsArea: FieldsArea;
+  bottom: BottomLine;
   note: NoteConfig;
 }
 
@@ -66,7 +93,12 @@ export const TEMPLATE_LIMITS = {
   fontSizeMm: { min: 1.5, max: 8 },
   nameLength: 40,
   prefixLength: 16,
+  separatorLength: 3,
   noteLength: 200,
+  /** 「指定字段」最多几行。 */
+  slots: 8,
+  /** 「全部字段」最多显示几行（含收尾的「…等 N 项」）。 */
+  allFieldRows: 6,
 } as const;
 
 /** 元素之间的固定间距（mm）。 */

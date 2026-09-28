@@ -1,4 +1,13 @@
-import type { JobRecord, PrintFailureReason, PrintResult, PrintSource, RecentPrint } from '../../../core/types';
+import { MAX_RAW_LENGTH } from '../../../core/scan/normalize-raw';
+import { joinLines } from '../../../core/templates/label-content';
+import type {
+  InvalidReason,
+  JobRecord,
+  PrintFailureReason,
+  PrintResult,
+  PrintSource,
+  RecentPrint,
+} from '../../../core/types';
 import type { LabelPreview } from '../../../shared/ipc-contract';
 import { PRINT_TIMEOUT_SECONDS } from '../../../shared/print-timing';
 
@@ -46,13 +55,27 @@ const MS_PER_MINUTE = SECONDS_PER_MINUTE * MS_PER_SECOND;
 const MINUTES_PER_HOUR = 60;
 const NO_ACTIONS: ScanActions = { print: null, forceReprint: false };
 
-const FORMAT_HINT = '应为「编码-颜色-尺码」，例如 CL5640-TK-图片色-XL。出现乱码时，检查扫码枪是否开启中文输出';
+const INVALID_VIEWS: Record<InvalidReason, FeedbackStatusView> = {
+  INVALID_CONTENT: {
+    tone: 'error',
+    title: '扫码内容无法识别',
+    detail: `内容为空、超过 ${MAX_RAW_LENGTH} 个字符或含有不可见字符。出现乱码时，检查扫码枪是否开启中文输出`,
+  },
+  NO_MATCHING_RULE: {
+    tone: 'error',
+    title: '没有匹配的识别规则',
+    detail: '在「识别规则」里启用「原样打印」，或新建一条能识别这种内容的规则',
+  },
+};
+/** 已打印时的详情最多列出几个字段值。 */
+const PRINTED_DETAIL_FIELDS = 3;
 
 const FAILURE_TITLES: Record<PrintFailureReason, string> = {
   PRINTER_NOT_FOUND: '找不到打印机',
   PRINTER_NOT_READY: '打印机未就绪',
   PRINT_TIMEOUT: '打印机没有响应',
   PRINT_ERROR: '打印失败',
+  LOOKUP_FAILED: '数据查询失败，没有打印',
 };
 
 const FAILURE_SHORT: Record<PrintFailureReason, string> = {
@@ -60,6 +83,7 @@ const FAILURE_SHORT: Record<PrintFailureReason, string> = {
   PRINTER_NOT_READY: '未就绪',
   PRINT_TIMEOUT: '超时',
   PRINT_ERROR: '驱动报错',
+  LOOKUP_FAILED: '查询失败',
 };
 
 /** 这些失败确定没有出纸，可以直接重试；超时结果不确定，只能强制补打。 */
@@ -67,6 +91,7 @@ const RETRYABLE_FAILURES: ReadonlySet<PrintFailureReason> = new Set([
   'PRINTER_NOT_FOUND',
   'PRINTER_NOT_READY',
   'PRINT_ERROR',
+  'LOOKUP_FAILED',
 ]);
 
 const SOURCE_LABELS: Record<PrintSource, string> = {
@@ -113,7 +138,13 @@ function failureDetail(reason: PrintFailureReason, detail: string | undefined): 
       return `${PRINT_TIMEOUT_SECONDS} 秒内没有响应，可能已出纸或仍在排队；确认没有出纸再用「强制补打」`;
     case 'PRINT_ERROR':
       return '打印机驱动报错，检查打印机状态后重试';
+    case 'LOOKUP_FAILED':
+      return lookupFailureDetail(detail);
   }
+}
+
+function lookupFailureDetail(detail: string | undefined): string {
+  return `${detail ?? '接口没有返回需要的数据'}；规则设为查询失败时不打印，接口恢复后点「重试打印」`;
 }
 
 function describeRecent(recent: RecentPrint, now: number): string {
@@ -126,7 +157,10 @@ export function describeResult(result: PrintResult, now: number): FeedbackStatus
       return {
         tone: 'success',
         title: '已发送打印',
-        detail: `${result.label.code} · ${result.label.color} · ${result.label.size}`,
+        detail: result.scan.fields
+          .slice(0, PRINTED_DETAIL_FIELDS)
+          .map((field) => joinLines(field.value))
+          .join(' · '),
       };
     case 'duplicate':
       return {
@@ -135,7 +169,7 @@ export function describeResult(result: PrintResult, now: number): FeedbackStatus
         detail: `${describeRecent(result.recent, now)}，${formatWindow(result.windowMs)}内同一标签只打一次`,
       };
     case 'invalid':
-      return { tone: 'error', title: '二维码格式不对', detail: FORMAT_HINT };
+      return INVALID_VIEWS[result.reason];
     case 'failed':
       return {
         tone: 'error',
@@ -186,6 +220,12 @@ export function describeScan(scan: ScanSnapshot | null, context: ScanContext): S
       },
     };
   }
+  if (previewResult.lookupFailure !== null) {
+    return {
+      status: { tone: 'error', title: '数据查询失败', detail: lookupFailureDetail(previewResult.lookupFailure) },
+      actions: { print: context.hasPrinter ? 'retry' : null, forceReprint: false },
+    };
+  }
   if (!context.hasPrinter) {
     return {
       status: { tone: 'warning', title: '还没选打印机', detail: '在右侧「打印机」列表里点选一台，选好后按 F2 打印' },
@@ -216,7 +256,7 @@ export function describeJobStatus(job: JobRecord): { tone: FeedbackTone; text: s
     case 'duplicate':
       return { tone: 'warning', text: '已拦截' };
     case 'invalid':
-      return { tone: 'error', text: '格式不对' };
+      return { tone: 'error', text: '无法识别' };
     case 'failed':
       return { tone: 'error', text: job.failureReason ? `失败：${FAILURE_SHORT[job.failureReason]}` : '失败' };
   }

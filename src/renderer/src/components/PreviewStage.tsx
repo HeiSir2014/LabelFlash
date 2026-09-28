@@ -10,8 +10,18 @@ const MAX_PREVIEW_SCALE = 2.8;
 
 export interface PreviewOverride {
   html: string | null;
+  qrOmitted: boolean;
   /** 显示在预览角上的说明，例如「模板编辑中」「示例」。 */
   badge: string;
+}
+
+/** 扫码预览的角标：命中的规则和实际用的模板，方便核对规则绑定是否生效。 */
+function scanBadge(scan: ScanState | null): string | null {
+  const preview = scan?.preview;
+  if (preview?.result.status !== 'ok' || preview.templateName === null) {
+    return null;
+  }
+  return `${preview.result.scan.ruleName} · ${preview.templateName}`;
 }
 
 interface PreviewStageProps {
@@ -31,6 +41,8 @@ export function PreviewStage({ scan, view, override, onPrint, onForceReprint }: 
     MAX_PREVIEW_SCALE,
   );
   const html = override ? override.html : (scan?.preview.html ?? null);
+  const badge = override ? override.badge : scanBadge(scan);
+  const isQrOmitted = override ? override.qrOmitted : (scan?.preview.qrOmitted ?? false);
   const feedKey = override ? `override-${override.badge}` : `scan-${scan?.seq ?? 0}`;
 
   return (
@@ -43,7 +55,10 @@ export function PreviewStage({ scan, view, override, onPrint, onForceReprint }: 
           <Ruler orientation="horizontal" lengthMm={LABEL_PAPER_MM.width} />
           <Ruler orientation="vertical" lengthMm={LABEL_PAPER_MM.height} />
           <div className="label-slot">
-            {override && <span className="label-badge">{override.badge}</span>}
+            {badge && <span className="label-badge">{badge}</span>}
+            {html && isQrOmitted && (
+              <span className="label-badge label-badge--warning">内容太长，二维码放不下，这张标签不印二维码</span>
+            )}
             {html ? (
               <div key={feedKey} className="label-feed">
                 <iframe className="label-frame" title="标签预览" sandbox="" srcDoc={html} tabIndex={-1} />
@@ -51,7 +66,7 @@ export function PreviewStage({ scan, view, override, onPrint, onForceReprint }: 
             ) : (
               <p className="label-placeholder">
                 {scan
-                  ? '这个二维码无法生成标签'
+                  ? '这次扫码无法生成标签'
                   : `扫码后在这里预览 ${LABEL_PAPER_MM.width}×${LABEL_PAPER_MM.height} 标签`}
               </p>
             )}

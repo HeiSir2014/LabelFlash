@@ -1,25 +1,46 @@
 import { describe, expect, test } from 'bun:test';
 import { DedupGuard } from './dedup-guard';
 import { PrintError } from './errors';
-import { MAX_RAW_LENGTH } from './label-parser';
 import { PrintQueue } from './print-queue';
-import { PrintService, TEST_LABEL } from './print-service';
-import { BUILT_IN_TEMPLATES, STANDARD_TEMPLATE } from './templates/builtin-templates';
+import { PrintService, TEST_RAW } from './print-service';
+import { BUILT_IN_RULES, DASH_THREE_RULE_ID, RAW_RULE_ID } from './scan/builtin-rules';
+import type { EnrichResult } from './scan/enrich';
+import { MAX_RAW_LENGTH } from './scan/normalize-raw';
+import { recognize } from './scan/recognize';
+import type { ScanRule } from './scan/rule-model';
+import type { ScanResult } from './scan/scan-result';
+import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from './templates/builtin-templates';
 import type { LabelTemplate } from './templates/template-model';
 import { FAKE_CLOCK_START, FakeClock } from './testing/fake-clock';
 import { FakePrinterAdapter } from './testing/fake-printer-adapter';
 import { InMemoryJobStore } from './testing/in-memory-job-store';
-import type { PrintRequest } from './types';
+import type { JobRecord, PrintRequest } from './types';
 
 const WINDOW_MS = 10 * 60_000;
 const RAW = 'CL5640-TK-图片色-XL';
 const PRINTER = '热敏标签机';
+const RAW_SCAN: ScanResult = {
+  raw: RAW,
+  ruleId: DASH_THREE_RULE_ID,
+  ruleName: '横杠三段（编码-颜色-尺码）',
+  fields: [
+    { name: '编码', value: 'CL5640-TK' },
+    { name: '颜色', value: '图片色' },
+    { name: '尺码', value: 'XL' },
+  ],
+};
+
+const noRegex = () => null;
 
 function createHarness(store = new InMemoryJobStore()) {
   const clock = new FakeClock();
   const adapter = new FakePrinterAdapter();
   const guard = new DedupGuard(clock, WINDOW_MS);
   let template: LabelTemplate = STANDARD_TEMPLATE;
+  let rules: readonly ScanRule[] = BUILT_IN_RULES;
+  const templateRequests: ScanResult[] = [];
+  const recorded: Array<{ job: JobRecord; scan: ScanResult | null }> = [];
+  let enrichScan: (scan: ScanResult) => Promise<EnrichResult> = async (scan) => ({ scan, traces: [], blocked: null });
   let nextId = 0;
   const service = new PrintService({
     adapter,
@@ -28,27 +49,48 @@ function createHarness(store = new InMemoryJobStore()) {
     clock,
     queue: new PrintQueue(1_000),
     createId: () => `job-${++nextId}`,
-    resolveTemplate: () => template,
+    recognize: (raw) => recognize(raw, rules, noRegex),
+    enrich: (scan) => enrichScan(scan),
+    resolveTemplate: (scan) => {
+      templateRequests.push(scan);
+      return template;
+    },
+    onRecorded: (job, scan) => recorded.push({ job, scan }),
   });
   const useTemplate = (next: LabelTemplate) => {
     template = next;
   };
-  return { clock, adapter, store, service, useTemplate };
+  const useRules = (next: readonly ScanRule[]) => {
+    rules = next;
+  };
+  const useEnrich = (next: (scan: ScanResult) => Promise<EnrichResult>) => {
+    enrichScan = next;
+  };
+  return { clock, adapter, store, service, useTemplate, useRules, useEnrich, templateRequests, recorded };
 }
+
+const withShelf = async (scan: ScanResult): Promise<EnrichResult> => ({
+  scan: { ...scan, fields: [...scan.fields, { name: '货架号', value: 'A-01' }] },
+  traces: [],
+  blocked: null,
+});
+
+const lookupFails = async (scan: ScanResult): Promise<EnrichResult> => ({
+  scan,
+  traces: [],
+  blocked: { stepIndex: 0, detail: '查询超时' },
+});
 
 function request(overrides: Partial<PrintRequest> = {}): PrintRequest {
   return { raw: RAW, printerName: PRINTER, source: 'desktop', ...overrides };
 }
 
 describe('PrintService.submit', () => {
-  test('prints a valid label with the active template and records it', async () => {
-    const { service, adapter, store } = createHarness();
+  test('prints a recognised scan with the template resolved for it and records it', async () => {
+    const { service, adapter, store, templateRequests } = createHarness();
     const result = await service.submit(request());
-    expect(result).toEqual({
-      status: 'printed',
-      jobId: 'job-1',
-      label: { raw: RAW, code: 'CL5640-TK', color: '图片色', size: 'XL' },
-    });
+    expect(result).toEqual({ status: 'printed', jobId: 'job-1', scan: RAW_SCAN });
+    expect(templateRequests).toEqual([RAW_SCAN]);
     expect(adapter.printed).toEqual([{ printerName: PRINTER, raw: RAW, templateId: STANDARD_TEMPLATE.id }]);
     expect(store.listRecent(1)[0]).toMatchObject({
       id: 'job-1',
@@ -69,14 +111,39 @@ describe('PrintService.submit', () => {
     expect(adapter.printed[0]?.templateId).toBe(second.id);
   });
 
-  test('rejects malformed input without printing and stores a truncated copy', async () => {
+  test('prints a numeric order number through the order-number rule', async () => {
+    const { service } = createHarness();
+    const result = await service.submit(request({ raw: '202609280001' }));
+    expect(result).toMatchObject({
+      status: 'printed',
+      scan: { ruleId: 'builtin:digits-order', fields: [{ name: '订单号', value: '202609280001' }] },
+    });
+  });
+
+  test('dedups multi-line content by its normalised form', async () => {
+    const { service, adapter } = createHarness();
+    const multiLine = '订单号：A001\r\n款号：CL5640\r\n';
+    expect((await service.submit(request({ raw: multiLine }))).status).toBe('printed');
+    expect((await service.submit(request({ raw: '订单号：A001\n款号：CL5640' }))).status).toBe('duplicate');
+    expect(adapter.printed.map((p) => p.raw)).toEqual(['订单号：A001\n款号：CL5640']);
+  });
+
+  test('rejects content that is too long without printing and stores a truncated copy', async () => {
     const { service, adapter, store } = createHarness();
-    expect(await service.submit(request({ raw: `  ${'x'.repeat(500)}  ` }))).toEqual({
+    const tooLong = 'x'.repeat(MAX_RAW_LENGTH + 500);
+    expect(await service.submit(request({ raw: `  ${tooLong}  ` }))).toEqual({
       status: 'invalid',
-      reason: 'INVALID_FORMAT',
+      reason: 'INVALID_CONTENT',
     });
     expect(adapter.printed).toHaveLength(0);
     expect(store.listRecent(1)[0]).toMatchObject({ status: 'invalid', raw: 'x'.repeat(MAX_RAW_LENGTH) });
+  });
+
+  test('reports valid content that no enabled rule recognises', async () => {
+    const { service, adapter, useRules } = createHarness();
+    useRules(BUILT_IN_RULES.filter((rule) => rule.id !== RAW_RULE_ID));
+    expect(await service.submit(request({ raw: '???' }))).toEqual({ status: 'invalid', reason: 'NO_MATCHING_RULE' });
+    expect(adapter.printed).toHaveLength(0);
   });
 
   test('blocks and records a repeat scan inside the window', async () => {
@@ -150,13 +217,9 @@ describe('PrintService.submit', () => {
 });
 
 describe('PrintService.preview', () => {
-  test('parses the label and reports no recent print', () => {
+  test('recognises the scan and reports no recent print', async () => {
     const { service } = createHarness();
-    expect(service.preview(RAW)).toEqual({
-      status: 'ok',
-      label: { raw: RAW, code: 'CL5640-TK', color: '图片色', size: 'XL' },
-      recent: null,
-    });
+    expect(await service.preview(RAW)).toEqual({ status: 'ok', scan: RAW_SCAN, recent: null, lookupFailure: null });
   });
 
   test('reports a recent print inside the window', async () => {
@@ -164,12 +227,85 @@ describe('PrintService.preview', () => {
     await service.submit(request());
     const printedAt = clock.now();
     clock.advance(30_000);
-    expect(service.preview(RAW)).toMatchObject({ recent: { state: 'printed', at: printedAt } });
+    expect(await service.preview(RAW)).toMatchObject({ recent: { state: 'printed', at: printedAt } });
   });
 
-  test('rejects malformed input', () => {
-    const { service } = createHarness();
-    expect(service.preview('???')).toEqual({ status: 'invalid', reason: 'INVALID_FORMAT' });
+  test('rejects blank input and content no rule recognises', async () => {
+    const { service, useRules } = createHarness();
+    expect(await service.preview('   ')).toEqual({ status: 'invalid', reason: 'INVALID_CONTENT' });
+    useRules([]);
+    expect(await service.preview(RAW)).toEqual({ status: 'invalid', reason: 'NO_MATCHING_RULE' });
+  });
+
+  test('shows the processed fields and warns when a blocking lookup failed', async () => {
+    const { service, useEnrich } = createHarness();
+    useEnrich(withShelf);
+    expect(await service.preview(RAW)).toMatchObject({ scan: { fields: [{}, {}, {}, { name: '货架号' }] } });
+    useEnrich(lookupFails);
+    expect(await service.preview(RAW)).toMatchObject({ status: 'ok', lookupFailure: '查询超时' });
+  });
+});
+
+describe('PrintService processing steps', () => {
+  test('prints the processed scan but dedups on the raw content', async () => {
+    const { service, useEnrich, templateRequests } = createHarness();
+    useEnrich(withShelf);
+    const result = await service.submit(request());
+    expect(result).toMatchObject({ status: 'printed', scan: { raw: RAW } });
+    expect(templateRequests[0]?.fields.at(-1)).toEqual({ name: '货架号', value: 'A-01' });
+    expect((await service.submit(request())).status).toBe('duplicate');
+  });
+
+  test('a blocking lookup failure does not print, is recorded, and can be retried at once', async () => {
+    const { service, useEnrich, adapter, store } = createHarness();
+    useEnrich(lookupFails);
+    expect(await service.submit(request())).toEqual({ status: 'failed', reason: 'LOOKUP_FAILED', detail: '查询超时' });
+    expect(adapter.printed).toHaveLength(0);
+    expect(store.listRecent(1)[0]).toMatchObject({ status: 'failed', failureReason: 'LOOKUP_FAILED' });
+    useEnrich(withShelf);
+    expect((await service.submit(request())).status).toBe('printed');
+  });
+
+  test('a repeat scan is blocked before any lookup runs', async () => {
+    const { service, useEnrich, adapter } = createHarness();
+    let lookups = 0;
+    useEnrich(async (scan) => {
+      lookups += 1;
+      return { scan, traces: [], blocked: null };
+    });
+    const release = adapter.hold();
+    const first = service.submit(request());
+    expect((await service.submit(request())).status).toBe('duplicate');
+    release();
+    await first;
+    expect(lookups).toBe(1);
+  });
+
+  test('an unexpected error in the steps prints without them', async () => {
+    const { service, useEnrich } = createHarness();
+    useEnrich(async () => {
+      throw new Error('boom');
+    });
+    expect((await service.submit(request())).status).toBe('printed');
+  });
+
+  test('reports every recorded result with the scan it was based on, but not the test page', async () => {
+    const { service, useEnrich, recorded } = createHarness();
+    useEnrich(withShelf);
+    await service.submit(request());
+    await service.submit(request());
+    await service.submit(request({ raw: '   ' }));
+    await service.printTest(PRINTER);
+    expect(recorded.map(({ job }) => job.status)).toEqual(['printed', 'duplicate', 'invalid']);
+    expect(recorded[0]?.scan?.fields.at(-1)).toEqual({ name: '货架号', value: 'A-01' });
+    expect(recorded[1]?.scan?.raw).toBe(RAW);
+    expect(recorded[2]?.scan).toBeNull();
+  });
+
+  test('the test page skips the steps', async () => {
+    const { service, useEnrich } = createHarness();
+    useEnrich(lookupFails);
+    expect((await service.printTest(PRINTER)).status).toBe('printed');
   });
 });
 
@@ -200,8 +336,17 @@ describe('PrintService.printTest', () => {
     const { service, adapter, store } = createHarness();
     expect((await service.printTest(PRINTER)).status).toBe('printed');
     expect((await service.printTest(PRINTER)).status).toBe('printed');
-    expect(adapter.printed.map((p) => p.raw)).toEqual([TEST_LABEL.raw, TEST_LABEL.raw]);
+    expect(adapter.printed.map((p) => p.raw)).toEqual([TEST_RAW, TEST_RAW]);
     expect(store.listRecent(10)).toEqual([]);
+  });
+
+  test('recognises the test page like a scan, and still prints it with every rule turned off', async () => {
+    const { service, useRules, useTemplate, adapter } = createHarness();
+    expect(await service.printTest(PRINTER)).toMatchObject({ scan: { ruleId: DASH_THREE_RULE_ID } });
+    useRules([]);
+    useTemplate(GENERIC_TEMPLATE);
+    expect(await service.printTest(PRINTER)).toMatchObject({ scan: { raw: TEST_RAW, fields: [{ value: TEST_RAW }] } });
+    expect(adapter.printed.at(-1)?.templateId).toBe(GENERIC_TEMPLATE.id);
   });
 
   test('reports test print failures', async () => {

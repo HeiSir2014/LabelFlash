@@ -19,7 +19,7 @@ export class FakePrinterAdapter implements PrinterAdapter {
       this.nextError = null;
       throw error;
     }
-    this.printed.push({ printerName, raw: job.label.raw, templateId: job.template.id });
+    this.printed.push({ printerName, raw: job.scan.raw, templateId: job.template.id });
   }
 
   failNext(error: unknown): void {

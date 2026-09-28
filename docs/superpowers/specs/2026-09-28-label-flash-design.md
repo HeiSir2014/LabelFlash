@@ -22,6 +22,8 @@
 
 ## 2. 输入数据
 
+> 1.0.1 起，识别改为可配置的识别规则，并加入加工步骤、通用模板、多行扫码和打印结果通知，见 [通用识别规则与通用模板](2026-09-28-generic-scan-rules-design.md)。本节描述的「编码-颜色-尺码」格式成为内置规则「横杠三段」，校验长度上限改为 1000 字符。
+
 - **格式**：二维码内容为 `编码-颜色-尺码`，例如 `CL5640-TK-图片色-XL`（已从样例图片解码确认）。
 - **拆分规则**：编码本身可能含 `-`，所以从右往左拆，正则为 `^(.+)-([^-]+)-([^-]+)$`。
 - **尺码是文本**：`36`、`36.5`、`S`、`M`、`L`、`XL`、`XXL`、`3XL`、`均码` 都合法。
@@ -132,7 +134,8 @@
 ## 7. 架构
 
 ```
-src/core       纯 TS 业务层：label-parser / dedup-guard / serial-queue / print-queue / job-store / print-service
+src/core       纯 TS 业务层：dedup-guard / serial-queue / print-queue / job-store / print-service
+               scan/（识别规则、加工步骤，1.0.1 起取代 label-parser）、lookup/、notify/
                templates/：template-model / builtin-templates / sanitize-template / note-text / text-fit / template-catalog
 src/shared     主进程与界面共用：brand / label-paper / print-timing / printer-readiness / job-history / settings / ipc-contract / sample-label / update-status / voice
 src/main       storage/（database / migrations / row-readers / sqlite-*）
@@ -169,7 +172,7 @@ src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models�
 ## 9. 界面
 
 - **窗口**：
-  - 无系统边框，标题栏自绘：CDL 品牌标识、产品名（标题里不出现"陈大露"，只在「关于」里出现）、当前打印机状态胶囊、最小化 / 最大化 / 关闭按钮。
+  - 无系统边框，标题栏自绘：CDL Logo、完整产品名「CDL-云签速印」和版本号、「淘宝店铺 CDLCOUTURE极简女装」链接、当前打印机状态胶囊、窗口按钮（macOS 用系统红绿灯）。标题里不出现"陈大露工作室"，它只在「关于」里出现。
   - 新版本下载完成后，标题栏出现"新版本 x 已就绪 · 重启更新"，需要点两次确认才会重启。
   - 关闭按钮只隐藏到托盘。第一次隐藏时，Windows 会弹气泡提示"扫码前请先打开窗口"。
 - **扫码条**：扫码框、「备注」下拉框（选完焦点立即回到扫码框）、自动打印开关。
@@ -194,7 +197,7 @@ src/renderer   React 19，MVVM：lib（纯逻辑，有测试）→ view-models�
     - 打印记录保留上限，调小时需要确认。
     - 开机自启：登录后自动打开窗口，不隐藏，所以可以直接扫码。
     - 常用备注：添加、删除。
-    - 关于：产品名、版本、出品方（陈大露 CDL）、数据目录、更新状态，以及"检查更新""打开日志目录"两个按钮。
+    - 关于：产品名、版本、出品方（陈大露工作室，CDL）、淘宝店铺（CDLCOUTURE极简女装：点击用系统浏览器打开电脑版店铺首页；另有本机生成的店铺二维码，手机淘宝扫码进店）、数据目录、更新状态，以及"检查更新""打开日志目录"两个按钮。
 - **反馈**：
   - 状态条用颜色和大字显示结果；同时播报语音确认，语音不可用时改用提示音。详见 §9a。
   - IPC 调用失败时，右下角通知"程序内部错误，已写入日志"，与打印机故障分开显示。

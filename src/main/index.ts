@@ -1,12 +1,16 @@
 import { randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { app, type BrowserWindow, dialog, Menu } from 'electron';
+import { app, type BrowserWindow, dialog, Menu, net } from 'electron';
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
 import { PrintQueue } from '../core/print-queue';
 import { PrintService } from '../core/print-service';
+import { type EnrichDeps, enrich } from '../core/scan/enrich';
+import { recognize } from '../core/scan/recognize';
+import { RuleCatalog } from '../core/scan/rule-catalog';
 import { TemplateCatalog } from '../core/templates/template-catalog';
 import { systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
@@ -18,17 +22,28 @@ import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback
 import { registerIpc } from './ipc';
 import { LOGS_DIR_NAME } from './log-files';
 import { setupLogging } from './logging';
-import { resolvePrintTemplate } from './print-template';
+import { LookupTables } from './lookup/lookup-tables';
+import { WebhookOutbox } from './notify/webhook-outbox';
+import { createWebhookSender } from './notify/webhook-sender';
+import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { createReadinessProbe, PrinterStatusMonitor } from './printing/printer-status';
+import { createHttpStepRunner } from './scan/http-step';
+import { RuleService } from './scan/rule-service';
+import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './scan/sandboxed-regex';
+import { safeStorageCipher } from './secrets/safe-storage-cipher';
 import { denyAllPermissions, hardenAllWebContents } from './security';
 import { openDatabase } from './storage/database';
 import { SqliteJobStore } from './storage/sqlite-job-store';
+import { SqliteLookupStore } from './storage/sqlite-lookup-store';
+import { SqliteScanRuleRepository } from './storage/sqlite-scan-rule-repository';
+import { SqliteSecretStore } from './storage/sqlite-secret-store';
 import { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import { SqliteTemplateRepository } from './storage/sqlite-template-repository';
+import { SqliteWebhookStore } from './storage/sqlite-webhook-store';
 import { SqliteWindowStateStore } from './storage/sqlite-window-state-store';
 import { type AppTray, createTray } from './tray';
 import { AppUpdater } from './updater';
@@ -144,6 +159,22 @@ async function bootstrap(): Promise<void> {
   const jobs = new SqliteJobStore(database, settings.current.historyLimit);
   await jobs.initialize();
   const templates = new TemplateCatalog(new SqliteTemplateRepository(database, systemClock), randomUUID);
+  const rules = new RuleCatalog(new SqliteScanRuleRepository(database, systemClock), randomUUID);
+  const runRegex = createSandboxedRegexRunner();
+  const lookupTables = new LookupTables(new SqliteLookupStore(database, systemClock), randomUUID);
+  const secrets = new SqliteSecretStore(database, safeStorageCipher, systemClock);
+  const userAgent = `CDL-LabelFlash/${app.getVersion()}`;
+  const enrichDeps: EnrichDeps = {
+    replace: createSandboxedRegexReplacer(),
+    lookup: (tableId, keyColumn, key, ignoreCase) => lookupTables.find(tableId, keyColumn, key, ignoreCase),
+    http: createHttpStepRunner({
+      fetch: (url, init) => net.fetch(url, init),
+      secret: (name) => secrets.get(name),
+      now: () => systemClock.now(),
+      userAgent,
+    }),
+    now: () => performance.now(),
+  };
   const guard = new DedupGuard(systemClock, secondsToMs(settings.current.dedupWindowSeconds));
   // 打印机状态和驱动纸张都经这一个常驻 PowerShell 查询（只在 Windows 上有）。
   const probeHost =
@@ -157,6 +188,23 @@ async function bootstrap(): Promise<void> {
   status.start();
   void status.watch(settings.current.selectedPrinter);
   const adapter = new ElectronDriverAdapter(requireWebContents, status, systemClock);
+  const outbox = new WebhookOutbox({
+    store: new SqliteWebhookStore(database),
+    send: createWebhookSender({
+      fetch: (url, init) => net.fetch(url, init),
+      secret: (name) => secrets.get(name),
+      now: () => systemClock.now(),
+      userAgent,
+    }),
+    endpoints: () => settings.current.webhooks,
+    clock: systemClock,
+    station: { name: hostname(), app: app.getVersion() },
+    createId: randomUUID,
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => clearTimeout(timer);
+    },
+  });
   const service = new PrintService({
     adapter,
     store: jobs,
@@ -164,7 +212,10 @@ async function bootstrap(): Promise<void> {
     clock: systemClock,
     queue: new PrintQueue(PRINT_TIMEOUT_MS),
     createId: randomUUID,
-    resolveTemplate: () => resolvePrintTemplate(templates, settings.current),
+    recognize: (raw) => recognize(raw, activeRules(rules, settings.current), runRegex),
+    enrich: (scan) => enrich(scan, rules.get(scan.ruleId)?.steps ?? [], enrichDeps, new Date()),
+    resolveTemplate: (scan) => resolvePrintTemplate(templates, settings.current, scan),
+    onRecorded: (job, scan) => outbox.enqueueResult(job, scan),
   });
   service.restore();
   const voice = new VoiceClips(join(dataPath, VOICE_CACHE_DIR_NAME), synthesizeWithEdge);
@@ -188,6 +239,16 @@ async function bootstrap(): Promise<void> {
     jobs,
     settings,
     templates,
+    lookupTables,
+    secrets,
+    outbox,
+    rules: new RuleService({
+      catalog: rules,
+      settings,
+      runRegex,
+      enrich: (scan, steps) => enrich(scan, steps, enrichDeps, new Date()),
+      clock: systemClock,
+    }),
     status,
     appInfo: {
       productName: BRAND.productName,
@@ -214,8 +275,12 @@ async function bootstrap(): Promise<void> {
       if (next.historyLimit !== previous.historyLimit) {
         await jobs.setCapacity(next.historyLimit);
       }
+      if (JSON.stringify(next.webhooks) !== JSON.stringify(previous.webhooks)) {
+        outbox.endpointsChanged();
+      }
     },
   });
+  outbox.start();
   applyLaunchAtLogin(settings.current.launchAtLogin);
 
   // 未打包运行（开发、E2E）时 macOS 程序坞默认显示 Electron 图标；安装版的图标由打包配置决定。
@@ -250,6 +315,7 @@ async function bootstrap(): Promise<void> {
   updater.start();
   warmVoice();
   app.on('will-quit', () => {
+    outbox.stop();
     status.stop();
     probeHost?.dispose();
     tray?.destroy();

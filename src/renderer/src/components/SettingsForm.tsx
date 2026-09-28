@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
 import { NOTE_VARIABLES } from '../../../core/templates/note-text';
+import { BRAND } from '../../../shared/brand';
 import type { AppInfo } from '../../../shared/ipc-contract';
 import {
   type AppSettings,
   HISTORY_LIMIT_RANGE,
   MAX_DEDUP_WINDOW_SECONDS,
   MAX_NOTE_PRESETS,
+  SCAN_LINE_GAP_RANGE,
   sanitizeNoteText,
 } from '../../../shared/settings';
 import type { VoiceCue } from '../../../shared/voice';
 import type { UpdateView } from '../lib/update-text';
+import { useQrImage } from '../view-models/use-qr-image';
 import { ConfirmButton } from './ConfirmButton';
 import { VoiceSettingsSection } from './VoiceSettingsSection';
+import { WebhookSettings } from './WebhookSettings';
 
 const NUMBER_FORMAT = new Intl.NumberFormat('zh-CN');
 
@@ -22,8 +26,11 @@ interface SettingsFormProps {
   update: UpdateView;
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
   onOpenLogFolder: () => void;
+  onOpenShop: () => void;
   onCheckForUpdates: () => void;
   onPreviewVoice: (cue?: VoiceCue) => void;
+  /** 通知签名可选的密钥名称（在「识别规则」页管理）。 */
+  secretNames: readonly string[];
 }
 
 export function SettingsForm({
@@ -33,11 +40,14 @@ export function SettingsForm({
   update,
   onChange,
   onOpenLogFolder,
+  onOpenShop,
   onCheckForUpdates,
   onPreviewVoice,
+  secretNames,
 }: SettingsFormProps) {
   const [pendingHistoryLimit, setPendingHistoryLimit] = useState<number | null>(null);
   const [newNote, setNewNote] = useState('');
+  const shopQr = useQrImage(BRAND.shop.url);
   const newNoteText = sanitizeNoteText(newNote);
   const canAddNote =
     newNoteText !== null &&
@@ -69,6 +79,15 @@ export function SettingsForm({
         min={0}
         max={MAX_DEDUP_WINDOW_SECONDS}
         onCommit={async (dedupWindowSeconds) => (await onChange({ dedupWindowSeconds }))?.dedupWindowSeconds ?? null}
+      />
+      <NumberSetting
+        label="多行扫码等待"
+        unit="毫秒"
+        hint="二维码里有换行时，扫码枪会连续发出回车；回车后这么久没有新字符才算扫完。多行内容被拆成几次时调大一点"
+        value={settings.scanLineGapMs}
+        min={SCAN_LINE_GAP_RANGE.min}
+        max={SCAN_LINE_GAP_RANGE.max}
+        onCommit={async (scanLineGapMs) => (await onChange({ scanLineGapMs }))?.scanLineGapMs ?? null}
       />
       <NumberSetting
         label="打印记录保留"
@@ -129,11 +148,17 @@ export function SettingsForm({
         onPreview={onPreviewVoice}
       />
 
+      <WebhookSettings
+        webhooks={settings.webhooks}
+        secretNames={secretNames}
+        onChange={(webhooks) => onChange({ webhooks })}
+      />
+
       <section className="note-presets" aria-label="常用备注">
         <h3 className="about__title">常用备注</h3>
         <p className="setting__hint">
           在扫码框旁的「备注」下拉框里一键切换，会替换当前模板的备注文字（位置和字号仍按模板）。支持变量：
-          {NOTE_VARIABLES.join(' ')}
+          {NOTE_VARIABLES.join(' ')}，以及 {'{字段名}'}（例如 {'{订单号}'}）
         </p>
         <ul className="note-presets__list">
           {settings.notePresets.map((text) => (
@@ -172,6 +197,19 @@ export function SettingsForm({
             </dd>
             <dt>出品</dt>
             <dd>{appInfo.brandOwner}（CDL）</dd>
+            <dt>淘宝店铺</dt>
+            <dd>
+              <button type="button" className="link-button" onClick={onOpenShop}>
+                {BRAND.shop.name}
+              </button>
+              <span className="about__path about__url">{BRAND.shop.url}</span>
+              {shopQr && (
+                <figure className="about__qr">
+                  <img src={shopQr} alt={`${BRAND.shop.name}店铺二维码`} width={132} height={132} />
+                  <figcaption>手机淘宝扫一扫进店</figcaption>
+                </figure>
+              )}
+            </dd>
             <dt>数据目录</dt>
             <dd className="about__path">{appInfo.dataPath}</dd>
           </dl>

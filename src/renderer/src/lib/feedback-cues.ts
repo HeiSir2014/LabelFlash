@@ -90,5 +90,7 @@ function failureCue(reason: PrintFailureReason, issue: PrinterIssue | undefined)
       return 'timeout';
     case 'PRINT_ERROR':
       return 'failed';
+    case 'LOOKUP_FAILED':
+      return 'lookupFailed';
   }
 }

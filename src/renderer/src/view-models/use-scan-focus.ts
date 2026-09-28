@@ -22,8 +22,8 @@ function isTextEntry(element: Element | null): boolean {
  * - 窗口重新获得焦点、焦点不在输入框：回到扫码框。
  * 自动回焦只移动焦点，不改动框里的内容和选区；全选只在操作员双击扫码框时发生。
  */
-export function useScanFocus(): RefObject<HTMLInputElement | null> {
-  const inputRef = useRef<HTMLInputElement>(null);
+export function useScanFocus(): RefObject<HTMLTextAreaElement | null> {
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     // focus() 会恢复输入框上次的选区（不会全选），所以自动回焦不会让下一次扫码覆盖掉已有内容。

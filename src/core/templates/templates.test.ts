@@ -1,38 +1,31 @@
 import { describe, expect, test } from 'bun:test';
-import { BUILT_IN_TEMPLATES, STANDARD_TEMPLATE } from './builtin-templates';
+import type { ScanResult } from '../scan/scan-result';
+import { InMemoryTemplateRepository } from '../testing/in-memory-repositories';
+import { BUILT_IN_TEMPLATES, DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from './builtin-templates';
 import { expandNoteText } from './note-text';
 import { sanitizeTemplate } from './sanitize-template';
-import { TemplateCatalog, TemplateError, type TemplateRepository } from './template-catalog';
+import { TemplateCatalog, TemplateError } from './template-catalog';
 import {
   CUSTOM_TEMPLATE_PREFIX,
   isBuiltInTemplateId,
-  type LabelTemplate,
   maxQrSizeMm,
   TEMPLATE_ID_PATTERN,
   TEMPLATE_LIMITS,
 } from './template-model';
-import { estimateTextWidthEm, fitFontSizeMm } from './text-fit';
 
-const LABEL = { raw: 'CL5640-TK-图片色-XXL', code: 'CL5640-TK', color: '图片色', size: 'XXL' };
-
-class MemoryRepository implements TemplateRepository {
-  readonly saved = new Map<string, LabelTemplate>();
-
-  listCustom(): LabelTemplate[] {
-    return [...this.saved.values()];
-  }
-
-  save(template: LabelTemplate): void {
-    this.saved.set(template.id, template);
-  }
-
-  remove(id: string): void {
-    this.saved.delete(id);
-  }
-}
+const SCAN: ScanResult = {
+  raw: 'CL5640-TK-图片色-XXL',
+  ruleId: 'builtin:dash-three',
+  ruleName: '横杠三段（编码-颜色-尺码）',
+  fields: [
+    { name: '编码', value: 'CL5640-TK' },
+    { name: '颜色', value: '图片色' },
+    { name: '尺码', value: 'XXL' },
+  ],
+};
 
 function createCatalog() {
-  const repository = new MemoryRepository();
+  const repository = new InMemoryTemplateRepository();
   let nextId = 0;
   const catalog = new TemplateCatalog(repository, () => `t${++nextId}`);
   return { repository, catalog };
@@ -51,6 +44,13 @@ describe('built-in templates', () => {
     expect(ids.every(isBuiltInTemplateId)).toBe(true);
     expect(ids.every((id) => TEMPLATE_ID_PATTERN.test(id))).toBe(true);
   });
+
+  test('default to the generic all-fields template; the garment ones pick 编码 / 颜色 / 尺码', () => {
+    expect(DEFAULT_TEMPLATE_ID).toBe(GENERIC_TEMPLATE.id);
+    expect(GENERIC_TEMPLATE.fieldsArea.mode).toBe('all');
+    expect(STANDARD_TEMPLATE.fieldsArea.mode).toBe('pick');
+    expect(STANDARD_TEMPLATE.fieldsArea.slots.map((slot) => slot.field)).toEqual(['编码', '颜色', '尺码']);
+  });
 });
 
 describe('sanitizeTemplate', () => {
@@ -68,13 +68,66 @@ describe('sanitizeTemplate', () => {
 
   test('clamps padding, QR and font sizes to the allowed ranges', () => {
     const result = sanitizeTemplate(
-      { paddingMm: 50, qr: { sizeMm: 500 }, fields: { code: { fontSizeMm: 0.1 } } },
+      {
+        paddingMm: 50,
+        qr: { sizeMm: 500 },
+        fieldsArea: { all: { fontSizeMm: 99 }, slots: [{ field: '编码', fontSizeMm: 0.1 }] },
+      },
       'custom:1',
       STANDARD_TEMPLATE,
     );
     expect(result.paddingMm).toBe(TEMPLATE_LIMITS.paddingMm.max);
     expect(result.qr.sizeMm).toBe(maxQrSizeMm(TEMPLATE_LIMITS.paddingMm.max));
-    expect(result.fields.code.fontSizeMm).toBe(TEMPLATE_LIMITS.fontSizeMm.min);
+    expect(result.fieldsArea.all.fontSizeMm).toBe(TEMPLATE_LIMITS.fontSizeMm.max);
+    expect(result.fieldsArea.slots[0]).toEqual({
+      field: '编码',
+      prefix: '',
+      fontSizeMm: TEMPLATE_LIMITS.fontSizeMm.min,
+      bold: true,
+    });
+  });
+
+  test('drops picked fields with invalid or repeated names and keeps at most eight', () => {
+    const slots = [
+      { field: '颜色' },
+      { field: '' },
+      { field: '{注入}' },
+      { field: '颜色' },
+      ...Array.from({ length: 10 }, (_, index) => ({ field: `字段${index}` })),
+    ];
+    const result = sanitizeTemplate({ fieldsArea: { mode: 'pick', slots } }, 'custom:1', STANDARD_TEMPLATE);
+    expect(result.fieldsArea.slots).toHaveLength(TEMPLATE_LIMITS.slots);
+    expect(result.fieldsArea.slots.slice(0, 2).map((slot) => slot.field)).toEqual(['颜色', '字段0']);
+  });
+
+  test('accepts both arrangements and keeps the separator on one line', () => {
+    const result = sanitizeTemplate(
+      { fieldsArea: { arrangement: 'stacked', all: { separator: ':\n' } } },
+      'custom:1',
+      GENERIC_TEMPLATE,
+    );
+    expect(result.fieldsArea.arrangement).toBe('stacked');
+    expect(result.fieldsArea.all.separator).toBe(':');
+    const unknown = sanitizeTemplate({ fieldsArea: { arrangement: 'diagonal' } }, 'custom:1', GENERIC_TEMPLATE);
+    expect(unknown.fieldsArea.arrangement).toBe(GENERIC_TEMPLATE.fieldsArea.arrangement);
+  });
+
+  test('keeps the existing picked fields when the input is not a list', () => {
+    const result = sanitizeTemplate({ fieldsArea: { mode: 'all', slots: 'x' } }, 'custom:1', STANDARD_TEMPLATE);
+    expect(result.fieldsArea.mode).toBe('all');
+    expect(result.fieldsArea.slots).toEqual(STANDARD_TEMPLATE.fieldsArea.slots);
+  });
+
+  test('accepts every QR content source and rejects a malformed one', () => {
+    const sanitizeQr = (content: unknown) =>
+      sanitizeTemplate({ qr: { content } }, 'custom:1', STANDARD_TEMPLATE).qr.content;
+    expect(sanitizeQr({ kind: 'field', field: '订单号' })).toEqual({ kind: 'field', field: '订单号' });
+    expect(sanitizeQr({ kind: 'text', text: 'https://example.com/{订单号}' })).toEqual({
+      kind: 'text',
+      text: 'https://example.com/{订单号}',
+    });
+    expect(sanitizeQr({ kind: 'field', field: '' })).toEqual({ kind: 'raw' });
+    expect(sanitizeQr({ kind: 'script' })).toEqual({ kind: 'raw' });
   });
 
   test('strips control characters but keeps line breaks in notes', () => {
@@ -94,15 +147,20 @@ describe('sanitizeTemplate', () => {
 });
 
 describe('expandNoteText', () => {
-  test('replaces every supported variable with local date and time', () => {
+  test('replaces field names, the full content, the rule name and local date and time', () => {
     const printedAt = new Date(2026, 8, 28, 9, 5);
-    expect(expandNoteText('{编码}/{颜色}/{尺码}/{完整编码} {日期} {时间}', LABEL, printedAt)).toBe(
-      'CL5640-TK/图片色/XXL/CL5640-TK-图片色-XXL 2026-09-28 09:05',
+    expect(expandNoteText('{编码}/{颜色}/{尺码}/{完整内容} {日期} {时间} {规则}', SCAN, printedAt)).toBe(
+      'CL5640-TK/图片色/XXL/CL5640-TK-图片色-XXL 2026-09-28 09:05 横杠三段（编码-颜色-尺码）',
     );
   });
 
-  test('leaves unknown variables untouched', () => {
-    expect(expandNoteText('质检 {工号}', LABEL, new Date())).toBe('质检 {工号}');
+  test('leaves unknown variables and fields that were not recognised untouched', () => {
+    expect(expandNoteText('质检 {工号} {订单号} {}', SCAN, new Date())).toBe('质检 {工号} {订单号} {}');
+  });
+
+  test('prefers the fixed variables over a recognised field with the same name', () => {
+    const scan: ScanResult = { ...SCAN, fields: [{ name: '日期', value: '昨天' }] };
+    expect(expandNoteText('{日期}', scan, new Date(2026, 8, 28))).toBe('2026-09-28');
   });
 });
 
@@ -119,8 +177,10 @@ describe('TemplateCatalog', () => {
     expect(copy.id).toBe(`${CUSTOM_TEMPLATE_PREFIX}t1`);
     expect(copy.name).toBe(`${STANDARD_TEMPLATE.name} 副本`);
     expect(repository.saved.get(copy.id)).toEqual(copy);
-    copy.fields.code.prefix = 'changed';
-    expect(STANDARD_TEMPLATE.fields.code.prefix).toBe('编码：');
+    const [firstSlot] = copy.fieldsArea.slots;
+    if (!firstSlot) throw new Error('expected picked fields');
+    firstSlot.prefix = 'changed';
+    expect(STANDARD_TEMPLATE.fieldsArea.slots[0]?.prefix).toBe('编码：');
   });
 
   test('save sanitizes and persists a custom template', () => {
@@ -143,27 +203,8 @@ describe('TemplateCatalog', () => {
     expect(() => catalog.remove('custom:missing')).toThrow(TemplateError);
   });
 
-  test('resolve falls back to the standard template', () => {
+  test('resolve falls back to the generic template', () => {
     const { catalog } = createCatalog();
-    expect(catalog.resolve('custom:deleted')).toBe(STANDARD_TEMPLATE);
-  });
-});
-
-describe('fitFontSizeMm', () => {
-  test('counts CJK characters as wide and Latin as narrow', () => {
-    expect(estimateTextWidthEm('图片色')).toBe(3);
-    expect(estimateTextWidthEm('CL')).toBeCloseTo(1.24);
-  });
-
-  test('keeps the font size when the text fits', () => {
-    expect(fitFontSizeMm('CL5640-TK', 3.2, 30, 1)).toBe(3.2);
-  });
-
-  test('shrinks long text to fit the allowed lines, never below the minimum', () => {
-    const long = 'C'.repeat(80);
-    const fitted = fitFontSizeMm(long, 3, 55, 2);
-    expect(fitted).toBeLessThan(3);
-    expect(estimateTextWidthEm(long) * fitted).toBeLessThanOrEqual(55 * 2);
-    expect(fitFontSizeMm('C'.repeat(1_000), 3, 55, 1)).toBe(TEMPLATE_LIMITS.fontSizeMm.min);
+    expect(catalog.resolve('custom:deleted')).toBe(GENERIC_TEMPLATE);
   });
 });

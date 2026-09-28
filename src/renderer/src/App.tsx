@@ -6,6 +6,7 @@ import { JobLog } from './components/JobLog';
 import { NoticeBar } from './components/NoticeBar';
 import { type PreviewOverride, PreviewStage } from './components/PreviewStage';
 import { PrinterList } from './components/PrinterList';
+import { RulePanel } from './components/RulePanel';
 import { ScanBar } from './components/ScanBar';
 import { SettingsForm } from './components/SettingsForm';
 import { SidePanel, type SideTab } from './components/SidePanel';
@@ -23,11 +24,12 @@ import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
 import { useNotices } from './view-models/use-notices';
-import { usePreviewHtml } from './view-models/use-preview-html';
 import { usePrinterStatus } from './view-models/use-printer-status';
 import { usePrinters } from './view-models/use-printers';
+import { useRules } from './view-models/use-rules';
 import { useScanStation } from './view-models/use-scan-station';
 import { useSettings } from './view-models/use-settings';
+import { useTemplatePreview } from './view-models/use-template-preview';
 import { useTemplates } from './view-models/use-templates';
 import { useUpdateStatus } from './view-models/use-update-status';
 
@@ -68,6 +70,8 @@ export function App() {
     replaceSettings: replace,
     onActiveTemplateChanged: () => void station.refreshPreview(),
   });
+  // 规则、顺序、模板绑定变了：当前扫码的识别结果和用的模板都可能变，重新预览。
+  const rules = useRules({ onRulesChanged: () => void station.refreshPreview() });
 
   // 编辑模板时预览草稿；悬停在其他模板上时预览它；没有扫码时用示例标签展示当前生效的模板。
   // 三种情况都套用备注下拉框的选择，看到的就是打出来的样子。
@@ -83,13 +87,18 @@ export function App() {
   }, [templates.templates, templates.active, hoverTemplateId, noteOverride]);
   const previewTemplate = templates.draft ?? hoverTemplate ?? (station.scan ? null : effectiveTemplate);
   const previewRaw = station.scan?.preview.result.status === 'ok' ? station.scan.raw : SAMPLE_LABEL_RAW;
-  const overrideHtml = usePreviewHtml(previewRaw, previewTemplate);
+  const overridePreview = useTemplatePreview(previewRaw, previewTemplate);
+  const overrideOf = (badge: string): PreviewOverride => ({
+    html: overridePreview?.html ?? null,
+    qrOmitted: overridePreview?.qrOmitted ?? false,
+    badge,
+  });
   const override: PreviewOverride | null = templates.draft
-    ? { html: overrideHtml, badge: '模板编辑中 · 未保存不会用于打印' }
+    ? overrideOf('模板编辑中 · 未保存不会用于打印')
     : hoverTemplate
-      ? { html: overrideHtml, badge: `预览 · ${hoverTemplate.name} · 点「使用」后才会用于打印` }
+      ? overrideOf(`预览 · ${hoverTemplate.name} · 点「使用」后才会用于打印`)
       : previewTemplate && templates.active
-        ? { html: overrideHtml, badge: `示例 · ${templates.active.name}` }
+        ? overrideOf(`示例 · ${templates.active.name}`)
         : null;
 
   const noteOptions = buildNoteOptions(settings?.notePresets ?? [], noteOverride);
@@ -127,6 +136,10 @@ export function App() {
     return result;
   };
 
+  const openShop = () => {
+    window.api.openShop().catch((error: unknown) => reportError('打开店铺', error));
+  };
+
   const openLogFolder = () => {
     window.api.openLogFolder().catch((error: unknown) => reportError('打开日志目录', error));
   };
@@ -138,6 +151,7 @@ export function App() {
         printerChip={printerChip}
         readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
         onInstallUpdate={updates.install}
+        onOpenShop={openShop}
       />
       {settings === null ? (
         <div className="loading">
@@ -157,6 +171,7 @@ export function App() {
           <div className="station">
             <ScanBar
               autoPrint={autoPrint}
+              lineGapMs={settings?.scanLineGapMs ?? DEFAULT_SETTINGS.scanLineGapMs}
               note={{ ...noteOptions, onSelect: (value) => void selectNote(value) }}
               onAutoPrintChange={(next) => void update({ autoPrint: next })}
               onScan={station.scanCode}
@@ -227,10 +242,13 @@ export function App() {
                   update={updateView}
                   onChange={changeSettings}
                   onOpenLogFolder={openLogFolder}
+                  onOpenShop={openShop}
                   onCheckForUpdates={updates.check}
                   onPreviewVoice={feedback.preview}
+                  secretNames={rules.secretNames}
                 />
               ),
+              rules: <RulePanel rules={rules} templates={templates.templates} />,
             }}
           />
         </main>

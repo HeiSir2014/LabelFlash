@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { ScanResult } from '../../../core/scan/scan-result';
 import type { LabelPreview } from '../../../shared/ipc-contract';
 import {
   describeJobStatus,
@@ -13,11 +14,31 @@ import {
 
 const NOW = Date.UTC(2026, 8, 28, 9, 0, 0);
 const MINUTE = 60_000;
-const LABEL = { raw: 'CL5640-TK-图片色-XL', code: 'CL5640-TK', color: '图片色', size: 'XL' };
-const OK_PREVIEW: LabelPreview = { result: { status: 'ok', label: LABEL, recent: null }, html: '<html></html>' };
+const SCAN: ScanResult = {
+  raw: 'CL5640-TK-图片色-XL',
+  ruleId: 'builtin:dash-three',
+  ruleName: '横杠三段（编码-颜色-尺码）',
+  fields: [
+    { name: '编码', value: 'CL5640-TK' },
+    { name: '颜色', value: '图片色' },
+    { name: '尺码', value: 'XL' },
+  ],
+};
+const OK_PREVIEW: LabelPreview = {
+  result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: null },
+  html: '<html></html>',
+  templateName: '样衣标准（二维码在左）',
+  qrOmitted: false,
+};
+const INVALID_PREVIEW = (reason: 'INVALID_CONTENT' | 'NO_MATCHING_RULE'): LabelPreview => ({
+  result: { status: 'invalid', reason },
+  html: null,
+  templateName: null,
+  qrOmitted: false,
+});
 
 const snapshot = (overrides: Partial<ScanSnapshot> = {}): ScanSnapshot => ({
-  raw: LABEL.raw,
+  raw: SCAN.raw,
   preview: OK_PREVIEW,
   print: null,
   isPrinting: false,
@@ -48,11 +69,24 @@ describe('formatAgo / formatWindow', () => {
 
 describe('describeResult', () => {
   test('printed means sent to the printer', () => {
-    expect(describeResult({ status: 'printed', jobId: 'j', label: LABEL }, NOW)).toEqual({
+    expect(describeResult({ status: 'printed', jobId: 'j', scan: SCAN }, NOW)).toEqual({
       tone: 'success',
       title: '已发送打印',
       detail: 'CL5640-TK · 图片色 · XL',
     });
+  });
+
+  test('printed lists at most three field values, multi-line values on one line', () => {
+    const scan: ScanResult = {
+      ...SCAN,
+      fields: [
+        { name: '订单号', value: 'A001' },
+        { name: '地址', value: '一号楼\n三单元' },
+        { name: '款号', value: 'CL5640' },
+        { name: '数量', value: '2' },
+      ],
+    };
+    expect(describeResult({ status: 'printed', jobId: 'j', scan }, NOW).detail).toBe('A001 · 一号楼 / 三单元 · CL5640');
   });
 
   test('duplicate explains when and why', () => {
@@ -95,13 +129,12 @@ describe('describeScan', () => {
     expect(describeScan(snapshot({ hasIpcError: true }), context()).status).toEqual(IPC_ERROR_VIEW);
   });
 
-  test('invalid preview is an error with no actions', () => {
-    const view = describeScan(
-      snapshot({ preview: { result: { status: 'invalid', reason: 'INVALID_FORMAT' }, html: null } }),
-      context(),
-    );
-    expect(view.status.title).toBe('二维码格式不对');
-    expect(view.actions).toEqual({ print: null, forceReprint: false });
+  test('invalid preview is an error with no actions, worded by reason', () => {
+    const noRule = describeScan(snapshot({ preview: INVALID_PREVIEW('NO_MATCHING_RULE') }), context());
+    expect(noRule.status).toMatchObject({ tone: 'error', title: '没有匹配的识别规则' });
+    expect(noRule.actions).toEqual({ print: null, forceReprint: false });
+    const unreadable = describeScan(snapshot({ preview: INVALID_PREVIEW('INVALID_CONTENT') }), context());
+    expect(unreadable.status.title).toBe('扫码内容无法识别');
   });
 
   test('printing is pending', () => {
@@ -116,12 +149,29 @@ describe('describeScan', () => {
 
   test('manual mode still lets F2 submit a recently printed label (the threshold decides) and offers force', () => {
     const preview: LabelPreview = {
-      result: { status: 'ok', label: LABEL, recent: { state: 'printed', at: NOW - 2 * MINUTE } },
-      html: '',
+      ...OK_PREVIEW,
+      result: { status: 'ok', scan: SCAN, recent: { state: 'printed', at: NOW - 2 * MINUTE }, lookupFailure: null },
     };
     const view = describeScan(snapshot({ preview }), context());
     expect(view.status).toMatchObject({ tone: 'warning', title: '2 分钟前已打印过' });
     expect(view.actions).toEqual({ print: 'print', forceReprint: true });
+  });
+
+  test('a lookup that failed during preview offers a retry instead of printing blank data', () => {
+    const preview: LabelPreview = {
+      ...OK_PREVIEW,
+      result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: '查询超时' },
+    };
+    const view = describeScan(snapshot({ preview }), context());
+    expect(view.status).toMatchObject({ tone: 'error', title: '数据查询失败' });
+    expect(view.status.detail).toContain('查询超时');
+    expect(view.actions).toEqual({ print: 'retry', forceReprint: false });
+  });
+
+  test('a blocked print explains the lookup failure', () => {
+    const view = describeResult({ status: 'failed', reason: 'LOOKUP_FAILED', detail: '返回 500' }, NOW);
+    expect(view).toMatchObject({ tone: 'error', title: '数据查询失败，没有打印' });
+    expect(view.detail).toContain('返回 500');
   });
 
   test('no printer selected blocks printing in both modes', () => {
@@ -152,7 +202,7 @@ describe('describeScan', () => {
 });
 
 describe('describeJobStatus', () => {
-  const base = { id: 'j', createdAt: NOW, raw: LABEL.raw, printerName: 'P', source: 'desktop' as const, forced: false };
+  const base = { id: 'j', createdAt: NOW, raw: SCAN.raw, printerName: 'P', source: 'desktop' as const, forced: false };
 
   test('marks forced reprints', () => {
     expect(describeJobStatus({ ...base, status: 'printed', forced: true })).toEqual({

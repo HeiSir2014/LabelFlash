@@ -1,8 +1,13 @@
+import type { LookupTableInfo } from '../core/lookup/lookup-model';
+import type { Delivery } from '../core/notify/delivery';
+import type { RuleKind, ScanRule } from '../core/scan/rule-model';
+import type { RuleSetting } from '../core/scan/rule-settings';
 import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
 import type { JobPage, JobQuery } from './job-history';
 import type { PrinterReadiness } from './printer-readiness';
+import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
 import type { UpdateStatus } from './update-status';
 import type { VoiceCue } from './voice';
@@ -24,8 +29,27 @@ export const IpcChannel = {
   DuplicateTemplate: 'templates:duplicate',
   SaveTemplate: 'templates:save',
   DeleteTemplate: 'templates:delete',
+  ListRules: 'rules:list',
+  CreateRule: 'rules:create',
+  DuplicateRule: 'rules:duplicate',
+  SaveRule: 'rules:save',
+  DeleteRule: 'rules:delete',
+  SaveRuleSettings: 'rules:save-settings',
+  TestRule: 'rules:test',
+  ExportRules: 'rules:export',
+  ImportRules: 'rules:import',
+  ListLookupTables: 'lookup:list',
+  ImportLookupTable: 'lookup:import',
+  DeleteLookupTable: 'lookup:delete',
+  ListSecrets: 'secrets:list',
+  SetSecret: 'secrets:set',
+  DeleteSecret: 'secrets:delete',
+  ListWebhookDeliveries: 'webhooks:deliveries',
+  RetryWebhookDelivery: 'webhooks:retry',
+  SendTestWebhook: 'webhooks:test',
   GetAppInfo: 'app:info',
   OpenLogFolder: 'app:open-log-folder',
+  OpenShop: 'app:open-shop',
   GetUpdateStatus: 'update:status',
   CheckForUpdates: 'update:check',
   InstallUpdate: 'update:install',
@@ -48,9 +72,18 @@ export interface PrintOptions {
 
 export interface LabelPreview {
   result: PreviewResult;
-  /** 与实际打印相同的标签 HTML；格式错误时为 null。 */
+  /** 与实际打印相同的标签 HTML；识别不了时为 null。 */
   html: string | null;
+  /** 这次用的模板（规则绑定的模板或当前模板）；识别不了时为 null。 */
+  templateName: string | null;
+  /** 内容太长，二维码放不下被省略了。 */
+  qrOmitted: boolean;
 }
+
+export type LookupImportResult =
+  | { status: 'imported'; table: LookupTableInfo }
+  | { status: 'canceled' }
+  | { status: 'invalid'; issue: string };
 
 export interface AppInfo {
   productName: string;
@@ -81,8 +114,38 @@ export interface LabelFlashApi {
   saveTemplate(template: LabelTemplate): Promise<LabelTemplate>;
   /** 删除后若它正在使用，自动切回标准模板；返回最新设置。 */
   deleteTemplate(id: string): Promise<AppSettings>;
+  listRules(): Promise<RuleListing>;
+  createRule(kind: RuleKind): Promise<RuleMutation>;
+  duplicateRule(id: string): Promise<RuleMutation>;
+  saveRule(rule: ScanRule): Promise<RuleMutation>;
+  deleteRule(id: string): Promise<RuleListing>;
+  /** 保存顺序、启用和模板绑定。 */
+  saveRuleSettings(settings: RuleSetting[]): Promise<RuleListing>;
+  /** draft 为正在编辑、还没保存的规则；不传则按本机当前规则识别。 */
+  testRule(raw: string, draft?: ScanRule): Promise<RuleTestResult>;
+  /** 主进程弹出保存对话框。 */
+  exportRules(ids: string[]): Promise<RuleExportResult>;
+  /** 主进程弹出打开对话框。 */
+  importRules(): Promise<RuleImportResult>;
+  listLookupTables(): Promise<LookupTableInfo[]>;
+  /** 主进程弹出选择文件的对话框；replaceId 不为 null 时替换那张表的内容。 */
+  importLookupTable(replaceId: string | null): Promise<LookupImportResult>;
+  deleteLookupTable(id: string): Promise<void>;
+  /** 只返回密钥名称；内容写进去以后界面上再也看不到。 */
+  listSecrets(): Promise<string[]>;
+  /** 新增或替换；名称或内容不合法、系统加密不可用时返回原因。 */
+  setSecret(name: string, value: string): Promise<{ ok: true } | { ok: false; issue: string }>;
+  deleteSecret(name: string): Promise<void>;
+  /** 最近的通知发送记录（新的在前）。接口本身在设置的 webhooks 里增删改。 */
+  listWebhookDeliveries(): Promise<Delivery[]>;
+  /** 失败或正在等待重试的通知立即重发；已送达的返回 false。 */
+  retryWebhookDelivery(id: number): Promise<boolean>;
+  /** 给这个接口发一条测试事件；接口不存在时返回 false。 */
+  sendTestWebhook(endpointId: string): Promise<boolean>;
   getAppInfo(): Promise<AppInfo>;
   openLogFolder(): Promise<void>;
+  /** 用系统浏览器打开出品方店铺（地址是主进程里的常量，页面不能指定网址）。 */
+  openShop(): Promise<void>;
   getUpdateStatus(): Promise<UpdateStatus>;
   checkForUpdates(): Promise<void>;
   /** 仅在新版本已下载（ready）时有效：重启并安装。 */

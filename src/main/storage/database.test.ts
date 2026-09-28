@@ -20,7 +20,17 @@ describe('openDatabase', () => {
   test('migrates a fresh database to the latest schema', () => {
     const db = openDatabase(':memory:');
     expect(userVersion(db)).toBe(MIGRATIONS.length);
-    expect(tableNames(db)).toEqual(['jobs', 'jobs_search', 'settings', 'templates']);
+    expect(tableNames(db)).toEqual([
+      'jobs',
+      'jobs_search',
+      'lookup_rows',
+      'lookup_tables',
+      'scan_rules',
+      'secrets',
+      'settings',
+      'templates',
+      'webhook_deliveries',
+    ]);
     db.close();
   });
 });

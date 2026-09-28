@@ -1,4 +1,6 @@
 import { MAX_DEDUP_WINDOW_MS } from '../core/dedup-guard';
+import { sanitizeWebhooks, type WebhookEndpoint } from '../core/notify/webhook-model';
+import { defaultRuleSettings, type RuleSetting, sanitizeRuleSettings } from '../core/scan/rule-settings';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { DEFAULT_NOTE_OVERRIDE, type NoteOverride } from '../core/templates/note-override';
 import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
@@ -18,6 +20,12 @@ export interface AppSettings {
   launchAtLogin: boolean;
   /** 扫码 / 打印后的语音确认播报。 */
   voice: VoiceSettings;
+  /** 识别规则的顺序、启用和绑定的模板（本机设置，不随规则导出）。 */
+  ruleSettings: RuleSetting[];
+  /** 多行扫码：回车 / Tab 之后这么久没有新字符才算一次扫码结束（毫秒）。 */
+  scanLineGapMs: number;
+  /** 打印结果通知的接口（签名密钥只存名称，内容在密钥表里）。 */
+  webhooks: WebhookEndpoint[];
 }
 
 export const MS_PER_SECOND = 1_000;
@@ -25,6 +33,8 @@ export const MAX_DEDUP_WINDOW_SECONDS = MAX_DEDUP_WINDOW_MS / MS_PER_SECOND;
 export const HISTORY_LIMIT_RANGE = { min: 1_000, max: 1_000_000 } as const;
 const MAX_PRINTER_NAME_LENGTH = 256;
 export const MAX_NOTE_PRESETS = 20;
+/** 扫码枪逐字输入只间隔几毫秒；80ms 足以区分「码里的换行」和「一次扫码结束」，人手按回车也感觉不到延迟。 */
+export const SCAN_LINE_GAP_RANGE = { min: 20, max: 500, default: 80 } as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   selectedPrinter: null,
@@ -38,6 +48,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // 只由程序按设置注册（不在安装脚本里写），自动更新重新运行安装程序时不会覆盖用户关掉的选择。
   launchAtLogin: true,
   voice: { enabled: true, name: DEFAULT_VOICE_NAME, ratePercent: 0 },
+  ruleSettings: defaultRuleSettings(),
+  scanLineGapMs: SCAN_LINE_GAP_RANGE.default,
+  webhooks: [],
 };
 
 export function sanitizeSettings(value: unknown): AppSettings {
@@ -48,7 +61,6 @@ export function sanitizeSettings(value: unknown): AppSettings {
     noteOverride: sanitizeNoteOverride(input['noteOverride']),
     notePresets: sanitizeNotePresets(input['notePresets']),
     autoPrint: sanitizeBoolean(input['autoPrint'], DEFAULT_SETTINGS.autoPrint),
-    // 旧版本的 dedupWindowMinutes 不做兼容（软件还没发布过），存着的旧值会被忽略，按默认值处理。
     dedupWindowSeconds: sanitizeInteger(
       input['dedupWindowSeconds'],
       0,
@@ -63,6 +75,14 @@ export function sanitizeSettings(value: unknown): AppSettings {
     ),
     launchAtLogin: sanitizeBoolean(input['launchAtLogin'], DEFAULT_SETTINGS.launchAtLogin),
     voice: sanitizeVoice(input['voice']),
+    ruleSettings: sanitizeRuleSettings(input['ruleSettings']),
+    scanLineGapMs: sanitizeInteger(
+      input['scanLineGapMs'],
+      SCAN_LINE_GAP_RANGE.min,
+      SCAN_LINE_GAP_RANGE.max,
+      DEFAULT_SETTINGS.scanLineGapMs,
+    ),
+    webhooks: sanitizeWebhooks(input['webhooks']),
   };
 }
 

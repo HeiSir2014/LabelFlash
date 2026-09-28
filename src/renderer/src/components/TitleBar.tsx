@@ -5,15 +5,16 @@ import { useWindowControls } from '../view-models/use-window-controls';
 import { ConfirmButton } from './ConfirmButton';
 
 interface TitleBarProps {
-  /** 当前版本号（如 0.1.0）；读取到之前为 null，不显示。 */
+  /** 当前版本号（如 1.0.1）；读取到之前为 null，不显示。 */
   version: string | null;
   printerChip: PrinterChipView;
   /** 新版本已下载时显示的版本号；null 表示没有待安装的更新。 */
   readyUpdateVersion: string | null;
   onInstallUpdate: () => void;
+  onOpenShop: () => void;
 }
 
-export function TitleBar({ version, printerChip, readyUpdateVersion, onInstallUpdate }: TitleBarProps) {
+export function TitleBar({ version, printerChip, readyUpdateVersion, onInstallUpdate, onOpenShop }: TitleBarProps) {
   const { chrome, isMaximized, isFullScreen, minimize, toggleMaximize, close } = useWindowControls();
   const hasTrafficLights = chrome === 'mac-traffic-lights';
   // 全屏时系统隐藏红绿灯，标题栏不再为它留位置。
@@ -29,6 +30,10 @@ export function TitleBar({ version, printerChip, readyUpdateVersion, onInstallUp
           {/* 版本号弱化显示：排查问题时一眼能看到，又不抢产品名的视觉层级。系统窗口标题只保留产品名。 */}
           {version && <span className="title-bar__version">v{version}</span>}
         </span>
+        <button type="button" className="title-bar__shop" title={BRAND.shop.url} onClick={onOpenShop}>
+          <span className="title-bar__shop-label">淘宝店铺</span>
+          <span className="title-bar__shop-name">{BRAND.shop.name}</span>
+        </button>
       </div>
       {readyUpdateVersion && (
         <ConfirmButton

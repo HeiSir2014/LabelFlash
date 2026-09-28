@@ -1,4 +1,4 @@
-import { BUILT_IN_TEMPLATES, STANDARD_TEMPLATE } from './builtin-templates';
+import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE } from './builtin-templates';
 import { sanitizeTemplate } from './sanitize-template';
 import { CUSTOM_TEMPLATE_PREFIX, isBuiltInTemplateId, type LabelTemplate, TEMPLATE_LIMITS } from './template-model';
 
@@ -36,9 +36,9 @@ export class TemplateCatalog {
     return this.list().find((template) => template.id === id) ?? null;
   }
 
-  /** 找不到（例如已被删除）时回退到标准模板，保证打印永远有模板可用。 */
+  /** 找不到（例如已被删除）时回退到通用模板，保证打印永远有模板可用。 */
   resolve(id: string): LabelTemplate {
-    return this.get(id) ?? STANDARD_TEMPLATE;
+    return this.get(id) ?? GENERIC_TEMPLATE;
   }
 
   duplicate(sourceId: string): LabelTemplate {

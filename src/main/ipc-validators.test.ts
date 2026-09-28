@@ -1,11 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import {
   MAX_IPC_STRING_LENGTH,
+  MAX_RAW_INPUT_LENGTH,
   requireJobQuery,
+  requireLookupTableId,
+  requirePositiveInteger,
   requirePrintOptions,
+  requireRaw,
+  requireRuleId,
+  requireRuleIds,
+  requireRuleKind,
   requireString,
   requireTemplateId,
   requireVoiceCue,
+  requireWebhookId,
 } from './ipc-validators';
 
 describe('ipc validators', () => {
@@ -13,6 +21,37 @@ describe('ipc validators', () => {
     expect(requireString('CL1-红-36', 'raw')).toBe('CL1-红-36');
     expect(() => requireString(42, 'raw')).toThrow('Invalid raw');
     expect(() => requireString('x'.repeat(MAX_IPC_STRING_LENGTH + 1), 'raw')).toThrow(TypeError);
+  });
+
+  test('requireRaw leaves room for multi-line scans before normalising', () => {
+    const multiLine = 'x\r\n'.repeat(MAX_IPC_STRING_LENGTH);
+    expect(requireRaw(multiLine)).toBe(multiLine);
+    expect(() => requireRaw('x'.repeat(MAX_RAW_INPUT_LENGTH + 1))).toThrow(TypeError);
+  });
+
+  test('rule ids, id lists and kinds are checked', () => {
+    expect(requireRuleId('custom:abc-1')).toBe('custom:abc-1');
+    expect(() => requireRuleId('other:x')).toThrow(TypeError);
+    expect(requireRuleIds(['builtin:raw', 'custom:a'])).toEqual(['builtin:raw', 'custom:a']);
+    expect(() => requireRuleIds(['builtin:raw', 3])).toThrow(TypeError);
+    expect(() => requireRuleIds(Array.from({ length: 101 }, () => 'custom:a'))).toThrow(TypeError);
+    expect(requireRuleKind('regex')).toBe('regex');
+    expect(() => requireRuleKind('script')).toThrow(TypeError);
+  });
+
+  test('requirePositiveInteger and requireWebhookId reject anything else', () => {
+    expect(requirePositiveInteger(3, 'id')).toBe(3);
+    for (const bad of [0, -1, 1.5, '3', null]) {
+      expect(() => requirePositiveInteger(bad, 'id')).toThrow(TypeError);
+    }
+    expect(requireWebhookId('w-1')).toBe('w-1');
+    expect(() => requireWebhookId('a/b')).toThrow(TypeError);
+  });
+
+  test('requireLookupTableId accepts generated ids only', () => {
+    expect(requireLookupTableId('3f2c9a1e-0b4d-4c55-9b0e-7d8f1a2b3c4d')).toBe('3f2c9a1e-0b4d-4c55-9b0e-7d8f1a2b3c4d');
+    expect(() => requireLookupTableId('../x')).toThrow(TypeError);
+    expect(() => requireLookupTableId(null)).toThrow(TypeError);
   });
 
   test('requirePrintOptions only allows renderer sources', () => {

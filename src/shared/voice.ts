@@ -23,6 +23,7 @@ export const VOICE_CUES = [
   'printerNotFound',
   'timeout',
   'failed',
+  'lookupFailed',
   'internalError',
 ] as const;
 export type VoiceCue = (typeof VOICE_CUES)[number];
@@ -35,7 +36,7 @@ export const VOICE_CUE_TEXT: Record<VoiceCue, string> = {
   scanned: '已扫描，按 F2 打印',
   duplicate: '重复扫码，已拦截',
   stillPrinting: '正在打印，请稍候',
-  invalid: '二维码格式不对',
+  invalid: '无法识别，请检查扫码内容',
   noPrinter: '请先选择打印机',
   paperOut: '打印机缺纸',
   paperJam: '打印机卡纸',
@@ -45,6 +46,7 @@ export const VOICE_CUE_TEXT: Record<VoiceCue, string> = {
   printerNotFound: '找不到打印机',
   timeout: '打印机没有响应，请检查是否出纸',
   failed: '打印失败',
+  lookupFailed: '数据查询失败，没有打印',
   internalError: '程序出错，请重试',
 };
 
@@ -73,6 +75,7 @@ export const VOICE_CUE_LEVEL: Record<VoiceCue, VoiceLevel> = {
   printerNotFound: 'alert',
   timeout: 'alert',
   failed: 'alert',
+  lookupFailed: 'alert',
   internalError: 'alert',
 };
 

@@ -1,29 +1,38 @@
 import { useId } from 'react';
+import { RULE_LIMITS } from '../../../core/scan/rule-model';
 import { NOTE_VARIABLES } from '../../../core/templates/note-text';
 import {
-  type FieldConfig,
-  type FieldKey,
+  type BottomLine,
   type LabelTemplate,
   maxQrSizeMm,
   type NoteConfig,
   type NotePlacement,
+  type QrContent,
+  type QrContentKind,
   type QrErrorLevel,
   type QrLayout,
   TEMPLATE_LIMITS,
   type TextAlign,
 } from '../../../core/templates/template-model';
+import { FieldsAreaEditor } from './FieldsAreaEditor';
 import { NumberField, Segmented, TextInput, Toggle } from './form-controls';
 
 const FONT_STEP_MM = 0.1;
 const PADDING_STEP_MM = 0.5;
 const QR_STEP_MM = 1;
 
-const FIELD_LABELS: ReadonlyArray<{ key: FieldKey; label: string }> = [
-  { key: 'code', label: '编码' },
-  { key: 'color', label: '颜色' },
-  { key: 'size', label: '尺码' },
-  { key: 'raw', label: '完整编码（底部）' },
+const QR_CONTENT_OPTIONS: ReadonlyArray<{ value: QrContentKind; label: string }> = [
+  { value: 'raw', label: '完整内容' },
+  { value: 'field', label: '某个字段' },
+  { value: 'text', label: '自定义文本' },
 ];
+
+/** 切换二维码内容来源时的初始值。 */
+const QR_CONTENT_DEFAULTS: Record<QrContentKind, QrContent> = {
+  raw: { kind: 'raw' },
+  field: { kind: 'field', field: '订单号' },
+  text: { kind: 'text', text: '' },
+};
 
 const ALIGN_OPTIONS: ReadonlyArray<{ value: TextAlign; label: string }> = [
   { value: 'left', label: '左' },
@@ -60,9 +69,10 @@ interface TemplateEditorProps {
 export function TemplateEditor({ draft, isDirty, onChange, onSave, onCancel }: TemplateEditorProps) {
   const noteId = useId();
   const { fontSizeMm } = TEMPLATE_LIMITS;
-  const setField = (key: FieldKey, patch: Partial<FieldConfig>) =>
-    onChange({ ...draft, fields: { ...draft.fields, [key]: { ...draft.fields[key], ...patch } } });
+  const setQrContent = (content: QrContent) => onChange({ ...draft, qr: { ...draft.qr, content } });
+  const setBottom = (patch: Partial<BottomLine>) => onChange({ ...draft, bottom: { ...draft.bottom, ...patch } });
   const setNote = (patch: Partial<NoteConfig>) => onChange({ ...draft, note: { ...draft.note, ...patch } });
+  const { content } = draft.qr;
 
   return (
     <div className="template-editor">
@@ -94,7 +104,7 @@ export function TemplateEditor({ draft, isDirty, onChange, onSave, onCancel }: T
             onChange={(bottomAlign) => onChange({ ...draft, bottomAlign })}
           />
           <p className="form-hint">
-            对齐按区域统一设置：二维码旁的编码、颜色、尺码（和旁边的备注）共用一种对齐，前缀与值分两列，值永远对齐。
+            对齐按区域统一设置：二维码旁的字段（和旁边的备注）共用一种对齐，前缀与值分两列，值永远对齐。
           </p>
           <NumberField
             label="页边距"
@@ -134,33 +144,56 @@ export function TemplateEditor({ draft, isDirty, onChange, onSave, onCancel }: T
             onChange={(errorCorrection) => onChange({ ...draft, qr: { ...draft.qr, errorCorrection } })}
           />
           <p className="form-hint">容错越高，二维码被磨损后越容易识别，但图案更密；热敏标签建议 M 或 Q。</p>
+          <p className="form-hint">内容太长时自动降低容错，仍然放不下就不印二维码。</p>
+          <Segmented
+            label="内容"
+            value={content.kind}
+            options={QR_CONTENT_OPTIONS}
+            onChange={(kind) => setQrContent(QR_CONTENT_DEFAULTS[kind])}
+          />
+          {content.kind === 'field' && (
+            <TextInput
+              label="字段名"
+              value={content.field}
+              maxLength={RULE_LIMITS.fieldNameLength}
+              placeholder="例如 订单号"
+              onChange={(field) => setQrContent({ kind: 'field', field })}
+            />
+          )}
+          {content.kind === 'text' && (
+            <TextInput
+              label="文本"
+              value={content.text}
+              maxLength={TEMPLATE_LIMITS.noteLength}
+              placeholder="例如 https://example.com/o/{订单号}"
+              onChange={(text) => setQrContent({ kind: 'text', text })}
+            />
+          )}
+          {content.kind !== 'raw' && (
+            <p className="form-hint">
+              字段没识别到、文本为空时，二维码改用完整内容。文本里可以写 {'{字段名}'} 等变量。
+            </p>
+          )}
         </section>
 
-        {FIELD_LABELS.map(({ key, label }) => {
-          const field = draft.fields[key];
-          return (
-            <section key={key} className="form-section">
-              <h3 className="form-section__title">{label}</h3>
-              <Toggle label="显示" checked={field.visible} onChange={(visible) => setField(key, { visible })} />
-              <TextInput
-                label="前缀文字"
-                value={field.prefix}
-                maxLength={TEMPLATE_LIMITS.prefixLength}
-                placeholder="例如 编码："
-                onChange={(prefix) => setField(key, { prefix })}
-              />
-              <NumberField
-                label="字号"
-                value={field.fontSizeMm}
-                min={fontSizeMm.min}
-                max={fontSizeMm.max}
-                step={FONT_STEP_MM}
-                onChange={(size) => setField(key, { fontSizeMm: size })}
-              />
-              <Toggle label="加粗" checked={field.bold} onChange={(bold) => setField(key, { bold })} />
-            </section>
-          );
-        })}
+        <FieldsAreaEditor area={draft.fieldsArea} onChange={(fieldsArea) => onChange({ ...draft, fieldsArea })} />
+
+        <section className="form-section">
+          <h3 className="form-section__title">底部整行</h3>
+          <p className="form-hint">
+            显示完整内容，多行用「 / 」连起来；只识别出一个字段、且它就是完整内容时（例如纯数字订单号）自动不显示。
+          </p>
+          <Toggle label="显示" checked={draft.bottom.visible} onChange={(visible) => setBottom({ visible })} />
+          <NumberField
+            label="字号"
+            value={draft.bottom.fontSizeMm}
+            min={fontSizeMm.min}
+            max={fontSizeMm.max}
+            step={FONT_STEP_MM}
+            onChange={(size) => setBottom({ fontSizeMm: size })}
+          />
+          <Toggle label="加粗" checked={draft.bottom.bold} onChange={(bold) => setBottom({ bold })} />
+        </section>
 
         <section className="form-section">
           <h3 className="form-section__title">备注</h3>
@@ -192,6 +225,9 @@ export function TemplateEditor({ draft, isDirty, onChange, onSave, onCancel }: T
                 </button>
               ))}
             </fieldset>
+            <p className="form-hint">
+              也可以写 {'{字段名}'} 取识别到的字段，例如 {'{订单号}'}；这次没识别到的字段原样印出。
+            </p>
           </div>
           <Segmented
             label="位置"

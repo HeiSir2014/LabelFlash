@@ -1,6 +1,6 @@
 import { type RefObject, useEffect, useRef } from 'react';
-import { WINDOW_TIMERS } from '../lib/hover-intent';
 import { IdleWatcher, isScannerCharacter, SCAN_FOCUS_IDLE_MS } from '../lib/scan-focus';
+import { WINDOW_TIMERS } from '../lib/timers';
 
 /** 焦点落到按钮、开关、空白处后，稍等一下再拉回：让点击和下拉框先完成自己的操作。 */
 const REFOCUS_DELAY_MS = 300;

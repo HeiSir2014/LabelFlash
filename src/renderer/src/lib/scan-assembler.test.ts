@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { IntentTimers } from './hover-intent';
 import { ScanAssembler } from './scan-assembler';
+import type { IntentTimers } from './timers';
 
 /** 假计时器：记录挂起的回调和时长，由测试决定何时到期。 */
 function fakeTimers() {

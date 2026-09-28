@@ -1,4 +1,4 @@
-import type { IntentTimers } from './hover-intent';
+import type { IntentTimers } from './timers';
 
 /** 鼠标和键盘都这么久没动，就把焦点还给扫码框（设置、模板编辑里也一样）。 */
 export const SCAN_FOCUS_IDLE_MS = 10_000;

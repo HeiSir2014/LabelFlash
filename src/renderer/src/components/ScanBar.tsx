@@ -1,7 +1,7 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import { WINDOW_TIMERS } from '../lib/hover-intent';
 import type { NoteOption } from '../lib/note-options';
 import { ScanAssembler } from '../lib/scan-assembler';
+import { WINDOW_TIMERS } from '../lib/timers';
 import { useScanFocus } from '../view-models/use-scan-focus';
 
 export interface NoteControl {

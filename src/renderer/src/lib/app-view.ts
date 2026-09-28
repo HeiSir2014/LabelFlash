@@ -52,6 +52,13 @@ export function pageLabel(page: ConfigPage): string {
   return PAGE_LABELS.get(page) ?? page;
 }
 
+/** 这些页面铺满内容区，自己安排滚动区域和底部操作条（列表 / 表单滚动，预览和试一试固定）。 */
+const FILL_PAGES: ReadonlySet<ConfigPage> = new Set(['templates', 'rules']);
+
+export function isFillPage(page: ConfigPage): boolean {
+  return FILL_PAGES.has(page);
+}
+
 /** 整个窗口只有两种视图：工作台，或配置中心的某一页。 */
 export type AppView = { kind: 'workbench' } | { kind: 'config'; page: ConfigPage };
 

@@ -7,10 +7,12 @@ import { WebhookSettings } from '../WebhookSettings';
 import { AboutPage } from './pages/AboutPage';
 import { GeneralPage } from './pages/GeneralPage';
 import { NotePresetsPage } from './pages/NotePresetsPage';
+import { TemplatesPage, type TemplatesPageProps } from './pages/TemplatesPage';
 import { VoicePage } from './pages/VoicePage';
 
 interface ConfigPagesProps {
   page: ConfigPage;
+  templates: TemplatesPageProps;
   settings: AppSettings;
   jobTotal: number;
   appInfo: AppInfo | null;
@@ -27,6 +29,7 @@ interface ConfigPagesProps {
 /** 配置中心当前页的内容。 */
 export function ConfigPages({
   page,
+  templates,
   settings,
   jobTotal,
   appInfo,
@@ -39,6 +42,8 @@ export function ConfigPages({
   onPreviewVoice,
 }: ConfigPagesProps) {
   switch (page) {
+    case 'templates':
+      return <TemplatesPage {...templates} />;
     case 'notes':
       return (
         <NotePresetsPage
@@ -73,11 +78,10 @@ export function ConfigPages({
       );
     case 'about':
       return <AboutPage appInfo={appInfo} onOpenShop={onOpenShop} />;
-    case 'templates':
     case 'rules':
     case 'lookup':
     case 'secrets':
-      // 这四页在后续步骤里迁进配置中心，目前仍在工作台右侧栏。
-      return <p className="config-empty">这一页正在迁移，暂时在工作台右侧栏的「模板」「识别规则」里管理。</p>;
+      // 这三页在下一步迁进配置中心，目前仍在工作台右侧栏。
+      return <p className="config-empty">这一页正在迁移，暂时在工作台右侧栏的「识别规则」里管理。</p>;
   }
 }

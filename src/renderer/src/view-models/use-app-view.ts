@@ -25,6 +25,11 @@ function transitionMs(): number {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : CONFIG_TRANSITION_MS;
 }
 
+/** 下拉框和带候选列表的输入框里，Esc 是用来收起下拉的，不当作「返回」。 */
+function isDropdown(target: EventTarget | null): boolean {
+  return target instanceof HTMLSelectElement || (target instanceof HTMLInputElement && target.hasAttribute('list'));
+}
+
 interface AppViewOptions {
   platform: Platform;
   /** 每次离开前调用，读取当前页面编辑器的最新状态。 */
@@ -36,7 +41,7 @@ interface AppViewOptions {
  * - 任何离开编辑器的动作（切换页面、返回、关闭、快捷键、Esc、跳转链接）都经过 requestLeave：
  *   有未保存的修改时先确认，放弃修改后才执行。
  * - 再次打开时回到上次的页面（本次运行内记住）。
- * - Ctrl+,（macOS ⌘,）开关配置中心；Esc 返回上一级（下拉框和输入法组字时的 Esc 除外）。
+ * - Ctrl+,（macOS ⌘,）开关配置中心；Esc 返回上一级（下拉框、带候选的输入框和输入法组字时的 Esc 除外）。
  */
 export function useAppView({ platform, editor }: AppViewOptions) {
   const [view, setView] = useState<AppView>(WORKBENCH);
@@ -132,7 +137,7 @@ export function useAppView({ platform, editor }: AppViewOptions) {
         return;
       }
       const isEscape = event.key === 'Escape' && !event.isComposing;
-      if (isEscape && isOpen && !(event.target instanceof HTMLSelectElement)) {
+      if (isEscape && isOpen && !isDropdown(event.target)) {
         event.preventDefault();
         back();
       }

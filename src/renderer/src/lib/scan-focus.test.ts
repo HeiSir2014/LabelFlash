@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { IntentTimers } from './hover-intent';
 import { IdleWatcher, isScannerCharacter, SCAN_FOCUS_IDLE_MS } from './scan-focus';
+import type { IntentTimers } from './timers';
 
 const KEY = { ctrlKey: false, altKey: false, metaKey: false };
 

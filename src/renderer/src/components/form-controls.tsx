@@ -105,10 +105,12 @@ interface TextInputProps {
   value: string;
   maxLength: number;
   placeholder?: string;
+  /** 候选列表（`<datalist>`）的 id：仍可输入候选之外的内容。 */
+  list?: string;
   onChange: (value: string) => void;
 }
 
-export function TextInput({ label, value, maxLength, placeholder, onChange }: TextInputProps) {
+export function TextInput({ label, value, maxLength, placeholder, list, onChange }: TextInputProps) {
   const id = useId();
   return (
     <div className="form-row">
@@ -122,6 +124,8 @@ export function TextInput({ label, value, maxLength, placeholder, onChange }: Te
         value={value}
         maxLength={maxLength}
         placeholder={placeholder}
+        list={list}
+        autoComplete="off"
         onChange={(event) => onChange(event.target.value)}
       />
     </div>

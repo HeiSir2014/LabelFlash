@@ -2,6 +2,9 @@ import type { EnrichStep } from '../../../core/scan/enrich-model';
 import { namedGroups, type ScanRule } from '../../../core/scan/rule-model';
 import type { ScanResult } from '../../../core/scan/scan-result';
 
+/** 模板页里字段名候选 `<datalist>` 的 id：字段名输入框用 `list` 指向它。 */
+export const FIELD_NAME_LIST_ID = 'field-name-suggestions';
+
 /** 一条规则能产出的字段名：识别出的字段 + 加工步骤产出的字段，按出现顺序。 */
 export function ruleFieldNames(rule: ScanRule): string[] {
   return [...recognisedNames(rule), ...rule.steps.flatMap(stepOutputs)];

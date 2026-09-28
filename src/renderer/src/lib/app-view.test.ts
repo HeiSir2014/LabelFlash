@@ -5,6 +5,7 @@ import {
   CONFIG_PAGES,
   configShortcutLabel,
   isConfigShortcut,
+  isFillPage,
   pageLabel,
   platformForChrome,
   type ShortcutKey,
@@ -26,6 +27,10 @@ describe('config navigation', () => {
     expect(pages).toEqual([...CONFIG_PAGES]);
     expect(CONFIG_NAV.map((group) => group.label)).toEqual(['标签', '识别', '集成', '系统']);
     expect(pageLabel('notes')).toBe('常用备注');
+  });
+
+  test('lets only the pages with a fixed preview or tester lay out their own scrolling', () => {
+    expect(CONFIG_PAGES.filter(isFillPage)).toEqual(['templates', 'rules']);
   });
 });
 

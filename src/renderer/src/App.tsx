@@ -12,14 +12,14 @@ import { PrinterList } from './components/PrinterList';
 import { RulePanel } from './components/RulePanel';
 import { ScanBar } from './components/ScanBar';
 import { SidePanel, type SideTab } from './components/SidePanel';
-import { TemplatePanel } from './components/TemplatePanel';
 import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
+import { fieldNameSuggestions } from './lib/field-names';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
 import { describePaperCheck } from './lib/paper-text';
-import { describePreviewUsage, type PreviewUsage } from './lib/preview-usage';
+import { describePreviewUsage } from './lib/preview-usage';
 import { describePrinterChip } from './lib/printer-chip';
 import { isWorkbenchActive } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
@@ -34,6 +34,7 @@ import { useNotices } from './view-models/use-notices';
 import { usePrinterStatus } from './view-models/use-printer-status';
 import { usePrinters } from './view-models/use-printers';
 import { useRules } from './view-models/use-rules';
+import { useSampleContent } from './view-models/use-sample-content';
 import { useScanStation } from './view-models/use-scan-station';
 import { useSettings } from './view-models/use-settings';
 import { useTemplatePreview } from './view-models/use-template-preview';
@@ -49,10 +50,6 @@ export function App() {
   const updates = useUpdateStatus();
   const updateView = describeUpdate(updates.status);
   const [sideTab, setSideTab] = useState<SideTab>('printers');
-  const platform = platformForChrome(window.windowControls.chrome);
-  // 模板和规则的编辑器在后续步骤迁进配置中心后接入未保存确认。
-  const appView = useAppView({ platform, editor: () => NO_EDITOR });
-  const isWorkbench = isWorkbenchActive(appView.view);
 
   const printerName = settings?.selectedPrinter ?? null;
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
@@ -84,33 +81,51 @@ export function App() {
   // 规则、顺序、模板绑定变了：当前扫码的识别结果和用的模板都可能变，重新预览。
   const rules = useRules({ onRulesChanged: () => void station.refreshPreview() });
 
-  // 编辑模板时预览草稿；悬停在其他模板上时预览它；没有扫码时用示例标签展示当前生效的模板。
-  // 三种情况都套用备注下拉框的选择，看到的就是打出来的样子。
+  const platform = platformForChrome(window.windowControls.chrome);
+  // 离开编辑器前检查未保存的修改：模板草稿只在模板页的编辑视图里存在（识别规则在下一步接入）。
+  const appView = useAppView({
+    platform,
+    editor: () =>
+      templates.draft ? { isEditing: true, isDirty: templates.isDirty, close: templates.cancelEdit } : NO_EDITOR,
+  });
+  const isWorkbench = isWorkbenchActive(appView.view);
+
+  // 没有扫码时用示例标签展示当前模板；模板页里预览选中的模板或草稿。
+  // 都套用备注下拉框的选择（草稿除外：正在编辑的就是备注本身），看到的就是打出来的样子。
   const noteOverride = settings?.noteOverride ?? DEFAULT_SETTINGS.noteOverride;
   const effectiveTemplate = useMemo(
     () => (templates.active ? applyNoteOverride(templates.active, noteOverride) : null),
     [templates.active, noteOverride],
   );
-  const [hoverTemplateId, setHoverTemplateId] = useState<string | null>(null);
-  const hoverTemplate = useMemo(() => {
-    const template = templates.templates.find((item) => item.id === hoverTemplateId);
-    return template && template.id !== templates.active?.id ? applyNoteOverride(template, noteOverride) : null;
-  }, [templates.templates, templates.active, hoverTemplateId, noteOverride]);
-  const previewTemplate = templates.draft ?? hoverTemplate ?? (station.scan ? null : effectiveTemplate);
-  const previewRaw = station.scan?.preview.result.status === 'ok' ? station.scan.raw : SAMPLE_LABEL_RAW;
-  const overridePreview = useTemplatePreview(previewRaw, previewTemplate);
-  const override: PreviewOverride | null = previewTemplate
+  const sampleTemplate = station.scan ? null : effectiveTemplate;
+  const samplePreview = useTemplatePreview(SAMPLE_LABEL_RAW, sampleTemplate);
+  const override: PreviewOverride | null = sampleTemplate
     ? {
-        html: overridePreview?.html ?? null,
-        qrOmitted: overridePreview?.qrOmitted ?? false,
-        feedKey: previewTemplate.id,
+        html: samplePreview?.html ?? null,
+        qrOmitted: samplePreview?.qrOmitted ?? false,
+        feedKey: sampleTemplate.id,
       }
     : null;
-  const previewUsage: PreviewUsage | null = templates.draft
-    ? { source: '模板编辑中', template: '未保存不会用于打印' }
-    : hoverTemplate
-      ? { source: `预览 · ${hoverTemplate.name}`, template: '点「使用」后才会用于打印' }
-      : describePreviewUsage(station.scan?.preview ?? null, templates.active?.name ?? null);
+  const previewUsage = describePreviewUsage(station.scan?.preview ?? null, templates.active?.name ?? null);
+
+  const isTemplatesPage = appView.view.kind === 'config' && appView.view.page === 'templates';
+  const templateSample = useSampleContent(station.scan?.raw ?? null);
+  const selectedTemplate = useMemo(
+    () => (templates.selected ? applyNoteOverride(templates.selected, noteOverride) : null),
+    [templates.selected, noteOverride],
+  );
+  const templatePreview = useTemplatePreview(
+    templateSample.value,
+    isTemplatesPage ? (templates.draft ?? selectedTemplate) : null,
+  );
+  const fieldNames = useMemo(
+    () =>
+      fieldNameSuggestions(
+        rules.ordered.map((item) => item.rule),
+        templatePreview?.result.status === 'ok' ? templatePreview.result.scan : null,
+      ),
+    [rules.ordered, templatePreview],
+  );
 
   const noteOptions = buildNoteOptions(settings?.notePresets ?? [], noteOverride);
   const selectNote = async (value: string) => {
@@ -238,23 +253,6 @@ export function App() {
                   onTestPrint={printTest}
                 />
               ),
-              templates: (
-                <TemplatePanel
-                  templates={templates.templates}
-                  activeId={templates.active?.id ?? null}
-                  previewId={hoverTemplate?.id ?? null}
-                  draft={templates.draft}
-                  isDirty={templates.isDirty}
-                  onPreviewChange={setHoverTemplateId}
-                  onActivate={(id) => void templates.activate(id)}
-                  onDuplicate={(id) => void templates.duplicate(id)}
-                  onEdit={templates.startEdit}
-                  onRemove={(id) => void templates.remove(id)}
-                  onDraftChange={templates.changeDraft}
-                  onSave={() => void templates.saveDraft()}
-                  onCancel={templates.cancelEdit}
-                />
-              ),
               history: (
                 <JobLog
                   jobs={jobLog.jobs}
@@ -278,12 +276,37 @@ export function App() {
         <ConfigCenter
           page={appView.view.page}
           isLeaving={appView.isLeaving}
-          breadcrumb={null}
+          breadcrumb={
+            isTemplatesPage && templates.draft
+              ? {
+                  current: `编辑：${templates.draft.name}`,
+                  onList: () => appView.requestLeave(() => undefined),
+                }
+              : null
+          }
           onNavigate={appView.open}
           onClose={appView.close}
         >
           <ConfigPages
             page={appView.view.page}
+            templates={{
+              templates: templates.templates,
+              activeId: templates.active?.id ?? null,
+              selected: templates.selected,
+              draft: templates.draft,
+              isDirty: templates.isDirty,
+              sample: templateSample,
+              preview: templatePreview,
+              fieldNames,
+              onSelect: templates.select,
+              onActivate: (id) => void templates.activate(id),
+              onDuplicate: (id) => void templates.duplicate(id),
+              onEdit: templates.startEdit,
+              onRemove: (id) => void templates.remove(id),
+              onDraftChange: templates.changeDraft,
+              onSave: () => void templates.saveDraft(),
+              onCancel: templates.cancelEdit,
+            }}
             settings={settings}
             jobTotal={jobLog.total}
             appInfo={appInfo}

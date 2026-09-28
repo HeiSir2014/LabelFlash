@@ -6,6 +6,7 @@ import {
   type FieldsMode,
   TEMPLATE_LIMITS,
 } from '../../../core/templates/template-model';
+import { FIELD_NAME_LIST_ID } from '../lib/field-names';
 import { NumberField, Segmented, TextInput, Toggle } from './form-controls';
 
 const FONT_STEP_MM = 0.1;
@@ -109,6 +110,7 @@ function SlotList({ slots, onChange }: { slots: FieldSlot[]; onChange: (slots: F
             value={slot.field}
             maxLength={RULE_LIMITS.fieldNameLength}
             placeholder="例如 订单号"
+            list={FIELD_NAME_LIST_ID}
             onChange={(field) => setSlot(index, { field })}
           />
           {!isValidFieldName(slot.field) && (

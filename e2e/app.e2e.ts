@@ -123,16 +123,29 @@ test('switches the current template from the preview toolbar', async () => {
   await app.close();
 });
 
+/** 打开配置中心的某一页（默认「模板」）。 */
+async function openConfig(page: Page, pageName = '模板'): Promise<void> {
+  if ((await page.locator('.config-center').count()) === 0) {
+    await page.getByRole('button', { name: '配置', exact: true }).click();
+  }
+  await page.getByRole('navigation', { name: '配置' }).getByRole('button', { name: pageName, exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: pageName })).toBeVisible();
+}
+
 test('keeps a saved custom template and the note selection after a restart', async () => {
   const first = await launch();
   const page = first.page;
-  await page.getByRole('tab', { name: '模板' }).click();
-  await page.locator('.template-row').first().getByRole('button', { name: '复制' }).click();
-  await page.locator('.template-editor').getByLabel('模板名称').fill('E2E 模板');
+  await openConfig(page);
+  await page.locator('.template-item').first().click();
+  await page.getByRole('button', { name: '复制' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('编辑：');
+  await page.locator('.template-form').getByLabel('模板名称').fill('E2E 模板');
   await page.getByRole('button', { name: '保存模板' }).click();
-  const customRow = page.locator('.template-row', { hasText: 'E2E 模板' });
-  await customRow.getByRole('button', { name: '使用' }).click();
-  await expect(customRow).toContainText('使用中');
+  const customItem = page.locator('.template-item', { hasText: 'E2E 模板' });
+  await expect(customItem).toHaveAttribute('aria-current', 'true');
+  await page.getByRole('button', { name: '使用', exact: true }).click();
+  await expect(customItem).toContainText('使用中');
+  await page.getByRole('button', { name: '返回工作台' }).click();
 
   // 备注下拉框的「管理常用备注…」打开配置中心的「常用备注」页。
   await page.getByRole('combobox', { name: '备注' }).selectOption({ label: '管理常用备注…' });
@@ -146,41 +159,61 @@ test('keeps a saved custom template and the note selection after a restart', asy
   await first.app.close();
 
   const second = await launch();
-  await second.page.getByRole('tab', { name: '模板' }).click();
-  await expect(second.page.locator('.template-row', { hasText: 'E2E 模板' })).toContainText('使用中');
+  await expect(second.page.locator('.preview-toolbar__usage')).toHaveText('示例内容 · 模板：E2E 模板');
   await expect(second.page.getByRole('combobox', { name: '备注' }).locator('option:checked')).toHaveText(
     'E2E 备注 {日期}',
   );
   await expect(second.page.frameLocator('.label-frame').locator('.note')).toContainText('E2E 备注');
+  await openConfig(second.page);
+  await expect(second.page.locator('.template-item', { hasText: 'E2E 模板' })).toContainText('使用中');
   await second.app.close();
 });
 
-test('previews a template after the pointer rests on it, without switching to it', async () => {
+test('previews a template by selecting it, without switching the current template', async () => {
   const { app, page } = await launch();
-  await page.getByRole('tab', { name: '模板' }).click();
-  const badge = page.locator('.preview-toolbar__usage');
-  await expect(badge).toHaveText('示例内容 · 模板：通用（二维码在左）');
+  await openConfig(page);
+  const preview = page.frameLocator('.config-center .label-frame').locator('body');
+  await expect(preview).toHaveClass(/layout-qr-left/);
 
-  const rightRow = page.locator('.template-row', { hasText: '通用（二维码在右）' });
-  const name = rightRow.locator('.template-row__name');
-  await name.hover();
-  // 停留不到 1 秒不切换，满 1 秒后才预览。
-  await page.waitForTimeout(500);
-  await expect(badge).toHaveText('示例内容 · 模板：通用（二维码在左）');
-  // 在有人使用的电脑上，系统会按真实光标位置补发「离开窗口」，打断计时。
-  // 每一轮重新悬停（像手在行上轻微晃动），再等满 1 秒以上：没被打断时第一轮就通过。
-  await expect(async () => {
-    await name.hover({ position: { x: 2, y: 2 } });
-    await expect(badge).toHaveText('预览 · 通用（二维码在右） · 点「使用」后才会用于打印', { timeout: 1_500 });
-  }).toPass({ timeout: 6_000 });
-  await expect(rightRow).toContainText('预览中');
-  await expect(page.frameLocator('.label-frame').locator('body')).toHaveClass(/layout-qr-right/);
-  await expect(page.locator('.template-row', { hasText: '使用中' })).toContainText('通用（二维码在左）');
+  await page.locator('.template-item', { hasText: '通用（二维码在右）' }).click();
+  await expect(preview).toHaveClass(/layout-qr-right/);
+  await expect(page.locator('.template-item', { hasText: '使用中' })).toContainText('通用（二维码在左）');
 
-  // 离开列表立即恢复成使用中的模板。
-  await page.locator('.scan-bar__input').hover();
-  await expect(badge).toHaveText('示例内容 · 模板：通用（二维码在左）');
-  await expect(rightRow).not.toContainText('预览中');
+  // 预览内容可以改成任意扫码内容。
+  await page.getByLabel('预览内容').fill('202609280001');
+  await expect(page.frameLocator('.config-center .label-frame').locator('.value')).toHaveText(['202609280001']);
+
+  await page.getByRole('button', { name: '返回工作台' }).click();
+  await expect(page.getByRole('combobox', { name: '当前模板' }).locator('option:checked')).toHaveText(
+    '通用（二维码在左）',
+  );
+  await app.close();
+});
+
+test('asks before leaving a template with unsaved changes', async () => {
+  const { app, page } = await launch();
+  await openConfig(page);
+  await page.locator('.template-item', { hasText: '通用（二维码在左）' }).click();
+  await page.getByRole('button', { name: '复制' }).click();
+  const name = page.locator('.template-form').getByLabel('模板名称');
+  const original = await name.inputValue();
+  await name.fill('改过的名字');
+
+  const nav = page.getByRole('navigation', { name: '配置' });
+  const dialog = page.getByRole('alertdialog', { name: '有未保存的修改' });
+  await nav.getByRole('button', { name: '识别规则' }).click();
+  await expect(dialog).toBeVisible();
+  // 回车等于「继续编辑」：扫码枪的回车不会丢掉修改。
+  await page.keyboard.press('Enter');
+  await expect(dialog).toHaveCount(0);
+  await expect(name).toHaveValue('改过的名字');
+
+  await nav.getByRole('button', { name: '识别规则' }).click();
+  await dialog.getByRole('button', { name: '放弃修改' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '识别规则' })).toBeVisible();
+  await openConfig(page);
+  await expect(page.locator('.template-item', { hasText: '改过的名字' })).toHaveCount(0);
+  await expect(page.locator('.template-item', { hasText: original })).toHaveCount(1);
   await app.close();
 });
 

@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback } from 'react';
-import { CONFIG_NAV, type ConfigPage, pageLabel } from '../../lib/app-view';
+import { CONFIG_NAV, type ConfigPage, isFillPage, pageLabel } from '../../lib/app-view';
 
 /** 二级页面（编辑视图）的面包屑：「识别规则 / 编辑：下划线查货架」，第一段回到列表。 */
 export interface Breadcrumb {
@@ -68,7 +68,7 @@ export function ConfigCenter({ page, isLeaving, breadcrumb, onNavigate, onClose,
           </div>
         ))}
       </nav>
-      <div className="config-content">
+      <div className={`config-content${isFillPage(page) ? ' config-content--fill' : ''}`}>
         <div className="config-content__inner">{children}</div>
       </div>
     </div>

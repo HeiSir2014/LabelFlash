@@ -11,7 +11,10 @@ interface TemplatesOptions {
   onActiveTemplateChanged: () => void;
 }
 
-/** 模板列表、启用、复制、编辑（草稿）、保存、删除。草稿只用于预览，保存后才用于打印。 */
+/**
+ * 模板列表、选中（模板页里点选即预览）、启用、复制、编辑（草稿）、保存、删除。
+ * 草稿只用于预览，保存后才用于打印。
+ */
 export function useTemplates({
   activeTemplateId,
   updateSettings,
@@ -20,6 +23,7 @@ export function useTemplates({
 }: TemplatesOptions) {
   const [templates, setTemplates] = useState<LabelTemplate[]>([]);
   const [draft, setDraft] = useState<LabelTemplate | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -36,6 +40,11 @@ export function useTemplates({
   const active = useMemo(
     () => templates.find((template) => template.id === activeTemplateId) ?? templates[0] ?? null,
     [templates, activeTemplateId],
+  );
+  /** 模板页列表里选中的模板；还没点选过（或选中的被删了）时是使用中的模板。 */
+  const selected = useMemo(
+    () => templates.find((template) => template.id === selectedId) ?? active,
+    [templates, selectedId, active],
   );
   const stored = useMemo(() => templates.find((template) => template.id === draft?.id) ?? null, [templates, draft]);
   const isDirty = draft !== null && !deepEqual(draft, stored);
@@ -54,6 +63,7 @@ export function useTemplates({
       try {
         const copy = await window.api.duplicateTemplate(sourceId);
         await load();
+        setSelectedId(copy.id);
         setDraft(structuredClone(copy));
       } catch (error) {
         reportError('复制模板', error);
@@ -108,8 +118,10 @@ export function useTemplates({
   return {
     templates,
     active,
+    selected,
     draft,
     isDirty,
+    select: setSelectedId,
     activate,
     duplicate,
     startEdit,

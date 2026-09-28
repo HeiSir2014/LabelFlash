@@ -1009,53 +1009,7 @@ input {
   font-size: 12px;
 }
 
-/* 模板列表 */
-.template-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border-bottom: 1px solid var(--color-housing);
-}
-
-.template-row--active {
-  background: linear-gradient(90deg, var(--color-tape) 0 4px, var(--color-tape-wash) 4px);
-}
-
-/* 悬停预览中的模板：虚线框，和「使用中」的实色标记区分开 */
-.template-row--previewing {
-  outline: 1px dashed var(--color-ink-soft);
-  outline-offset: -4px;
-}
-
-.badge--preview {
-  border: 1px dashed var(--color-ink-soft);
-  background: transparent;
-  color: var(--color-ink);
-}
-
-.template-row__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.template-row__name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.template-row__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-
-/* 模板编辑器 */
+/* 规则编辑器（侧栏里，下一步迁进配置中心） */
 .template-editor {
   display: flex;
   flex: 1;
@@ -2040,6 +1994,239 @@ input {
 .about-card__qr figcaption {
   color: var(--color-ink-soft);
   font-size: 12px;
+}
+
+/* ── 铺满内容区的页面（模板、识别规则）：自己安排滚动区域和底部操作条 ── */
+.config-content--fill {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.config-content--fill > .config-content__inner {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  max-width: none;
+}
+
+/* 底部操作条：左边状态或校验原因，右边次要按钮、主按钮；不随内容滚动 */
+.config-actions {
+  display: flex;
+  grid-area: actions;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--config-actions-height);
+  padding: 0 var(--space-5);
+  border-top: 1px solid var(--color-rule);
+  background: var(--color-paper);
+}
+
+/* 配置中心打开时，提示条抬到底部操作条上方：不盖住「保存」「使用」这类按钮 */
+.config-center ~ .notice-bar {
+  bottom: calc(var(--config-actions-height) + var(--space-5));
+}
+
+.config-actions__status {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 13px;
+}
+
+/* 配置中心里的表单：标签列加宽，分区做成卡片 */
+.config-center .form-row {
+  grid-template-columns: 120px minmax(0, 1fr);
+}
+
+.config-center .form-section {
+  padding: var(--space-4);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+}
+
+/* 「预览内容」：模板页的试用输入框 */
+.sample-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: start;
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.sample-input__label {
+  padding-top: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sample-input__field {
+  font-family: var(--font-data);
+  resize: none;
+}
+
+/* 模板页 · 列表视图 */
+.templates-page {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 320px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.template-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--color-rule);
+  background: var(--color-paper);
+}
+
+.template-list__intro,
+.template-list__empty {
+  margin: 0;
+  padding: 0 var(--space-4);
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+.template-list__heading {
+  margin: var(--space-2) 0 var(--space-1);
+  padding: 0 var(--space-4);
+  color: var(--color-ink-soft);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.template-list__items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 选中的模板：与导航当前项、「使用中」的标记一致（左边 4px 竖条） */
+.template-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-2) var(--space-4) var(--space-2) calc(var(--space-4) - 4px);
+  border: 0;
+  border-left: 4px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.template-item:hover {
+  background: var(--color-housing);
+}
+
+.template-item[aria-current="true"] {
+  border-left-color: var(--color-tape);
+  background: var(--color-tape-wash);
+}
+
+.template-item__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-stage,
+.template-editing__preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-5);
+}
+
+.template-stage .label-preview,
+.template-editing__preview .label-preview {
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+}
+
+.template-stage__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.template-stage__hint {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 13px;
+}
+
+/* 模板页 · 编辑视图：表单滚动，预览固定，操作条在底部 */
+.template-editing {
+  display: grid;
+  flex: 1;
+  grid-template-areas:
+    "form preview"
+    "actions actions";
+  grid-template-columns: minmax(380px, 1fr) minmax(360px, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.template-editing__form {
+  grid-area: form;
+  min-height: 0;
+  padding: var(--space-5);
+  overflow-y: auto;
+}
+
+.template-editing__preview {
+  grid-area: preview;
+  border-left: 1px solid var(--color-rule);
+}
+
+.template-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 720px;
+}
+
+/* 窄窗口：预览移到表单上方，高 220px；预览内容输入框放在标签左边，标签才不会缩得太小 */
+@media (max-width: 1099px) {
+  .template-editing {
+    grid-template-areas:
+      "preview"
+      "form"
+      "actions";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 220px minmax(0, 1fr) auto;
+  }
+
+  .template-editing__preview {
+    flex-direction: row;
+    padding: var(--space-3) var(--space-5);
+    border-bottom: 1px solid var(--color-rule);
+    border-left: 0;
+  }
+
+  .template-editing__preview .sample-input {
+    flex: 0 0 280px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
 }
 
 /* ── 应用内确认框 ── */

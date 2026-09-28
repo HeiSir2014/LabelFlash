@@ -1,4 +1,4 @@
-import type { IntentTimers } from './hover-intent';
+import type { IntentTimers } from './timers';
 
 export type BreakKind = 'enter' | 'tab';
 

@@ -1,54 +1,79 @@
 /**
- * 电脑端的会话状态（纯逻辑，时间由 Clock 注入）：认领手机、防重放、任务去重和结果、背压与限流、到期。
+ * 电脑端的会话状态（纯逻辑，时间由 Clock 注入）：手机加入与移除、防重放、打印队列、任务去重、背压与限流、到期。
  *
- * 任务是幂等的：同一个任务号只执行一次。重发的任务号只回当前进度（accepted）或已有的结果（result），
- * 所以手机可以放心地在重连后重发——不会丢，也不会多打。
+ * - 多部手机共用一个二维码，每部手机有自己的令牌；电脑上可以随时移除某一部（令牌作废）。
+ * - 所有手机的任务进同一个队列，先来先打，一次打一张；每个任务的结果只发给提交它的手机。
+ * - 任务是幂等的：同一个任务号只执行一次，重发只回当前进度（accepted / started）或已有的结果。
  */
 import { timingSafeEqual } from 'node:crypto';
 import type { Clock } from '../../core/types';
 import { randomId } from '../../shared/mobile-crypto';
 import {
   type CloseReason,
+  type DenialReason,
   type DesktopMessage,
   MAX_PENDING_JOBS,
+  MAX_PHONES_PER_SESSION,
   type PhoneMessage,
   type PhonePrintResult,
 } from '../../shared/mobile-protocol';
 
-/** 二维码显示后多久没有手机打开就作废：拍到屏幕的人拿到的也只是一个很快过期的链接。 */
+/** 二维码显示后多久没有手机加入就作废：拍到屏幕的人拿到的也只是一个很快过期的链接。 */
 export const UNCLAIMED_TTL_MS = 10 * 60_000;
-/** 认领后多久没有任务就自动结束：偶尔补打用完就放下了，不该一直连着。 */
+/** 多久没有任务就自动结束：偶尔补打用完就放下了，不该一直连着。 */
 export const IDLE_END_MS = 30 * 60_000;
-/** 每分钟最多接受的任务数：热敏标签机大约一秒出一张，再快也打不出来。 */
+/** 所有手机合计每分钟最多接受的任务数：热敏标签机大约一秒出一张，再快也打不出来。 */
 export const MAX_JOBS_PER_MINUTE = 60;
 /** 保留结果的任务数：远多于重连时要补发的几张；更早的任务号即使被重放，也会先被 nonce / seq 挡住。 */
 export const JOB_MEMORY = 1_000;
 const RATE_WINDOW_MS = 60_000;
 
-export type HelloReply = { kind: 'welcome'; token: string; nonce: string } | { kind: 'taken' };
+export type HelloReply = { kind: 'welcome'; token: string; nonce: string } | { kind: 'denied'; reason: DenialReason };
+
+/** 要发给某个手机连接的消息。手机不在线时不发：结果已保存，它重连后重发任务号就能拿到。 */
+export interface Delivery {
+  connection: string;
+  message: DesktopMessage;
+}
 
 export type SubmitDecision =
   | { kind: 'ignore' }
   | { kind: 'reply'; message: DesktopMessage }
-  /** 新任务：先回复 accepted，再按顺序执行，执行完调用 complete。 */
+  /** 新任务：先回复 accepted，再按队列顺序执行（started → complete）。 */
   | { kind: 'run'; reply: DesktopMessage; job: string; raw: string; force: boolean };
 
-interface PhoneConnection {
-  /** 认领或恢复成功后才有；被拒绝的连接一直是 null。 */
-  nonce: string | null;
-  lastSeq: number;
+export interface PhoneSummary {
+  /** 电脑界面上用来指认、移除这部手机；不是令牌。 */
+  id: string;
+  device: string;
+  online: boolean;
+  printed: number;
 }
 
-type JobState = { state: 'queued' } | { state: 'done'; result: PhonePrintResult };
+interface Phone {
+  id: string;
+  token: string;
+  device: string;
+  /** 当前连接号；断线时为 null。 */
+  connection: string | null;
+  /** 本次连接的 welcome 给的 nonce 和已收到的最大 seq。 */
+  nonce: string | null;
+  lastSeq: number;
+  printed: number;
+}
+
+type Job = { owner: string; state: 'queued' | 'printing' } | { owner: string; state: 'done'; result: PhonePrintResult };
 
 export class MobileSession {
   private readonly createdAt: number;
-  private claim: { token: string; device: string } | null = null;
-  /** 当前代表已认领手机的连接号；手机断线时为 null。 */
-  private claimedPhone: string | null = null;
-  private readonly connections = new Map<string, PhoneConnection>();
-  /** 任务号 → 状态，按接受顺序排列（Map 保持插入顺序），超出上限时删最早完成的。 */
-  private readonly jobs = new Map<string, JobState>();
+  private hasEverJoined = false;
+  /** 按加入顺序排列（Map 保持插入顺序），界面上的手机列表也按这个顺序。 */
+  private readonly phones = new Map<string, Phone>();
+  /** 连接号 → 手机 id；连上了还没加入（或被拒绝）的连接为 null。 */
+  private readonly connections = new Map<string, string | null>();
+  private readonly jobs = new Map<string, Job>();
+  /** 还没出结果的任务，按先来后到排列；打印中的在最前面。 */
+  private readonly queue: string[] = [];
   private readonly acceptedAt: number[] = [];
   private lastActivity: number;
   private printedCount = 0;
@@ -58,58 +83,77 @@ export class MobileSession {
     this.lastActivity = this.createdAt;
   }
 
-  phoneJoined(phone: string): void {
-    this.connections.set(phone, { nonce: null, lastSeq: 0 });
+  phoneJoined(connection: string): void {
+    this.connections.set(connection, null);
   }
 
-  phoneLeft(phone: string): void {
-    this.connections.delete(phone);
-    if (this.claimedPhone === phone) {
-      this.claimedPhone = null;
+  phoneLeft(connection: string): void {
+    const phone = this.phoneAt(connection);
+    this.connections.delete(connection);
+    if (phone) {
+      phone.connection = null;
+      phone.nonce = null;
     }
   }
 
-  hello(phone: string, message: Extract<PhoneMessage, { type: 'hello' }>): HelloReply {
-    const connection = this.connections.get(phone);
-    if (!connection) {
-      return { kind: 'taken' };
+  hello(connection: string, message: Extract<PhoneMessage, { type: 'hello' }>): HelloReply {
+    if (!this.connections.has(connection)) {
+      return { kind: 'denied', reason: 'removed' };
     }
-    if (this.claim === null) {
-      this.claim = { token: randomId(), device: message.device };
+    let phone: Phone;
+    if (message.token === null) {
+      if (this.phones.size >= MAX_PHONES_PER_SESSION) {
+        return { kind: 'denied', reason: 'full' };
+      }
+      phone = {
+        id: randomId(),
+        token: randomId(),
+        device: message.device,
+        connection,
+        nonce: null,
+        lastSeq: 0,
+        printed: 0,
+      };
+      this.phones.set(phone.id, phone);
+      this.hasEverJoined = true;
       this.lastActivity = this.clock.now();
-    } else if (message.token === null || !sameSecret(message.token, this.claim.token)) {
-      return { kind: 'taken' };
     } else {
-      this.claim.device = message.device;
+      const known = this.phoneWithToken(message.token);
+      // 不认识的令牌只可能来自被移除的手机（令牌已作废）：不能让它换个连接又混进来。
+      if (!known) {
+        return { kind: 'denied', reason: 'removed' };
+      }
+      phone = known;
+      if (phone.connection !== null && phone.connection !== connection) {
+        // 同一部手机换了连接（刷新页面、换网络）：旧连接不再代表它。
+        this.connections.set(phone.connection, null);
+      }
+      phone.device = message.device;
     }
-    this.claimedPhone = phone;
-    connection.nonce = randomId();
-    connection.lastSeq = 0;
-    return { kind: 'welcome', token: this.claim.token, nonce: connection.nonce };
+    phone.connection = connection;
+    phone.nonce = randomId();
+    phone.lastSeq = 0;
+    this.connections.set(connection, phone.id);
+    return { kind: 'welcome', token: phone.token, nonce: phone.nonce };
   }
 
-  submit(phone: string, message: Extract<PhoneMessage, { type: 'submit' }>): SubmitDecision {
-    const connection = this.connections.get(phone);
-    // 只接受当前认领连接上、nonce 对得上、seq 严格递增的消息：挡住被拒绝的手机和重放的旧消息。
-    if (
-      phone !== this.claimedPhone ||
-      !connection?.nonce ||
-      !sameSecret(message.nonce, connection.nonce) ||
-      message.seq <= connection.lastSeq
-    ) {
+  submit(connection: string, message: Extract<PhoneMessage, { type: 'submit' }>): SubmitDecision {
+    const phone = this.phoneAt(connection);
+    // 只接受已加入的手机、nonce 对得上、seq 严格递增的消息：挡住没加入的连接和重放的旧消息。
+    if (!phone?.nonce || !sameSecret(message.nonce, phone.nonce) || message.seq <= phone.lastSeq) {
       return { kind: 'ignore' };
     }
-    connection.lastSeq = message.seq;
+    phone.lastSeq = message.seq;
     const now = this.clock.now();
     this.lastActivity = now;
     const known = this.jobs.get(message.job);
-    if (known?.state === 'queued') {
-      return { kind: 'reply', message: { type: 'accepted', job: message.job } };
+    if (known) {
+      // 任务号是手机生成的随机数：别的手机不会用到同一个，用到了就是伪造，不理会。
+      return known.owner === phone.id
+        ? { kind: 'reply', message: this.progressOf(message.job, known) }
+        : { kind: 'ignore' };
     }
-    if (known?.state === 'done') {
-      return { kind: 'reply', message: { type: 'result', job: message.job, result: known.result } };
-    }
-    if (this.pendingCount() >= MAX_PENDING_JOBS) {
+    if (this.pendingOf(phone.id) >= MAX_PENDING_JOBS) {
       return { kind: 'reply', message: { type: 'refused', job: message.job, reason: 'too-many-pending' } };
     }
     this.forgetOldRates(now);
@@ -117,63 +161,146 @@ export class MobileSession {
       return { kind: 'reply', message: { type: 'refused', job: message.job, reason: 'rate-limited' } };
     }
     this.acceptedAt.push(now);
-    this.jobs.set(message.job, { state: 'queued' });
+    this.jobs.set(message.job, { owner: phone.id, state: 'queued' });
+    this.queue.push(message.job);
     return {
       kind: 'run',
-      reply: { type: 'accepted', job: message.job },
+      reply: { type: 'accepted', job: message.job, ahead: this.queue.length - 1 },
       job: message.job,
       raw: message.raw,
       force: message.force,
     };
   }
 
-  /** 任务执行完：记下结果，返回要发给手机的消息。 */
-  complete(job: string, result: PhonePrintResult): DesktopMessage {
-    this.jobs.set(job, { state: 'done', result });
+  /** 任务开始打印。任务已不在队列里（它的手机被移除了）时返回 null，调用方就不再打印它。 */
+  started(jobId: string): Delivery[] | null {
+    const job = this.jobs.get(jobId);
+    if (!job || job.state !== 'queued' || !this.queue.includes(jobId)) {
+      return null;
+    }
+    this.jobs.set(jobId, { owner: job.owner, state: 'printing' });
+    return this.deliver(job.owner, { type: 'started', job: jobId });
+  }
+
+  /** 任务执行完：记下结果，发给提交它的手机，并告诉排在后面的手机队伍往前走了。 */
+  complete(jobId: string, result: PhonePrintResult): Delivery[] {
+    const job = this.jobs.get(jobId);
+    if (!job) {
+      return [];
+    }
+    this.jobs.set(jobId, { owner: job.owner, state: 'done', result });
+    this.removeFromQueue(jobId);
     if (result.status === 'printed') {
       this.printedCount += 1;
+      const phone = this.phones.get(job.owner);
+      if (phone) {
+        phone.printed += 1;
+      }
     }
     this.forgetOldJobs();
-    return { type: 'result', job, result };
+    return [...this.deliver(job.owner, { type: 'result', job: jobId, result }), ...this.queuePositions()];
   }
 
-  /** 结果发给谁：当前代表已认领手机的连接；手机断线时为 null（结果已保存，手机重连后重发任务号就能拿到）。 */
-  claimedConnection(): string | null {
-    return this.claimedPhone;
+  /**
+   * 移除一部手机：令牌作废，它排队中的任务不再打印（正在打印的那张照常打完）。
+   * 返回要断开的连接，以及排在后面的手机的新位置。
+   */
+  removePhone(id: string): { kick: string | null; deliveries: Delivery[] } {
+    const phone = this.phones.get(id);
+    if (!phone) {
+      return { kick: null, deliveries: [] };
+    }
+    this.phones.delete(id);
+    if (phone.connection !== null) {
+      this.connections.set(phone.connection, null);
+    }
+    for (const jobId of [...this.queue]) {
+      const job = this.jobs.get(jobId);
+      if (job?.owner === id && job.state === 'queued') {
+        this.jobs.delete(jobId);
+        this.removeFromQueue(jobId);
+      }
+    }
+    return { kick: phone.connection, deliveries: this.queuePositions() };
   }
 
-  /** 还没有手机打开时，二维码的失效时间；已有手机时为 null。 */
+  /** 在线手机的连接号（打印机变了要告诉它们）。 */
+  onlineConnections(): string[] {
+    return [...this.phones.values()].flatMap((phone) => (phone.connection === null ? [] : [phone.connection]));
+  }
+
+  /** 还没有手机加入时，二维码的失效时间；有手机加入过之后为 null。 */
   unclaimedUntil(): number | null {
-    return this.claim === null ? this.createdAt + UNCLAIMED_TTL_MS : null;
+    return this.hasEverJoined ? null : this.createdAt + UNCLAIMED_TTL_MS;
   }
 
-  /** 该结束时返回原因。有任务在排队时不算空闲。 */
+  /** 该结束时返回原因。队列里还有任务时不算空闲。 */
   expiry(): CloseReason | null {
     const now = this.clock.now();
-    if (this.claim === null) {
+    if (!this.hasEverJoined) {
       return now - this.createdAt >= UNCLAIMED_TTL_MS ? 'idle' : null;
     }
-    if (this.pendingCount() > 0) {
+    if (this.queue.length > 0) {
       return null;
     }
     return now - this.lastActivity >= IDLE_END_MS ? 'idle' : null;
   }
 
-  status(): { phone: { device: string; online: boolean } | null; printed: number } {
+  status(): { phones: PhoneSummary[]; printed: number; queued: number } {
     return {
-      phone: this.claim ? { device: this.claim.device, online: this.claimedPhone !== null } : null,
+      phones: [...this.phones.values()].map((phone) => ({
+        id: phone.id,
+        device: phone.device,
+        online: phone.connection !== null,
+        printed: phone.printed,
+      })),
       printed: this.printedCount,
+      queued: this.queue.length,
     };
   }
 
-  private pendingCount(): number {
-    let count = 0;
-    for (const job of this.jobs.values()) {
-      if (job.state === 'queued') {
-        count += 1;
-      }
+  private progressOf(jobId: string, job: Job): DesktopMessage {
+    switch (job.state) {
+      case 'queued':
+        return { type: 'accepted', job: jobId, ahead: this.queue.indexOf(jobId) };
+      case 'printing':
+        return { type: 'started', job: jobId };
+      case 'done':
+        return { type: 'result', job: jobId, result: job.result };
     }
-    return count;
+  }
+
+  /** 排队中的每个任务的当前位置，发给各自的手机。 */
+  private queuePositions(): Delivery[] {
+    return this.queue.flatMap((jobId, ahead) => {
+      const job = this.jobs.get(jobId);
+      return job?.state === 'queued' ? this.deliver(job.owner, { type: 'accepted', job: jobId, ahead }) : [];
+    });
+  }
+
+  private deliver(phoneId: string, message: DesktopMessage): Delivery[] {
+    const connection = this.phones.get(phoneId)?.connection ?? null;
+    return connection === null ? [] : [{ connection, message }];
+  }
+
+  private phoneAt(connection: string): Phone | undefined {
+    const id = this.connections.get(connection);
+    return id ? this.phones.get(id) : undefined;
+  }
+
+  private phoneWithToken(token: string): Phone | undefined {
+    return [...this.phones.values()].find((phone) => sameSecret(token, phone.token));
+  }
+
+  private pendingOf(phoneId: string): number {
+    return this.queue.filter((jobId) => this.jobs.get(jobId)?.owner === phoneId).length;
+  }
+
+  private removeFromQueue(jobId: string): void {
+    const index = this.queue.indexOf(jobId);
+    if (index >= 0) {
+      this.queue.splice(index, 1);
+    }
   }
 
   private forgetOldRates(now: number): void {
@@ -183,13 +310,13 @@ export class MobileSession {
   }
 
   private forgetOldJobs(): void {
-    for (const [job, state] of this.jobs) {
+    for (const [jobId, job] of this.jobs) {
       if (this.jobs.size <= JOB_MEMORY) {
         return;
       }
-      // 只删已完成的：排队中的任务要等它的结果。
-      if (state.state === 'done') {
-        this.jobs.delete(job);
+      // 只删已完成的：排队中和打印中的任务还要等它的结果。
+      if (job.state === 'done') {
+        this.jobs.delete(jobId);
       }
     }
   }

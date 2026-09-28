@@ -15,7 +15,7 @@ const PRINTED: PhonePrintResult = {
 };
 
 function job(patch: Partial<JobEntry>): JobEntry {
-  return { id: 'a', raw: RAW, force: false, status: 'sending', result: null, refusal: null, ...patch };
+  return { id: 'a', raw: RAW, force: false, status: 'sending', ahead: null, result: null, refusal: null, ...patch };
 }
 
 const done = (result: PhonePrintResult, force = false) => job({ status: 'done', result, force });
@@ -24,7 +24,12 @@ describe('jobView', () => {
   test('shows a job on its way', () => {
     expect(jobView(job({}), 'online')).toMatchObject({ tone: 'pending', title: '正在发送…', detail: RAW });
     expect(jobView(job({}), 'desktop-offline').title).toContain('连上');
-    expect(jobView(job({ status: 'queued' }), 'online')).toMatchObject({ tone: 'pending', title: '正在打印…' });
+    expect(jobView(job({ status: 'queued', ahead: 3 }), 'online')).toMatchObject({
+      tone: 'pending',
+      title: '排队中，前面还有 3 张',
+    });
+    expect(jobView(job({ status: 'queued', ahead: 0 }), 'online').title).toBe('排队中，下一张就是它');
+    expect(jobView(job({ status: 'printing' }), 'online')).toMatchObject({ tone: 'pending', title: '正在打印…' });
   });
 
   test('confirms a printed label and shows what it was', () => {
@@ -101,9 +106,13 @@ describe('messageView', () => {
     expect(messageView(state({ screen: 'ended', endReason: 'desktop-gone' }))?.text).toContain('断线');
   });
 
-  test('explains an expired link and a session taken by another phone', () => {
+  test('explains an expired link', () => {
     expect(messageView(state({ screen: 'not-found' }))?.title).toBe('链接已失效');
-    expect(messageView(state({ screen: 'taken' }))?.text).toContain('一部手机');
+  });
+
+  test('explains why a phone was turned away', () => {
+    expect(messageView(state({ screen: 'denied', denial: 'full' }))?.text).toContain('移除不用的手机');
+    expect(messageView(state({ screen: 'denied', denial: 'removed' }))?.title).toBe('这部手机已被移除');
   });
 
   test('has no message while scanning', () => {

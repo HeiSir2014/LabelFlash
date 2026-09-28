@@ -184,7 +184,8 @@ describe('parseDesktopMessage', () => {
     const messages: DesktopMessage[] = [
       { type: 'welcome', token: SECRET, nonce: SESSION, printer: '热敏标签机' },
       { type: 'welcome', token: SECRET, nonce: SESSION, printer: null },
-      { type: 'taken' },
+      { type: 'denied', reason: 'full' },
+      { type: 'denied', reason: 'removed' },
       { type: 'printer', printer: '热敏标签机' },
       { type: 'printer', printer: null },
     ];
@@ -193,8 +194,24 @@ describe('parseDesktopMessage', () => {
     }
   });
 
-  test('accepts job acknowledgements and refusals', () => {
-    expect(parseDesktopMessage({ type: 'accepted', job: JOB })).toEqual({ type: 'accepted', job: JOB });
+  test('rejects an unknown denial reason', () => {
+    expect(parseDesktopMessage({ type: 'denied', reason: 'bored' })).toBeNull();
+  });
+
+  test('accepts queue positions, starts and refusals', () => {
+    expect(parseDesktopMessage({ type: 'accepted', job: JOB, ahead: 0 })).toEqual({
+      type: 'accepted',
+      job: JOB,
+      ahead: 0,
+    });
+    expect(parseDesktopMessage({ type: 'accepted', job: JOB, ahead: 3 })).toEqual({
+      type: 'accepted',
+      job: JOB,
+      ahead: 3,
+    });
+    expect(parseDesktopMessage({ type: 'accepted', job: JOB, ahead: -1 })).toBeNull();
+    expect(parseDesktopMessage({ type: 'accepted', job: JOB })).toBeNull();
+    expect(parseDesktopMessage({ type: 'started', job: JOB })).toEqual({ type: 'started', job: JOB });
     for (const reason of ['rate-limited', 'too-many-pending'] as const) {
       expect(parseDesktopMessage({ type: 'refused', job: JOB, reason })).toEqual({ type: 'refused', job: JOB, reason });
     }

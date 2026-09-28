@@ -1,8 +1,8 @@
 /**
- * 电脑端的「手机扫码」：点开始时才连中转服务，按会话接待一部手机，按顺序执行它提交的打印任务。
+ * 电脑端的「手机扫码」：点开始时才连中转服务，按会话接待几部手机，把它们提交的打印任务排成一队，一次打一张。
  *
  * 不依赖 Electron：WebSocket、计时器、打印函数都由参数注入，集成测试用真实的中转服务和手机端代码跑通。
- * 会话规则（认领、防重放、任务去重、背压、到期）在 mobile-session.ts；这里只做编排。
+ * 会话规则（手机加入与移除、防重放、打印队列、任务去重、背压、到期）在 mobile-session.ts；这里只做编排。
  */
 import type { Clock } from '../../core/types';
 import { importSessionKey, openMessage, randomId, randomKey, sealMessage } from '../../shared/mobile-crypto';
@@ -18,7 +18,7 @@ import {
 } from '../../shared/mobile-protocol';
 import type { MobileFailure, MobileStatus } from '../../shared/mobile-status';
 import { RelaySocket, type SocketLike, type SocketTimers } from '../../shared/relay-socket';
-import { MobileSession } from './mobile-session';
+import { type Delivery, MobileSession } from './mobile-session';
 import { desktopSocketUrl } from './relay-endpoint';
 
 export interface MobileHostDeps {
@@ -136,14 +136,15 @@ export class MobileHost {
     if (!run.isOpened) {
       return { state: 'connecting' };
     }
-    const { phone, printed } = run.session.status();
+    const { phones, printed, queued } = run.session.status();
     return {
       state: 'active',
       url: run.url,
       expiresAt: run.session.unclaimedUntil(),
       relayOnline: run.isRelayOnline,
-      phone,
+      phones,
       printed,
+      queued,
     };
   }
 
@@ -152,13 +153,31 @@ export class MobileHost {
     return () => this.listeners.delete(listener);
   }
 
-  /** 设置里的打印机变了：告诉已连接的手机。 */
+  /** 设置里的打印机变了：告诉所有在线的手机。 */
   printerChanged(): void {
     const run = this.run;
-    const phone = run?.session.claimedConnection();
-    if (run && phone) {
-      this.send(run, phone, { type: 'printer', printer: this.deps.printerName() });
+    if (!run) {
+      return;
     }
+    for (const connection of run.session.onlineConnections()) {
+      this.send(run, connection, { type: 'printer', printer: this.deps.printerName() });
+    }
+  }
+
+  /** 在电脑上移除一部手机：断开它、作废它的令牌，它排队中的任务不再打印。 */
+  removePhone(id: string): void {
+    const run = this.run;
+    if (!run) {
+      return;
+    }
+    const { kick, deliveries } = run.session.removePhone(id);
+    if (kick !== null) {
+      this.send(run, kick, { type: 'denied', reason: 'removed' });
+      this.enqueueFrame(run, { t: 'kick', phone: kick });
+    }
+    this.sendAll(run, deliveries);
+    this.deps.log('mobile: removed a phone');
+    this.emit();
   }
 
   /** 定时调用：二维码没人打开、或者长时间没有任务时结束会话。 */
@@ -217,9 +236,9 @@ export class MobileHost {
         this.deps.log(`mobile: phone welcomed (${message.device})`);
         this.emit();
       } else {
-        this.send(run, phone, { type: 'taken' });
+        this.send(run, phone, { type: 'denied', reason: reply.reason });
         this.enqueueFrame(run, { t: 'kick', phone });
-        this.deps.log('mobile: turned away a second phone');
+        this.deps.log(`mobile: turned away a phone (${reply.reason})`);
       }
       return;
     }
@@ -237,17 +256,26 @@ export class MobileHost {
     }
   }
 
-  /** 执行一个任务并把结果发给手机当前的连接；手机正好断线时结果已保存，它重连后重发任务号就能拿到。 */
+  /**
+   * 执行一个任务：告诉它的手机开始打印，打完把结果发回去，并告诉排在后面的手机新的位置。
+   * 手机正好断线时结果已保存，它重连后重发任务号就能拿到。
+   */
   private async execute(run: Run, job: string, raw: string, force: boolean): Promise<void> {
     // 会话已经结束（用户点了「结束」）：排队中的任务不再打印。
     if (this.run !== run) {
       return;
     }
+    const started = run.session.started(job);
+    // 任务已不在队列里：它的手机被移除了。
+    if (started === null) {
+      return;
+    }
+    this.sendAll(run, started);
+    this.emit();
     const result = await this.print(raw, force);
-    const message = run.session.complete(job, result);
-    const phone = run.session.claimedConnection();
-    if (phone && this.run === run) {
-      this.send(run, phone, message);
+    const deliveries = run.session.complete(job, result);
+    if (this.run === run) {
+      this.sendAll(run, deliveries);
     }
     this.emit();
   }
@@ -297,6 +325,12 @@ export class MobileHost {
         run.socket.send({ t: 'send', phone, body });
       })
       .catch((error: unknown) => this.deps.log(`mobile: failed to send to the phone: ${String(error)}`));
+  }
+
+  private sendAll(run: Run, deliveries: Delivery[]): void {
+    for (const { connection, message } of deliveries) {
+      this.send(run, connection, message);
+    }
   }
 
   /** 不加密的外层帧（踢出）也排进发送链，保证在它前面的消息先发出去。 */

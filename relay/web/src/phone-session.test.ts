@@ -167,13 +167,17 @@ describe('PhoneSession: jobs', () => {
     await welcome();
     const job = phone.submit(RAW, false);
     await expectSent(2);
-    await expectEvent(() => fromDesktop({ type: 'accepted', job }));
+    await expectEvent(() => fromDesktop({ type: 'accepted', job, ahead: 2 }));
+    await expectEvent(() => fromDesktop({ type: 'accepted', job, ahead: 0 }));
+    await expectEvent(() => fromDesktop({ type: 'started', job }));
     await expectEvent(() => fromDesktop({ type: 'result', job, result: PRINTED }));
     const refusedJob = phone.submit(RAW, false);
     await expectSent(3);
     await expectEvent(() => fromDesktop({ type: 'refused', job: refusedJob, reason: 'too-many-pending' }));
-    expect(events.slice(-3)).toEqual([
-      { type: 'accepted', job },
+    expect(events.slice(-5)).toEqual([
+      { type: 'accepted', job, ahead: 2 },
+      { type: 'accepted', job, ahead: 0 },
+      { type: 'started', job },
       { type: 'result', job, result: PRINTED },
       { type: 'refused', job: refusedJob, reason: 'too-many-pending' },
     ]);
@@ -191,7 +195,7 @@ describe('PhoneSession: jobs', () => {
     const finished = phone.submit(RAW, false);
     const unfinished = phone.submit('OTHER', false);
     await expectSent(3);
-    await expectEvent(() => fromDesktop({ type: 'accepted', job: unfinished }));
+    await expectEvent(() => fromDesktop({ type: 'accepted', job: unfinished, ahead: 0 }));
     await expectEvent(() => fromDesktop({ type: 'result', job: finished, result: PRINTED }));
     const nonce = await reconnect();
     await expectSent(2);
@@ -215,7 +219,7 @@ describe('PhoneSession: jobs', () => {
     await welcome();
     const job = phone.submit(RAW, false);
     await expectSent(2);
-    await expectEvent(() => fromDesktop({ type: 'accepted', job }));
+    await expectEvent(() => fromDesktop({ type: 'accepted', job, ahead: 0 }));
     for (let elapsed = 0; elapsed < 3 * JOB_ACK_TIMEOUT_MS; elapsed += 1_000) {
       timers.advance(1_000);
       socket().receive('{"t":"pong"}');
@@ -248,11 +252,17 @@ describe('PhoneSession: link and session end', () => {
     expect(events.at(-1)).toEqual({ type: 'link', link: 'desktop-offline' });
   });
 
-  test('reports a session taken by another phone', async () => {
+  test('reports a phone turned away because the session is full', async () => {
     socket().open();
     await expectSent(1, () => socket().receive('{"t":"online"}'));
-    await expectEvent(() => fromDesktop({ type: 'taken' }));
-    expect(events.at(-1)).toEqual({ type: 'taken' });
+    await expectEvent(() => fromDesktop({ type: 'denied', reason: 'full' }));
+    expect(events.at(-1)).toEqual({ type: 'denied', reason: 'full' });
+  });
+
+  test('treats being disconnected by the desktop as being removed', async () => {
+    await welcome();
+    await expectEvent(() => socket().receive('{"t":"kicked"}'));
+    expect(events.at(-1)).toEqual({ type: 'denied', reason: 'removed' });
   });
 
   test('reports the end of the session', async () => {

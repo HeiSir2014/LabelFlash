@@ -4,7 +4,13 @@
  */
 import type { InvalidReason, PrintFailureReason } from '../../../src/core/types';
 import { formatWindow } from '../../../src/shared/duration-text';
-import type { EndReason, PhonePrintResult, RefusalReason } from '../../../src/shared/mobile-protocol';
+import {
+  type DenialReason,
+  type EndReason,
+  MAX_PHONES_PER_SESSION,
+  type PhonePrintResult,
+  type RefusalReason,
+} from '../../../src/shared/mobile-protocol';
 import { printResultCue } from '../../../src/shared/print-cues';
 import { PRINT_TIMEOUT_SECONDS } from '../../../src/shared/print-timing';
 import { VOICE_CUE_LEVEL, VOICE_CUE_TEXT, type VoiceCue, type VoiceLevel } from '../../../src/shared/voice';
@@ -53,6 +59,17 @@ const REFUSAL_TITLES: Record<RefusalReason, string> = {
 
 const RESTART_HINT = '需要时在电脑上重新点「手机扫码」。';
 
+const DENIAL_VIEWS: Record<DenialReason, MessageView> = {
+  full: {
+    title: '手机已满',
+    text: `这个二维码已经有 ${MAX_PHONES_PER_SESSION} 部手机在用。请在电脑上移除不用的手机后再扫。`,
+  },
+  removed: {
+    title: '这部手机已被移除',
+    text: '电脑上把这部手机移除了。需要继续用的话，重新扫电脑屏幕上的二维码。',
+  },
+};
+
 const END_TEXTS: Record<EndReason, string> = {
   stopped: `电脑上已结束手机扫码。${RESTART_HINT}`,
   idle: `超过 30 分钟没有扫码，已自动结束。${RESTART_HINT}`,
@@ -70,6 +87,8 @@ export function jobView(job: JobEntry, link: LinkState): JobView {
         actions: [],
       };
     case 'queued':
+      return { tone: 'pending', title: queueTitle(job.ahead ?? 0), detail: job.raw, actions: [] };
+    case 'printing':
       return { tone: 'pending', title: '正在打印…', detail: job.raw, actions: [] };
     case 'refused':
       return {
@@ -118,7 +137,7 @@ function resultView(result: PhonePrintResult, forced: boolean, raw: string): Job
   }
 }
 
-/** 占满整页的提示：没有链接、正在连接、已结束、链接失效、被占用；扫码中返回 null。 */
+/** 占满整页的提示：没有链接、正在连接、已结束、链接失效、没被接纳；扫码中返回 null。 */
 export function messageView(state: PhoneState): MessageView | null {
   switch (state.screen) {
     case 'no-link':
@@ -129,11 +148,8 @@ export function messageView(state: PhoneState): MessageView | null {
       return { title: '手机扫码已结束', text: END_TEXTS[state.endReason ?? 'stopped'] };
     case 'not-found':
       return { title: '链接已失效', text: `这个二维码已经过期或已结束。${RESTART_HINT}` };
-    case 'taken':
-      return {
-        title: '已在另一部手机上使用',
-        text: '一个二维码只给一部手机用。要换手机，先在电脑上结束，再重新点「手机扫码」。',
-      };
+    case 'denied':
+      return DENIAL_VIEWS[state.denial ?? 'removed'];
     case 'scanning':
       return null;
   }
@@ -149,6 +165,11 @@ export function linkBanner(link: LinkState): string | null {
     case 'desktop-offline':
       return '电脑暂时断线，正在等它回来…扫到的会先存在手机上';
   }
+}
+
+/** 所有手机的任务共用一个队列：告诉拿手机的人还要等几张。 */
+function queueTitle(ahead: number): string {
+  return ahead === 0 ? '排队中，下一张就是它' : `排队中，前面还有 ${ahead} 张`;
 }
 
 function cueView(cue: VoiceCue): Pick<JobView, 'tone' | 'title'> {

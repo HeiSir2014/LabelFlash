@@ -13,6 +13,7 @@ import {
   type EndReason,
   FIRST_FRAME_TIMEOUT_MS,
   MAX_FRAME_BYTES,
+  MAX_PHONES_PER_SESSION,
   MOBILE_PROTOCOL_VERSION,
   type PhoneFrame,
   parseDesktopFrame,
@@ -52,8 +53,9 @@ export interface HubDeps {
 const DEFAULT_LIMITS: HubLimits = {
   maxSessions: 500,
   maxConnections: 2_000,
-  // 一个会话只给一部手机用；留出余量给刷新页面时新旧连接短暂重叠。
-  maxPhonesPerSession: 3,
+  // 电脑最多接纳 MAX_PHONES_PER_SESSION 部手机；翻倍是给刷新页面、换网络时新旧连接短暂重叠，
+  // 多出来的连接由电脑拒绝，中转服务只防刷爆。
+  maxPhonesPerSession: MAX_PHONES_PER_SESSION * 2,
   // 一家店的所有设备通常共用一个出口 IP。
   maxConnectionsPerIp: 20,
 };

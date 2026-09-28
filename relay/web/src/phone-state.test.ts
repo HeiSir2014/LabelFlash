@@ -43,10 +43,21 @@ describe('reducePhone', () => {
       ['b', 'sending'],
       ['a', 'sending'],
     ]);
-    state = reducePhone(state, { type: 'accepted', job: 'a' });
-    expect(state.jobs[1]?.status).toBe('queued');
+    state = reducePhone(state, { type: 'accepted', job: 'a', ahead: 3 });
+    expect(state.jobs[1]).toMatchObject({ status: 'queued', ahead: 3 });
+    state = reducePhone(state, { type: 'accepted', job: 'a', ahead: 1 });
+    expect(state.jobs[1]).toMatchObject({ status: 'queued', ahead: 1 });
+    state = reducePhone(state, { type: 'started', job: 'a' });
+    expect(state.jobs[1]).toMatchObject({ status: 'printing', ahead: null });
     state = reducePhone(state, { type: 'result', job: 'a', result: PRINTED });
     expect(state.jobs[1]).toMatchObject({ status: 'done', result: PRINTED });
+  });
+
+  test('does not move a printing or finished job back into the queue', () => {
+    const printing = run([welcomed, submitted('a'), { type: 'started', job: 'a' }]);
+    expect(reducePhone(printing, { type: 'accepted', job: 'a', ahead: 0 })).toBe(printing);
+    const done = reducePhone(printing, { type: 'result', job: 'a', result: PRINTED });
+    expect(reducePhone(done, { type: 'started', job: 'a' })).toBe(done);
   });
 
   test('marks a refused job', () => {
@@ -77,7 +88,7 @@ describe('reducePhone', () => {
     expect(ended).toMatchObject({ screen: 'ended', endReason: 'idle' });
     expect(reducePhone(ended, welcomed)).toBe(ended);
     expect(run([{ type: 'not-found' }]).screen).toBe('not-found');
-    expect(run([{ type: 'taken' }]).screen).toBe('taken');
+    expect(run([{ type: 'denied', reason: 'full' }])).toMatchObject({ screen: 'denied', denial: 'full' });
   });
 
   test('remembers whether the camera works', () => {
@@ -98,7 +109,7 @@ describe('canSubmit', () => {
 
   test('holds scanning while too many jobs wait for their result', () => {
     const pending = Array.from({ length: MAX_PENDING_JOBS }, (_, index) => submitted(`job${index}`));
-    const full = run([welcomed, ...pending]);
+    const full = run([welcomed, ...pending, { type: 'started', job: 'job0' }]);
     expect(canSubmit(full)).toBe(false);
     expect(canSubmit(reducePhone(full, { type: 'result', job: 'job0', result: PRINTED }))).toBe(true);
   });

@@ -24,7 +24,19 @@ import type { TokenStore } from './token-store';
 /** 会话发给页面的事件：就是页面状态机的这几种事件，直接送进 reducePhone。 */
 export type SessionEvent = Extract<
   PhoneEvent,
-  { type: 'link' | 'welcomed' | 'printer' | 'accepted' | 'result' | 'refused' | 'ended' | 'not-found' | 'taken' }
+  {
+    type:
+      | 'link'
+      | 'welcomed'
+      | 'printer'
+      | 'accepted'
+      | 'started'
+      | 'result'
+      | 'refused'
+      | 'ended'
+      | 'not-found'
+      | 'denied';
+  }
 >;
 
 export interface PhoneSessionOptions {
@@ -128,7 +140,8 @@ export class PhoneSession {
         this.finish({ type: 'ended', reason: frame.reason });
         return;
       case 'kicked':
-        this.finish({ type: 'taken' });
+        // 电脑移除这部手机时先发 denied 再让中转服务断开；只收到断开时也按「被移除」处理。
+        this.finish({ type: 'denied', reason: 'removed' });
         return;
       case 'not-found':
         this.handleMissing();
@@ -155,21 +168,22 @@ export class PhoneSession {
           this.send(job);
         }
         return;
-      case 'taken':
-        this.finish({ type: 'taken' });
+      case 'denied':
+        this.finish({ type: 'denied', reason: message.reason });
         return;
       case 'printer':
         this.emit({ type: 'printer', printer: message.printer });
         return;
-      case 'accepted': {
-        const job = this.outbox.get(message.job);
-        if (job) {
-          job.isAccepted = true;
-          this.clearAckTimer(job);
-          this.emit({ type: 'accepted', job: message.job });
+      case 'accepted':
+        if (this.acknowledge(message.job)) {
+          this.emit({ type: 'accepted', job: message.job, ahead: message.ahead });
         }
         return;
-      }
+      case 'started':
+        if (this.acknowledge(message.job)) {
+          this.emit({ type: 'started', job: message.job });
+        }
+        return;
       case 'result':
         if (this.forget(message.job)) {
           this.emit({ type: 'result', job: message.job, result: message.result });
@@ -205,6 +219,17 @@ export class PhoneSession {
         this.send(jobId);
       }, JOB_ACK_TIMEOUT_MS);
     }
+  }
+
+  /** 电脑已收到这个任务（排队或开始打印）：不再因为确认超时重发。 */
+  private acknowledge(jobId: string): boolean {
+    const job = this.outbox.get(jobId);
+    if (!job) {
+      return false;
+    }
+    job.isAccepted = true;
+    this.clearAckTimer(job);
+    return true;
   }
 
   private forget(jobId: string): boolean {

@@ -23,7 +23,7 @@ const SCAN_FRAME_INTERVAL_MS = 160;
 const SCANNED_VIBRATE_MS = 40;
 /** 打印出问题时的振动：两下，和「扫到了」区分开。 */
 const PROBLEM_VIBRATE_PATTERN_MS = [80, 60, 80];
-const FINISHED_SCREENS: ReadonlySet<PhoneState['screen']> = new Set(['no-link', 'ended', 'not-found', 'taken']);
+const FINISHED_SCREENS: ReadonlySet<PhoneState['screen']> = new Set(['no-link', 'ended', 'not-found', 'denied']);
 
 const fragment = parsePhoneFragment(location.hash);
 let state: PhoneState = initialPhoneState(fragment !== null);

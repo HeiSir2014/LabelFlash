@@ -4,17 +4,29 @@ export type MobileStatus =
   | { state: 'connecting' }
   | {
       state: 'active';
-      /** 二维码里的私有链接。 */
+      /** 二维码里的私有链接，几部手机共用。 */
       url: string;
-      /** 还没有手机打开时，二维码的失效时间；已有手机时为 null。 */
+      /** 还没有手机加入时，二维码的失效时间；有手机加入过之后为 null。 */
       expiresAt: number | null;
       /** 和中转服务的连接是否正常。 */
       relayOnline: boolean;
-      phone: { device: string; online: boolean } | null;
+      /** 加入过的手机，按加入顺序。 */
+      phones: MobilePhone[];
       /** 本次会话已打印的张数。 */
       printed: number;
+      /** 排队中和正在打印的任务数。 */
+      queued: number;
     }
   | { state: 'failed'; error: MobileFailure };
+
+export interface MobilePhone {
+  /** 用来在电脑上移除这部手机；不是令牌。 */
+  id: string;
+  /** 例如「iPhone · 微信」。 */
+  device: string;
+  online: boolean;
+  printed: number;
+}
 
 /**
  * not-configured = 没有中转地址；unreachable = 连不上中转服务（仍在自动重试）；

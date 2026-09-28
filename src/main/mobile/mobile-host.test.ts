@@ -9,6 +9,7 @@ import { systemClock } from '../../core/types';
 import { importSessionKey, openMessage, randomId, sealMessage } from '../../shared/mobile-crypto';
 import {
   type DesktopMessage,
+  MAX_PHONES_PER_SESSION,
   MOBILE_PROTOCOL_VERSION,
   type PhonePrintResult,
   parsePhoneFragment,
@@ -86,7 +87,7 @@ async function activeUrl(): Promise<string> {
 }
 
 /** 用手机端的真实代码连上来。 */
-async function connectPhone(url: string, events: SessionEvent[]): Promise<PhoneSession> {
+async function connectPhone(url: string, events: SessionEvent[], device = '测试手机'): Promise<PhoneSession> {
   const fragment = parsePhoneFragment(new URL(url).hash);
   if (!fragment) {
     throw new Error(`bad phone url ${url}`);
@@ -95,7 +96,7 @@ async function connectPhone(url: string, events: SessionEvent[]): Promise<PhoneS
     relayUrl: `ws://127.0.0.1:${port}/ws/phone`,
     session: fragment.session,
     key: await importSessionKey(fragment.key),
-    device: '测试手机',
+    device,
     tokens: createTokenStore(null),
     createSocket: (socketUrl) => new WebSocket(socketUrl, { headers: { Origin: ORIGIN } }) as unknown as SocketLike,
     timers,
@@ -133,7 +134,7 @@ describe('MobileHost', () => {
     const url = await activeUrl();
     expect(url.startsWith(`http://127.0.0.1:${port}/m/#`)).toBe(true);
     expect(parsePhoneFragment(new URL(url).hash)).not.toBeNull();
-    expect(host.status()).toMatchObject({ state: 'active', relayOnline: true, phone: null, printed: 0 });
+    expect(host.status()).toMatchObject({ state: 'active', relayOnline: true, phones: [], printed: 0, queued: 0 });
   });
 
   test('claims the phone that opens the link', async () => {
@@ -141,7 +142,7 @@ describe('MobileHost', () => {
     await connectPhone(await activeUrl(), events);
     await waitFor(() => events.some((event) => event.type === 'welcomed'), 'the welcome');
     expect(events).toContainEqual({ type: 'welcomed', printer: '热敏标签机' });
-    expect(host.status()).toMatchObject({ phone: { device: '测试手机', online: true } });
+    expect(host.status()).toMatchObject({ phones: [{ device: '测试手机', online: true, printed: 0 }] });
   });
 
   test('prints a submitted job and reports it back', async () => {
@@ -150,10 +151,11 @@ describe('MobileHost', () => {
     await waitFor(() => events.some((event) => event.type === 'welcomed'), 'the welcome');
     const job = phone.submit(RAW, false);
     await waitFor(() => events.some((event) => event.type === 'result'), 'the result');
-    expect(events).toContainEqual({ type: 'accepted', job });
+    expect(events).toContainEqual({ type: 'accepted', job, ahead: 0 });
+    expect(events).toContainEqual({ type: 'started', job });
     expect(events).toContainEqual({ type: 'result', job, result: PRINTED });
     expect(prints).toEqual([{ raw: RAW, force: false, printer: '热敏标签机' }]);
-    expect(host.status()).toMatchObject({ printed: 1 });
+    expect(host.status()).toMatchObject({ printed: 1, queued: 0, phones: [{ printed: 1 }] });
   });
 
   test('prints jobs one after another, in the order they came', async () => {
@@ -228,15 +230,68 @@ describe('MobileHost', () => {
     expect(events).toContainEqual({ type: 'printer', printer: '另一台热敏标签机' });
   });
 
-  test('turns away a second phone', async () => {
+  test('queues jobs from several phones together and answers each phone about its own', async () => {
+    printDelayMs = 50;
     const url = await activeUrl();
     const first: SessionEvent[] = [];
-    await connectPhone(url, first);
-    await waitFor(() => first.some((event) => event.type === 'welcomed'), 'the first welcome');
     const second: SessionEvent[] = [];
-    await connectPhone(url, second);
-    await waitFor(() => second.some((event) => event.type === 'taken'), 'the refusal');
-    expect(host.status()).toMatchObject({ phone: { device: '测试手机', online: true } });
+    const phoneA = await connectPhone(url, first, '手机甲');
+    const phoneB = await connectPhone(url, second, '手机乙');
+    await waitFor(
+      () => [first, second].every((events) => events.some((event) => event.type === 'welcomed')),
+      'both welcomes',
+    );
+    const a1 = phoneA.submit('A1', false);
+    await waitFor(() => first.some((event) => event.type === 'accepted'), 'the first acceptance');
+    const b1 = phoneB.submit('B1', false);
+    await waitFor(() => second.some((event) => event.type === 'accepted'), 'the second acceptance');
+    const a2 = phoneA.submit('A2', false);
+    await waitFor(() => [...first, ...second].filter((event) => event.type === 'result').length === 3, 'three results');
+    expect(prints.map((entry) => entry.raw)).toEqual(['A1', 'B1', 'A2']);
+    expect(maxRunning).toBe(1);
+    // 乙的任务排在甲的第一张后面；甲的第一张打完，它往前挪到第一位。
+    expect(second).toContainEqual({ type: 'accepted', job: b1, ahead: 1 });
+    expect(second).toContainEqual({ type: 'accepted', job: b1, ahead: 0 });
+    const resultJobs = (events: SessionEvent[]) =>
+      events.flatMap((event) => (event.type === 'result' ? [event.job] : []));
+    expect(resultJobs(first)).toEqual([a1, a2]);
+    expect(resultJobs(second)).toEqual([b1]);
+    expect(host.status()).toMatchObject({
+      printed: 3,
+      phones: [
+        { device: '手机甲', printed: 2 },
+        { device: '手机乙', printed: 1 },
+      ],
+    });
+  });
+
+  test('turns away a phone once the session is full', async () => {
+    const url = await activeUrl();
+    const joined: SessionEvent[][] = [];
+    for (let index = 0; index < MAX_PHONES_PER_SESSION; index += 1) {
+      const events: SessionEvent[] = [];
+      joined.push(events);
+      await connectPhone(url, events, `手机${index}`);
+      await waitFor(() => events.some((event) => event.type === 'welcomed'), `welcome ${index}`);
+    }
+    const extra: SessionEvent[] = [];
+    await connectPhone(url, extra, '多出来的手机');
+    await waitFor(() => extra.some((event) => event.type === 'denied'), 'the refusal');
+    expect(extra).toContainEqual({ type: 'denied', reason: 'full' });
+    const status = host.status() as Extract<MobileStatus, { state: 'active' }>;
+    expect(status.phones).toHaveLength(MAX_PHONES_PER_SESSION);
+  });
+
+  test('removes a phone on request, and keeps it out', async () => {
+    const url = await activeUrl();
+    const events: SessionEvent[] = [];
+    await connectPhone(url, events);
+    await waitFor(() => events.some((event) => event.type === 'welcomed'), 'the welcome');
+    const status = host.status() as Extract<MobileStatus, { state: 'active' }>;
+    host.removePhone(status.phones[0]?.id ?? '');
+    await waitFor(() => events.some((event) => event.type === 'denied'), 'the removal');
+    expect(events).toContainEqual({ type: 'denied', reason: 'removed' });
+    expect(host.status()).toMatchObject({ phones: [] });
   });
 
   test(

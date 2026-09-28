@@ -113,7 +113,7 @@ test(
     await Bun.sleep(HOLD_STILL_MS);
     expect(prints).toEqual([LABEL]);
     expect(await page.locator('.job').count()).toBe(1);
-    expect(host.status()).toMatchObject({ phone: { online: true }, printed: 1 });
+    expect(host.status()).toMatchObject({ phones: [{ online: true, printed: 1 }], printed: 1 });
     expect(errors).toEqual([]);
   },
   SCAN_TIMEOUT_MS * 2,

@@ -37,6 +37,11 @@ export const JOB_ACK_TIMEOUT_MS = 10_000;
  * 10 张足够连续扫一小批，又不至于在打印机出问题时积压太多。
  */
 export const MAX_PENDING_JOBS = 10;
+/**
+ * 一个会话里同时加入的手机上限：样衣间几个人一起补打够用；再多，排队时间长到失去意义，
+ * 也更难看清是谁在用。电脑上可以移除不用的手机腾出位置。
+ */
+export const MAX_PHONES_PER_SESSION = 5;
 /** 手机的简短描述（例如「iPhone · 微信」）只用于电脑上显示，超出截断。 */
 export const MAX_DEVICE_LENGTH = 40;
 /**
@@ -87,13 +92,17 @@ export type RelayToPhone =
   | { t: 'pong' }
   | { t: 'error'; code: RelayErrorCode };
 
+export const DENIAL_REASONS = ['full', 'removed'] as const;
+/** 手机没被接纳的原因：full = 会话里的手机满了；removed = 电脑上把这部手机移除了（它的令牌已作废）。 */
+export type DenialReason = (typeof DENIAL_REASONS)[number];
+
 export const REFUSAL_REASONS = ['rate-limited', 'too-many-pending'] as const;
 /** 任务没被接受（也就没有执行）的原因：稍后可以用同一个任务号重发。 */
 export type RefusalReason = (typeof REFUSAL_REASONS)[number];
 
 /** 手机 → 电脑。 */
 export type PhoneMessage =
-  /** 认领或恢复会话；token 是之前 welcome 给的令牌，第一次为 null。 */
+  /** 加入或恢复会话；token 是之前 welcome 给的令牌，第一次为 null。 */
   | { type: 'hello'; token: string | null; device: string }
   /**
    * 提交一个打印任务。
@@ -120,14 +129,19 @@ export type PhonePrintResult =
 
 /** 电脑 → 手机。 */
 export type DesktopMessage =
-  /** 认领或恢复成功：令牌、本次连接的 nonce、当前打印机（没选时为 null）。 */
+  /** 加入或恢复成功：这部手机的令牌、本次连接的 nonce、当前打印机（没选时为 null）。 */
   | { type: 'welcome'; token: string; nonce: string; printer: string | null }
-  /** 会话已被别的手机占用。 */
-  | { type: 'taken' }
+  /** 没被接纳。 */
+  | { type: 'denied'; reason: DenialReason }
   /** 电脑上选的打印机变了。 */
   | { type: 'printer'; printer: string | null }
-  /** 任务已收到，排队打印。 */
-  | { type: 'accepted'; job: string }
+  /**
+   * 任务在排队：前面还有 ahead 个任务（所有手机的任务共用一个队列）。
+   * 队伍往前走时电脑会再发一次，更新 ahead。
+   */
+  | { type: 'accepted'; job: string; ahead: number }
+  /** 任务开始打印。 */
+  | { type: 'started'; job: string }
   /** 任务的最终结果。 */
   | { type: 'result'; job: string; result: PhonePrintResult }
   /** 任务没被接受。 */
@@ -280,12 +294,16 @@ export function parseDesktopMessage(value: unknown): DesktopMessage | null {
       }
       return { type: 'welcome', token, nonce, printer };
     }
-    case 'taken':
-      return { type: 'taken' };
+    case 'denied':
+      return isOneOf(value['reason'], DENIAL_REASONS) ? { type: 'denied', reason: value['reason'] } : null;
     case 'printer':
       return isStringOrNull(value['printer']) ? { type: 'printer', printer: value['printer'] } : null;
-    case 'accepted':
-      return isRandomId(value['job']) ? { type: 'accepted', job: value['job'] } : null;
+    case 'accepted': {
+      const { job, ahead } = value;
+      return isRandomId(job) && isCount(ahead) ? { type: 'accepted', job, ahead } : null;
+    }
+    case 'started':
+      return isRandomId(value['job']) ? { type: 'started', job: value['job'] } : null;
     case 'result': {
       const { job } = value;
       const result = readPrintResult(value['result']);
@@ -399,6 +417,10 @@ function isVersion(value: unknown): value is number {
 /** 本次连接内的消息序号：从 1 开始的安全整数。 */
 function isSequence(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function isCount(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function isDuration(value: unknown): value is number {

@@ -1,30 +1,37 @@
 /**
  * 扫码页的状态机。页面只按状态渲染、把浏览器和连接的事件送进来，状态转换都在这里，用 bun test 测试。
  *
- * 扫到就打：取景一直开着，每扫到一个码就是一个打印任务，列在下面，从「发送中」「排队中」走到结果。
+ * 扫到就打：取景一直开着，每扫到一个码就是一个打印任务，列在下面，从「发送中」「排队中」「打印中」走到结果。
+ * 几部手机共用电脑上的一个打印队列，排队时显示前面还有几张。
  * 连接状态（link）和任务分开：断线时任务留在手机的发件箱里，重新连上后自动补发（见 phone-session.ts）。
  */
 import {
+  type DenialReason,
   type EndReason,
   MAX_PENDING_JOBS,
   type PhonePrintResult,
   type RefusalReason,
 } from '../../../src/shared/mobile-protocol';
 
-export type Screen = 'no-link' | 'connecting' | 'scanning' | 'ended' | 'not-found' | 'taken';
+export type Screen = 'no-link' | 'connecting' | 'scanning' | 'ended' | 'not-found' | 'denied';
 
 /** reconnecting = 正在连中转服务；desktop-offline = 中转服务在，电脑暂时断线。 */
 export type LinkState = 'online' | 'reconnecting' | 'desktop-offline';
 export type CameraState = 'pending' | 'live' | 'unavailable';
 
-/** sending = 还没送达电脑（包括断线时留在发件箱里）；queued = 电脑已收到，排队打印；done / refused = 有了结果。 */
-export type JobStatus = 'sending' | 'queued' | 'done' | 'refused';
+/**
+ * sending = 还没送达电脑（包括断线时留在发件箱里）；queued = 电脑已收到，在排队；printing = 正在打印；
+ * done / refused = 有了结果（refused 表示没有执行）。
+ */
+export type JobStatus = 'sending' | 'queued' | 'printing' | 'done' | 'refused';
 
 export interface JobEntry {
   id: string;
   raw: string;
   force: boolean;
   status: JobStatus;
+  /** 排队时前面还有几个任务（所有手机合计）；不在排队时为 null。 */
+  ahead: number | null;
   result: PhonePrintResult | null;
   refusal: RefusalReason | null;
 }
@@ -37,6 +44,7 @@ export interface PhoneState {
   /** 最近的任务，新的在前。 */
   jobs: JobEntry[];
   endReason: EndReason | null;
+  denial: DenialReason | null;
 }
 
 export type PhoneEvent =
@@ -45,17 +53,19 @@ export type PhoneEvent =
   | { type: 'printer'; printer: string | null }
   | { type: 'camera'; camera: Exclude<CameraState, 'pending'> }
   | { type: 'submitted'; job: string; raw: string; force: boolean }
-  | { type: 'accepted'; job: string }
+  | { type: 'accepted'; job: string; ahead: number }
+  | { type: 'started'; job: string }
   | { type: 'result'; job: string; result: PhonePrintResult }
   | { type: 'refused'; job: string; reason: RefusalReason }
   | { type: 'ended'; reason: EndReason }
   | { type: 'not-found' }
-  | { type: 'taken' };
+  | { type: 'denied'; reason: DenialReason };
 
 /** 页面上保留的任务条数：够看清最近扫的一批，列表又不会拉得太长。 */
 export const JOB_HISTORY = 20;
 
-const TERMINAL_SCREENS: ReadonlySet<Screen> = new Set(['no-link', 'ended', 'not-found', 'taken']);
+const TERMINAL_SCREENS: ReadonlySet<Screen> = new Set(['no-link', 'ended', 'not-found', 'denied']);
+const WAITING_STATUSES: ReadonlySet<JobStatus> = new Set(['sending', 'queued', 'printing']);
 
 export function initialPhoneState(hasLink: boolean): PhoneState {
   return {
@@ -65,6 +75,7 @@ export function initialPhoneState(hasLink: boolean): PhoneState {
     printer: null,
     jobs: [],
     endReason: null,
+    denial: null,
   };
 }
 
@@ -74,7 +85,7 @@ export function canSubmit(state: PhoneState): boolean {
 }
 
 export function pendingCount(state: PhoneState): number {
-  return state.jobs.filter((job) => job.status === 'sending' || job.status === 'queued').length;
+  return state.jobs.filter((job) => WAITING_STATUSES.has(job.status)).length;
 }
 
 export function reducePhone(state: PhoneState, event: PhoneEvent): PhoneState {
@@ -101,24 +112,31 @@ export function reducePhone(state: PhoneState, event: PhoneEvent): PhoneState {
         raw: event.raw,
         force: event.force,
         status: 'sending',
+        ahead: null,
         result: null,
         refusal: null,
       };
       return { ...state, jobs: [job, ...state.jobs].slice(0, JOB_HISTORY) };
     }
     case 'accepted':
-      // 结果可能先于重发的 accepted 到达：已经有结果的不退回「排队中」。
-      return updateJob(state, event.job, (job) => (job.status === 'sending' ? { ...job, status: 'queued' } : job));
+      // 排队位置会随队伍前进多次更新；已经开始打印或有了结果的，不退回「排队中」。
+      return updateJob(state, event.job, (job) =>
+        job.status === 'sending' || job.status === 'queued' ? { ...job, status: 'queued', ahead: event.ahead } : job,
+      );
+    case 'started':
+      return updateJob(state, event.job, (job) =>
+        WAITING_STATUSES.has(job.status) ? { ...job, status: 'printing', ahead: null } : job,
+      );
     case 'result':
-      return updateJob(state, event.job, (job) => ({ ...job, status: 'done', result: event.result }));
+      return updateJob(state, event.job, (job) => ({ ...job, status: 'done', ahead: null, result: event.result }));
     case 'refused':
-      return updateJob(state, event.job, (job) => ({ ...job, status: 'refused', refusal: event.reason }));
+      return updateJob(state, event.job, (job) => ({ ...job, status: 'refused', ahead: null, refusal: event.reason }));
     case 'ended':
       return { ...state, screen: 'ended', endReason: event.reason };
     case 'not-found':
       return { ...state, screen: 'not-found' };
-    case 'taken':
-      return { ...state, screen: 'taken' };
+    case 'denied':
+      return { ...state, screen: 'denied', denial: event.reason };
   }
 }
 

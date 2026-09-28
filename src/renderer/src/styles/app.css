@@ -289,11 +289,17 @@ input {
 .scan-bar__input {
   flex: 1;
   min-width: 0;
+  height: 1.4em;
+  padding: 0;
   border: 0;
   outline: none;
+  overflow: hidden;
+  resize: none;
   background: transparent;
   font-family: var(--font-data);
   font-size: 22px;
+  line-height: 1.4;
+  white-space: pre;
   user-select: text;
 }
 

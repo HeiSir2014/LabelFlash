@@ -287,6 +287,7 @@
 - `ScanAssembler(gapMs, onSubmit, timers)`：
   - `breakKey(kind: 'enter' | 'tab')`：先挂起，不提交。
   - `character()`：在挂起状态下，返回要插入的分隔字符（`\n` 或 `\t`），并取消计时。
+    - 由扫码框的 `onChange`（内容在末尾变长）触发，而不是 keydown：中文往往不经过 keydown 送达（Windows 扫码枪的 Alt+小键盘码、输入法上屏、自动化测试的 insertText）。
   - 计时到期后，调用 `onSubmit` 提交当前内容。
   - `setGap(ms)`。
 

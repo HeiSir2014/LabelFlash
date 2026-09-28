@@ -73,6 +73,21 @@ test('loads the UI over app:// and previews a scanned label', async () => {
   await app.close();
 });
 
+test('takes a burst of lines with Enters in between as one multi-line scan', async () => {
+  const { app, page } = await launch();
+  const input = page.locator('.scan-bar__input');
+  await input.focus();
+  // 像扫码枪一样连续发出按键：码里的换行后面紧跟着下一个字符，只有最后的回车后面是停顿。
+  for (const line of ['订单号：A001', '款号：CL5640', '尺码：XL']) {
+    await page.keyboard.type(line);
+    await page.keyboard.press('Enter');
+  }
+  await expect(page.locator('.label-badge')).toHaveText('多行键值 · 通用（二维码在左）');
+  await expect(page.frameLocator('.label-frame').locator('.value')).toHaveText(['A001', 'CL5640', 'XL']);
+  await expect(input).toHaveValue('');
+  await app.close();
+});
+
 test('keeps a saved custom template and the note selection after a restart', async () => {
   const first = await launch();
   const page = first.page;

@@ -167,6 +167,7 @@ export function App() {
           <div className="station">
             <ScanBar
               autoPrint={autoPrint}
+              lineGapMs={settings?.scanLineGapMs ?? DEFAULT_SETTINGS.scanLineGapMs}
               note={{ ...noteOptions, onSelect: (value) => void selectNote(value) }}
               onAutoPrintChange={(next) => void update({ autoPrint: next })}
               onScan={station.scanCode}

@@ -7,6 +7,7 @@ import {
   HISTORY_LIMIT_RANGE,
   MAX_DEDUP_WINDOW_SECONDS,
   MAX_NOTE_PRESETS,
+  SCAN_LINE_GAP_RANGE,
   sanitizeNoteText,
 } from '../../../shared/settings';
 import type { VoiceCue } from '../../../shared/voice';
@@ -74,6 +75,15 @@ export function SettingsForm({
         min={0}
         max={MAX_DEDUP_WINDOW_SECONDS}
         onCommit={async (dedupWindowSeconds) => (await onChange({ dedupWindowSeconds }))?.dedupWindowSeconds ?? null}
+      />
+      <NumberSetting
+        label="多行扫码等待"
+        unit="毫秒"
+        hint="二维码里有换行时，扫码枪会连续发出回车；回车后这么久没有新字符才算扫完。多行内容被拆成几次时调大一点"
+        value={settings.scanLineGapMs}
+        min={SCAN_LINE_GAP_RANGE.min}
+        max={SCAN_LINE_GAP_RANGE.max}
+        onCommit={async (scanLineGapMs) => (await onChange({ scanLineGapMs }))?.scanLineGapMs ?? null}
       />
       <NumberSetting
         label="打印记录保留"

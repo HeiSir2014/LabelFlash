@@ -4,6 +4,7 @@
 - 状态：方案已确认（按需连接云端、二维码直接是私有子链接）
 - 目标版本：1.1.0（1.0.1 发布之后）
 - 取代：总设计第 1 节里 Phase 2 的「主进程内 HTTPS 服务、自签证书、token/PIN 认证」方案，原因见第 10 节
+- 中转服务地址：代码里不写任何域名。官方安装包默认连接 yterm.cn 上的中转服务；任何人都可以自己部署中转服务，在电脑的设置里填自己的地址（见 7.4）
 
 ## 1. 目标与范围
 
@@ -38,8 +39,8 @@
 ## 3. 架构
 
 ```
-手机浏览器 ──wss──▶ yterm.cn/labelflash/ ──▶ 中转服务（Docker 容器）◀──wss── 电脑主进程 ──▶ PrintService ──▶ 热敏标签机
-   扫码页（同一个地址提供）      nginx 终结 TLS            只转发            电脑主动连出去
+手机浏览器 ──wss──▶ 反向代理（终结 TLS）──▶ 中转服务（容器）◀──wss── 电脑主进程 ──▶ PrintService ──▶ 热敏标签机
+扫码页也由中转服务提供         例如 nginx              只转发            电脑主动连出去
 ```
 
 | 部分 | 位置 | 职责 |
@@ -65,8 +66,8 @@
   - 会话号 `sessionId`：16 字节；
   - 所有权密钥 `ownerSecret`：16 字节，只在电脑和中转服务之间用；
   - 内容密钥 `key`：32 字节。
-- 链接是 `https://yterm.cn/labelflash/m/#<sessionId>.<key>`，都用 base64url 编码。
-- 会话号和内容密钥放在 `#` 后面：浏览器不会把 `#` 后面的部分发给服务器，所以不会出现在 nginx 日志和 Referer 里。
+- 链接是 `<中转地址>m/#<sessionId>.<key>`，都用 base64url 编码。例如中转地址是 `https://relay.example.com/labelflash/` 时，链接是 `https://relay.example.com/labelflash/m/#…`。
+- 会话号和内容密钥放在 `#` 后面：浏览器不会把 `#` 后面的部分发给服务器，所以不会出现在反向代理的日志和 Referer 里。
 
 ### 4.2 端到端加密
 
@@ -108,8 +109,8 @@
 - **容量**：
   - 最多 500 个会话、2000 个连接；
   - 每个会话最多 3 个手机连接；
-  - 每个来源 IP 最多 20 个连接。来源 IP 取 nginx 传来的 `X-Real-IP`；服务只监听 127.0.0.1，外面访问不到。
-- **来源检查**：手机连接的 `Origin` 必须是 `https://yterm.cn`。
+  - 每个来源 IP 最多 20 个连接。来源 IP 取反向代理传来的 `X-Real-IP`；容器端口只映射到宿主机的 127.0.0.1，外面直接访问不到。
+- **来源检查**：手机连接的 `Origin` 必须等于中转服务的 `PUBLIC_ORIGIN`（扫码页对外的 origin，部署时必填，没有默认值）。
 - **所有权**：
   - 会话号第一次 `open` 时，中转服务记下 `ownerSecret` 的 SHA-256。
   - 电脑断线重连时用同一个 `ownerSecret` 再 `open`，中转服务就接管会话，并关掉旧连接。这样处理了半开连接：旧连接其实已经断了，服务端还没发现。
@@ -120,7 +121,7 @@
 
 ```
 Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self';
-  connect-src 'self' wss://yterm.cn; img-src 'self' blob: data:; style-src 'self'; media-src 'self' blob:;
+  connect-src 'self' wss://<PUBLIC_ORIGIN 的主机>; img-src 'self' blob: data:; style-src 'self'; media-src 'self' blob:;
   base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 Permissions-Policy: camera=(self), microphone=(), geolocation=()
 Referrer-Policy: no-referrer
@@ -185,7 +186,7 @@ X-Content-Type-Options: nosniff
 
 - **心跳**：电脑和手机每 25 秒发一次 `ping`，10 秒内没收到 `pong` 就判定断线，主动关闭连接并重连。
 - **重连间隔**：依次为 1、2、5、10、30 秒，之后保持 30 秒。
-- **nginx 超时**：`proxy_read_timeout` 设 120 秒，比心跳间隔长得多。
+- **反向代理超时**：读超时（nginx 的 `proxy_read_timeout`）设 120 秒，比心跳间隔长得多。
 - **电脑断线**：中转服务告诉手机 `waiting`，会话保留 2 分钟。电脑在这段时间内重新 `open` 了，就告诉手机 `online`；否则告诉手机 `ended: desktop-gone` 并忘掉这个会话。
 - **中转服务重启**：
   - 内存里的会话全部丢失。电脑和手机各自重连：电脑重新 `open`（`ownerSecret` 不变），手机重新 `join`，再用令牌 `hello`。
@@ -204,7 +205,7 @@ X-Content-Type-Options: nosniff
 
 - **解码库**：zxing-wasm 的 reader（ZXing C++ 编译成 WebAssembly）。
   - 放在 Web Worker 里跑，不卡界面。
-  - `.wasm` 由我们自己的服务器提供（`locateFile` 指向本站）。它的默认地址是国外 CDN，在国内不稳定。
+  - `.wasm` 由中转服务自己提供（`locateFile` 指向本站）。它的默认地址是国外 CDN，在国内不稳定。
   - 为什么不用浏览器自带的 `BarcodeDetector`：iPhone 的 Safari 没有它，而且不同手机上的效果不一致。
 - **码制**：QR Code、Data Matrix、Code 128、Code 39、EAN-13、EAN-8、UPC-A。不开 ITF 等容易误识的码制。
 - **编码**：`textMode: 'Plain'`，按码里的 ECI 或自动猜测的字符集转成文字。UTF-8 和 GBK 编码的中文都要能正确还原，由单元测试覆盖。
@@ -245,14 +246,14 @@ X-Content-Type-Options: nosniff
 
 | 文件 | 作用 | 依赖 Electron |
 |---|---|---|
-| `relay-endpoint.ts` | 中转地址：默认 `https://yterm.cn/labelflash/`；开发版可以用环境变量 `CDL_LABELFLASH_RELAY_URL` 改成本机的中转服务（安装版忽略） | 否 |
-| `relay-link.ts` | WebSocket 连接：心跳、重连、所有权；WebSocket 和计时器都由参数注入 | 否 |
+| `relay-endpoint.ts` | 中转地址：取设置里的地址，没填时用构建时注入的默认值；校验、拼出 WebSocket 和扫码页地址（见 7.4） | 否 |
+| `mobile-host.ts` | 编排：连接（`src/shared/relay-socket.ts`，心跳、重连）、所有权、加解密、会话、调用注入的预览和打印；WebSocket 和计时器都由参数注入 | 否 |
 | `mobile-session.ts` | 会话状态：认领、令牌、`nonce` 和 `id` 检查、10 分钟 / 30 分钟到期、限流；时间由 `Clock` 注入 | 否 |
 | `mobile-replies.ts` | 把 `PrintService` 的结果换成发给手机的精简结果（截断字段，去掉内部信息） | 否 |
 | `mobile-station.ts` | 接线：收到请求 → `PrintService`；状态变化推给界面 | 是（只做接线） |
 
 - **WebSocket**：用 Electron 44 主进程自带的全局 `WebSocket`（Node 24），不新增依赖。
-- **系统代理**：Node 的 WebSocket 不走系统代理设置。店里的网络要能直接访问 `yterm.cn:443`，这一点写进 README。
+- **系统代理**：Node 的 WebSocket 不走系统代理设置。店里的网络要能直接访问中转服务的 443 端口，这一点写进 README。
 
 ### 7.2 打印
 
@@ -285,33 +286,55 @@ X-Content-Type-Options: nosniff
   - `mobile:status-changed`：主进程推送状态变化。
   - 参数照例经 `ipc-validators.ts` 校验。
 
+### 7.4 中转地址
+
+项目是开源的，代码里不写任何域名。
+
+- **设置项**：新增设置 `mobileRelayUrl`（字符串或 null），在配置中心的「手机扫码」一节里填写，旁边有「恢复默认」。
+  - 必须是 `https://` 地址，路径以 `/` 结尾（没有时自动补上）；`http://` 只接受 `localhost` 和 `127.0.0.1`，给开发和测试用。
+  - 手机上的摄像头只在 https 页面里可用，所以正式使用只能是 https。
+- **默认值**：构建时由环境变量 `CDL_LABELFLASH_DEFAULT_RELAY_URL` 注入（electron-vite 的 `define`）。
+  - 官方安装包由 CI 构建，CI 从仓库的 Actions 变量读取这个值，指向 yterm.cn 上的官方中转服务。
+  - 自己构建时不设这个变量，就没有默认值。
+- **取值顺序**：设置里填了就用设置，否则用默认值；两者都没有时，「手机扫码」按钮提示先去配置中心填写中转地址。
+- **换地址**：会话进行中改了地址，先结束当前会话，下次点「手机扫码」时连新地址。
+
 ## 8. 部署
 
-- **服务器**：`yterm.cn`（Ubuntu 24.04，2 核，内存 1.9G）。nginx 以 host 网络模式跑在 Docker 里；443 端口按 SNI 分流，`yterm.cn` 的 TLS 站点监听 8443 和 8444（proxy_protocol）。
+任何有域名和 https 证书的服务器都能部署，官方的中转服务部署在 yterm.cn。仓库里只写通用的做法，不写具体服务器的配置。
+
+- **环境变量**：
+  - `PUBLIC_ORIGIN`（必填）：扫码页对外的 origin，例如 `https://relay.example.com`；
+  - `PORT`：默认 3180；`HOST`：默认 `0.0.0.0`（容器内）。
 - **容器 `labelflash-relay`**：
-  - 基础镜像 `oven/bun:1.4.2-alpine`，服务器上已有，层共享，几乎不占额外磁盘；
+  - 基础镜像 `oven/bun:1.4.2-alpine`，和开发用的 Bun 版本一致；
   - 以非 root 用户运行，文件系统只读；
   - 只绑定 `127.0.0.1:3180`；
   - 内存上限 128 MB；
   - 日志 5 MB × 2 份轮转；
   - `--restart unless-stopped`。
-- **目录**：服务器上的 `~/labelflash-relay/`，放构建产物和 Dockerfile。
-- **nginx**：在 `yterm.cn` 的 TLS 站点里加 `location /labelflash/`（见 `relay/deploy/nginx-location.conf`）：
+- **反向代理**：在已有 https 站点下加一个路径前缀，例如 `/labelflash/`（nginx 示例见 `relay/deploy/nginx-location.conf`，域名用占位符）：
   - 转发到 `127.0.0.1:3180`，去掉路径前缀；
-  - 支持 WebSocket 升级，`proxy_read_timeout 120s`，请求体上限 64k。
-  - 只需改一次：先备份配置，`nginx -t` 通过后再 reload。
-- **发布**：`bun run relay:deploy`，依次做这几件事：
-  1. 本机构建服务端 bundle 和扫码页；
-  2. 上传到服务器；
-  3. `docker build`；
-  4. 替换容器；
-  5. 请求 `/labelflash/healthz`，确认新版本已在运行。
+  - 支持 WebSocket 升级，读超时 120 秒，请求体上限 64k；
+  - 传 `X-Real-IP`。
+  - 电脑里填的中转地址就是 `https://<域名>/labelflash/`。
+- **发布**：`bun run relay:deploy`。目标服务器从环境变量读取，不写进仓库：
+  - `RELAY_DEPLOY_SSH`：ssh 主机名；
+  - `RELAY_PUBLIC_ORIGIN`：传给容器的 `PUBLIC_ORIGIN`；
+  - `RELAY_HEALTH_URL`：对外的健康检查地址。
+  - 依次做这几件事：
+    1. 本机构建服务端 bundle 和扫码页；
+    2. 经 ssh 上传到服务器的 `~/labelflash-relay/<版本>/`；
+    3. `docker build`；
+    4. 替换容器；
+    5. 请求健康检查，确认新版本已在运行；失败时换回上一个镜像。
 - **健康检查**：`GET /healthz` 返回 `{ ok, version, sessions, connections }`，不含会话号。
 
 ## 9. 需要澄清的问题与结论
 
 | 问题 | 结论 |
 |---|---|
+| 中转地址写在哪？ | 代码里不写。设置项 `mobileRelayUrl`；官方安装包的默认值在构建时注入，见 7.4 |
 | 平时要不要连着中转服务？ | 不连。点「手机扫码」才连，会话结束就断 |
 | 二维码被拍照外传怎么办？ | 一个会话只给第一部手机；10 分钟没人打开就作废；电脑上随时能结束 |
 | 中转服务能看到扫码内容吗？ | 看不到。内容端到端加密，密钥只在二维码的 `#` 部分 |
@@ -325,10 +348,10 @@ X-Content-Type-Options: nosniff
 | 手机识别乱码？ | 解码库按 ECI 或自动识别字符集，UTF-8 和 GBK 都有测试 |
 | iPhone 微信里摄像头打不开？ | 自动降级为拍照识别或手动输入；是否能实时取景待真机验收 |
 | 手机页面的用词和电脑不一致？ | 标题共用 `VOICE_CUE_TEXT`，结果到播报句的对应放在 `src/shared/print-cues.ts` |
-| 多家店共用一台中转服务？ | 每台电脑自己的会话互不相干；容量上限见 4.5 |
+| 多家店共用一台中转服务？ | 每台电脑自己的会话互不相干；容量上限见 4.5。也可以各自部署，在设置里填自己的地址 |
 | 店里网络需要代理？ | 不支持系统代理，README 写明 |
 | 中转服务升级后和旧版电脑不兼容？ | 消息带版本号；版本不支持时回复 `error: version`，电脑提示「请更新软件」。中转服务升级时保持旧版本可用 |
-| 服务器磁盘只剩 3.4G？ | 复用已有的基础镜像，日志限 10 MB，不写磁盘 |
+| 中转服务占多少资源？ | 不写磁盘，内存上限 128 MB，日志限 10 MB，适合和其他服务共用一台小服务器 |
 | 为什么不用局域网直连？ | 见第 10 节 |
 
 ## 10. 取舍
@@ -339,7 +362,7 @@ X-Content-Type-Options: nosniff
   - 云端中转由电脑主动连出去，这些问题都没有。代价是店里要能上网，偶尔补打的场景可以接受。
 - **按需连接，而不是常连**：平时没有连接，服务器负担和暴露面都更小。代价是每次用手机都要到电脑前点一下，偶尔补打可以接受。
 - **中转只转发，会话放在电脑上**：服务端没有状态，重启不丢会话，也不需要数据库。
-- **端到端加密**：服务器和其他服务共用，加密后服务器看不到内容。WebCrypto 在浏览器和 Node 里都有，不增加依赖。
+- **端到端加密**：中转服务可能由别人部署，或者和其他服务共用一台服务器；加密后它看不到内容。WebCrypto 在浏览器和 Node 里都有，不增加依赖。
 - **每张确认**：比「扫到就打」多点一下，但不会误打。以后需要连续扫码时，可以加一个「连续模式」开关，协议不用改。
 
 ## 11. 测试
@@ -371,9 +394,10 @@ X-Content-Type-Options: nosniff
 1. **协议与中转服务**：`src/shared/mobile-protocol.ts`、`mobile-crypto.ts`、`print-cues.ts`，`relay/src/`，以及测试。
 2. **扫码页**：`relay/web/`、构建脚本、解码测试。
 3. **电脑端模块**：`src/main/mobile/` 里不依赖 Electron 的模块，先不接线；经真实中转服务的集成测试。
-4. **部署与浏览器验证**：Docker 镜像、nginx、`relay:deploy`；假摄像头的浏览器测试；把扫码页交给需求方用真手机试。
+4. **部署与浏览器验证**：Docker 镜像、反向代理示例、`relay:deploy`；部署官方中转服务；假摄像头的浏览器测试；把扫码页交给需求方用真手机试。
 5. **接入电脑**（重构合回后）：
    - 主进程接线、IPC、preload、界面按钮和弹窗；
+   - 设置项 `mobileRelayUrl` 和配置中心里的填写框；构建时注入默认地址，CI 的发布作业从 Actions 变量读取；
    - 界面的 `feedback-cues.ts` 改用 `print-cues.ts`，删掉重复的对应关系；
    - E2E、README 和各级 CLAUDE.md；
    - Windows 和 macOS 验收，发布 1.1.0。

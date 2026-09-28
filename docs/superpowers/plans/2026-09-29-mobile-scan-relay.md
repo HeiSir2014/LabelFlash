@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 手机网页扫码，经 yterm.cn 上的中转服务，在店里电脑的热敏标签机上打印；电脑只在会话进行中连接中转服务，内容端到端加密。
+**Goal:** 手机网页扫码，经云端中转服务，在店里电脑的热敏标签机上打印；电脑只在会话进行中连接中转服务，内容端到端加密。中转地址是设置项，代码里不写域名（官方安装包的默认值在构建时注入）。
 
 **Architecture:**
 - 中转服务是一个无状态的 Bun 程序：按会话号在电脑和手机的 WebSocket 之间转发加密消息，同时提供扫码页的静态文件。
@@ -29,6 +29,7 @@
   - 常量带单位后缀，并注明取值依据。
   - 测试先行：先写失败的测试，再实现。
 - **命名**：文档和代码里不出现参考产品的名称，打印机只写「热敏标签机」。
+- **不写域名**：代码、测试、脚本里不出现官方中转服务的域名，测试用 `relay.example.com`。官方地址只在文档里说明「官方安装包默认用 yterm.cn」，具体服务器的配置不进仓库。
 
 ## 文件结构
 
@@ -56,11 +57,11 @@
 | `relay/web/src/view.ts`、`main.ts` | 渲染与接线 |
 | `relay/tsconfig.json`、`relay/web/tsconfig.json` | 服务端（Bun）和页面（DOM）的类型检查 |
 | `scripts/relay/build.ts` | 构建 `relay/dist/`：`server.js` 和带哈希的 `web/` |
-| `scripts/relay/deploy.ts` | 上传、`docker build`、替换容器、健康检查 |
+| `scripts/relay/deploy.ts` | 上传、`docker build`、替换容器、健康检查；目标服务器从环境变量读取 |
 | `scripts/relay/demo-desktop.ts` | 命令行电脑端：终端里显示二维码，打出收到的请求，不真的打印；给真手机试用 |
-| `relay/Dockerfile`、`relay/deploy/nginx-location.conf` | 镜像；nginx 片段（只改一次，存档备查） |
+| `relay/Dockerfile`、`relay/deploy/nginx-location.conf` | 镜像；nginx 示例片段（域名用占位符） |
 | `relay/README.md`、`relay/CLAUDE.md` | 运行、部署、约束 |
-| `src/main/mobile/relay-endpoint.ts` | 中转地址与环境变量覆盖 |
+| `src/main/mobile/relay-endpoint.ts` | 中转地址：设置优先、构建默认值兜底，校验并拼出各地址 |
 | `src/main/mobile/mobile-session.ts` | 电脑端会话状态 |
 | `src/main/mobile/mobile-replies.ts` | `PrintService` 结果 → 手机精简结果 |
 | `src/main/mobile/mobile-host.ts` | 电脑端编排：socket + 加密 + 会话 + 注入的预览/打印函数 |
@@ -89,7 +90,7 @@
     - `hello` 的 `device` 超过 `MAX_DEVICE_LENGTH` 时截断（不拒绝）；`token` 为 null 或 22 位；
     - `preview` / `print` 的 `id` 必须是正的安全整数；`raw` 必须是字符串且不超过 `MAX_RAW_LENGTH * 4`，更细的校验交给 `PrintService`；`force` 必须是布尔值。
   - `parseDesktopMessage`：`welcome`、`rejected`、`preview`（`ok` 与 `invalid`）、`print`（五种状态）、`busy`、`rate-limited` 各一例；`failed.reason` 不在 `PRINT_FAILURE_REASONS` 里时拒绝。
-  - `buildPhoneUrl('https://yterm.cn/labelflash/', s, k)` 得到 `https://yterm.cn/labelflash/m/#s.k`；`parsePhoneFragment('#s.k')` 还原出 `{ session: s, key: k }`；空串、缺点号、长度不对时返回 null。
+  - `buildPhoneUrl('https://relay.example.com/labelflash/', s, k)` 得到 `https://relay.example.com/labelflash/m/#s.k`；`parsePhoneFragment('#s.k')` 还原出 `{ session: s, key: k }`；空串、缺点号、长度不对时返回 null。
 
 - [ ] **Step 2: 运行测试，确认失败**：`bun test src/shared/mobile-protocol.test.ts`。预期失败：找不到模块。
 
@@ -401,9 +402,9 @@ export class RelayHub {
 
 - [ ] **Step 1: 写失败的测试：**
   - `readConfig(env)`：
-    - 默认值：端口 3180、`allowedOrigin` 为 `https://yterm.cn`、`webRoot` 为 `<入口所在目录>/web`；
-    - `PORT` 不是 1–65535 的整数时抛出带变量名的错误；
-    - `ALLOWED_ORIGIN` 必须是 `https://` 开头的 origin（不含路径）。
+    - 默认值：主机 `0.0.0.0`、端口 3180、`webRoot` 为 `<入口所在目录>/web`；
+    - `PUBLIC_ORIGIN` 必填，没有默认值；必须是 https 的 origin（不含路径），`http://localhost` / `http://127.0.0.1` 只给开发用；
+    - `PORT` 不是 1–65535 的整数时抛出带变量名的错误。
   - `serveStatic(root, pathname, origin)`：
     - `/m/` 返回 `index.html`，带设计 4.6 的 CSP（含 `wss://<origin 的 host>`）、`Permissions-Policy`、`Referrer-Policy`、`nosniff`、`no-cache`；
     - `/m/assets/app-abc123.js` 返回 `max-age=31536000, immutable` 和正确的 `Content-Type`（`.js`、`.css`、`.wasm` → `application/wasm`）；
@@ -412,7 +413,7 @@ export class RelayHub {
   - 服务集成测试（`Bun.serve` 用 0 端口，真实 WebSocket 客户端）：
     - `/healthz` 返回 `{ok:true, version, sessions:0, connections:0}`；
     - `/` 302 到 `m/`；
-    - 电脑 `open` → 手机 `join`（带 `Origin: https://yterm.cn`）→ 双向转发 → 电脑 `close` → 手机收到 `ended`；
+    - 电脑 `open` → 手机 `join`（带 `Origin` 为配置的 `PUBLIC_ORIGIN`）→ 双向转发 → 电脑 `close` → 手机收到 `ended`；
     - 手机连接的 `Origin` 不对时，升级请求返回 403；
     - 超过 `MAX_FRAME_BYTES` 的帧导致连接关闭。
 
@@ -420,7 +421,7 @@ export class RelayHub {
 - [ ] **Step 3: 实现：**
 
 ```ts
-export interface RelayConfig { port: number; allowedOrigin: string; webRoot: string; version: string }
+export interface RelayConfig { host: string; port: number; publicOrigin: string; webRoot: string; version: string }
 export function readConfig(env: Record<string, string | undefined>, entryDir: string, version: string): RelayConfig;
 export function serveStatic(root: string, pathname: string, origin: string): Promise<Response>;
 export interface RunningRelay { url: URL; hub: RelayHub; stop(): Promise<void> }
@@ -559,7 +560,7 @@ export const READER_OPTIONS = {
     1. 用 `Bun.build` 分别构建 worker、主脚本（`naming: '[name]-[hash].[ext]'`，`minify`，`target: 'browser'`，通过 `define` 注入 `READER_WASM_URL`、`DECODE_WORKER_URL`）和 `server.js`（`target: 'bun'`，注入 `RELAY_VERSION`）；
     2. 复制 wasm 和 CSS，文件名按内容哈希；
     3. 改写 `index.html` 里的引用。
-  - `relay:dev`：构建后在本机 3180 端口启动，`ALLOWED_ORIGIN=http://localhost:3180`。
+  - `relay:dev`：构建后在本机 3180 端口启动，`PUBLIC_ORIGIN=http://localhost:3180`。
 
 - [ ] **Step 4: 运行测试，确认通过**；再运行 `bun run relay:dev`，用电脑的 Edge 打开 `http://localhost:3180/m/`，确认显示「在电脑上点「手机扫码」…」。
 - [ ] **Step 5: 提交**：`feat(phone): camera page and relay build`。
@@ -575,11 +576,10 @@ export const READER_OPTIONS = {
 - Test: 同名 `*.test.ts`
 
 - [ ] **Step 1: 写失败的测试：**
-  - `resolveRelayBase({ isPackaged, env })`：
-    - 默认 `https://yterm.cn/labelflash/`；
-    - 未打包且设置了 `CDL_LABELFLASH_RELAY_URL` 时用它（自动补结尾的 `/`）；
-    - 已打包时忽略环境变量；
-    - 不是 http(s) 地址时抛错。
+  - `resolveRelayBase({ setting, buildDefault })`：
+    - 设置不为 null 时用设置，否则用构建时的默认值；都没有时返回 null；
+    - 自动补结尾的 `/`；
+    - `sanitizeRelayUrl(value)`：只接受 https 地址，http 只接受 `localhost` / `127.0.0.1`；不合法时返回 null（设置的清洗函数在阶段 5 调用它）。
   - `desktopSocketUrl(base)`：`https` → `wss://…/ws/desktop`，`http` → `ws://…`。
   - `MobileSession`（假时钟）：
     - 第一部手机 `hello(null)` 得到 `welcome`，令牌为 22 位，`status().phone.device` 为它的描述；
@@ -613,7 +613,7 @@ export type MobileStatus =
       phone: { device: string; online: boolean } | null;
       printed: number;
     }
-  | { state: 'failed'; error: 'unreachable' | 'version' | 'server-busy' | 'session-taken' };
+  | { state: 'failed'; error: 'not-configured' | 'unreachable' | 'version' | 'server-busy' | 'session-taken' };
 ```
 
 - [ ] **Step 4: 运行，确认通过。**
@@ -677,7 +677,7 @@ export class MobileHost {
 - [ ] **Step 1: 写测试：**
   - 生成 640×480、30 帧的 Y4M：白底，中间是 `CL5640-TK-图片色-XL` 的二维码。Y 平面按像素灰度，U、V 平面填 128。
   - 用 `channel: 'msedge'` 启动，参数为 `--use-fake-ui-for-media-stream`、`--use-fake-device-for-media-stream`、`--use-file-for-fake-video-capture=<y4m>`。
-  - 本机启动中转服务，用 `MobileHost` 当电脑端（注入假的预览和打印）。打开 `url`（把 `https://yterm.cn/labelflash/` 换成本机地址）。
+  - 本机启动中转服务（`PUBLIC_ORIGIN=http://localhost:<端口>`），用 `MobileHost` 当电脑端（中转地址填本机，注入假的预览和打印），打开它给出的 `url`。
   - 断言：页面进入确认状态并显示字段；点「打印」后显示「已发送打印」；注入的 `print` 收到原文。
 - [ ] **Step 2: 运行 `bun run test:relay-browser`，确认通过。**
 - [ ] **Step 3: 提交**：`test(phone): camera scan through a fake video device`。
@@ -698,26 +698,27 @@ export class MobileHost {
   - `--user bun`
   - `--log-opt max-size=5m`
   - `--log-opt max-file=2`
-  - `-e ALLOWED_ORIGIN=https://yterm.cn`
+  - `-e PUBLIC_ORIGIN=<参数传入>`
   - 镜像为 `labelflash-relay:<version>`。
+  - `readDeployTarget(env)`：`RELAY_DEPLOY_SSH`、`RELAY_PUBLIC_ORIGIN`、`RELAY_HEALTH_URL` 缺一个就抛出带变量名的错误。
 - [ ] **Step 2: 实现：**
   - `Dockerfile`：`FROM oven/bun:1.4.2-alpine`，`COPY dist/ /app/`，`USER bun`，`EXPOSE 3180`，`CMD ["bun", "/app/server.js"]`。
   - `deploy.ts` 依次做这几件事：
     1. `relay:build`；
-    2. 把 `relay/dist` 和 `Dockerfile` 打成 tar，经 `ssh yterm.cn` 解到 `~/labelflash-relay/<version>/`；
+    2. 把 `relay/dist` 和 `Dockerfile` 打成 tar，经 `ssh $RELAY_DEPLOY_SSH` 解到 `~/labelflash-relay/<version>/`；
     3. `docker build`；
     4. 停掉并删除旧容器，用新镜像 `docker run`；
-    5. 轮询 `curl -fsS http://127.0.0.1:3180/healthz`，版本号对上才算成功；失败时用上一个镜像恢复；
+    5. 轮询服务器本机的 `curl -fsS http://127.0.0.1:3180/healthz`，再请求对外的 `$RELAY_HEALTH_URL`，版本号都对上才算成功；失败时用上一个镜像恢复；
     6. 只保留最近 2 个版本的镜像和目录。
-- [ ] **Step 3: nginx（只做一次，线上操作）：**
-  1. 备份 `~/nginx/conf.d/yterm.cn.conf`；
-  2. 在 TLS 站点的 `location /` 之前加入 `relay/deploy/nginx-location.conf` 的内容；
-  3. `docker exec nginx nginx -t` 通过后再 `docker exec nginx nginx -s reload`；
-  4. 用 `curl https://yterm.cn/labelflash/healthz` 验证。
-  - 如果 `nginx.conf` 里没有 `map $http_upgrade $connection_upgrade`，片段里就直接写 `Connection "upgrade"`。
-- [ ] **Step 4: 发布。** 运行 `bun run relay:deploy`，确认：
-  - `https://yterm.cn/labelflash/m/` 能打开，响应头符合设计 4.6；
-  - 用本机脚本当电脑端连 `wss://yterm.cn/labelflash/ws/desktop` 走通一次。
+- [ ] **Step 3: 反向代理（官方中转服务只做一次，线上操作，具体步骤不写进仓库）：**
+  1. 备份站点配置；
+  2. 在 https 站点的 `location /` 之前加入 `relay/deploy/nginx-location.conf` 的内容（把占位域名换成实际域名）；
+  3. `nginx -t` 通过后再 reload；
+  4. 请求 `<中转地址>healthz` 验证。
+  - 示例片段直接写 `Connection "upgrade"`，不依赖站点里是否定义了 `map $http_upgrade`。
+- [ ] **Step 4: 发布官方中转服务。** 设置好三个环境变量后运行 `bun run relay:deploy`，确认：
+  - `<中转地址>m/` 能打开，响应头符合设计 4.6；
+  - 用 `demo-desktop.ts` 当电脑端连上去走通一次。
 - [ ] **Step 5: 提交**：`feat(relay): docker image, nginx location and deploy script`。
 
 ### Task 15: 真手机试用（需求方）
@@ -738,6 +739,8 @@ export class MobileHost {
 重构合回后，先按新的界面结构把本阶段细化成任务，再实施。已确定的内容：
 
 1. **主进程**：
+   - 设置项 `mobileRelayUrl`（`src/shared/settings.ts`，清洗用 `sanitizeRelayUrl`）；配置中心「手机扫码」一节的地址输入框和「恢复默认」；
+   - `electron.vite.config.ts` 用 `define` 注入 `CDL_LABELFLASH_DEFAULT_RELAY_URL`；CI 的发布作业从 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL` 读取；
    - `src/main/mobile/mobile-station.ts` 创建 `MobileHost`，接上 `PrintService.preview` / `submit`（`source: 'mobile'`）、`resolveTemplate`（模板名）、设置里的 `selectedPrinter` 和 `dedupWindowSeconds`、打印机显示名；
    - 程序退出时 `stop('quit')`；每 5 秒 `tick()`。
 2. **IPC**：
@@ -750,7 +753,7 @@ export class MobileHost {
    - `feedback-cues.ts` 改用 `src/shared/print-cues.ts`。
 4. **E2E**：Electron 连本机中转服务，脚本手机扫码 → 打印记录出现来源「手机」的一条（打印机用 E2E 现有的假打印方式）。
 5. **文档**：
-   - README：功能、「手机扫码需要能访问 yterm.cn:443，不支持系统代理」、内容端到端加密；
+   - README：功能、中转地址（官方安装包默认用 yterm.cn 上的中转服务，可以在设置里换成自己部署的）、「电脑要能直接访问中转服务的 443 端口，不支持系统代理」、内容端到端加密；
    - `src/main/CLAUDE.md`、`src/renderer/CLAUDE.md`：新模块和约束；
    - 设计文档里和实现不一致的地方同步改掉。
 6. **验收**：Windows 150% 缩放和 macOS 各走一遍，真机出纸，版本号改为 1.1.0。

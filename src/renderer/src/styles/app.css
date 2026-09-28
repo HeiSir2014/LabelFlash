@@ -111,6 +111,20 @@ input {
   letter-spacing: 0.06em;
 }
 
+/* 名称和版本号按文字基线对齐 */
+.title-bar__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.title-bar__version {
+  color: rgb(251 251 248 / 0.55);
+  font-family: var(--font-data);
+  font-size: 11px;
+  user-select: text;
+}
+
 .printer-chip {
   display: flex;
   align-items: center;

@@ -5,13 +5,15 @@ import { useWindowControls } from '../view-models/use-window-controls';
 import { ConfirmButton } from './ConfirmButton';
 
 interface TitleBarProps {
+  /** 当前版本号（如 0.1.0）；读取到之前为 null，不显示。 */
+  version: string | null;
   printerChip: PrinterChipView;
   /** 新版本已下载时显示的版本号；null 表示没有待安装的更新。 */
   readyUpdateVersion: string | null;
   onInstallUpdate: () => void;
 }
 
-export function TitleBar({ printerChip, readyUpdateVersion, onInstallUpdate }: TitleBarProps) {
+export function TitleBar({ version, printerChip, readyUpdateVersion, onInstallUpdate }: TitleBarProps) {
   const { chrome, isMaximized, isFullScreen, minimize, toggleMaximize, close } = useWindowControls();
   const hasTrafficLights = chrome === 'mac-traffic-lights';
   // 全屏时系统隐藏红绿灯，标题栏不再为它留位置。
@@ -21,7 +23,11 @@ export function TitleBar({ printerChip, readyUpdateVersion, onInstallUpdate }: T
     <header className={className}>
       <div className="title-bar__brand">
         <img className="title-bar__logo" src={brandIcon} alt={BRAND.mark} width={28} height={28} draggable={false} />
-        <span className="title-bar__name">{BRAND.productName.replace(`${BRAND.mark}-`, '')}</span>
+        <span className="title-bar__title">
+          <span className="title-bar__name">{BRAND.productName.replace(`${BRAND.mark}-`, '')}</span>
+          {/* 版本号弱化显示：排查问题时一眼能看到，又不抢产品名的视觉层级。系统窗口标题只保留产品名。 */}
+          {version && <span className="title-bar__version">v{version}</span>}
+        </span>
       </div>
       {readyUpdateVersion && (
         <ConfirmButton

@@ -127,6 +127,7 @@ export function App() {
   return (
     <div className="app">
       <TitleBar
+        version={appInfo?.version ?? null}
         printerChip={printerChip}
         readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
         onInstallUpdate={updates.install}

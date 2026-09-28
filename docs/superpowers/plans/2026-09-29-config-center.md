@@ -7,7 +7,7 @@
 **Architecture:**
 - 视图状态、扫码路由、字段名候选都是渲染层的纯逻辑（`src/renderer/src/lib/`），有完整单元测试；组件只负责展示。
 - 工作台和配置中心是同一个窗口里的两个视图：配置中心是标题栏以下的覆盖层，打开时工作台设为 `inert`，F2 和自动回焦按视图启停。
-- 现有编辑组件（模板编辑器、规则编辑器、加工步骤、试一试、查找表、密钥、通知、语音）只换容器；`SettingsForm` 拆成各页面。主进程只加一个 `lookup:rows` 通道。
+- 现有编辑组件（模板编辑器、规则编辑器、加工步骤、试一试、查找表、密钥、通知、语音）只换容器；`SettingsForm` 拆成各页面。主进程计划只加一个 `lookup:rows` 通道；实施中又加了 `secrets:copy-reference`（见执行记录的任务 6 和「完整审查」）。
 
 **Tech Stack:** 沿用现有：Bun 1.4、Electron 44、React 19、TypeScript 5.9 strict、Biome 2、Playwright。无新增依赖。
 
@@ -26,9 +26,10 @@
 | 3 工作台工具条、正在查询、扫码框 | e0e4882 | 工具条说明由 `lib/preview-usage.ts` 生成，分「规则」「模板」两段，放不下时先省略规则名（1280 宽时模板名和「规则指定」要完整可见）；「正在查询」放在 `ScanContext.queryingRaw`（查询中的是新扫的码，快照里还是上一张）；1024 宽时备注和自动打印整体换行（扫码框原来只剩 128px）。 |
 | 4 配置中心框架和四页 | 774aa7d | `.button--primary` 只管颜色，大号改用 `.button--large`（页面操作不该像工作台的打印按钮）；「配置」按钮用和打印机胶囊一样的全圆角。 |
 | 5 模板页 | cef4bc9 | `hover-intent.ts` 改名 `timers.ts`，只留计时器接口；配置中心打开时提示条抬到操作条上方（「已保存」曾挡住「使用」8 秒）；带候选的输入框里 Esc 只收起下拉。 |
-| 6 规则、查找表、密钥、通知 | 40615b7 | 查找表行预览、复制引用各用一个 view-model（`use-lookup-preview`、`use-copy-text`）；复制经新增的 IPC `clipboard:write-text` 由主进程代写（最初放开过 `clipboard-sanitized-write` 网页权限，违反「权限一律拒绝」的安全底线，已改回）；关闭配置中心时工作台立即恢复，配置中心只淡出（淡出期间扫的码曾丢失）。 |
+| 6 规则、查找表、密钥、通知 | 40615b7、47706ff | 查找表行预览、复制引用各用一个 view-model（`use-lookup-preview`、`use-copy-text`）；复制经新增的 IPC `clipboard:write-text` 由主进程代写（最初放开过 `clipboard-sanitized-write` 网页权限，违反「权限一律拒绝」的安全底线，已改回；审查后又收窄成只复制密钥引用的 `secrets:copy-reference`）；关闭配置中心时工作台立即恢复，配置中心只淡出（淡出期间扫的码曾丢失）。 |
 | 7 配置中心扫码、跳转链接 | 0faec25 | 扫码先进隐藏的接收框（和扫码框共用 `use-scan-input.ts`），拼好后替换测试框内容，而不是把焦点切进测试框（那样新码会接在旧内容后面，Tab 也会带走焦点）；通知接口的草稿也纳入未保存确认（`use-endpoint-editor.ts`）。 |
 | 8 视觉验收 | 0bc3baf、1ca2cc5 | 验收页面是手写的 HTML（读 `manifest.json` 和截图），不用脚本生成报告；需求方的确认保存在验收页面里。验收顺带发现并修好 macOS 全屏会被立刻退出的问题（0bc3baf）。 |
+| 完整审查 | 见提交记录 | 按三份审查（渲染层逻辑；组件与样式；主进程、契约与测试）修复，要点：密码框逐字输入会被当成扫码切走、焦点停在下拉框时扫码被吞（`lib/scan-focus.ts` 的 `isTypingField` / `keepsFocus`）；接收框残留的零散按键 1 秒后清掉；草稿按页面区分；确认框改为原生模态 `<dialog>`；通知接口保存失败不丢草稿、编辑中的那一行停用开关和删除；复制只允许密钥引用（`secrets:copy-reference`）；配置中心的状态收进 `use-config-center.ts`；视觉检查的对比度阈值按 WCAG 的磅值换算。每条修复都有单元测试或 E2E 覆盖。 |
 
 ## Global Constraints
 

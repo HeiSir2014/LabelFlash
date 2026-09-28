@@ -58,6 +58,7 @@ export async function renderLabelHtml(job: LabelJob): Promise<string> {
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
+<title>${escapeHtml(label.raw)}</title>
 <style>
   @page { size: ${mm(width)} ${mm(height)}; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }

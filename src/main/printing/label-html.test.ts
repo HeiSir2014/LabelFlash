@@ -148,6 +148,15 @@ describe('renderLabelHtml', () => {
   });
 });
 
+describe('print job name', () => {
+  // 没有 <title> 时 Chromium 用整段 data: 地址当打印任务名，打印队列里无法辨认，也无法按任务名跟踪。
+  test('titles the page with the escaped label code', async () => {
+    expect(await render()).toContain('<title>CL5640-TK-图片色-XL</title>');
+    const html = await render(STANDARD_TEMPLATE, { raw: '<b>-红-36', code: '<b>', color: '红', size: '36' });
+    expect(html).toContain('<title>&lt;b&gt;-红-36</title>');
+  });
+});
+
 describe('escapeHtml', () => {
   test('escapes all five special characters', () => {
     expect(escapeHtml(`<a href="x">'&'</a>`)).toBe('&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;');

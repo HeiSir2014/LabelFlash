@@ -100,8 +100,11 @@ async function remote(target: DeployTarget, script: string): Promise<string> {
   return stdout.trim();
 }
 
-async function run(command: string[]): Promise<void> {
-  const child = Bun.spawn(command, { stdout: 'inherit', stderr: 'inherit' });
+/**
+ * 在 cwd 里执行本机命令。tar 和 scp 只用相对路径：GNU tar 和 scp 会把 Windows 路径里的「C:」当成远程主机名。
+ */
+async function run(command: string[], cwd: string): Promise<void> {
+  const child = Bun.spawn(command, { cwd, stdout: 'inherit', stderr: 'inherit' });
   const exitCode = await child.exited;
   if (exitCode !== 0) {
     throw new Error(`${command[0]} 失败（退出码 ${exitCode}）`);
@@ -129,12 +132,12 @@ export async function deploy(target: DeployTarget): Promise<void> {
     const stage = join(workDir, 'stage');
     await buildRelay({ outDir: join(stage, 'dist'), version });
     await Bun.write(join(stage, 'Dockerfile'), Bun.file(join(ROOT, 'relay', 'Dockerfile')));
-    const archive = join(workDir, 'relay.tgz');
-    await run(['tar', '-czf', archive, '-C', stage, 'dist', 'Dockerfile']);
+    const archive = 'relay.tgz';
+    await run(['tar', '-czf', archive, '-C', 'stage', 'dist', 'Dockerfile'], workDir);
 
     const dir = `${REMOTE_DIR}/${tag}`;
     await remote(target, `mkdir -p ${dir}`);
-    await run(['scp', '-o', 'BatchMode=yes', '-q', archive, `${target.ssh}:${dir}/relay.tgz`]);
+    await run(['scp', '-o', 'BatchMode=yes', '-q', archive, `${target.ssh}:${dir}/relay.tgz`], workDir);
     console.log(`uploaded ${tag}`);
 
     const previous = await remote(target, `cat ${REMOTE_DIR}/current 2>/dev/null || true`);

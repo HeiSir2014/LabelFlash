@@ -77,7 +77,7 @@ GitHub Actions 在 Windows 上运行：
 发布新版本：
 
 1. 修改 `package.json` 里的 `version`。
-2. 提交后打标签，例如 `git tag v0.2.0 && git push --tags`。
+2. 提交后打同名标签，例如 `git tag v1.0.1 && git push --tags`。标签版本必须和 `package.json` 一致：客户端按版本号比较、按文件名里的版本找旧版 blockmap 做差分下载。
 
 ## 目录结构
 

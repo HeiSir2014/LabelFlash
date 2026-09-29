@@ -89,7 +89,9 @@ export function useScanStation({ autoPrint, onJobRecorded, announce }: StationOp
         querying.finish(seq);
       }
       const isValid = !hasIpcError && preview.result.status === 'ok';
-      const willPrint = mode.printNow && isValid;
+      // 这种纸没有打印机时照样交给主进程（它返回 no-printer），但不先说「正在打印…」：只说程序确知的事。
+      const hasPrinter = preview.result.status === 'ok' && preview.result.printer.printerName !== null;
+      const willPrint = mode.printNow && isValid && hasPrinter;
       if (querying.isLatest(seq)) {
         setScan({ seq, raw, preview, source: mode.source, print: null, isPrinting: willPrint, hasIpcError });
       }

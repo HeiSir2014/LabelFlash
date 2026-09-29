@@ -43,7 +43,11 @@ export function paperRows(
       papers.set(key, paper);
     }
   }
-  const assigned = new Set(Object.values(paperPrinters));
+  // 已经分配给别的纸、或被模板指定的打印机不再建议：它装的是别的纸。
+  const assigned = new Set([
+    ...Object.values(paperPrinters),
+    ...templates.flatMap((template) => (template.printer ? [template.printer] : [])),
+  ]);
   return [...papers].map(([key, paper]) => {
     const printer = paperPrinters[key] ?? null;
     const users = templates.filter((template) => paperKey(template.paper) === key);
@@ -112,12 +116,13 @@ export function describeTemplatePrinter(
   target: PrinterTarget,
   paperPrinters: Readonly<Record<string, string>>,
   installed: readonly string[],
+  /** 系统打印机名 → 界面上显示的名字（macOS 上系统名是打印队列名）。 */
+  displayName: (printerName: string) => string = (printerName) => printerName,
 ): string {
   const choice = resolvePrinter(target, paperPrinters, installed);
   if (choice.printerName === null) {
     return '还没有打印机';
   }
-  return choice.reason === 'template-missing'
-    ? `${choice.printerName}（指定的 ${choice.missingPrinter} 不在这台电脑上）`
-    : choice.printerName;
+  const name = displayName(choice.printerName);
+  return choice.reason === 'template-missing' ? `${name}（指定的 ${choice.missingPrinter} 不在这台电脑上）` : name;
 }

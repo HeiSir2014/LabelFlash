@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
 import { describePrintersSummary } from '../../shared/printer-summary';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
@@ -105,10 +105,32 @@ export function App() {
     [installedNames, responsibilitiesByName],
   );
   const printerProfiles = usePrinterProfiles(installedNames, assignedNames, expectedPapers);
+  // 第一次读完打印机列表之前，不把分配到的打印机说成「这台电脑上没有」。
+  const knownNames = printers.hasLoaded ? installedNames : [...installedNames, ...assignedNames];
+  /** 系统打印机名 → 界面上显示的名字（macOS 上系统名是打印队列名）。 */
+  const displayNameOf = useCallback(
+    (name: string) => printers.printers.find((printer) => printer.name === name)?.displayName ?? name,
+    [printers.printers],
+  );
+  /** 打印机设置变了（纸张分配、本机打印机）：预览里的「打印机：…」要跟着变。 */
+  const printerSetupKey = `${JSON.stringify(paperPrinters)}${installedNames.join('|')}`;
+  // 连着点两个「建议」时，第二次要在第一次的基础上改：按最新的分配合并，不按这一帧渲染时的。
+  const latestPaperPrinters = useRef(paperPrinters);
+  useEffect(() => {
+    latestPaperPrinters.current = paperPrinters;
+  }, [paperPrinters]);
+  const assignPaper = async (key: string, name: string | null) => {
+    const next = withAssignment(latestPaperPrinters.current, key, name);
+    latestPaperPrinters.current = next;
+    if (await update({ paperPrinters: next })) {
+      // 这一张会打到哪台可能变了：按新的分配重新预览。
+      void station.refreshPreview();
+    }
+  };
   const paperRowsView = paperRows(
     templates.templates,
     paperPrinters,
-    installedNames,
+    knownNames,
     Object.fromEntries(
       installedNames.map((name) => {
         const check = printerProfiles.profileOf(name).paper;
@@ -118,9 +140,8 @@ export function App() {
   );
   const printerChip = describePrintersSummary(
     assignedNames.map((name) => ({
-      name,
-      // 列表还在读取时不急着说「系统里找不到」。
-      isListed: printers.isLoading || installedNames.includes(name),
+      name: displayNameOf(name),
+      isListed: knownNames.includes(name),
       readiness: printerProfiles.profileOf(name).readiness,
     })),
   );
@@ -161,7 +182,7 @@ export function App() {
     () => (templates.active ? applyNoteOverride(templates.active, noteOverride) : null),
     [templates.active, noteOverride],
   );
-  const samplePreview = useTemplatePreview(SAMPLE_LABEL_RAW, station.scan ? null : effectiveTemplate);
+  const samplePreview = useTemplatePreview(SAMPLE_LABEL_RAW, station.scan ? null : effectiveTemplate, printerSetupKey);
   const override: PreviewOverride | null =
     station.scan || !effectiveTemplate
       ? null
@@ -169,7 +190,8 @@ export function App() {
           html: samplePreview?.html ?? null,
           qrOmitted: samplePreview?.qrOmitted ?? false,
           feedKey: samplePreview?.templateId ?? effectiveTemplate.id,
-          paper: effectiveTemplate.paper,
+          // 和正在显示的标签内容用同一份结果的纸张，换模板时框和内容一起变。
+          paper: samplePreview?.paper ?? effectiveTemplate.paper,
         };
 
   const noteOptions = buildNoteOptions(settings?.notePresets ?? [], noteOverride);
@@ -280,6 +302,7 @@ export function App() {
                   station.scan?.preview ?? null,
                   templates.active?.name ?? null,
                   samplePreview?.result.status === 'ok' ? samplePreview.result.printer : null,
+                  displayNameOf,
                 )}
                 onActivate={(id) => void templates.activate(id)}
               />
@@ -306,7 +329,8 @@ export function App() {
               profileOf={printerProfiles.profileOf}
               responsibilitiesOf={responsibilitiesByName}
               openingName={printerProfiles.openingName}
-              onAssign={(key, name) => void update({ paperPrinters: withAssignment(paperPrinters, key, name) })}
+              displayName={displayNameOf}
+              onAssign={(key, name) => void assignPaper(key, name)}
               onOpenPreferences={(name) => void printerProfiles.openPreferences(name)}
               onRefresh={() => void printers.refresh()}
               onTestPrint={printTest}
@@ -402,7 +426,8 @@ export function App() {
       {isMobileOverlayShown && (
         <MobileOverlay
           view={describeMobileOverlay(mobile.status, {
-            hasPrinter: Object.keys(settings?.paperPrinters ?? {}).length > 0,
+            // 至少有一台被分配到的打印机在这台电脑上（纸张分配或模板指定）。
+            hasPrinter: assignedNames.some((name) => installedNames.includes(name)),
             now: mobile.now,
           })}
           qrImage={mobileQr}

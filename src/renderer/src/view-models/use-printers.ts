@@ -5,6 +5,8 @@ import { reportError } from '../lib/notices';
 export function usePrinters() {
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  /** 第一次读完之前不知道系统里有哪些打印机：这时不说「系统里找不到」。窗口每次回到前台都会重读，那时列表是已知的。 */
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -14,6 +16,7 @@ export function usePrinters() {
       reportError('读取打印机列表', error);
     } finally {
       setIsLoading(false);
+      setHasLoaded(true);
     }
   }, []);
 
@@ -35,5 +38,5 @@ export function usePrinters() {
     return () => window.removeEventListener('focus', onFocus);
   }, [refresh]);
 
-  return { printers, isLoading, refresh, printTest };
+  return { printers, isLoading, hasLoaded, refresh, printTest };
 }

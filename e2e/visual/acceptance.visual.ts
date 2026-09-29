@@ -1084,7 +1084,8 @@ const ITEMS: Item[] = [
           await page.reload();
           // 只有「整段内容」规则认得：用当前模板（规则没指定模板）。
           await scan(page, '订单 A20260929001 小标签');
-          await expect(page.locator('.preview-toolbar__usage')).toContainText('模板：小标签');
+          // 等扫码结果（示例内容的工具条也写着这个模板）：「规则：」只在扫码之后出现。
+          await expect(page.locator('.preview-toolbar__usage')).toContainText('规则：原样打印 · 模板：小标签');
           await expect(page.locator('.ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 50 /);
         },
       },
@@ -1095,7 +1096,7 @@ const ITEMS: Item[] = [
           await callApi(page, 'updateSettings', { activeTemplateId: id, autoPrint: false, paperPrinters: {} });
           await page.reload();
           await scan(page, '订单 A20260929001 箱唛');
-          await expect(page.locator('.preview-toolbar__usage')).toContainText('模板：箱唛');
+          await expect(page.locator('.preview-toolbar__usage')).toContainText('规则：原样打印 · 模板：箱唛');
           await expect(page.locator('.ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 100 /);
         },
       },

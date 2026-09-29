@@ -190,3 +190,18 @@ test('chooses the paper and printer of a template in the editor', async ({ elect
   const saved = (await callApi(page, 'listTemplates')).find((template) => template.name === 'E2E 88×55');
   expect(saved).toMatchObject({ paper: { widthMm: 88, heightMm: 55 }, printer: '面单机C' });
 });
+
+// 在打印机页分配之后，不用重新载入：示例预览和这一张的状态都按新的分配更新。
+test('updates the preview printer right after a paper is assigned in the panel', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await callApi(page, 'updateSettings', { autoPrint: false });
+  await page.reload();
+  const usage = page.locator('.preview-toolbar__usage');
+  await expect(usage).toContainText('打印机：还没有');
+
+  await scan(page, LABEL_CODE);
+  await expect(page.locator('.status-strip__title')).toHaveText('没有可用的打印机');
+  await page.getByLabel('60×40 标签 用哪台打印机').selectOption('标签机A');
+  await expect(usage).toContainText('打印机：标签机A');
+  await expect(page.locator('.status-strip__title')).toHaveText('待打印');
+});

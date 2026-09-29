@@ -79,9 +79,10 @@ function ListView({
   const builtIn = templates.filter((template) => isBuiltInTemplateId(template.id));
   const custom = templates.filter((template) => !isBuiltInTemplateId(template.id));
   const names = printers.map((printer) => printer.name);
+  const displayName = (name: string) => printers.find((printer) => printer.name === name)?.displayName ?? name;
   // 每一行写上纸张和实际会用的打印机：纸张分配改了，这里跟着变。
   const describeUse = (template: LabelTemplate) =>
-    `${formatPaperName(template.paper)} · ${describeTemplatePrinter(template, paperPrinters, names)}`;
+    `${formatPaperName(template.paper)} · ${describeTemplatePrinter(template, paperPrinters, names, displayName)}`;
   const groupProps = { selectedId: selected?.id ?? null, activeId, onSelect, describeUse };
 
   return (
@@ -103,7 +104,7 @@ function ListView({
           qrOmitted={preview?.qrOmitted ?? false}
           feedKey={preview?.templateId ?? 'none'}
           maxScale={MAX_PREVIEW_SCALE}
-          paper={selected?.paper ?? DEFAULT_PAPER}
+          paper={preview?.paper ?? selected?.paper ?? DEFAULT_PAPER}
           placeholder={previewPlaceholder(preview)}
         />
         {selected && (
@@ -228,7 +229,7 @@ function EditView({
           qrOmitted={preview?.qrOmitted ?? false}
           feedKey={preview?.templateId ?? 'none'}
           maxScale={MAX_PREVIEW_SCALE}
-          paper={draft.paper}
+          paper={preview?.paper ?? draft.paper}
           placeholder={previewPlaceholder(preview)}
         />
       </section>

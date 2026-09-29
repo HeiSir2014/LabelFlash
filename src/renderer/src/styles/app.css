@@ -1196,11 +1196,6 @@ textarea {
   line-height: 1.5;
 }
 
-.badge--quiet {
-  background: var(--color-housing);
-  color: var(--color-ink-soft);
-}
-
 .badge {
   flex: none;
   padding: 0 6px;
@@ -1210,7 +1205,13 @@ textarea {
   font-size: 11px;
 }
 
-/* 打印机的问题（缺纸、离线……）：写在 .badge 后面才能盖住它的底色 */
+/* 变体都写在 .badge 后面才能盖住它的底色 */
+.badge--quiet {
+  background: var(--color-housing);
+  color: var(--color-ink-soft);
+}
+
+/* 打印机的问题（缺纸、离线……） */
 .badge--error {
   background: var(--color-error);
   color: var(--color-paper);

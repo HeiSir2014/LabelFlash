@@ -73,4 +73,10 @@ describe('describePreviewPrinter', () => {
     const choice = { printerName: null, reason: 'unassigned', paperKey: '100x180', missingPrinter: null } as const;
     expect(describePreviewPrinter(choice)).toBe('打印机：还没有');
   });
+
+  test('uses the name the system displays', () => {
+    expect(describePreviewPrinter({ printerName: 'Label_Printer_01', reason: 'paper' }, () => '标签机A')).toBe(
+      '打印机：标签机A',
+    );
+  });
 });

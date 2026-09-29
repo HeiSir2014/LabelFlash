@@ -52,6 +52,27 @@ describe('paperRows', () => {
   });
 });
 
+describe('paperRows suggestions', () => {
+  // 被模板指定的打印机装的是那个模板的纸：不再建议给别的纸。
+  test('does not suggest a printer a template names', () => {
+    const templates = [
+      { name: '极兔面单', paper: { widthMm: 100, heightMm: 180 }, printer: null },
+      { name: '申通面单', paper: { widthMm: 100, heightMm: 180 }, printer: '面单机C' },
+    ];
+    const rows = paperRows(templates, {}, INSTALLED, DRIVER_PAPER);
+    expect(rows[0]?.suggestion).toBeNull();
+  });
+});
+
+describe('describeTemplatePrinter with display names', () => {
+  test('shows the name the system displays', () => {
+    const label = { paper: { widthMm: 60, heightMm: 40 }, printer: null };
+    expect(describeTemplatePrinter(label, { '60x40': 'Label_Printer_01' }, ['Label_Printer_01'], () => '标签机A')).toBe(
+      '标签机A',
+    );
+  });
+});
+
 describe('responsibilitiesOf', () => {
   test('lists the papers and templates a printer handles', () => {
     expect(responsibilitiesOf('面单机B', TEMPLATES, { '60x40': '标签机A' })).toEqual({

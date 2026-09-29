@@ -100,7 +100,11 @@ function BasicSection({ draft, onChange, printers, paperPrinters }: SectionProps
   const [isCustom, setIsCustom] = useState(() => findPreset(draft.paper) === null);
   const setPaper = (paper: PaperSize) => onChange(withPaper(draft, paper));
   const names = printers.map((printer) => printer.name);
-  const assigned = resolvePrinter({ paper: draft.paper, printer: null }, paperPrinters, names).printerName;
+  const assignedName = resolvePrinter({ paper: draft.paper, printer: null }, paperPrinters, names).printerName;
+  const assigned =
+    assignedName === null
+      ? null
+      : (printers.find((printer) => printer.name === assignedName)?.displayName ?? assignedName);
   const printerOptions = [
     { value: '', label: `按纸张分配（当前是 ${assigned ?? '还没有'}）` },
     // 指定的打印机不在这台电脑上：仍然显示它的名字，不悄悄显示成别的选项。
@@ -149,6 +153,9 @@ function BasicSection({ draft, onChange, printers, paperPrinters }: SectionProps
             step={PAPER_STEP_MM}
             onChange={(heightMm) => setPaper({ ...draft.paper, heightMm })}
           />
+          <p className="form-hint">
+            {`宽 ${PAPER_LIMITS_MM.width.min}–${PAPER_LIMITS_MM.width.max}mm，高 ${PAPER_LIMITS_MM.height.min}–${PAPER_LIMITS_MM.height.max}mm；超出范围的数字不会生效。`}
+          </p>
         </>
       )}
       <SelectField

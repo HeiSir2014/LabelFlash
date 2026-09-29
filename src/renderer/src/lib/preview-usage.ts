@@ -19,6 +19,8 @@ export function describePreviewUsage(
   preview: LabelPreview | null,
   activeTemplateName: string | null,
   samplePrinter: PrinterChoice | null = null,
+  /** 系统打印机名 → 界面上显示的名字（macOS 上系统名是打印队列名）。 */
+  displayName: (printerName: string) => string = (printerName) => printerName,
 ): PreviewUsage | null {
   if (preview === null) {
     return activeTemplateName === null
@@ -26,7 +28,7 @@ export function describePreviewUsage(
       : {
           source: '示例内容',
           template: `模板：${activeTemplateName}`,
-          printer: samplePrinter && describePreviewPrinter(samplePrinter),
+          printer: samplePrinter && describePreviewPrinter(samplePrinter, displayName),
         };
   }
   if (preview.result.status !== 'ok' || preview.templateName === null) {
@@ -36,18 +38,22 @@ export function describePreviewUsage(
   return {
     source: `规则：${preview.result.scan.ruleName}`,
     template: `模板：${preview.templateName}${bound}`,
-    printer: describePreviewPrinter(preview.result.printer),
+    printer: describePreviewPrinter(preview.result.printer, displayName),
   };
 }
 
 /** 这张会打到哪台：模板指定的打印机不在时说明已退回纸张分配。 */
-export function describePreviewPrinter(choice: PrinterChoice): string {
+export function describePreviewPrinter(
+  choice: PrinterChoice,
+  displayName: (printerName: string) => string = (printerName) => printerName,
+): string {
   if (choice.printerName === null) {
     return '打印机：还没有';
   }
+  const name = displayName(choice.printerName);
   return choice.reason === 'template-missing'
-    ? `打印机：${choice.printerName}（模板指定的 ${choice.missingPrinter} 不在这台电脑上）`
-    : `打印机：${choice.printerName}`;
+    ? `打印机：${name}（模板指定的 ${choice.missingPrinter} 不在这台电脑上）`
+    : `打印机：${name}`;
 }
 
 export function usageText(usage: PreviewUsage): string {

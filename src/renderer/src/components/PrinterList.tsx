@@ -17,6 +17,8 @@ interface PrinterListProps {
   rows: PaperRow[];
   profileOf: (printerName: string) => PrinterProfile;
   responsibilitiesOf: (printerName: string) => Responsibilities;
+  /** 系统打印机名 → 界面上显示的名字。 */
+  displayName: (printerName: string) => string;
   /** 正在打开「打印首选项」的打印机。 */
   openingName: string | null;
   onAssign: (paperKey: string, printerName: string | null) => void;
@@ -32,6 +34,7 @@ export function PrinterList({
   rows,
   profileOf,
   responsibilitiesOf,
+  displayName,
   openingName,
   onAssign,
   onOpenPreferences,
@@ -91,7 +94,7 @@ export function PrinterList({
                     className="button button--small paper-row__suggestion"
                     onClick={() => row.suggestion && onAssign(row.key, row.suggestion)}
                   >
-                    建议：{row.suggestion}
+                    建议：{displayName(row.suggestion)}
                   </button>
                 )}
               </li>
@@ -132,7 +135,7 @@ export function PrinterList({
                   />
                 )}
                 <span className="printer-row__name">{printer.displayName}</span>
-                {readiness && !readiness.ready && <span className="badge badge--error">{readiness.detail}</span>}
+                {duties.length > 0 && <PrinterState readiness={readiness} />}
               </span>
               <button
                 type="button"
@@ -169,5 +172,17 @@ export function PrinterList({
         </p>
       )}
     </div>
+  );
+}
+
+/** 被分配到的打印机的状态（主进程只检测它们）：就绪 / 出了什么问题 / 未知（macOS、还没查到）。 */
+function PrinterState({ readiness }: { readiness: PrinterProfile['readiness'] }) {
+  if (readiness === null) {
+    return <span className="badge badge--quiet">状态未知</span>;
+  }
+  return readiness.ready ? (
+    <span className="badge badge--quiet">就绪</span>
+  ) : (
+    <span className="badge badge--error">{readiness.detail}</span>
   );
 }

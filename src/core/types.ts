@@ -3,8 +3,8 @@ import type { PrinterChoice } from './printing/resolve-printer';
 import type { ScanResult } from './scan/scan-result';
 import type { LabelTemplate } from './templates/template-model';
 
-/** desktop = 扫码枪，history = 从打印记录重打，mobile = 手机（Phase 2）。 */
-export const PRINT_SOURCES = ['desktop', 'history', 'mobile'] as const;
+/** desktop = 扫码枪，history = 从打印记录重打，mobile = 手机，api = 本机接口。 */
+export const PRINT_SOURCES = ['desktop', 'history', 'mobile', 'api'] as const;
 export type PrintSource = (typeof PRINT_SOURCES)[number];
 
 /** 打印请求不带打印机：主进程按模板决定（见 printing/resolve-printer.ts）。 */

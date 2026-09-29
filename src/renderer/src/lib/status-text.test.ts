@@ -302,3 +302,9 @@ describe('describeJobStatus', () => {
     });
   });
 });
+
+describe('describeSource', () => {
+  test('names jobs submitted through the local api', () => {
+    expect(describeSource('api')).toBe('本机接口');
+  });
+});

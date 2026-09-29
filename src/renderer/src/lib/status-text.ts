@@ -113,6 +113,7 @@ const SOURCE_LABELS: Record<PrintSource, string> = {
   desktop: '扫码枪',
   history: '记录重打',
   mobile: '手机',
+  api: '本机接口',
 };
 
 export function formatAgo(at: number, now: number): string {

@@ -99,4 +99,44 @@ export const MIGRATIONS: readonly string[] = [
   ALTER TABLE jobs ADD COLUMN paper TEXT;
   ALTER TABLE jobs ADD COLUMN template_id TEXT;
   `,
+  // 3：打印记录表重建（本机接口）。SQLite 改不了取值检查（CHECK），按官方做法建新表、复制、删旧表、改名。
+  // 来源加 api；新增 fields（这一张打出来的字段，JSON）和 caller（谁提交的）。
+  // seq 原样复制，全文索引按 seq 对应，不用重建；自增计数也接着旧表的走，删掉的旧序号不会被新记录复用。
+  `
+  CREATE TABLE jobs_new (
+    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id             TEXT    NOT NULL UNIQUE,
+    created_at     INTEGER NOT NULL,
+    raw            TEXT    NOT NULL,
+    printer_name   TEXT    NOT NULL,
+    source         TEXT    NOT NULL CHECK (source IN ('desktop', 'history', 'mobile', 'api')),
+    status         TEXT    NOT NULL CHECK (status IN ('printed', 'duplicate', 'invalid', 'failed')),
+    forced         INTEGER NOT NULL CHECK (forced IN (0, 1)),
+    failure_reason TEXT             CHECK (failure_reason IN
+      ('PRINTER_NOT_FOUND', 'PRINTER_NOT_READY', 'PRINT_TIMEOUT', 'PRINT_ERROR', 'LOOKUP_FAILED')),
+    paper          TEXT,
+    template_id    TEXT,
+    fields         TEXT,
+    caller         TEXT
+  ) STRICT;
+  INSERT INTO jobs_new (seq, id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id)
+    SELECT seq, id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id FROM jobs;
+  INSERT INTO sqlite_sequence (name, seq)
+    SELECT 'jobs_new', 0 WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'jobs_new');
+  UPDATE sqlite_sequence
+    SET seq = MAX(seq, IFNULL((SELECT seq FROM sqlite_sequence WHERE name = 'jobs'), 0))
+    WHERE name = 'jobs_new';
+  DROP TRIGGER jobs_search_insert;
+  DROP TRIGGER jobs_search_delete;
+  DROP INDEX jobs_printed_at;
+  DROP TABLE jobs;
+  ALTER TABLE jobs_new RENAME TO jobs;
+  CREATE INDEX jobs_printed_at ON jobs (created_at) WHERE status = 'printed';
+  CREATE TRIGGER jobs_search_insert AFTER INSERT ON jobs BEGIN
+    INSERT INTO jobs_search (rowid, raw) VALUES (new.seq, new.raw);
+  END;
+  CREATE TRIGGER jobs_search_delete AFTER DELETE ON jobs BEGIN
+    INSERT INTO jobs_search (jobs_search, rowid, raw) VALUES ('delete', old.seq, old.raw);
+  END;
+  `,
 ];

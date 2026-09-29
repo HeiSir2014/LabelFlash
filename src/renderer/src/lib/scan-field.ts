@@ -36,6 +36,24 @@ export function pasteInto(display: string, selectionStart: number, selectionEnd:
   return display.slice(0, selectionStart) + text + display.slice(selectionEnd);
 }
 
+export interface SelectionParts {
+  before: string;
+  selected: string;
+  after: string;
+}
+
+/**
+ * 文字层按输入框的真实选区分成三段：选中的部分画高亮，没有选中时光标画在 before 和 after 之间。
+ * 透明密码框自己的光标和选区看不见（位置也是按圆点算的），不这样画的话，方向键移了光标、双击全选都看不出来。
+ * 选区还没报告过（null）时当作光标在末尾；过时的选区（内容刚被清空）收在文字范围内。
+ */
+export function selectionParts(display: string, start: number | null, end: number | null): SelectionParts {
+  const clamp = (value: number | null) => Math.min(Math.max(value ?? display.length, 0), display.length);
+  const from = clamp(start);
+  const to = Math.max(from, clamp(end));
+  return { before: display.slice(0, from), selected: display.slice(from, to), after: display.slice(to) };
+}
+
 export type ScanFieldType = 'password' | 'text';
 
 export function scanFieldType(platform: Platform): ScanFieldType {

@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { fromDisplay, LINE_BREAK_MARK, pasteInto, scanFieldType, TAB_MARK, toDisplay } from './scan-field';
+import {
+  fromDisplay,
+  LINE_BREAK_MARK,
+  pasteInto,
+  scanFieldType,
+  selectionParts,
+  TAB_MARK,
+  toDisplay,
+} from './scan-field';
 
 describe('toDisplay / fromDisplay', () => {
   test('shows line breaks and tabs inside a code as visible marks', () => {
@@ -30,6 +38,25 @@ describe('pasteInto', () => {
 
   test('replaces the selected part and keeps the rest', () => {
     expect(pasteInto('AB-XX-CD', 3, 5, 'M\tL')).toBe(`AB-M${TAB_MARK}L-CD`);
+  });
+});
+
+// 透明的密码框自己的光标和选区看不见：文字层按真实的选区画出选中的部分和光标。
+describe('selectionParts', () => {
+  test('puts the caret where the real caret is', () => {
+    expect(selectionParts('CL5887-M', 2, 2)).toEqual({ before: 'CL', selected: '', after: '5887-M' });
+  });
+
+  test('marks the selected part, for example after a double click selects everything', () => {
+    expect(selectionParts('CL5887-M', 0, 8)).toEqual({ before: '', selected: 'CL5887-M', after: '' });
+  });
+
+  test('keeps the caret at the end when the field has not reported a selection yet', () => {
+    expect(selectionParts('CL5887', null, null)).toEqual({ before: 'CL5887', selected: '', after: '' });
+  });
+
+  test('stays within the text when the selection is out of date', () => {
+    expect(selectionParts('AB', 5, 9)).toEqual({ before: 'AB', selected: '', after: '' });
   });
 });
 

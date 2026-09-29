@@ -1,11 +1,18 @@
-import { useId, useLayoutEffect, useRef } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { NoteOption } from '../lib/note-options';
-import { pasteInto, type ScanFieldType } from '../lib/scan-field';
+import { pasteInto, type ScanFieldType, selectionParts } from '../lib/scan-field';
 import { useScanFocus } from '../view-models/use-scan-focus';
 import { useScanInput } from '../view-models/use-scan-input';
 import { Switch } from './form-controls';
 
 const PLACEHOLDER = '用扫码枪扫标签二维码，或手动输入后回车';
+/** 光标离文字层边缘至少留这么宽：滚动时光标不贴着边框。 */
+const CARET_MARGIN_PX = 24;
+
+interface Selection {
+  start: number | null;
+  end: number | null;
+}
 
 export interface NoteControl {
   options: NoteOption[];
@@ -32,14 +39,43 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
   const textRef = useRef<HTMLSpanElement>(null);
   const textId = useId();
 
-  // 内容比框长时显示末尾：扫码枪和手动输入都在末尾打字，和输入框自己滚动到光标处一样。
+  const [selection, setSelection] = useState<Selection>({ start: null, end: null });
+  // 粘贴后光标要落在粘进来的内容后面：值由界面状态重设，浏览器会把光标挪到末尾，所以渲染后再放回去。
+  const caretAfterPaste = useRef<number | null>(null);
+  const readSelection = (field: HTMLInputElement) =>
+    setSelection({ start: field.selectionStart, end: field.selectionEnd });
+
+  // 让光标（或选区的末端）留在看得见的范围里：扫码枪和手动输入都在末尾打字，方向键移到前面时跟着滚回去。
   const { value } = input;
+  const parts = selectionParts(value, selection.start, selection.end);
+  const { before, selected } = parts;
+  useLayoutEffect(() => {
+    const field = inputRef.current;
+    const caret = caretAfterPaste.current;
+    // 等输入框里已经是粘贴后的内容，再把光标放回粘进来的内容后面。
+    if (field && caret !== null && field.value === value) {
+      caretAfterPaste.current = null;
+      field.setSelectionRange(caret, caret);
+      setSelection({ start: caret, end: caret });
+    }
+  }, [value, inputRef]);
   useLayoutEffect(() => {
     const text = textRef.current;
-    if (text) {
-      text.scrollLeft = value === '' ? 0 : text.scrollWidth;
+    // 没有选中时跟着光标，有选中时跟着选区的末端；before / selected 变了就说明光标或选区动了。
+    const marker = text?.querySelector<HTMLElement>(selected === '' ? '.scan-bar__caret' : '.scan-bar__selection');
+    // 光标在最前面（包括框里没有内容）：从头显示。
+    if (!text || !marker || (before === '' && selected === '')) {
+      text?.scrollTo({ left: 0 });
+      return;
     }
-  }, [value]);
+    const left = marker.offsetLeft - text.offsetLeft;
+    const right = left + marker.offsetWidth;
+    if (left < text.scrollLeft + CARET_MARGIN_PX) {
+      text.scrollLeft = Math.max(0, left - CARET_MARGIN_PX);
+    } else if (right > text.scrollLeft + text.clientWidth - CARET_MARGIN_PX) {
+      text.scrollLeft = right - text.clientWidth + CARET_MARGIN_PX;
+    }
+  }, [before, selected]);
 
   return (
     <section className="scan-bar" aria-label="扫码">
@@ -53,10 +89,27 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
           <span
             ref={textRef}
             id={textId}
-            className={`scan-bar__text${input.value === '' ? ' scan-bar__text--placeholder' : ''}`}
+            className={`scan-bar__text${value === '' ? ' scan-bar__text--placeholder' : ''}`}
+            // 由程序滚到光标处（滚动条隐藏）：是滚动容器，不是被裁掉的文字。
+            data-allow-x-scroll=""
             aria-hidden="true"
           >
-            {input.value === '' ? PLACEHOLDER : input.value}
+            {value === '' ? (
+              <>
+                <span className="scan-bar__caret" />
+                {PLACEHOLDER}
+              </>
+            ) : (
+              <>
+                {parts.before}
+                {parts.selected === '' ? (
+                  <span className="scan-bar__caret" />
+                ) : (
+                  <mark className="scan-bar__selection">{parts.selected}</mark>
+                )}
+                {parts.after}
+              </>
+            )}
           </span>
           <input
             ref={inputRef}
@@ -66,13 +119,16 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
             onChange={(event) => input.onChange(event.target.value)}
             onKeyDown={input.onKeyDown}
             onCompositionStart={input.onCompositionStart}
+            onSelect={(event) => readSelection(event.currentTarget)}
             // 自己处理粘贴：单行输入框会删掉换行，多行的码粘进来就变了。
             onPaste={(event) => {
               event.preventDefault();
               const field = event.currentTarget;
               const start = field.selectionStart ?? field.value.length;
               const end = field.selectionEnd ?? start;
-              input.onChange(pasteInto(field.value, start, end, event.clipboardData.getData('text/plain')));
+              const next = pasteInto(field.value, start, end, event.clipboardData.getData('text/plain'));
+              caretAfterPaste.current = start + next.length - (field.value.length - (end - start));
+              input.onChange(next);
             }}
             // 名字来自外层的「扫码」标签。密码框的内容读屏只念成圆点，所以把看得见的那层文字当作说明念出来
             // （那层本身 aria-hidden，不会念两遍）。

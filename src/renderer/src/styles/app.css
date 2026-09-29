@@ -449,10 +449,13 @@ textarea {
   line-height: 32px;
 }
 
+/* 程序把它滚到光标处（见 ScanBar）：能横向滚动，但不显示滚动条。 */
 .scan-bar__text {
   display: block;
   height: 100%;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   white-space: pre;
 }
 
@@ -462,16 +465,22 @@ textarea {
   font-size: 15px;
 }
 
-/* 光标画在文字层末尾：透明的密码框自己的光标看不见（位置也按圆点算，和文字对不上）。 */
-.scan-bar__field:focus-within .scan-bar__text:not(.scan-bar__text--placeholder)::after,
-.scan-bar__field:focus-within .scan-bar__text--placeholder::before {
-  content: "";
+/*
+ * 光标和选区画在文字层里、按输入框的真实位置：透明密码框自己的光标看不见（位置也按圆点算，和文字对不上）。
+ * 光标左右各缩回 1px，总宽为 0：显示、隐藏、闪烁都不挪动文字。
+ */
+.scan-bar__caret {
   display: inline-block;
   width: 2px;
   height: 24px;
-  margin: 0 1px;
+  margin: 0 -1px;
   vertical-align: middle;
   background: var(--color-ink);
+  visibility: hidden;
+}
+
+.scan-bar__field:focus-within .scan-bar__caret {
+  visibility: visible;
   animation: scan-caret 1s steps(1) infinite;
 }
 
@@ -482,10 +491,20 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .scan-bar__field:focus-within .scan-bar__text::after,
-  .scan-bar__field:focus-within .scan-bar__text::before {
+  .scan-bar__field:focus-within .scan-bar__caret {
     animation: none;
   }
+}
+
+/* 选中的部分：和输入框一样，离开扫码框后不再高亮。 */
+.scan-bar__selection {
+  background: transparent;
+  color: inherit;
+}
+
+.scan-bar__field:focus-within .scan-bar__selection {
+  background: var(--color-tape);
+  color: var(--color-ink);
 }
 
 .scan-bar__input {

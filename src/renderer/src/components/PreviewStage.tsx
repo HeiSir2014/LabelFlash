@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { LABEL_PAPER_MM } from '../../../shared/label-paper';
-import type { ConfigPage } from '../lib/app-view';
-import type { ScanView } from '../lib/status-text';
+import type { ScanView, StatusLinkTarget } from '../lib/status-text';
 import type { ScanState } from '../view-models/use-scan-station';
 import { ConfirmButton } from './ConfirmButton';
 import { LabelPreview } from './LabelPreview';
@@ -25,7 +24,8 @@ export interface PreviewStageProps {
   onPrint: () => void;
   onForceReprint: () => void;
   /** 状态条上的直达按钮：打开配置中心的对应页面。 */
-  onOpenPage: (page: ConfigPage) => void;
+  /** 状态条的直达按钮：配置中心的页面，或工作台右侧的打印机页。 */
+  onOpenPage: (page: StatusLinkTarget) => void;
 }
 
 export function PreviewStage({

@@ -238,7 +238,12 @@ export function App() {
             override,
             onPrint: () => station.printCurrent(false),
             onForceReprint: () => station.printCurrent(true),
-            onOpenPage: appView.open,
+            onOpenPage: (page) => {
+              // 打印机页在工作台右侧，不在配置中心。
+              if (page !== 'printers') {
+                appView.open(page);
+              }
+            },
           }}
           printers={
             <PrinterList

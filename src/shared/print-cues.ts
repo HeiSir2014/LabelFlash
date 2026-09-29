@@ -9,7 +9,7 @@ import type { VoiceCue } from './voice';
 /** 这次打印是怎么发起的：扫码、强制补打、从打印记录重打、打测试页。 */
 export type PrintMode = 'scan' | 'force' | 'history' | 'test';
 
-/** PrintResult 和手机收到的精简结果都满足这个结构；no-printer 只出现在手机收到的结果里。 */
+/** PrintResult 和手机收到的精简结果都满足这个结构。 */
 export type PrintOutcome =
   | { status: 'printed' }
   | { status: 'duplicate'; recent: RecentPrint }

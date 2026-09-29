@@ -156,7 +156,7 @@ export type PhonePrintResult =
   | { status: 'duplicate'; recent: RecentPrint; windowMs: number }
   | { status: 'invalid'; reason: InvalidReason }
   | { status: 'failed'; reason: PrintFailureReason; detail: string | null; issue: PrinterIssue | null }
-  /** 电脑上还没有选打印机。 */
+  /** 这张的纸在电脑上没有可用的打印机（协议不变：手机不需要知道是哪种纸）。 */
   | { status: 'no-printer' };
 
 /** 排队中的一个任务：前面还有 ahead 个任务（所有手机的任务共用一个队列，包括正在打印的那张）。 */

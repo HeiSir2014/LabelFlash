@@ -6,7 +6,16 @@ import type { EnrichResult } from './scan/enrich';
 import { MAX_RAW_LENGTH, normalizeRaw } from './scan/normalize-raw';
 import type { ScanResult } from './scan/scan-result';
 import type { LabelTemplate } from './templates/template-model';
-import type { Clock, JobRecord, LabelJob, PreviewResult, PrinterAdapter, PrintRequest, PrintResult } from './types';
+import type {
+  Clock,
+  JobRecord,
+  LabelJob,
+  PreviewResult,
+  PrinterAdapter,
+  PrintRequest,
+  PrintResult,
+  RecordedResult,
+} from './types';
 
 export const TEST_RAW = 'TEST-0001-测试色-XL';
 
@@ -76,7 +85,7 @@ export class PrintService {
     // 先占住防重复窗口再加工：HTTP 查询要花时间，扫码枪连按的第二下必须在这里就被拦下。
     const reservation = this.deps.guard.tryReserve(raw, request.force === true);
     if (!reservation.ok) {
-      const duplicate: PrintResult = {
+      const duplicate: RecordedResult = {
         status: 'duplicate',
         recent: reservation.recent,
         windowMs: this.deps.guard.windowMs,
@@ -86,7 +95,11 @@ export class PrintService {
     const enriched = await this.enrich(recognition.scan);
     if (enriched.blocked) {
       this.deps.guard.release(raw);
-      const lookupFailed: PrintResult = { status: 'failed', reason: 'LOOKUP_FAILED', detail: enriched.blocked.detail };
+      const lookupFailed: RecordedResult = {
+        status: 'failed',
+        reason: 'LOOKUP_FAILED',
+        detail: enriched.blocked.detail,
+      };
       return this.finish(id, request, raw, lookupFailed, enriched.scan);
     }
     const { scan } = enriched;
@@ -153,7 +166,7 @@ export class PrintService {
     id: string,
     request: PrintRequest,
     raw: string,
-    result: PrintResult,
+    result: RecordedResult,
     scan: ScanResult | null,
   ): PrintResult {
     const job: JobRecord = {
@@ -179,6 +192,6 @@ export class PrintService {
   }
 }
 
-function failed(failure: PrintFailure): PrintResult {
+function failed(failure: PrintFailure): Extract<PrintResult, { status: 'failed' }> {
   return { status: 'failed', ...failure };
 }

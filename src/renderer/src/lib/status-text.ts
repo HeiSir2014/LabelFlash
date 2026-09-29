@@ -10,11 +10,17 @@ import type {
 } from '../../../core/types';
 import { formatWindow } from '../../../shared/duration-text';
 import type { LabelPreview } from '../../../shared/ipc-contract';
+import { DEFAULT_PAPER } from '../../../shared/label-paper';
+import { formatPaperName, parsePaperKey } from '../../../shared/paper-sizes';
 import { PRINT_TIMEOUT_SECONDS } from '../../../shared/print-timing';
+import { VOICE_CUE_TEXT } from '../../../shared/voice';
 import type { ConfigPage } from './app-view';
 
 /** 防重复窗口的说法和手机扫码页共用一份（见 src/shared/duration-text.ts）。 */
 export { formatWindow };
+
+/** 状态条上的直达按钮：配置中心的某一页，或工作台右侧的打印机页。 */
+export type StatusLinkTarget = ConfigPage | 'printers';
 
 export type FeedbackTone = 'success' | 'warning' | 'error';
 export type StatusTone = FeedbackTone | 'idle' | 'pending';
@@ -24,7 +30,7 @@ export interface StatusView {
   title: string;
   detail: string;
   /** 要去配置中心的某一页才能解决时，状态条上给一个直达按钮。 */
-  link?: { page: ConfigPage; label: string };
+  link?: { page: StatusLinkTarget; label: string };
 }
 
 export interface FeedbackStatusView extends StatusView {
@@ -173,7 +179,23 @@ export function describeResult(result: PrintResult, now: number): FeedbackStatus
         title: FAILURE_TITLES[result.reason],
         detail: failureDetail(result.reason, result.detail),
       };
+    case 'no-printer':
+      return describeNoPrinter(result.paperKey, result.missingPrinter);
   }
+}
+
+/** 这种纸没有可用的打印机：说清是哪种纸，模板指定的打印机不在时一并说明。 */
+export function describeNoPrinter(paperKey: string, missingPrinter: string | null): FeedbackStatusView {
+  const paper = formatPaperName(parsePaperKey(paperKey) ?? DEFAULT_PAPER);
+  return {
+    tone: 'warning',
+    title: VOICE_CUE_TEXT.noPrinter,
+    detail:
+      missingPrinter === null
+        ? `${paper} 还没有打印机`
+        : `模板指定的 ${missingPrinter} 不在这台电脑上，${paper} 也还没有打印机`,
+    link: { page: 'printers', label: '去指定打印机' },
+  };
 }
 
 export const IPC_ERROR_VIEW: FeedbackStatusView = {

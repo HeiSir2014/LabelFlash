@@ -37,9 +37,13 @@ export type PrintResult =
   | { status: 'printed'; jobId: string; scan: ScanResult }
   | { status: 'duplicate'; recent: RecentPrint; windowMs: number }
   | { status: 'invalid'; reason: InvalidReason }
-  | { status: 'failed'; reason: PrintFailureReason; detail?: string; issue?: PrinterIssue };
+  | { status: 'failed'; reason: PrintFailureReason; detail?: string; issue?: PrinterIssue }
+  /** 这种纸没有可用的打印机：没有打印，不写打印记录，不占防重复窗口。 */
+  | { status: 'no-printer'; paperKey: string; missingPrinter: string | null };
 
-export type PrintStatus = PrintResult['status'];
+/** 写进打印记录的结果（no-printer 不写记录）。 */
+export type RecordedResult = Exclude<PrintResult, { status: 'no-printer' }>;
+export type PrintStatus = RecordedResult['status'];
 export const PRINT_STATUSES = ['printed', 'duplicate', 'invalid', 'failed'] as const satisfies readonly PrintStatus[];
 
 export type PreviewResult =

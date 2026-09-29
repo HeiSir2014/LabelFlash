@@ -71,6 +71,22 @@ describe('formatAgo / formatWindow', () => {
 });
 
 describe('describeResult', () => {
+  test('tells which paper has no printer and offers to open the printer panel', () => {
+    expect(describeResult({ status: 'no-printer', paperKey: '100x180', missingPrinter: null }, NOW)).toEqual({
+      tone: 'warning',
+      title: '没有可用的打印机',
+      detail: '100×180 二联面单 还没有打印机',
+      link: { page: 'printers', label: '去指定打印机' },
+    });
+  });
+
+  test('says when the printer named by the template is not on this computer', () => {
+    const result = { status: 'no-printer', paperKey: '100x180', missingPrinter: '面单机D' } as const;
+    expect(describeResult(result, NOW).detail).toBe(
+      '模板指定的 面单机D 不在这台电脑上，100×180 二联面单 也还没有打印机',
+    );
+  });
+
   test('printed means sent to the printer', () => {
     expect(describeResult({ status: 'printed', jobId: 'j', scan: SCAN }, NOW)).toEqual({
       tone: 'success',

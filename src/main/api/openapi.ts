@@ -297,7 +297,7 @@ export function openApiDocument(port: number) {
     info: {
       title: 'CDL-LabelFlash 本机接口',
       version: 'v1',
-      description: '提交「模板 + 字段」打印标签，或只排版返回 PDF。说明见程序附带的 docs/local-api.md。',
+      description: '提交「模板 + 字段」打印标签，或只排版返回 PDF。接入说明见 CDL-云签速印 项目的 docs/local-api.md。',
     },
     servers: [{ url: `http://127.0.0.1:${port}` }],
     security: [{ bearer: [] }],

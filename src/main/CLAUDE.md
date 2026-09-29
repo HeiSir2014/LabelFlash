@@ -64,13 +64,14 @@
 设计见 `docs/superpowers/specs/2026-09-30-local-api-design.md`，给第三方的说明在 `docs/local-api.md`。
 
 - **分层**：除了 `pdf-render.ts`（隐藏窗口 + `printToPDF`），都不 import electron，用 `bun test` 测试，`http-server.test.ts` 和 `local-api.test.ts` 真的启动服务。
-  - `local-api.ts`：组装（任务服务、密钥、授权、网站授权框、HTTP 服务），跟随设置启停；`index.ts` 只把 Electron 的能力传进来；
-  - `http-server.ts`：`node:http`，依次试端口（`apiPortOrder`：指定的 → 上次用成功的 → 17631–17633 → 系统分配），监听后从回环地址自检；请求体上限、预检、限速；
+  - `local-api.ts`：组装（任务服务、密钥、授权、网站询问、HTTP 服务、防火墙），跟随设置启停，启停排成一队；防火墙没放行时（安装版）只监听本机；`index.ts` 只把 Electron 的能力传进来；
+  - `http-server.ts`：`node:http`，依次试端口（`apiPortOrder`：指定的 → 上次用成功的 → 17631–17640 → 系统分配），监听后从 `127.0.0.1` 和 `::1` 自检；先认证再读请求体、请求体上限、预检、限速；
+  - `origin-prompts.ts`：等操作员确认的网站（最多 3 个、10 分钟收起、拒绝后 10 分钟冷却），界面顶部显示询问条，同时发系统通知；
   - `authenticator.ts`：先认程序密钥（不核对 Host），再认本机来的网站（核对 Host、只认 http/https 的 Origin），其余一律要密钥；
   - `router.ts` + `resources.ts` + `request-schema.ts`：AIP 风格的路由、资源和校验；`openapi.ts` 和路由表由测试核对一致。
 - **密钥**：只存 SHA-256 摘要。原文只在生成的那次 IPC 返回值里出现，另在内存里留 10 分钟给「复制」按钮，不写库、不写日志。
 - **打印**：经 `PrintService.printFields`（来源 `api`），不播报；写了打印记录后推送 `jobs:changed`（合并成最多 0.5 秒一次）。
-- **防火墙**：`firewall.ts` 执行 `src/shared/firewall-rule.ts` 生成的 PowerShell 脚本（整段 Base64 交给 `-EncodedCommand`，不经过命令行转义）；安装包用同一份脚本。
+- **防火墙**：`firewall.ts` 执行 `src/shared/firewall-rule.ts` 生成的 PowerShell 脚本（系统目录里的 powershell.exe，整段 Base64 交给 `-EncodedCommand`，不经过命令行转义）；只动本程序路径下的规则。安装包用同一份脚本（见 `resources/installer/firewall.nsh`）。
 
 ## 手机扫码（`mobile/`）
 

@@ -11,12 +11,13 @@ CDL-云签速印在电脑上提供一个 HTTP 接口。网页系统、客户端�
 | 项 | 说明 |
 |---|---|
 | 地址 | 本机：`http://127.0.0.1:<端口>`；局域网：`http://<这台电脑的局域网 IP>:<端口>`。配置中心「本机接口」页列出了可用的地址 |
-| 端口 | 默认 17631。被占用时程序自动换：先试上次用过的端口，再试 17631、17632、17633，都不行就由系统分配一个。实际端口以配置中心显示的为准 |
-| 确认身份 | `GET /v1/service` 不需要授权，返回 `{"product":"CDL-LabelFlash","apiVersion":"v1","appVersion":"…","port":17631}`。先调它，确认连的是本程序，不是占着端口的别的程序 |
+| 端口 | 一般是 17631。程序记住上次成功用的端口，下次启动还用它，所以配好之后端口不会变；只有它被别的程序占了才换：依次试 17631–17640，都不行就由系统分配一个。换了端口时配置中心会提示。在配置中心填了端口的，优先用填的 |
+| 确认身份 | `GET /v1/service` 不需要授权，返回 `{"product":"CDL-LabelFlash","apiVersion":"v1","appVersion":"…","port":17631,"instanceId":"…"}`。先调它，确认连的是本程序，不是占着端口的别的程序 |
+| 这台电脑的编号 | `instanceId` 是这台电脑上本程序的固定编号（UUID），重启、升级、换端口都不变。调用方可以记下它：换端口后找到的服务，用它确认还是原来那台电脑 |
 | 协议 | 只有 HTTP，没有 HTTPS。局域网里传输是明文，只在可信的局域网里使用 |
 | 程序开着才可用 | 接口跑在 CDL-云签速印里，程序退出时接口也不可用 |
 
-找不到时可以按 17631 → 17632 → 17633 的顺序试，每个都用 `/v1/service` 确认。
+连不上记下的端口时，可以按 17631 → 17640 的顺序试，每个都用 `/v1/service` 确认 `product` 和 `instanceId`。
 
 ## 2. 授权
 
@@ -34,9 +35,12 @@ CDL-云签速印在电脑上提供一个 HTTP 接口。网页系统、客户端�
 
 网页从本机的浏览器调用 `http://127.0.0.1:<端口>` 时，不用密钥：
 
-1. 网页第一次调用，收到 403 和原因 `ORIGIN_NOT_AUTHORIZED`；同时电脑上弹出「网站想使用打印服务：允许 / 拒绝」。
-2. 操作员点「允许」后，这个网站（协议 + 域名 + 端口）会被记住，网页重试即可。
-3. 拒绝后 10 分钟内同一网站不再弹框，直接拒绝。已授权的网站可以在配置中心撤销。
+1. 网页第一次调用，收到 403 和原因 `ORIGIN_NOT_AUTHORIZED`；同时程序顶部出现「网站想使用打印服务：允许 / 拒绝」，并弹出系统通知提醒操作员。
+2. 操作员点「允许」后，这个网站（协议 + 域名 + 端口）一直有效，直到在配置中心「本机接口」页撤销。网页重试即可。
+3. 操作员点「拒绝」后 10 分钟内，这个网站的请求直接收到 403 和原因 `ORIGIN_DENIED`，不再询问。10 分钟没人处理的询问自动收起，网页再次调用时重新询问。
+4. 同时最多 3 个网站在等确认，再多的收到 `ORIGIN_NOT_AUTHORIZED`，稍后重试即可。
+
+网页能读到哪些响应：已授权网站的所有响应；没授权的网站只能读到上面两种授权错误（`ORIGIN_NOT_AUTHORIZED`、`ORIGIN_DENIED`），其他响应浏览器不让读，`fetch` 会抛出 `TypeError`。
 
 注意：
 
@@ -200,22 +204,28 @@ CDL-云签速印在电脑上提供一个 HTTP 接口。网页系统、客户端�
 | 400 | `INVALID_ARGUMENT` | `INVALID_ARGUMENT`（见 `fieldViolations`） |
 | 400 | `FAILED_PRECONDITION` | `PRINTER_NOT_FOUND` |
 | 401 | `UNAUTHENTICATED` | `KEY_REQUIRED`、`KEY_INVALID`、`NO_KEYS_YET`（电脑上还没生成过密钥） |
-| 403 | `PERMISSION_DENIED` | `ORIGIN_NOT_AUTHORIZED`（去电脑上点允许）、`ORIGIN_UNSUPPORTED`、`HOST_NOT_ALLOWED` |
+| 403 | `PERMISSION_DENIED` | `ORIGIN_NOT_AUTHORIZED`（去电脑上点允许）、`ORIGIN_DENIED`（操作员拒绝了，10 分钟后可以再请求）、`ORIGIN_UNSUPPORTED`、`HOST_NOT_ALLOWED` |
 | 404 | `NOT_FOUND` | `TEMPLATE_NOT_FOUND`、`PRINT_JOB_NOT_FOUND`（别的调用方的任务也按不存在处理） |
 | 413 | `INVALID_ARGUMENT` | `PAYLOAD_TOO_LARGE`（请求体超过 4MB，请分批） |
-| 429 | `RESOURCE_EXHAUSTED` | `RATE_LIMITED`、`QUEUE_FULL` |
+| 429 | `RESOURCE_EXHAUSTED` | `RATE_LIMITED`、`QUEUE_FULL`、`RENDER_BUSY`（同时生成的 PDF 太多） |
 | 500 | `INTERNAL` | `INTERNAL`（详情写在电脑上的日志里） |
+| 503 | `UNAVAILABLE` | `PRINTERS_UNAVAILABLE`（读不到这台电脑的打印机列表，稍后重试） |
+
+收到 429 和 503 时等一会儿（例如 1 秒，再失败就加倍）再重试；重试打印任务时带上原来的 `requestId`。
 
 ## 5. 限额
 
 - 请求体最大 4MB。
-- 同一调用方每秒 20 个请求，可以突发到 40 个。
+- 同一调用方每秒 20 个请求，可以突发到 40 个。局域网里同一台电脑认证前的请求另有每秒 40 个的上限。
 - 一次批量最多 1000 个任务；一张标签最多 50 个字段、100 份；排队中的标签最多 5000 张。
+- 同时最多生成 2 个 PDF，另有 8 个排队，再多的收到 `RENDER_BUSY`。
+- 查进度时不要逐个任务轮询：一批几百个任务，用 `GET /v1/printJobs` 每秒查一次列表即可。
 
 ## 6. 局域网和防火墙
 
 - 局域网访问默认开启，在配置中心「本机接口」页可以关掉，关掉后只接受这台电脑上的网页和程序。
-- Windows：安装时会弹一次管理员确认，加一条防火墙规则（只放行本程序，只在专用和域网络生效）。当时点了「否」的，可以在「本机接口」页点「添加防火墙规则」。
+- Windows：安装时会弹一次管理员确认，加一条防火墙入站规则：只放行本程序的 TCP 连接，专用、公用、域网络都生效（Windows 常把新连的 Wi-Fi 当作公用网络）。局域网来的请求照样要程序密钥。
+- Windows 防火墙还没放行本程序时（安装时点了「否」，或从没有这条规则的旧版本升级上来），局域网访问先不打开，只接受这台电脑上的网页和程序，免得 Windows 自己弹出防火墙警告。「本机接口」页会提示，点「添加防火墙规则」确认后自动对局域网开放。
 - macOS：安装时把程序加进系统防火墙的允许列表（打开了防火墙才起作用）。
 
 ## 7. 示例
@@ -227,6 +237,18 @@ CDL-云签速印在电脑上提供一个 HTTP 接口。网页系统、客户端�
 ```js
 const BASE = 'http://127.0.0.1:17631';
 
+// crypto.randomUUID 只在 https 或 localhost 的网页里有；内网 http 页面用 getRandomValues 生成。
+function newRequestId() {
+  if (crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 async function print(fields, content) {
   const response = await fetch(`${BASE}/v1/printJobs`, {
     method: 'POST',
@@ -235,14 +257,17 @@ async function print(fields, content) {
       template: 'templates/builtin-standard',
       fields,
       content,
-      requestId: crypto.randomUUID(),
+      requestId: newRequestId(),
     }),
   });
   const body = await response.json();
   if (!response.ok) {
     const reason = body.error.details?.[0]?.reason;
     if (reason === 'ORIGIN_NOT_AUTHORIZED') {
-      throw new Error('请在打印电脑上点「允许」，然后重试');
+      throw new Error('请在打印电脑上的程序里点「允许」，然后重试');
+    }
+    if (reason === 'ORIGIN_DENIED') {
+      throw new Error('打印电脑拒绝了这个网站：请联系操作员');
     }
     throw new Error(body.error.message);
   }
@@ -255,7 +280,7 @@ async function waitSent(name) {
     if (job.state === 'SENT' || job.state === 'FAILED') {
       return job;
     }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 }
 
@@ -300,15 +325,22 @@ if not response.ok:
     raise RuntimeError(response.json()["error"])
 jobs = response.json()["printJobs"]
 
+# 每秒查一次本调用方的任务列表（新的在前），不逐个任务查：同一调用方每秒最多 20 个请求。
 pending = {job["name"] for job in jobs}
+delay = 1
 while pending:
-    for name in list(pending):
-        job = requests.get(f"{BASE}/v1/{name}", headers=HEADERS, timeout=5).json()
-        if job["state"] in ("SENT", "FAILED"):
-            pending.discard(name)
+    time.sleep(delay)
+    listed = requests.get(f"{BASE}/v1/printJobs", params={"pageSize": 1000}, headers=HEADERS, timeout=10)
+    if listed.status_code in (429, 503):
+        delay = min(delay * 2, 30)
+        continue
+    listed.raise_for_status()
+    delay = 1
+    for job in listed.json()["printJobs"]:
+        if job["name"] in pending and job["state"] in ("SENT", "FAILED"):
+            pending.discard(job["name"])
             if job["state"] == "FAILED":
-                print(name, job["failure"])
-    time.sleep(1)
+                print(job["name"], job["failure"])
 
 pdf = requests.post(
     f"{BASE}/v1/templates/builtin-standard:render",
@@ -394,4 +426,7 @@ public class PrintLabel {
 
 ## 8. 隐私
 
-本机接口打的每一张都完整保存字段（面单上可能有收件人的姓名、电话、地址），只存在这台电脑的打印记录里，超过「打印记录保留」的条数时和其他记录一起删除。
+本机接口提交的每一张都完整保存字段（面单上可能有收件人的姓名、电话、地址），只存在这台电脑上：
+
+- 打印记录里的，超过「打印记录保留」的条数时和其他记录一起删除；
+- 给调用方查进度的任务记录保留 7 天，之后自动删除。

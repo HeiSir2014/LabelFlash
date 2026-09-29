@@ -63,11 +63,11 @@ function requestAsWebsite(url: string, origin: string): Promise<number> {
   });
 }
 
-/** 复制一个模板改成 100×180；返回它在接口里的名字。 */
-async function createWaybillTemplate(page: Page): Promise<string> {
+/** 复制一个模板改成 100×180；返回它的编号和在接口里的名字。 */
+async function createWaybillTemplate(page: Page): Promise<{ id: string; name: string }> {
   const copy = await callApi(page, 'duplicateTemplate', 'builtin:generic');
   await callApi(page, 'saveTemplate', { ...copy, name: '面单', paper: { widthMm: 100, heightMm: 180 } });
-  return `templates/${copy.id.replace(':', '-')}`;
+  return { id: copy.id, name: `templates/${copy.id.replace(':', '-')}` };
 }
 
 test('asks for a program key before anything else', async ({ electronApp }) => {
@@ -86,34 +86,50 @@ test('prints a job from a program, records it with its fields and reprints it fr
   electronApp,
 }) => {
   const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
-  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A' } });
+  const waybill = await createWaybillTemplate(page);
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x180': '面单机B' } });
+  // 模板是经接口新建的：重新加载界面，让打印记录知道这个模板还在（能按原样重打）。
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
   const base = await apiBase(page);
   const headers = await createKey(page);
+  // 内容不是任何识别规则认得的码：重打、预览都要按记录里的模板和字段，重新识别的话会落到别的模板和打印机。
   const fields = [
-    { name: '编码', value: 'CL5640-TK' },
-    { name: '尺码', value: 'XL' },
+    { name: '单号', value: 'SF1234567890' },
+    { name: '收件人', value: '张三' },
   ];
+  const content = 'SF1234567890 张三';
   const created = await fetch(`${base}/v1/printJobs`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ template: STANDARD, fields, content: 'CL5640-TK-XL' }),
+    body: JSON.stringify({ template: waybill.name, fields, content }),
   });
   expect(created.status).toBe(200);
   await waitAllSent(base, headers, 1);
-  expect(await fakePrints(app)).toEqual([
-    { printerName: '标签机A', raw: 'CL5640-TK-XL', paper: '60x40', templateId: 'builtin:standard' },
-  ]);
+  const printed = { printerName: '面单机B', raw: content, paper: '100x180', templateId: waybill.id };
+  expect(await fakePrints(app)).toEqual([printed]);
   const [job] = (await callApi(page, 'listJobs', { limit: 1 })).jobs;
-  expect(job).toMatchObject({ source: 'api', raw: 'CL5640-TK-XL', fields, templateId: 'builtin:standard' });
+  expect(job).toMatchObject({ source: 'api', raw: content, fields, templateId: waybill.id });
   expect(job?.caller).toMatch(/^key:/);
 
   // 打印记录由主进程推送刷新；本机接口的记录按当时的模板和字段重打。
   await page.getByRole('tab', { name: '打印记录' }).click();
-  const row = page.locator('.job-row').first();
-  await expect(row.locator('.job-row__meta')).toContainText('本机接口（E2E）');
-  await row.getByRole('button', { name: '重打' }).click();
+  const apiRow = page.locator('.job-row').filter({ hasText: '本机接口（E2E）' });
+  await expect(apiRow).toHaveCount(1);
+  await apiRow.getByRole('button', { name: '重打' }).click();
   await expect.poll(async () => (await fakePrints(app)).length).toBe(2);
-  expect((await fakePrints(app))[1]).toMatchObject({ raw: 'CL5640-TK-XL', templateId: 'builtin:standard' });
+  expect((await fakePrints(app))[1]).toEqual(printed);
+  // 重打出来的记录带着原来的调用方和字段，写明是原提交的调用方。
+  const [reprinted] = (await callApi(page, 'listJobs', { limit: 1 })).jobs;
+  expect(reprinted).toMatchObject({ source: 'history', raw: content, fields, caller: job?.caller });
+  await expect(page.locator('.job-row').first().locator('.job-row__meta')).toContainText('记录重打（原提交：E2E）');
+
+  // 先预览、核对后按 F2：同样按记录里的模板和字段。
+  await apiRow.getByRole('button', { name: '预览' }).click();
+  await expect(page.locator('.status-strip__title')).toHaveText('待打印');
+  await page.keyboard.press('F2');
+  await expect.poll(async () => (await fakePrints(app)).length).toBe(3);
+  expect((await fakePrints(app))[2]).toEqual(printed);
 });
 
 test('prints a batch of 300 labels on two papers, each printer in submission order', async ({ electronApp }) => {
@@ -123,7 +139,7 @@ test('prints a batch of 300 labels on two papers, each printer in submission ord
   const base = await apiBase(page);
   const headers = await createKey(page);
   const requests = Array.from({ length: BATCH_SIZE }, (_, index) => ({
-    template: index % 2 === 0 ? STANDARD : waybill,
+    template: index % 2 === 0 ? STANDARD : waybill.name,
     fields: [{ name: '序号', value: String(index) }],
     content: `NO-${index}`,
   }));
@@ -193,6 +209,10 @@ test('manages program keys and the LAN switch on the local api page', async ({ e
   await openConfig(page, '本机接口');
   await expect(page.getByRole('status').filter({ hasText: '正在运行' })).toBeVisible();
   await expect(page.locator('.api-address').first()).toHaveText(base);
+  // 关掉局域网之前，本机地址之外还列着局域网地址：关掉后只剩本机的，才说明开关起了作用。
+  const { lanAddresses } = await callApi(page, 'getLocalApiStatus');
+  expect(lanAddresses.length).toBeGreaterThan(0);
+  await expect(page.locator('.api-address')).toHaveCount(1 + lanAddresses.length);
 
   await page.getByLabel('名称', { exact: true }).fill('仓库');
   await page.getByRole('button', { name: '生成密钥' }).click();

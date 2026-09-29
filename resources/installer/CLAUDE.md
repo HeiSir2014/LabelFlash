@@ -9,6 +9,7 @@
 - **布局用逻辑像素**：所有坐标写在 `LAYOUT` 里，按 100% 缩放的逻辑像素写，生成时按比例换算。插件本身不会随系统缩放放大界面（`EnableDpi` 在这个版本里无效），所以每种缩放各生成一份皮肤，安装时按系统 DPI 挑最接近的那份。
 - **`skin-ui.nsh` 要自给自足**：自己 include 用到的头文件（`LogicLib`、`FileFunc`、`WinMessages`），不依赖 `installer.nsi` 的 include 顺序。这样换个简单的脚本也能引用它来预览界面。
 - **插件 DLL 必须和登记的一致**：哈希登记在 `NOTICE.md` 和 `scripts/installer/plugin.ts`。构建时逐字节校验，`.gitattributes` 把 `*.dll` 标为 binary。
+- **防火墙规则**：安装和卸载都经 `firewall.nsh` 运行 `firewall.ps1`（由 `build-skin.ts` 从 `src/shared/firewall-rule.ts` 生成，和程序里的按钮同一份脚本），只动本程序路径下的规则。PowerShell 写系统目录的绝对路径，用 `-Command` 把脚本当作代码块运行（组策略规定了执行策略时 `-File` 会被拦下）；路径按 PowerShell 单引号字符串转义（用户名里可以有单引号）。
 - **卸载程序只来自第一段**：它由 electron-builder 自带脚本加上 `resources/installer.nsh` 生成。卸载时的行为改在 `installer.nsh` 的 `customUnInstall` 里；覆盖安装和更新都会带 `--updated` 运行旧版的卸载程序，这时不能删开机自启项。
 
 ## NSIS 的坑（都实际遇到过）

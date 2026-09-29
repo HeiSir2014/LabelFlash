@@ -9,7 +9,7 @@ import { SettingRow } from '../SettingRow';
 
 /** 端口怎么选：和主进程的 apiPortOrder 一致，写在说明里给操作员看。 */
 const PORT_HINT =
-  '一般不用填：程序先用上次的端口，其次 17631、17632、17633，都被占用时自动换一个空闲端口。填了就优先用它，被占用时同样自动换，并在上面提示。';
+  '一般不用填：程序一直用上次成功的端口；它被占用时依次试 17631–17640，都被占用时由系统分配一个空闲端口。填了就优先用它，被占用时同样自动换，并在上面提示。';
 
 export interface LocalApiPageProps {
   api: LocalApiModel;

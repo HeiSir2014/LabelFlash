@@ -108,7 +108,7 @@
 - `requestId`：可选，UUID。同一调用方、同一 `requestId` 在 24 小时内重复提交，直接返回已有的任务，不再打印（AIP-155）。
 - `state`（AIP-216）：`QUEUED` → `PRINTING` → `SENT`（全部份数都已发送打印）或 `FAILED`。
   - 用 `SENT`，不说「已打印」：驱动回调成功只代表进了打印队列，和界面用词一致。
-  - 失败时 `failure` 是 `{ "reason": "NO_PRINTER", "message": "中文说明" }`。可能的原因：`NO_PRINTER`、`PRINTER_NOT_FOUND`、`PRINTER_NOT_READY`、`PRINT_TIMEOUT`、`PRINT_ERROR`。某一份失败时任务就是 `FAILED`，`sentCopies` 写明已经发送了几份；后面的份数不再打。
+  - 失败时 `failure` 是 `{ "reason": "NO_PRINTER", "message": "中文说明" }`。可能的原因：`NO_PRINTER`、`PRINTER_NOT_FOUND`、`PRINTER_NOT_READY`、`PRINT_TIMEOUT`、`PRINT_ERROR`、`INTERRUPTED`（程序在打完之前退出，见第 7 节）。某一份失败时任务就是 `FAILED`，`sentCopies` 写明已经发送了几份；后面的份数不再打。
   - 重复提交（同一 `requestId`）不算失败：直接返回已有的任务。
 - **Create 返回 200** 和状态为 `QUEUED` 的任务（AIP 标准方法返回资源本身），之后查询状态。
 - **batchCreate**（AIP-233）：请求 `{ "requests": [ {…}, … ] }`，返回 `{ "printJobs": [ … ] }`，顺序和请求一致。整批先校验，有一个参数不对整批都不收，错误里指出是第几个（`requests[12].fields`）。收下之后每张各自成功或失败。
@@ -217,9 +217,11 @@ SQLite 不能原地修改取值检查（CHECK），做法是：建新表 → 复
 
 | 表 | 内容 | 保留 |
 |---|---|---|
-| `api_jobs` | 任务编号、调用方、`requestId`、模板、份数、已发送份数、指定的打印机、状态、失败原因和说明、创建和更新时间 | 7 天。标签内容以打印记录表为准，不在两处各存一份 |
-| `api_job_records` | 任务 → 打印记录（每一份一条） | 跟随 `api_jobs` |
+| `api_jobs` | 任务编号、调用方、`requestId`、模板、请求里的字段和内容、份数、已发送份数、指定的打印机、状态、失败原因和说明、创建和更新时间 | 7 天。字段也要存：查询任务时要返回，排队中的任务要靠它打印；长期留存的是打印记录表 |
 | `api_keys` | 编号、名称、SHA-256 摘要、创建时间、最后使用时间 | 撤销时删除 |
+
+- 不另建「任务 → 打印记录」的对应表：任务只留 7 天，对应关系随之消失，对长期统计没有用；打印记录本身带调用方和时间。
+- **程序重启**：上次没打完的任务（`QUEUED`、`PRINTING`）标成 `FAILED`，原因 `INTERRUPTED`，不自动续打，免得程序一启动突然出纸。调用方按 `sentCopies` 决定补打多少。
 
 **设置里新增**
 

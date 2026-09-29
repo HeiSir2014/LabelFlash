@@ -4,7 +4,7 @@ import type { Clock, LabelJob, PrinterAdapter, PrinterInfo } from '../../core/ty
 import { renderLabelHtml } from './label-html';
 import { pageSizeMicrons } from './page-size';
 import type { PrinterProfiles } from './printer-profiles';
-import type { PrinterStatusMonitor } from './printer-status';
+import type { PrinterReadiness } from './printer-status';
 
 /** 打印时用的打印机列表缓存；界面上的「刷新」总是取最新列表。 */
 const PRINTER_LIST_TTL_MS = 5_000;
@@ -20,7 +20,8 @@ export class ElectronDriverAdapter implements PrinterAdapter {
 
   constructor(
     private readonly getWebContents: () => WebContents,
-    private readonly status: PrinterStatusMonitor,
+    /** 后台检测到的打印机状态（缓存）；null = 未知，不阻止打印。 */
+    private readonly readinessOf: (printerName: string) => PrinterReadiness | null,
     private readonly clock: Clock,
     private readonly profiles: PrinterProfiles,
   ) {}
@@ -37,7 +38,7 @@ export class ElectronDriverAdapter implements PrinterAdapter {
     if (!(await this.hasPrinter(printerName))) {
       throw new PrintError('PRINTER_NOT_FOUND', `Printer not found: ${printerName}`);
     }
-    const readiness = this.status.get(printerName);
+    const readiness = this.readinessOf(printerName);
     if (readiness && !readiness.ready) {
       throw new PrintError('PRINTER_NOT_READY', `Printer not ready: ${printerName}`, {
         detail: readiness.detail,

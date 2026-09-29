@@ -5,6 +5,11 @@ export const ALERT_COOLDOWN_MS = 30 * 60_000;
 /** 同一类问题每天最多提醒 2 次：无人处理时不反复打扰。 */
 export const MAX_ALERTS_PER_KIND_PER_DAY = 2;
 
+/** 限频按「打印机 + 问题」计：一台缺纸不能压住另一台的缺纸通知。用 NUL 分隔，打印机名里不会出现它。 */
+export function alertKey(printerName: string, detail: string): string {
+  return `${printerName}\u0000${detail}`;
+}
+
 interface KindHistory {
   day: string;
   countToday: number;

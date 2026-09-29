@@ -37,7 +37,7 @@ import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { PrinterProfiles } from './printing/printer-profiles';
-import { createReadinessProbe, PrinterStatusMonitor } from './printing/printer-status';
+import { createReadinessProbe, type PrinterReadiness, PrinterStatusMonitor } from './printing/printer-status';
 import { createHttpStepRunner } from './scan/http-step';
 import { RuleService } from './scan/rule-service';
 import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './scan/sandboxed-regex';
@@ -188,14 +188,21 @@ async function bootstrap(): Promise<void> {
     process.platform === 'win32'
       ? new PrinterProbeHost(spawnPowerShellProbe, PROBE_QUERY_TIMEOUT_MS, (message) => console.warn(message))
       : null;
+  const profiles = new PrinterProfiles((name) => queryDriverPaper(name, probeHost), systemClock);
+  const adapter = new ElectronDriverAdapter(
+    requireWebContents,
+    (name): PrinterReadiness | null => status.get(name),
+    systemClock,
+    profiles,
+  );
+  const probeReadiness = createReadinessProbe(probeHost);
   const status = new PrinterStatusMonitor(
-    createReadinessProbe(probeHost),
+    // 打印机名来自设置和模板：交给探测进程之前先核对系统里有这台打印机。
+    async (name): Promise<PrinterReadiness | null> => ((await adapter.hasPrinter(name)) ? probeReadiness(name) : null),
     createPrinterAlertNotifier(new AlertThrottle(systemClock), showMainWindow),
   );
   status.start();
-  void status.watch(settings.current.selectedPrinter);
-  const profiles = new PrinterProfiles((name) => queryDriverPaper(name, probeHost), systemClock);
-  const adapter = new ElectronDriverAdapter(requireWebContents, status, systemClock, profiles);
+  void status.watchPrinters(() => (settings.current.selectedPrinter ? [settings.current.selectedPrinter] : []));
   const outbox = new WebhookOutbox({
     store: new SqliteWebhookStore(database),
     send: createWebhookSender({
@@ -299,7 +306,7 @@ async function bootstrap(): Promise<void> {
     onSettingsChanged: async (next, previous) => {
       guard.setWindowMs(secondsToMs(next.dedupWindowSeconds));
       if (next.selectedPrinter !== previous.selectedPrinter) {
-        void status.watch(next.selectedPrinter);
+        void status.poll();
       }
       if (next.launchAtLogin !== previous.launchAtLogin) {
         applyLaunchAtLogin(next.launchAtLogin);

@@ -56,11 +56,12 @@ export function createReadinessProbe(
 /** 打印机从「可用 / 未知」变为「不能打印」（或不能打印的原因变了）时通知。 */
 export type NotReadyListener = (printerName: string, detail: string) => void;
 
-/** 后台轮询当前打印机状态；打印时直接读缓存，不增加出纸延迟。 */
+/** 后台轮询被分配到的打印机的状态；打印时直接读缓存，不增加出纸延迟。 */
 export class PrinterStatusMonitor {
   private readonly readiness = new Map<string, PrinterReadiness>();
-  private watched: string | null = null;
+  private watched: () => readonly string[] = () => [];
   private timer: ReturnType<typeof setInterval> | null = null;
+  private isPolling = false;
 
   constructor(
     private readonly probe: (printerName: string) => Promise<PrinterReadiness | null>,
@@ -80,26 +81,44 @@ export class PrinterStatusMonitor {
     }
   }
 
-  watch(printerName: string | null): Promise<void> {
-    this.watched = printerName;
-    this.readiness.clear();
+  /** 要检测哪些打印机：每次轮询都重新取（纸张分配、模板改了不用另外通知，调一次 poll 即可立即生效）。 */
+  watchPrinters(names: () => readonly string[]): Promise<void> {
+    this.watched = names;
     return this.poll();
   }
 
-  /** null = 未知（尚未查询、查询失败或非 Windows）。 */
+  /** null = 未知（尚未查询、查询失败、没有被检测或非 Windows）。 */
   get(printerName: string): PrinterReadiness | null {
     return this.readiness.get(printerName) ?? null;
   }
 
   async poll(): Promise<void> {
-    const printerName = this.watched;
-    if (!printerName) {
+    // 上一轮还没查完就跳过：Windows 上一台最长要等 10 秒，几台叠起来不能越积越多。
+    if (this.isPolling) {
       return;
     }
-    const result = await this.probe(printerName);
-    if (printerName !== this.watched) {
-      return;
+    this.isPolling = true;
+    try {
+      const names = [...new Set(this.watched())];
+      for (const name of [...this.readiness.keys()]) {
+        if (!names.includes(name)) {
+          this.readiness.delete(name);
+        }
+      }
+      for (const printerName of names) {
+        const result = await this.probe(printerName);
+        // 查询期间不再检测这台了（分配改了）：丢掉这个过期的结果。
+        if (this.watched().includes(printerName)) {
+          this.update(printerName, result);
+        }
+      }
+    } finally {
+      this.isPolling = false;
     }
+  }
+
+  /** 从能打变成不能打（或问题变了）才通知：检测列表变化不会让同样的问题再报一次。 */
+  private update(printerName: string, result: PrinterReadiness | null): void {
     const previous = this.readiness.get(printerName);
     if (result) {
       this.readiness.set(printerName, result);

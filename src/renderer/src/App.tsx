@@ -135,6 +135,7 @@ export function App() {
           html: samplePreview?.html ?? null,
           qrOmitted: samplePreview?.qrOmitted ?? false,
           feedKey: samplePreview?.templateId ?? effectiveTemplate.id,
+          paper: effectiveTemplate.paper,
         };
 
   const noteOptions = buildNoteOptions(settings?.notePresets ?? [], noteOverride);
@@ -233,7 +234,11 @@ export function App() {
               <PreviewToolbar
                 templates={templates.templates}
                 activeTemplateId={templates.active?.id ?? null}
-                usage={describePreviewUsage(station.scan?.preview ?? null, templates.active?.name ?? null)}
+                usage={describePreviewUsage(
+                  station.scan?.preview ?? null,
+                  templates.active?.name ?? null,
+                  samplePreview?.result.status === 'ok' ? samplePreview.result.printer : null,
+                )}
                 onActivate={(id) => void templates.activate(id)}
               />
             ),

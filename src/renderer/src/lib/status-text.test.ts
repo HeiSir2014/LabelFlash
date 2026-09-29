@@ -37,6 +37,7 @@ const OK_PREVIEW: LabelPreview = {
   templateName: '样衣标准（二维码在左）',
   isTemplateBound: true,
   qrOmitted: false,
+  paper: { widthMm: 60, heightMm: 40 },
 };
 const INVALID_PREVIEW = (reason: 'INVALID_CONTENT' | 'NO_MATCHING_RULE'): LabelPreview => ({
   result: { status: 'invalid', reason },
@@ -44,6 +45,7 @@ const INVALID_PREVIEW = (reason: 'INVALID_CONTENT' | 'NO_MATCHING_RULE'): LabelP
   templateName: null,
   isTemplateBound: false,
   qrOmitted: false,
+  paper: null,
 });
 
 const snapshot = (overrides: Partial<ScanSnapshot> = {}): ScanSnapshot => ({

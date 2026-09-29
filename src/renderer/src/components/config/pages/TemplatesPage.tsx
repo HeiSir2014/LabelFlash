@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { isBuiltInTemplateId, type LabelTemplate } from '../../../../../core/templates/template-model';
+import { DEFAULT_PAPER } from '../../../../../shared/label-paper';
 import { FIELD_NAME_LIST_ID } from '../../../lib/field-names';
 import type { TemplatePreview } from '../../../view-models/use-template-preview';
 import { DeleteButton } from '../../ConfirmButton';
@@ -90,6 +91,7 @@ function ListView({
           qrOmitted={preview?.qrOmitted ?? false}
           feedKey={preview?.templateId ?? 'none'}
           maxScale={MAX_PREVIEW_SCALE}
+          paper={selected?.paper ?? DEFAULT_PAPER}
           placeholder={previewPlaceholder(preview)}
         />
         {selected && (
@@ -201,6 +203,7 @@ function EditView({
           qrOmitted={preview?.qrOmitted ?? false}
           feedKey={preview?.templateId ?? 'none'}
           maxScale={MAX_PREVIEW_SCALE}
+          paper={draft.paper}
           placeholder={previewPlaceholder(preview)}
         />
       </section>

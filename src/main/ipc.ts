@@ -9,11 +9,12 @@ import {
   shell,
 } from 'electron';
 import type { PrintService } from '../core/print-service';
+import type { PrinterChoice } from '../core/printing/resolve-printer';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
-import { CUSTOM_TEMPLATE_PREFIX } from '../core/templates/template-model';
+import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { checkDriverPaper } from '../shared/driver-paper';
@@ -53,6 +54,7 @@ import { renderLabelHtml } from './printing/label-html';
 import type { PrinterDriver } from './printing/printer-driver';
 import type { PrinterProfiles } from './printing/printer-profiles';
 import type { PrinterStatusMonitor } from './printing/printer-status';
+import { DEFAULT_PRINTER_DPI } from './printing/qr-code';
 import { registerRuleIpc } from './scan/rule-ipc';
 import type { RuleService } from './scan/rule-service';
 import type { SqliteJobStore } from './storage/sqlite-job-store';
@@ -89,6 +91,8 @@ export interface IpcDeps {
   onSettingsChanged: (next: AppSettings, previous: AppSettings) => Promise<void>;
   /** 模板保存或删除之后：模板指定的打印机可能变了，要检测的打印机跟着变。 */
   onTemplatesChanged: () => void;
+  /** 这个模板用哪台打印机（和打印时同一个规则）：模板页预览草稿时用。 */
+  choosePrinter: (template: LabelTemplate) => Promise<PrinterChoice>;
 }
 
 /**
@@ -137,16 +141,25 @@ export function registerIpc(deps: IpcDeps): void {
     return next;
   };
 
+  /** 这张要打到的打印机的分辨率；没有打印机、或打印机不在系统里时按 203dpi（名字不在系统里就不交给系统命令）。 */
+  const dpiFor = async (result: PreviewResult): Promise<number> => {
+    const printerName = result.status === 'ok' ? result.printer.printerName : null;
+    return printerName !== null && (await deps.adapter.hasPrinter(printerName))
+      ? deps.profiles.dpiOf(printerName)
+      : DEFAULT_PRINTER_DPI;
+  };
   handle(IpcChannel.Preview, async (raw) => {
     const result = await deps.service.preview(requireRaw(raw));
-    return renderPreview(result, printTemplateFor(result));
+    return renderPreview(result, printTemplateFor(result), await dpiFor(result));
   });
   handle(IpcChannel.PreviewTemplate, async (raw, template) => {
     const result = await deps.service.preview(requireRaw(raw));
     const fallback = printTemplateFor(result).template;
     const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, fallback);
-    // 模板页指定了要看的模板，不是规则选的。
-    return renderPreview(result, { template: draft, isBound: false });
+    // 模板页指定了要看的模板，不是规则选的；打印机也按这个模板重新决定（示例内容本来绑的是别的模板）。
+    const forDraft: PreviewResult =
+      result.status === 'ok' ? { ...result, printer: await deps.choosePrinter(draft) } : result;
+    return renderPreview(forDraft, { template: draft, isBound: false }, await dpiFor(forDraft));
   });
   handle(IpcChannel.Print, (raw, options) =>
     deps.service.submit({ raw: requireRaw(raw), ...requirePrintOptions(options) }),
@@ -267,10 +280,11 @@ export function registerIpc(deps: IpcDeps): void {
   on(IpcChannel.WindowClose, () => deps.getWindow()?.close());
 }
 
-function renderPreview(result: PreviewResult, { template, isBound }: PrintTemplate): LabelPreview {
+/** 预览和实际打印用同一份 HTML：二维码按这张要打到的打印机的分辨率对齐。 */
+function renderPreview(result: PreviewResult, { template, isBound }: PrintTemplate, dpi: number): LabelPreview {
   if (result.status !== 'ok') {
-    return { result, html: null, templateName: null, isTemplateBound: false, qrOmitted: false };
+    return { result, html: null, templateName: null, isTemplateBound: false, qrOmitted: false, paper: null };
   }
-  const { html, qrOmitted } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() });
-  return { result, html, templateName: template.name, isTemplateBound: isBound, qrOmitted };
+  const { html, qrOmitted } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() }, dpi);
+  return { result, html, templateName: template.name, isTemplateBound: isBound, qrOmitted, paper: template.paper };
 }

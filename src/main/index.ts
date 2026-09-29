@@ -370,6 +370,7 @@ async function bootstrap(): Promise<void> {
     mobile,
     profiles,
     getWindow: () => mainWindow,
+    choosePrinter,
     onTemplatesChanged: () => {
       void status.poll();
       void warmProfiles();

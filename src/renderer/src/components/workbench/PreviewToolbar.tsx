@@ -36,6 +36,12 @@ export function PreviewToolbar({ templates, activeTemplateId, usage, onActivate 
           <span className="preview-toolbar__source">{usage.source}</span>
           <span className="preview-toolbar__separator"> · </span>
           <span className="preview-toolbar__used-template">{usage.template}</span>
+          {usage.printer && (
+            <>
+              <span className="preview-toolbar__separator"> · </span>
+              <span className="preview-toolbar__printer">{usage.printer}</span>
+            </>
+          )}
         </p>
       )}
     </div>

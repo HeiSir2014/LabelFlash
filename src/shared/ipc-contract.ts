@@ -7,6 +7,7 @@ import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
 import type { JobPage, JobQuery } from './job-history';
 import type { MobileStatus } from './mobile-status';
+import type { PaperSize } from './paper-sizes';
 import type { PrinterReadiness } from './printer-readiness';
 import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
@@ -95,6 +96,8 @@ export interface LabelPreview {
   isTemplateBound: boolean;
   /** 内容太长，二维码放不下被省略了。 */
   qrOmitted: boolean;
+  /** 这次用的模板的纸张（预览的软尺和标签框按它）；识别不了时为 null。 */
+  paper: PaperSize | null;
 }
 
 export type LookupImportResult =

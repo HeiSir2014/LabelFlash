@@ -13,6 +13,7 @@ const NO_PREVIEW: LabelPreview = {
   templateName: null,
   isTemplateBound: false,
   qrOmitted: false,
+  paper: null,
 };
 /** 识别超过这么久（通常是查找表或接口查询）才显示「正在查询」，快的扫码不闪一下。 */
 const QUERYING_DELAY_MS = 200;

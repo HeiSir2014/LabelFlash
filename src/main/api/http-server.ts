@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { isWebOrigin } from '../../shared/local-api';
 import { ApiError, errorBody } from './api-error';
 import type { Authenticator, Caller } from './authenticator';
 import { corsHeaders } from './cors';
-import { isLoopbackAddress, isLoopbackHost, isWebOrigin } from './network';
+import { isLoopbackAddress, isLoopbackHost } from './network';
 import type { RateLimiter } from './rate-limiter';
 import type { ApiRequest, ApiResponse } from './router';
 

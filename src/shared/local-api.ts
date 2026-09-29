@@ -21,6 +21,16 @@ export interface CreatedApiKey {
   secret: string;
 }
 
+/** 能按网站记住授权的来源：http 或 https 的网站（file:// 页面、沙盒 iframe 的 Origin 是 null）。 */
+export function isWebOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 /** 密钥名称：去掉首尾空白后 1–40 个字、不含控制字符；不合格返回 null。 */
 export function normalizeApiKeyName(value: unknown): string | null {
   if (typeof value !== 'string') {

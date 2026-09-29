@@ -30,13 +30,3 @@ export function isLoopbackHost(host: string | undefined, port: number): boolean 
   }
   return LOOPBACK_HOSTNAMES.has(host.slice(0, separator).toLowerCase()) && host.slice(separator + 1) === String(port);
 }
-
-/** 能按网站记住授权的来源：http 或 https 的网站（file:// 页面、沙盒 iframe 的 Origin 是 null）。 */
-export function isWebOrigin(origin: string): boolean {
-  try {
-    const url = new URL(origin);
-    return (url.protocol === 'http:' || url.protocol === 'https:') && url.origin === origin;
-  } catch {
-    return false;
-  }
-}

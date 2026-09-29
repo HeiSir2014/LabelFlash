@@ -5,6 +5,7 @@ import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { DEFAULT_NOTE_OVERRIDE, type NoteOverride } from '../core/templates/note-override';
 import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
 import { DEFAULT_PAPER } from './label-paper';
+import { isWebOrigin } from './local-api';
 import { paperKey, parsePaperKey } from './paper-sizes';
 import { sanitizeRelayUrl } from './relay-url';
 import { DEFAULT_VOICE_NAME, isVoiceName, VOICE_RATE_RANGE, type VoiceSettings } from './voice';
@@ -38,6 +39,12 @@ export interface AppSettings {
    * 规则见 src/shared/relay-url.ts。
    */
   mobileRelayUrl: string | null;
+  /** 本机接口的端口；null = 用默认的 17631，被占用时依次试 17632、17633。指定了就只用它。 */
+  apiPort: number | null;
+  /** 本机接口是否对局域网开放（局域网里的程序要带程序密钥）；关掉时只监听本机。 */
+  apiLanEnabled: boolean;
+  /** 允许调用本机接口的网站（http/https 的 origin），由电脑上的授权框加入，配置中心可以撤销。 */
+  apiAuthorizedOrigins: string[];
 }
 
 export const MS_PER_SECOND = 1_000;
@@ -49,6 +56,10 @@ export const MAX_NOTE_PRESETS = 20;
 export const MAX_PAPER_ASSIGNMENTS = 32;
 /** 扫码枪逐字输入只间隔几毫秒；80ms 足以区分「码里的换行」和「一次扫码结束」，人手按回车也感觉不到延迟。 */
 export const SCAN_LINE_GAP_RANGE = { min: 20, max: 500, default: 80 } as const;
+/** 本机接口的端口：1024 以下是系统保留端口，macOS、Linux 上普通程序不能监听。 */
+export const API_PORT_RANGE = { min: 1024, max: 65_535 } as const;
+/** 授权网站最多这么多个：一台电脑用到的网页系统不会太多；防止异常数据撑大设置。 */
+export const MAX_AUTHORIZED_ORIGINS = 50;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   paperPrinters: {},
@@ -66,6 +77,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   scanLineGapMs: SCAN_LINE_GAP_RANGE.default,
   webhooks: [],
   mobileRelayUrl: null,
+  apiPort: null,
+  // 局域网里的客户端软件是主要用法之一；没有程序密钥时局域网请求一律拒绝，默认开着也不会被随便调用。
+  apiLanEnabled: true,
+  apiAuthorizedOrigins: [],
 };
 
 export function sanitizeSettings(value: unknown): AppSettings {
@@ -100,7 +115,28 @@ export function sanitizeSettings(value: unknown): AppSettings {
     webhooks: sanitizeWebhooks(input['webhooks']),
     // 不合法的地址当作没填，回到默认地址：填错一次不该让手机扫码一直连不上。
     mobileRelayUrl: sanitizeRelayUrl(input['mobileRelayUrl']),
+    apiPort: sanitizeApiPort(input['apiPort']),
+    apiLanEnabled: sanitizeBoolean(input['apiLanEnabled'], DEFAULT_SETTINGS.apiLanEnabled),
+    apiAuthorizedOrigins: sanitizeOrigins(input['apiAuthorizedOrigins']),
   };
+}
+
+/** 端口不合法时回到默认端口（不夹到范围里）：夹出来的端口不是用户想要的。 */
+function sanitizeApiPort(value: unknown): number | null {
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= API_PORT_RANGE.min &&
+    value <= API_PORT_RANGE.max
+    ? value
+    : null;
+}
+
+function sanitizeOrigins(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const origins = value.filter((item): item is string => typeof item === 'string' && isWebOrigin(item));
+  return [...new Set(origins)].slice(0, MAX_AUTHORIZED_ORIGINS);
 }
 
 function sanitizeVoice(value: unknown): VoiceSettings {

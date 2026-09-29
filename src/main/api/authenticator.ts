@@ -1,6 +1,7 @@
+import { isWebOrigin } from '../../shared/local-api';
 import { ApiError } from './api-error';
 import { hashApiKey } from './api-keys';
-import { isLoopbackAddress, isLoopbackHost, isWebOrigin } from './network';
+import { isLoopbackAddress, isLoopbackHost } from './network';
 
 /** 通过授权的调用方。 */
 export interface Caller {

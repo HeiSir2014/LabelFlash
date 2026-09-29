@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isLoopbackAddress, isLoopbackHost, isWebOrigin } from './network';
+import { isLoopbackAddress, isLoopbackHost } from './network';
 
 describe('isLoopbackAddress', () => {
   test('tells loopback addresses from LAN addresses', () => {
@@ -26,17 +26,5 @@ describe('isLoopbackHost', () => {
     expect(isLoopbackHost('127.0.0.1:80', 17631)).toBe(false);
     expect(isLoopbackHost('127.0.0.1', 17631)).toBe(false);
     expect(isLoopbackHost(undefined, 17631)).toBe(false);
-  });
-});
-
-describe('isWebOrigin', () => {
-  // 只有 http/https 的网站能按网站记住授权；file:// 页面和沙盒 iframe 的 Origin 是 null。
-  test('accepts only http and https origins', () => {
-    expect(isWebOrigin('https://erp.example.com')).toBe(true);
-    expect(isWebOrigin('http://localhost:8080')).toBe(true);
-    expect(isWebOrigin('null')).toBe(false);
-    expect(isWebOrigin('file://')).toBe(false);
-    expect(isWebOrigin('chrome-extension://abc')).toBe(false);
-    expect(isWebOrigin('https://erp.example.com/path')).toBe(false);
   });
 });

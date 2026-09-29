@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  API_PORT_RANGE,
   type AppSettings,
   DEFAULT_SETTINGS,
   HISTORY_LIMIT_RANGE,
+  MAX_AUTHORIZED_ORIGINS,
   MAX_DEDUP_WINDOW_SECONDS,
   MAX_NOTE_PRESETS,
   MAX_PAPER_ASSIGNMENTS,
@@ -46,6 +48,9 @@ describe('sanitizeSettings', () => {
         },
       ],
       mobileRelayUrl: 'https://relay.example.com/labelflash/',
+      apiPort: 18000,
+      apiLanEnabled: false,
+      apiAuthorizedOrigins: ['https://erp.example.com', 'http://localhost:8080'],
     };
     expect(sanitizeSettings(settings)).toEqual(settings);
   });
@@ -159,5 +164,38 @@ describe('paperPrinters', () => {
   // 只有设置里完全没有纸张分配（1.0.x 升级上来）才迁移；分配表坏了不能把旧打印机请回来。
   test('only migrates when there is no paper assignment at all', () => {
     expect(sanitizeSettings({ selectedPrinter: '旧打印机', paperPrinters: null }).paperPrinters).toEqual({});
+  });
+});
+
+describe('local api settings', () => {
+  // 局域网里的客户端软件是主要用法之一：默认开启（仍然要程序密钥才能调用）。
+  test('uses the default ports and opens the LAN by default', () => {
+    expect(DEFAULT_SETTINGS.apiPort).toBeNull();
+    expect(DEFAULT_SETTINGS.apiLanEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.apiAuthorizedOrigins).toEqual([]);
+  });
+
+  test('accepts only unprivileged whole-number ports', () => {
+    expect(sanitizeSettings({ apiPort: API_PORT_RANGE.min }).apiPort).toBe(API_PORT_RANGE.min);
+    expect(sanitizeSettings({ apiPort: API_PORT_RANGE.max }).apiPort).toBe(API_PORT_RANGE.max);
+    for (const port of [80, 70_000, 18_000.5, '18000', -1]) {
+      expect(sanitizeSettings({ apiPort: port }).apiPort).toBeNull();
+    }
+  });
+
+  test('keeps only distinct web origins, up to the limit', () => {
+    const origins = [
+      'https://erp.example.com',
+      'https://erp.example.com',
+      'https://erp.example.com/path',
+      'null',
+      'file://',
+      7,
+      ...Array.from({ length: MAX_AUTHORIZED_ORIGINS + 5 }, (_, index) => `https://site${index}.example.com`),
+    ];
+    const kept = sanitizeSettings({ apiAuthorizedOrigins: origins }).apiAuthorizedOrigins;
+    expect(kept[0]).toBe('https://erp.example.com');
+    expect(kept).toHaveLength(MAX_AUTHORIZED_ORIGINS);
+    expect(new Set(kept).size).toBe(kept.length);
   });
 });

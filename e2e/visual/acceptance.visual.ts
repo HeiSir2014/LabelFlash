@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { type HttpStep, STEP_LIMITS } from '../../src/core/scan/enrich-model';
+import type { FakePrinterSpec } from '../../src/main/printing/fake-printers';
 import { RECENT_DELIVERY_COUNT } from '../../src/shared/ipc-contract';
 import { HISTORY_LIMIT_RANGE } from '../../src/shared/settings';
 import {
@@ -16,7 +17,7 @@ import {
   stubPrinting,
   typeLikeScanner,
 } from '../support/app-helpers';
-import { APP_ROOT } from '../support/electron-app';
+import { APP_ROOT, type LaunchOptions } from '../support/electron-app';
 import { expect, test } from '../support/fixtures';
 import { connectTestPhone, type LocalRelay, startLocalRelay, type TestPhone } from '../support/relay-server';
 import {
@@ -40,7 +41,7 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的 V01–V34）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 视觉验收（设计文档 §8.2 的 V01–V37）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
  * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
@@ -107,6 +108,8 @@ interface Item {
   title: string;
   points: string;
   sizes?: readonly Size[];
+  /** 启动选项，例如用假打印机代替系统打印机。 */
+  launch?: LaunchOptions;
   setup?: (ctx: Context) => Promise<void>;
   shots?: Shot[];
   /** 不走通用的截图流程，自己截（缩放、系统窗口截图）。 */
@@ -141,6 +144,33 @@ async function useFakePrinter(ctx: Context): Promise<void> {
 }
 
 // ── 验收项 ──
+
+/**
+ * V35–V37：几台假打印机（打印只记下来，不碰真打印机）。驱动纸张各不相同，面单机B 缺纸，
+ * 家用打印机没有负责任何纸张（只显示驱动纸张，不提醒）。
+ */
+const PAPER_PRINTERS: FakePrinterSpec[] = [
+  { name: '标签机A', paper: { widthMm: 60, heightMm: 40, dpi: 203 }, readiness: { ready: true } },
+  {
+    name: '面单机B',
+    paper: { widthMm: 100, heightMm: 180, dpi: 203 },
+    readiness: { ready: false, detail: '缺纸', issue: 'paperOut' },
+  },
+  { name: '面单机C', paper: { widthMm: 100, heightMm: 180, dpi: 300 }, readiness: { ready: true } },
+  { name: '家用打印机', paper: { widthMm: 210, heightMm: 297, dpi: 600 }, readiness: null },
+];
+
+/** 复制通用模板，改成指定的纸张（和打印机）后保存；返回新模板的 id。 */
+async function saveCopyOnPaper(
+  page: Page,
+  name: string,
+  paper: { widthMm: number; heightMm: number },
+  printer: string | null = null,
+): Promise<string> {
+  const copy = await callApi(page, 'duplicateTemplate', 'builtin:generic');
+  await callApi(page, 'saveTemplate', { ...copy, name, paper, printer });
+  return copy.id;
+}
 
 /** V28 每次扫一个新码：旧的查询还没返回也不影响，界面只认最新的一次扫码。 */
 let slowScanCount = 0;
@@ -980,6 +1010,97 @@ const ITEMS: Item[] = [
       },
     ],
   },
+  {
+    id: 'V35',
+    title: '打印机页 · 纸张分配',
+    points:
+      '顶部「纸张 → 打印机」表每种纸一行，下拉框完整显示打印机名；没有可用打印机的纸标红，旁边有「建议：…」按钮；下面每台打印机显示状态（缺纸的红点和「缺纸」）、「负责：…」、驱动纸张（对不上时的提醒和「打开打印首选项」）；没负责纸张的打印机只显示驱动纸张；标题栏胶囊显示出问题的那一台',
+    launch: { fakePrinters: PAPER_PRINTERS },
+    setup: async ({ page }) => {
+      await saveCopyOnPaper(page, '极兔面单', { widthMm: 100, heightMm: 180 });
+      await saveCopyOnPaper(page, '顺丰面单', { widthMm: 100, heightMm: 150 }, '面单机B');
+      await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A' } });
+      await page.reload();
+      await expect(page.locator('.paper-row')).toHaveCount(3);
+      await expect(page.locator('.printer-chip')).toHaveText('面单机B（缺纸）');
+    },
+  },
+  {
+    id: 'V36',
+    title: '模板编辑器 · 纸张和打印机',
+    points:
+      '「基本」区的纸张尺寸下拉框（预设名带适用的快递）、自定义时的宽和高两个输入框、打印机下拉框（「按纸张分配（当前是 …）」、指定的打印机不在这台电脑上时标明）；换纸张后右侧预览的软尺跟着变；模板列表每行下面是纸张和实际会用的打印机',
+    launch: { fakePrinters: PAPER_PRINTERS },
+    setup: async ({ page }) => {
+      await saveCopyOnPaper(page, '旧电脑的面单', { widthMm: 100, heightMm: 180 }, '旧电脑上的打印机');
+      await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x180': '面单机C' } });
+      await page.reload();
+    },
+    shots: [
+      {
+        label: '面单预设 · 指定的打印机不在这台电脑上',
+        prepare: async ({ page }) => {
+          // 每种尺寸都从头打开这个模板：上一张截图改过草稿（自定义尺寸、按纸张分配）。
+          await page.reload();
+          await expect(page.locator('.scan-bar__input')).toBeFocused();
+          await openConfig(page, '模板');
+          await page.locator('.template-item', { hasText: '旧电脑的面单' }).click();
+          await page.getByRole('button', { name: '编辑' }).click();
+          const form = page.locator('.template-form');
+          await form
+            .getByLabel('纸张尺寸')
+            .selectOption({ label: '100×180 二联面单（申通、极兔、中通、圆通、韵达、顺丰、EMS）' });
+          await expect(form.getByLabel('打印机').locator('option:checked')).toHaveText(
+            '旧电脑上的打印机（这台电脑上没有）',
+          );
+        },
+      },
+      {
+        label: '自定义尺寸 · 按纸张分配',
+        prepare: async ({ page }) => {
+          const form = page.locator('.template-form');
+          await form.getByLabel('纸张尺寸').selectOption({ label: '自定义…' });
+          await form.getByLabel('纸张宽').fill('88');
+          await form.getByLabel('纸张高').fill('55');
+          await form.getByLabel('打印机').selectOption('');
+          await blurActiveElement(page);
+          await expect(page.locator('.template-editing .ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 88 /);
+        },
+      },
+    ],
+  },
+  {
+    id: 'V37',
+    title: '非 60×40 的预览',
+    points:
+      '50×30、100×100 两种纸：软尺刻度是实际毫米数，标签框比例正确；二维码和字号放得下，没有被裁掉；工具条显示打印机',
+    launch: { fakePrinters: PAPER_PRINTERS },
+    shots: [
+      {
+        label: '50×30 标签',
+        prepare: async ({ page }) => {
+          const id = await saveCopyOnPaper(page, '小标签', { widthMm: 50, heightMm: 30 });
+          await callApi(page, 'updateSettings', { activeTemplateId: id, autoPrint: false, paperPrinters: {} });
+          await page.reload();
+          // 只有「整段内容」规则认得：用当前模板（规则没指定模板）。
+          await scan(page, '订单 A20260929001 小标签');
+          await expect(page.locator('.preview-toolbar__usage')).toContainText('模板：小标签');
+          await expect(page.locator('.ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 50 /);
+        },
+      },
+      {
+        label: '100×100 标签',
+        prepare: async ({ page }) => {
+          const id = await saveCopyOnPaper(page, '箱唛', { widthMm: 100, heightMm: 100 });
+          await callApi(page, 'updateSettings', { activeTemplateId: id, autoPrint: false, paperPrinters: {} });
+          await page.reload();
+          await scan(page, '订单 A20260929001 箱唛');
+          await expect(page.locator('.preview-toolbar__usage')).toContainText('模板：箱唛');
+          await expect(page.locator('.ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 100 /);
+        },
+      },
+    ],
+  },
 ];
 
 /** V32：本机中转服务和一部测试手机（每种尺寸共用，只连一次）。 */
@@ -1004,7 +1125,7 @@ test.afterAll(async () => {
 for (const item of ITEMS) {
   // 程序由 electronApp 夹具启动：用例结束时（包括失败时）关掉程序、删掉数据目录。
   test(`${item.id} ${item.title}`, async ({ electronApp }) => {
-    const { app, page, userData } = await electronApp.launch();
+    const { app, page, userData } = await electronApp.launch(item.launch);
     const window = (await app.browserWindow(page)) as WindowHandle;
     const ctx: Context = { app, page, userData, window, notes: [], cleanups: [] };
     const record: ItemRecord = { id: item.id, title: item.title, points: item.points, shots: [], notes: ctx.notes };

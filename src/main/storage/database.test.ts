@@ -21,6 +21,8 @@ describe('openDatabase', () => {
     const db = openDatabase(':memory:');
     expect(userVersion(db)).toBe(MIGRATIONS.length);
     expect(tableNames(db)).toEqual([
+      'api_jobs',
+      'api_keys',
       'jobs',
       'jobs_search',
       'lookup_rows',

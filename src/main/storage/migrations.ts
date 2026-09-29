@@ -139,4 +139,39 @@ export const MIGRATIONS: readonly string[] = [
     INSERT INTO jobs_search (jobs_search, rowid, raw) VALUES ('delete', old.seq, old.raw);
   END;
   `,
+  // 4：本机接口的任务和程序密钥。
+  // 任务保留 7 天：请求里的字段也存着，查询任务时要返回，排队中的任务要靠它打印；长期留存的是打印记录。
+  // 密钥只存 SHA-256 摘要，不存原文。
+  `
+  CREATE TABLE api_jobs (
+    seq             INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              TEXT    NOT NULL UNIQUE,
+    caller          TEXT    NOT NULL,
+    request_id      TEXT,
+    template_id     TEXT    NOT NULL,
+    fields          TEXT    NOT NULL,
+    content         TEXT,
+    copies          INTEGER NOT NULL,
+    sent_copies     INTEGER NOT NULL,
+    printer         TEXT,
+    state           TEXT    NOT NULL CHECK (state IN ('QUEUED', 'PRINTING', 'SENT', 'FAILED')),
+    failure_reason  TEXT             CHECK (failure_reason IN
+      ('NO_PRINTER', 'PRINTER_NOT_FOUND', 'PRINTER_NOT_READY', 'PRINT_TIMEOUT', 'PRINT_ERROR', 'INTERRUPTED')),
+    failure_message TEXT,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+  ) STRICT;
+  CREATE INDEX api_jobs_caller ON api_jobs (caller, seq);
+  CREATE INDEX api_jobs_request ON api_jobs (caller, request_id) WHERE request_id IS NOT NULL;
+  CREATE INDEX api_jobs_unfinished ON api_jobs (seq) WHERE state IN ('QUEUED', 'PRINTING');
+  CREATE INDEX api_jobs_created ON api_jobs (created_at);
+
+  CREATE TABLE api_keys (
+    id           TEXT    PRIMARY KEY,
+    name         TEXT    NOT NULL,
+    hash         TEXT    NOT NULL UNIQUE,
+    created_at   INTEGER NOT NULL,
+    last_used_at INTEGER
+  ) STRICT;
+  `,
 ];

@@ -1,0 +1,31 @@
+/** 本机接口里主进程和界面共用的类型和规则。 */
+
+/** 程序密钥的名称上限：配置中心一行放得下（例如「ERP 服务器」「仓库面单机」）。 */
+export const API_KEY_NAME_LENGTH = 40;
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: 名称里不允许任何控制字符
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
+
+/** 一个程序密钥（不含密钥原文：原文只在生成时显示一次）。 */
+export interface ApiKeyInfo {
+  id: string;
+  name: string;
+  createdAt: number;
+  /** 最后一次使用的时间（按分钟记）；没用过为 null。 */
+  lastUsedAt: number | null;
+}
+
+/** 刚生成的密钥：secret 是原文，只在这一次返回。 */
+export interface CreatedApiKey {
+  key: ApiKeyInfo;
+  secret: string;
+}
+
+/** 密钥名称：去掉首尾空白后 1–40 个字、不含控制字符；不合格返回 null。 */
+export function normalizeApiKeyName(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const name = value.trim();
+  return name.length > 0 && name.length <= API_KEY_NAME_LENGTH && !CONTROL_CHARACTERS.test(name) ? name : null;
+}

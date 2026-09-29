@@ -1,0 +1,22 @@
+[package]
+name = "ocr-addon"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+# Node-API 扩展：只做参数转换和异步任务，识别都在 ocr-core 里。
+[lib]
+crate-type = ["cdylib"]
+
+# napi-rs 的宏会展开出 unsafe 代码，这个包不用工作区的 forbid(unsafe_code)。
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[dependencies]
+ocr-core = { path = "../ocr-core" }
+# napi4：线程池上的异步任务需要；Node 18+ 和 Bun 都支持。
+napi = { version = "3.13", default-features = false, features = ["napi4"] }
+napi-derive = "3.6"
+
+[build-dependencies]
+napi-build = "2.5"

@@ -14,6 +14,7 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["node", "bun", "electron-vite/node"]
   },
   "include": [
@@ -22,6 +23,7 @@
     "src/main/**/*",
     "src/preload/**/*",
     "scripts/**/*",
+    "native/ocr/node/**/*",
     "electron.vite.config.ts"
   ]
 }

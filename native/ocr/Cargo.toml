@@ -1,0 +1,27 @@
+# 本地 OCR 引擎（设计：docs/superpowers/specs/2026-09-30-ocr-engine-design.md）。
+# ocr-core：纯 Rust 的识别流水线；ocr-addon：给 Bun / Node.js 用的 Node-API 扩展。
+[workspace]
+resolver = "2"
+members = ["crates/ocr-core", "crates/ocr-addon"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# 单元测试里有逐像素的图像处理：依赖和本包都开优化，否则调试构建慢几十倍。
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

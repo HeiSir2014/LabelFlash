@@ -1,0 +1,18 @@
+[package]
+name = "ocr-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# ONNX Runtime：Windows 下载官方静态库链接进来，得到自包含的扩展；不用 ndarray，张量直接用切片。
+# api-23：只要求 ONNX Runtime 1.23 的接口，将来 macOS 可以运行时加载官方 1.23 的 universal2 动态库。
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "tls-native", "api-23"] }
+thiserror = "2"
+
+[dev-dependencies]
+# 只在集成测试里解码 JPEG 样张；引擎本身不做图片编解码。
+jpeg-decoder = { version = "0.3", default-features = false }

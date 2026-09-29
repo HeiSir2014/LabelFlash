@@ -1,0 +1,7 @@
+{
+  "name": "ocr-node",
+  "private": true,
+  "type": "module",
+  "description": "本地 OCR 引擎的 TypeScript 包装（Bun 和 Node.js 共用同一个 Node-API 扩展）",
+  "main": "src/index.ts"
+}

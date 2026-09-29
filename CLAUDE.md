@@ -48,6 +48,10 @@
 | `bun run relay:dev` | 本机构建并启动手机扫码的中转服务（http://localhost:3180） |
 | `bun run test:relay-browser` | 用 Edge 的假摄像头跑一遍扫码页（需要本机有 Edge） |
 | `bun run relay:deploy` | 发布中转服务，目标服务器从环境变量读取（见 `relay/README.md`） |
+| `bun run ocr:models` | 下载本地 OCR 的模型到 `models/`（按固定版本和 SHA-256 校验，不进 git） |
+| `bun run ocr:build` | 编译本地 OCR 的 Node-API 扩展（Rust，需要 cargo） |
+| `bun run ocr:test` | 本地 OCR 引擎的 Rust 测试、clippy 和格式检查（有模型时跑真实模型的集成测试） |
+| `bun run ocr:example` / `bun run ocr:bench` | 用样张在 Bun 和 Node.js 上各识别一次 / 跑 benchmark |
 
 ## 提交前必须通过
 
@@ -71,6 +75,7 @@ scripts       构建脚本（bundle 检查、图标、安装包、中转服务�
 resources     图标、托盘图标、安装包资源
 e2e           Playwright 端到端测试
 relay         手机扫码：云端中转服务（Bun）和手机扫码页，单独部署，不进安装包
+native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addon）+ TypeScript 包装（node/）；还没接进程序
 ```
 
 依赖方向：renderer → preload → main → core。shared 可以被任何一层引用，它自己只依赖 core。

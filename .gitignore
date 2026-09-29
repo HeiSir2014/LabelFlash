@@ -6,3 +6,8 @@ dist/
 test-results/
 playwright-report/
 .gstack/
+
+# 本地 OCR：模型由 bun run ocr:models 下载；Rust 的构建输出和编好的扩展不进 git
+models/
+native/ocr/target/
+*.node

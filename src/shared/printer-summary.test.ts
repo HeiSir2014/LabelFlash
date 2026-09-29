@@ -45,7 +45,11 @@ describe('phonePrinterLabel', () => {
   test('is the printer name, a count, or nothing', () => {
     expect(phonePrinterLabel([A])).toBe('标签机A');
     expect(phonePrinterLabel([A, { ...B, readiness: null }])).toBe('2 台');
-    expect(phonePrinterLabel([A, B])).toBe('2 台就绪');
     expect(phonePrinterLabel([])).toBeNull();
+  });
+
+  // 手机上的汇总不随状态变化推送：不说「就绪」这种可能已经过时的话。
+  test('does not tell the phone that printers are ready', () => {
+    expect(phonePrinterLabel([A, B])).toBe('2 台');
   });
 });

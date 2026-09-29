@@ -62,6 +62,8 @@ export class PrinterStatusMonitor {
   private watched: () => readonly string[] = () => [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private isPolling = false;
+  /** 正在检测时又被要求检测：这一轮完了再补一轮。 */
+  private isPollRequested = false;
 
   constructor(
     private readonly probe: (printerName: string) => Promise<PrinterReadiness | null>,
@@ -93,8 +95,9 @@ export class PrinterStatusMonitor {
   }
 
   async poll(): Promise<void> {
-    // 上一轮还没查完就跳过：Windows 上一台最长要等 10 秒，几台叠起来不能越积越多。
+    // 上一轮还没查完就不叠加（Windows 上一台最长要等 10 秒）：记下来，这一轮完了再补一轮，名单变化不会被漏掉。
     if (this.isPolling) {
+      this.isPollRequested = true;
       return;
     }
     this.isPolling = true;
@@ -114,6 +117,10 @@ export class PrinterStatusMonitor {
       }
     } finally {
       this.isPolling = false;
+    }
+    if (this.isPollRequested) {
+      this.isPollRequested = false;
+      await this.poll();
     }
   }
 

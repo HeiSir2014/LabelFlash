@@ -110,18 +110,23 @@ describe('PrinterStatusMonitor', () => {
     expect(notified).toEqual(['B', 'C']);
   });
 
-  // Windows 上一台最长要查 10 秒：上一轮没查完时不叠加新的一轮。
-  test('skips a poll while the previous one is still running', async () => {
+  // 正在检测时又要求检测（设置保存、窗口刚建好）：这一轮完了再补一轮，不丢掉这次请求。
+  test('runs one more poll after the current one when asked during a poll', async () => {
     let probes = 0;
     let release: () => void = () => {};
     const monitor = new PrinterStatusMonitor(() => {
       probes += 1;
-      return new Promise((resolve) => (release = () => resolve({ ready: true })));
+      return probes === 1
+        ? new Promise((resolve) => (release = () => resolve({ ready: true })))
+        : Promise.resolve({ ready: true });
     });
     const first = monitor.watchPrinters(() => ['A']);
-    await monitor.poll();
+    const second = monitor.poll();
+    // 不叠加：上一轮没查完时不开始新的查询。
+    expect(probes).toBe(1);
     release();
     await first;
-    expect(probes).toBe(1);
+    await second;
+    expect(probes).toBe(2);
   });
 });

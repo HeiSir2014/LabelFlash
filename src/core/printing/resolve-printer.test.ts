@@ -56,4 +56,11 @@ describe('resolvePrinter', () => {
   test('keeps an assigned printer even when it is not installed', () => {
     expect(resolvePrinter(LABEL, ASSIGNED, []).printerName).toBe('标签机A');
   });
+
+  // 两种尺寸很接近的纸都分配了打印机：按最接近的那种纸，不按分配表里的先后。
+  test('matches the nearest assigned paper within the tolerance', () => {
+    const assigned = { '100x149.8': '面单机甲', '100x150.8': '面单机乙' };
+    const target = { paper: { widthMm: 100, heightMm: 150.6 }, printer: null };
+    expect(resolvePrinter(target, assigned, []).printerName).toBe('面单机乙');
+  });
 });

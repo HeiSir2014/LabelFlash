@@ -14,7 +14,7 @@ import { recognize } from '../core/scan/recognize';
 import { RuleCatalog } from '../core/scan/rule-catalog';
 import { TemplateCatalog } from '../core/templates/template-catalog';
 import type { LabelTemplate } from '../core/templates/template-model';
-import { systemClock } from '../core/types';
+import { type PrinterInfo, systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { IpcChannel } from '../shared/ipc-contract';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
@@ -205,6 +205,10 @@ async function bootstrap(): Promise<void> {
    * 下一轮状态检测（窗口建好之后）再查。
    */
   const isInstalled = async (name: string): Promise<boolean> => {
+    // 窗口还没建好时直接按「没有」：不去碰适配器（否则共享的打印机列表查询会以失败收场），窗口建好后会再检测。
+    if (fakePrinters === null && (!mainWindow || mainWindow.isDestroyed())) {
+      return false;
+    }
     try {
       return await adapter.hasPrinter(name);
     } catch (error) {
@@ -310,12 +314,16 @@ async function bootstrap(): Promise<void> {
     settings: () => settings.current,
     buildDefaultRelayUrl: BUILD_DEFAULT_RELAY_URL,
     printerLabel: async () => {
-      const known = await adapter.knownPrinterNames().catch((error: unknown): string[] => {
+      const known = await adapter.listPrinters().catch((error: unknown): PrinterInfo[] => {
         console.warn('[mobile] cannot list printers for the phone header', error);
         return [];
       });
+      // 手机上显示界面里的名字（macOS 上系统名是打印队列名）。
       return phonePrinterLabel(
-        assignedPrinterNames().map((name) => ({ name, isListed: known.includes(name), readiness: status.get(name) })),
+        assignedPrinterNames().map((name) => {
+          const printer = known.find((item) => item.name === name);
+          return { name: printer?.displayName ?? name, isListed: printer !== undefined, readiness: status.get(name) };
+        }),
       );
     },
     submit: (request) => service.submit(request),
@@ -374,6 +382,8 @@ async function bootstrap(): Promise<void> {
     onTemplatesChanged: () => {
       void status.poll();
       void warmProfiles();
+      // 模板指定的打印机可能变了：手机顶部的打印机汇总跟着变。
+      mobile.printersChanged();
     },
     onSettingsChanged: async (next, previous) => {
       guard.setWindowMs(secondsToMs(next.dedupWindowSeconds));

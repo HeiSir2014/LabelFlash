@@ -129,9 +129,12 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
  * 保存过一次设置后 paperPrinters 就存在了，以后不再读 selectedPrinter，清空分配也不会让旧打印机回来。
  */
 function sanitizePaperPrinters(value: unknown, legacySelected: unknown): Record<string, string> {
-  if (!isRecord(value)) {
+  if (value === undefined) {
     const legacy = sanitizePrinterName(legacySelected);
     return legacy === null ? {} : { [paperKey(DEFAULT_PAPER)]: legacy };
+  }
+  if (!isRecord(value)) {
+    return {};
   }
   const result: Record<string, string> = {};
   for (const [key, name] of Object.entries(value)) {

@@ -38,15 +38,14 @@ export function describePrintersSummary(printers: readonly PrinterSummaryInput[]
   return { tone: isKnown ? 'ready' : 'unknown', text: `打印机 ${printers.length} 台${isKnown ? '就绪' : ''}` };
 }
 
-/** 手机顶部「打印机：」后面的文字；没有分配打印机时为 null（手机按原来的「没有打印机」显示）。 */
+/**
+ * 手机顶部「打印机：」后面的文字；没有分配打印机时为 null（手机按原来的「没有打印机」显示）。
+ * 只说名字或台数，不说「就绪」：这段文字只在手机加入和分配变化时推送，状态变了手机上不会跟着变。
+ */
 export function phonePrinterLabel(printers: readonly PrinterSummaryInput[]): string | null {
   const [only] = printers;
   if (!only) {
     return null;
   }
-  if (printers.length === 1) {
-    return only.name;
-  }
-  const isReady = printers.every((printer) => printer.isListed && printer.readiness?.ready === true);
-  return `${printers.length} 台${isReady ? '就绪' : ''}`;
+  return printers.length === 1 ? only.name : `${printers.length} 台`;
 }

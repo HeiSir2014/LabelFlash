@@ -101,6 +101,11 @@ export class MobileStation {
     this.host?.stop('quit');
   }
 
+  /** 被分配到的打印机变了（例如模板指定了别的打印机）：告诉在线的手机新的打印机汇总。 */
+  printersChanged(): void {
+    this.host?.printerChanged();
+  }
+
   settingsChanged(next: StationSettings, previous: StationSettings): void {
     // 设置每次保存都是新对象：按内容比较，分配没变时不打扰手机。
     if (JSON.stringify(next.paperPrinters) !== JSON.stringify(previous.paperPrinters)) {

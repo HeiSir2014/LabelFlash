@@ -45,11 +45,17 @@ function findAssigned(paper: PaperSize, paperPrinters: Readonly<Record<string, s
   if (exact !== undefined) {
     return exact;
   }
+  // 容差内有几种纸时取最接近的，不按分配表里的先后。
+  let nearest: { printer: string; distance: number } | null = null;
   for (const [key, printer] of Object.entries(paperPrinters)) {
     const assigned = parsePaperKey(key);
-    if (assigned !== null && isSamePaper(assigned, paper)) {
-      return printer;
+    if (assigned === null || !isSamePaper(assigned, paper)) {
+      continue;
+    }
+    const distance = Math.abs(assigned.widthMm - paper.widthMm) + Math.abs(assigned.heightMm - paper.heightMm);
+    if (nearest === null || distance < nearest.distance) {
+      nearest = { printer, distance };
     }
   }
-  return null;
+  return nearest?.printer ?? null;
 }

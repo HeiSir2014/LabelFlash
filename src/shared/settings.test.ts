@@ -155,4 +155,9 @@ describe('paperPrinters', () => {
   test('has no printer assigned by default', () => {
     expect(sanitizeSettings({}).paperPrinters).toEqual({});
   });
+
+  // 只有设置里完全没有纸张分配（1.0.x 升级上来）才迁移；分配表坏了不能把旧打印机请回来。
+  test('only migrates when there is no paper assignment at all', () => {
+    expect(sanitizeSettings({ selectedPrinter: '旧打印机', paperPrinters: null }).paperPrinters).toEqual({});
+  });
 });

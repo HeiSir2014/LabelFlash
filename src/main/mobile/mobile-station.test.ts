@@ -154,6 +154,13 @@ describe('MobileStation', () => {
     expect(onlyHost().calls).toContain('printerChanged');
   });
 
+  test('tells the phones when a template changes which printers are used', () => {
+    const station = createStation();
+    station.start();
+    station.printersChanged();
+    expect(onlyHost().calls).toContain('printerChanged');
+  });
+
   // 设置每次保存都是新对象：分配没变时不打扰手机。
   test('does not tell the phones anything when the assignment is saved unchanged', () => {
     const station = createStation();

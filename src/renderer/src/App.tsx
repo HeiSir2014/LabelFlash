@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
+import type { JobRecord } from '../../core/types';
 import { describePrintersSummary } from '../../shared/printer-summary';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
@@ -21,6 +22,7 @@ import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
 import { describePreviewUsage } from './lib/preview-usage';
 import { expectedPaperKey, paperRows, responsibilitiesOf, withAssignment } from './lib/printer-assignment';
+import { reprintMode } from './lib/reprint';
 import { scanFieldType } from './lib/scan-field';
 import { isWorkbenchActive } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
@@ -37,7 +39,7 @@ import { usePrinterProfiles } from './view-models/use-printer-profiles';
 import { usePrinters } from './view-models/use-printers';
 import { useQrImage } from './view-models/use-qr-image';
 import { useRules } from './view-models/use-rules';
-import { useScanStation } from './view-models/use-scan-station';
+import { type HistoryTarget, useScanStation } from './view-models/use-scan-station';
 import { useSettings } from './view-models/use-settings';
 import { useTemplatePreview } from './view-models/use-template-preview';
 import { useTemplates } from './view-models/use-templates';
@@ -77,6 +79,15 @@ export function App() {
     replaceSettings: replace,
     onActiveTemplateChanged: () => void station.refreshPreview(),
   });
+  // 打印记录的预览、重打：本机接口的记录按当时的模板和字段（模板删了就不能按原样重打）。
+  const reprintModeOf = useCallback(
+    (job: JobRecord) => reprintMode(job, (id) => templates.templates.some((template) => template.id === id)),
+    [templates.templates],
+  );
+  const historyTarget = useCallback(
+    (job: JobRecord): HistoryTarget => ({ raw: job.raw, jobId: reprintModeOf(job) === 'stored' ? job.id : null }),
+    [reprintModeOf],
+  );
   // 打印机：按纸张分配，模板也可以自己指定（规则见 src/core/printing/resolve-printer.ts）。
   const paperPrinters = settings?.paperPrinters ?? DEFAULT_SETTINGS.paperPrinters;
   const installedNames = useMemo(() => printers.printers.map((printer) => printer.name), [printers.printers]);
@@ -346,8 +357,9 @@ export function App() {
               isLoadingMore={jobLog.isLoadingMore}
               onSearchChange={jobLog.setSearch}
               onLoadMore={() => void jobLog.loadMore()}
-              onReview={station.review}
-              onReprint={station.reprint}
+              reprintModeOf={reprintModeOf}
+              onReview={(job) => station.review(historyTarget(job))}
+              onReprint={(job) => station.reprint(historyTarget(job))}
             />
           }
         />

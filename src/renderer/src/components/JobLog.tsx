@@ -1,4 +1,5 @@
 import type { JobRecord } from '../../../core/types';
+import type { ReprintMode } from '../lib/reprint';
 import { describeJobMeta, describeJobStatus } from '../lib/status-text';
 
 /** 多行内容在列表里只显示第一行，完整内容放在悬停提示里。 */
@@ -18,8 +19,10 @@ interface JobLogProps {
   isLoadingMore: boolean;
   onSearchChange: (search: string) => void;
   onLoadMore: () => void;
-  onReview: (raw: string) => void;
-  onReprint: (raw: string) => void;
+  /** 这条记录能不能、怎么预览和重打（见 lib/reprint.ts）；unavailable 时不显示按钮。 */
+  reprintModeOf: (job: JobRecord) => ReprintMode;
+  onReview: (job: JobRecord) => void;
+  onReprint: (job: JobRecord) => void;
 }
 
 export function JobLog({
@@ -31,6 +34,7 @@ export function JobLog({
   isLoadingMore,
   onSearchChange,
   onLoadMore,
+  reprintModeOf,
   onReview,
   onReprint,
 }: JobLogProps) {
@@ -67,16 +71,12 @@ export function JobLog({
               <div className="job-row__meta" title={meta}>
                 {meta}
               </div>
-              {job.status !== 'invalid' && (
+              {reprintModeOf(job) !== 'unavailable' && (
                 <div className="job-row__actions">
-                  <button
-                    type="button"
-                    className="button button--small button--quiet"
-                    onClick={() => onReview(job.raw)}
-                  >
+                  <button type="button" className="button button--small button--quiet" onClick={() => onReview(job)}>
                     预览
                   </button>
-                  <button type="button" className="button button--small" onClick={() => onReprint(job.raw)}>
+                  <button type="button" className="button button--small" onClick={() => onReprint(job)}>
                     重打
                   </button>
                 </div>

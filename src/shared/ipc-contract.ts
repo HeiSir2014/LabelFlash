@@ -25,6 +25,8 @@ export const IpcChannel = {
   CheckDriverPaper: 'printer:driver-paper',
   OpenPrinterPreferences: 'printer:open-preferences',
   ListJobs: 'jobs:list',
+  PreviewJob: 'jobs:preview',
+  ReprintJob: 'jobs:reprint',
   GetSettings: 'settings:get',
   UpdateSettings: 'settings:update',
   ListTemplates: 'templates:list',
@@ -133,6 +135,10 @@ export interface LabelFlashApi {
   /** 打开驱动的「打印首选项」窗口；窗口关闭后才完成。 */
   openPrinterPreferences(printerName: string): Promise<void>;
   listJobs(query: JobQuery): Promise<JobPage>;
+  /** 按记录里的模板和字段预览（本机接口的记录，见 lib/reprint.ts）；记录或模板不在了会失败。 */
+  previewJob(jobId: string): Promise<LabelPreview>;
+  /** 按记录里的模板和字段重打，来源记为记录重打；打印机按现在的分配决定。 */
+  reprintJob(jobId: string): Promise<PrintResult>;
   getSettings(): Promise<AppSettings>;
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   listTemplates(): Promise<LabelTemplate[]>;

@@ -8,7 +8,7 @@ import {
   type OpenDialogOptions,
   shell,
 } from 'electron';
-import type { PrintService } from '../core/print-service';
+import { fieldsScan, type PrintService } from '../core/print-service';
 import type { PrinterChoice } from '../core/printing/resolve-printer';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
@@ -64,6 +64,8 @@ import type { AppUpdater } from './updater';
 import type { VoiceClips } from './voice/voice-clips';
 
 const DRAFT_TEMPLATE_ID = `${CUSTOM_TEMPLATE_PREFIX}draft`;
+/** 打印记录编号是 UUID（36 个字符）；留出余量，挡住异常长的参数。 */
+const MAX_JOB_ID_LENGTH = 64;
 
 /** 已校验的纸张键 → 纸张（requirePaperKey 保证能解析，兜底只为类型）。 */
 function paperOf(key: string): PaperSize {
@@ -131,6 +133,25 @@ export function registerIpc(deps: IpcDeps): void {
     }
     return printerName;
   };
+  /**
+   * 按原样重打要用的记录、模板和字段。界面按 reprintMode 只对能重打的记录显示按钮，
+   * 这里再遇到缺东西（刚好被环形保留删掉、模板刚被删）就报错，由界面提示。
+   */
+  const storedLabelOf = (value: unknown) => {
+    const jobId = requireString(value, 'jobId', MAX_JOB_ID_LENGTH);
+    const job = deps.jobs.get(jobId);
+    if (job === null) {
+      throw new Error(`Job not found: ${jobId}`);
+    }
+    if (job.templateId === undefined || job.fields === undefined) {
+      throw new Error(`Job ${jobId} has no stored template or fields`);
+    }
+    const template = deps.templates.get(job.templateId);
+    if (template === null) {
+      throw new Error(`Template of job ${jobId} was deleted: ${job.templateId}`);
+    }
+    return { job, template, fields: job.fields };
+  };
   const scanOf = (result: PreviewResult) => (result.status === 'ok' ? result.scan : null);
   const printTemplateFor = (result: PreviewResult) =>
     resolvePrintTemplate(deps.templates, deps.settings.current, scanOf(result));
@@ -182,6 +203,28 @@ export function registerIpc(deps: IpcDeps): void {
     deps.profiles.forget(name);
   });
   handle(IpcChannel.ListJobs, (query) => deps.jobs.listPage(requireJobQuery(query)));
+  handle(IpcChannel.PreviewJob, async (jobId) => {
+    const { job, template, fields } = storedLabelOf(jobId);
+    const result: PreviewResult = {
+      status: 'ok',
+      scan: fieldsScan(job.raw, fields),
+      recent: null,
+      lookupFailure: null,
+      printer: await deps.choosePrinter(template),
+    };
+    return renderPreview(result, { template, isBound: false }, await dpiFor(result));
+  });
+  handle(IpcChannel.ReprintJob, (jobId) => {
+    const { job, template, fields } = storedLabelOf(jobId);
+    return deps.service.printFields({
+      template,
+      fields,
+      content: job.raw,
+      source: 'history',
+      caller: job.caller ?? null,
+      printerName: null,
+    });
+  });
   handle(IpcChannel.GetSettings, () => deps.settings.current);
   handle(IpcChannel.UpdateSettings, (patch) => updateSettings(requireRecord(patch, 'settings patch')));
   handle(IpcChannel.ListTemplates, () => deps.templates.list());

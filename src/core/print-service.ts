@@ -76,6 +76,11 @@ const SCAN_OPTIONS: LabelOptions = { dedup: true, enrich: true, printerName: nul
 /** 本机接口的识别结果里的「规则」：备注变量 {规则} 和打印结果通知里显示为「本机接口」。 */
 export const API_RULE = { id: 'api', name: '本机接口' } as const;
 
+/** 不经过识别规则的一张的识别结果（预览按记录重打时也用它，和打印时一致）。 */
+export function fieldsScan(content: string, fields: ScanField[]): ScanResult {
+  return { raw: content, ruleId: API_RULE.id, ruleName: API_RULE.name, fields };
+}
+
 /** 不经过识别规则的一张：本机接口提交的，或从打印记录按当时的模板和字段重打的。 */
 export interface FieldsPrint {
   template: LabelTemplate;
@@ -132,7 +137,7 @@ export class PrintService {
 
   /** 按给定的模板和字段打印一张：不识别、不加工、不用扫码的防重复窗口。 */
   async printFields(input: FieldsPrint): Promise<PrintResult> {
-    const scan: ScanResult = { raw: input.content, ruleId: API_RULE.id, ruleName: API_RULE.name, fields: input.fields };
+    const scan = fieldsScan(input.content, input.fields);
     const request: PrintRequest = { raw: input.content, source: input.source };
     if (input.caller !== null) {
       request.caller = input.caller;

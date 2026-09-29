@@ -144,7 +144,19 @@ describe('PhoneSession: joining', () => {
     await expectSent(1, () => socket().receive('{"t":"online"}'));
     await expectEvent(() => fromDesktop({ type: 'welcome', token, nonce: randomId(), printer: '热敏标签机' }));
     expect(store.token).toBe(token);
-    expect(events).toContainEqual({ type: 'welcomed', printer: '热敏标签机' });
+    expect(events).toContainEqual({ type: 'welcomed', printer: '热敏标签机', image: null });
+  });
+
+  test('passes on the label image the desktop asks for', async () => {
+    socket().open();
+    await expectSent(1, () => socket().receive('{"t":"online"}'));
+    const image = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    await expectEvent(() =>
+      fromDesktop({ type: 'welcome', token: randomId(), nonce: randomId(), printer: null, image }),
+    );
+    expect(events).toContainEqual({ type: 'welcomed', printer: null, image });
+    await expectEvent(() => fromDesktop({ type: 'printer', printer: null }));
+    expect(events.at(-1)).toEqual({ type: 'printer', printer: null, image: null });
   });
 
   test('says hello with the saved token after reconnecting', async () => {
@@ -160,7 +172,7 @@ describe('PhoneSession: joining', () => {
   test('passes on printer changes', async () => {
     await welcome();
     await expectEvent(() => fromDesktop({ type: 'printer', printer: null }));
-    expect(events.at(-1)).toEqual({ type: 'printer', printer: null });
+    expect(events.at(-1)).toEqual({ type: 'printer', printer: null, image: null });
   });
 });
 
@@ -176,6 +188,15 @@ describe('PhoneSession: jobs', () => {
     ]);
     expect(first).not.toBe(second);
     expect(events).toContainEqual({ type: 'submitted', job: first, raw: RAW, force: false });
+  });
+
+  test('sends the label image and typed fields with a job', async () => {
+    const nonce = await welcome();
+    const image = { jpeg: '/9j/4AAQSkZJRgABAQ==', code: { x: 325, y: 195, size: 130 } };
+    const fields = [{ name: '货架号', value: 'A-1-2-3' }];
+    const job = phone.submit(RAW, false, { image, fields });
+    await expectSent(2);
+    expect(await submits()).toEqual([{ type: 'submit', nonce, seq: 1, job, raw: RAW, force: false, image, fields }]);
   });
 
   test('refuses content beyond the request limit before sending anything', () => {
@@ -277,7 +298,7 @@ describe('PhoneSession: jobs', () => {
     const before = events.length;
     await fromDesktop({ type: 'result', job: randomId(), result: PRINTED });
     await expectEvent(() => fromDesktop({ type: 'printer', printer: 'X' }));
-    expect(events.slice(before)).toEqual([{ type: 'printer', printer: 'X' }]);
+    expect(events.slice(before)).toEqual([{ type: 'printer', printer: 'X', image: null }]);
   });
 });
 
@@ -301,6 +322,19 @@ describe('PhoneSession: surviving a page reload', () => {
     const nonce = await welcome();
     await expectSent(2);
     expect(await submits()).toEqual([{ type: 'submit', nonce, seq: 1, job, raw: RAW, force: false }]);
+  });
+
+  // 页面被刷新：还没结果的任务连同标签图一起留着，重新连上后原样重发（不然会打出没有货架号的标签）。
+  test('keeps the label image of a waiting job across a reload', async () => {
+    const image = { jpeg: '/9j/4AAQSkZJRgABAQ==', code: { x: 325, y: 195, size: 130 } };
+    const job = phone.submit(RAW, false, { image, fields: [] });
+    expect(store.jobs).toEqual([{ id: job, raw: RAW, force: false, image }]);
+    phone.stop();
+    phone = createPhone();
+    phone.start();
+    const nonce = await welcome();
+    await expectSent(2);
+    expect(await submits()).toEqual([{ type: 'submit', nonce, seq: 1, job, raw: RAW, force: false, image }]);
   });
 
   test('waits for the desktop after a reload when it had been welcomed before', async () => {

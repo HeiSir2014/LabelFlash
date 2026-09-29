@@ -23,6 +23,7 @@
 | 扫码、识别、预览、模板、打印记录、语音、通知、密钥 | ✅ | ✅ |
 | 打印到本机打印机 | ✅ | ✅（家用打印机已实测出纸；热敏标签机待真机验证） |
 | 驱动纸张检测、打开打印机设置 | ✅ 常驻 PowerShell 查询 CIM；驱动「打印首选项」 | ✅ `ipptool`；系统设置「打印机与扫描仪」 |
+| 图中文字识别（货架号，本地 OCR） | ✅ 安装包带扩展、模型和 VC++ 运行库（`resources/ocr/`） | 未做：不带 OCR，这一步跳过，电脑不向手机要图 |
 | 本机接口（HTTP） | ✅ 防火墙规则：安装时和配置页按钮（PowerShell NetSecurity，弹 UAC）；占用端口的程序用 `Get-NetTCPConnection` 查 | ✅（未在 Mac 上验证）pkg 装完把程序加进系统防火墙允许列表；占用端口的程序用 `lsof` 查 |
 | 打印机状态检测与异常通知 | ✅ | 未做：状态按「未知」处理，不阻止打印；计划改用 CUPS 的 `printer-state-reasons` |
 | 窗口按钮 | 自绘最小化 / 最大化 / 关闭 | 系统红绿灯；快捷键显示 ⌘ |
@@ -41,7 +42,7 @@
 | `bun run check` | Biome + 五份 tsconfig（主进程与脚本、界面、E2E、中转服务、扫码页）的类型检查 + 全部单元测试 |
 | `bun test <路径>` | 只跑某个单元测试文件 |
 | `bun run test:e2e` | 构建 → 检查 bundle → Playwright 驱动构建版 Electron |
-| `bun run dist:win` | Windows 安装包（两段构建，见 `resources/installer/CLAUDE.md`），输出到 `dist/` |
+| `bun run dist:win` | Windows 安装包（两段构建，见 `resources/installer/CLAUDE.md`），输出到 `dist/`；自动下载模型、编译 OCR 扩展（需要 Rust 和 Visual Studio 的 C++ 工具） |
 | `bun run dist:mac` | macOS 的 pkg 安装包（只能在 macOS 上打），输出到 `dist/` |
 | `bun run installer:skin` | 只生成安装界面的皮肤，调界面时用 |
 | `bun run icons` | 改了 `resources/*.svg` 后重新生成 PNG 图标 |
@@ -75,7 +76,7 @@ scripts       构建脚本（bundle 检查、图标、安装包、中转服务�
 resources     图标、托盘图标、安装包资源
 e2e           Playwright 端到端测试
 relay         手机扫码：云端中转服务（Bun）和手机扫码页，单独部署，不进安装包
-native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addon）+ TypeScript 包装（node/）；还没接进程序
+native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addon）+ TypeScript 包装（node/）；主进程经 src/main/ocr/ 使用
 ```
 
 依赖方向：renderer → preload → main → core。shared 可以被任何一层引用，它自己只依赖 core。

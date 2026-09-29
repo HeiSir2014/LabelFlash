@@ -209,15 +209,20 @@ X-Content-Type-Options: nosniff
 | 方向 | 消息 | 说明 |
 |---|---|---|
 | 手机 → 电脑 | `{type:'hello', token, device}` | 加入或恢复；`device` 是页面从 UA 得出的简短描述，例如「iPhone · 微信」 |
-| 手机 → 电脑 | `{type:'submit', nonce, seq, job, raw, force}` | 提交打印任务；`job` 是幂等键，见 4.3 |
-| 电脑 → 手机 | `{type:'welcome', token, nonce, printer}` | 加入或恢复成功；`printer` 是当前打印机的显示名，没选时为 null |
+| 手机 → 电脑 | `{type:'submit', nonce, seq, job, raw, force, image?, fields?}` | 提交打印任务；`job` 是幂等键，见 4.3。`image`：电脑要图时随扫码截的整张标签（按二维码摆正的 JPEG 和二维码在图里的位置）；`fields`：手机上手动输入的字段（没认出货架号时补的） |
+| 电脑 → 手机 | `{type:'welcome', token, nonce, printer, image?}` | 加入或恢复成功；`printer` 是当前打印机的显示名，没选时为 null；`image` 是要手机随扫码截的标签图（区域和清晰度），不需要时没有 |
 | 电脑 → 手机 | `{type:'denied', reason}` | 没被接纳：`full`（手机满了）/ `removed`（被电脑移除）/ `locked`（电脑暂停了新手机加入） |
-| 电脑 → 手机 | `{type:'printer', printer}` | 电脑上选的打印机变了 |
+| 电脑 → 手机 | `{type:'printer', printer, image?}` | 电脑上选的打印机变了，或者要不要截图变了（`image` 同 `welcome`） |
 | 电脑 → 手机 | `{type:'accepted', job, ahead}` | 回复 `submit`：在排队，前面还有 `ahead` 个任务 |
 | 电脑 → 手机 | `{type:'queue', jobs: [{job, ahead}]}` | 队伍往前走了：这部手机所有排队中任务的新位置（1–10 条）；只发给位置变了的手机 |
 | 电脑 → 手机 | `{type:'started', job}` | 开始打印 |
-| 电脑 → 手机 | `{type:'result', job, result}` | 最终结果：`printed`（带规则名和字段摘要）、`duplicate`、`invalid`、`failed`，或 `no-printer` |
+| 电脑 → 手机 | `{type:'result', job, result}` | 最终结果：`printed`（带规则名和字段摘要）、`duplicate`、`invalid`、`failed`（`TEXT_NOT_FOUND` 时带没认出的字段名 `field`），或 `no-printer` |
 | 电脑 → 手机 | `{type:'refused', job, reason}` | 没有接受（也就没有执行）：`rate-limited` / `too-many-pending` |
+
+**货架号识别加的字段（2026-09-30，见 `2026-09-30-shelf-number-design.md`）**：都是可选字段，老版本忽略它们，不升协议版本号。
+- 老电脑不在 `welcome` 里要图，新扫码页就不截图，帧也不会变大；老电脑的失败结果没有 `field`，扫码页按 null。
+- 单帧上限从 64 KB 提到 192 KB、单条明文从 32 KB 提到 128 KB（图最多 64 KB），中转服务的 `maxPayloadLength` 用同一个常量。
+- 新的失败原因 `TEXT_NOT_FOUND` 只有新电脑会发：**先部署中转服务（带新的扫码页），再发电脑端的新版本**，否则老扫码页不认这个结果。
 
 ### 5.3 心跳与重连
 

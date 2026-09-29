@@ -25,7 +25,8 @@ extraResources:
 electronLanguages:
   - zh-CN
   - en-US
-# 没有第三方原生模块（SQLite 是 Electron 内置的 node:sqlite），不需要重新编译。
+# 没有 npm 的原生模块（SQLite 是 Electron 内置的 node:sqlite），不需要重新编译。
+# 本地 OCR 的 Node-API 扩展由 Rust 单独编译，不经过 npm，见下面 win.extraResources。
 npmRebuild: false
 electronFuses:
   runAsNode: false
@@ -49,6 +50,13 @@ win:
         - x64
   icon: resources/icon.png
   executableName: CDL-LabelFlash
+  # 本地 OCR（货架号识别）：扩展、VC++ 运行库、模型，由 scripts/ocr/stage-resources.ts 放到 dist/.ocr（打安装包前自动运行）。
+  # 主进程按 resources/ocr 找它们（src/main/ocr/ocr-files.ts）。macOS 这一版不带，这一步按「没有文字识别」处理。
+  extraResources:
+    - from: dist/.ocr
+      to: ocr
+    - from: native/ocr/THIRD_PARTY_NOTICES.txt
+      to: licenses/ocr-third-party.txt
 # 安装界面是自绘的（resources/installer/installer.nsi），由 scripts/installer/build-installer.ts 分两段构建：
 # 第一段用 electron-builder 自带脚本取卸载程序，第二段加上 nsis.script 打出发布的安装包。
 # 所以不要直接运行 electron-builder 出安装包，用 bun run dist:win。

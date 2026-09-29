@@ -38,6 +38,7 @@ function stepOutputs(step: EnrichStep): string[] {
   switch (step.kind) {
     case 'template':
     case 'regexReplace':
+    case 'imageText':
       return [step.output];
     case 'lookup':
     case 'http':

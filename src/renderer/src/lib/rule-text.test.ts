@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { BUILT_IN_RULES } from '../../../core/scan/builtin-rules';
 import type { EnrichStep } from '../../../core/scan/enrich-model';
-import { describeDelimiter, fieldsSummary, ruleSummary, stepSummary } from './rule-text';
+import {
+  describeBlocked,
+  describeDelimiter,
+  describeTrace,
+  fieldsSummary,
+  ruleSummary,
+  stepSummary,
+} from './rule-text';
 
 describe('ruleSummary', () => {
   test('summarises every built-in rule', () => {
@@ -65,5 +72,29 @@ describe('fieldsSummary', () => {
         { name: '货架号', value: '' },
       ]),
     ).toBe('编码 CL1 · 地址 一号楼 / 三单元 · 货架号 （空）');
+  });
+});
+
+describe('describeTrace', () => {
+  test('says a step ran, was skipped, or why it failed', () => {
+    const base = { kind: 'imageText', durationMs: 1.4 } as const;
+    expect(describeTrace({ ...base, ok: true, skipped: false, detail: null })).toBe('图中文字识别：完成（1 毫秒）');
+    expect(
+      describeTrace({ ...base, ok: true, skipped: true, detail: '这次扫码没有标签图（只有手机扫码带图），跳过' }),
+    ).toBe('图中文字识别：这次扫码没有标签图（只有手机扫码带图），跳过（1 毫秒）');
+    expect(describeTrace({ ...base, ok: false, skipped: false, detail: '没认出货架号' })).toBe(
+      '图中文字识别：没认出货架号（1 毫秒）',
+    );
+  });
+});
+
+describe('describeBlocked', () => {
+  test('names what went wrong for each blocking step', () => {
+    expect(describeBlocked({ stepIndex: 0, detail: '查询超时', reason: 'LOOKUP_FAILED', field: null })).toBe(
+      '查询失败且设为不打印：查询超时',
+    );
+    expect(describeBlocked({ stepIndex: 1, detail: '没认出货架号', reason: 'TEXT_NOT_FOUND', field: '货架号' })).toBe(
+      '没认出且设为不打印：没认出货架号',
+    );
   });
 });

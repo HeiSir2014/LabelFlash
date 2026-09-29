@@ -174,4 +174,42 @@ export const MIGRATIONS: readonly string[] = [
     last_used_at INTEGER
   ) STRICT;
   `,
+  // 5：失败原因加上 TEXT_NOT_FOUND（货架号识别：图中文字没认出）。和第 3 条一样重建 jobs 表，序号和全文索引不变。
+  `
+  CREATE TABLE jobs_new (
+    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id             TEXT    NOT NULL UNIQUE,
+    created_at     INTEGER NOT NULL,
+    raw            TEXT    NOT NULL,
+    printer_name   TEXT    NOT NULL,
+    source         TEXT    NOT NULL CHECK (source IN ('desktop', 'history', 'mobile', 'api')),
+    status         TEXT    NOT NULL CHECK (status IN ('printed', 'duplicate', 'invalid', 'failed')),
+    forced         INTEGER NOT NULL CHECK (forced IN (0, 1)),
+    failure_reason TEXT             CHECK (failure_reason IN
+      ('PRINTER_NOT_FOUND', 'PRINTER_NOT_READY', 'PRINT_TIMEOUT', 'PRINT_ERROR', 'LOOKUP_FAILED', 'TEXT_NOT_FOUND')),
+    paper          TEXT,
+    template_id    TEXT,
+    fields         TEXT,
+    caller         TEXT
+  ) STRICT;
+  INSERT INTO jobs_new (seq, id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id, fields, caller)
+    SELECT seq, id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id, fields, caller FROM jobs;
+  INSERT INTO sqlite_sequence (name, seq)
+    SELECT 'jobs_new', 0 WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'jobs_new');
+  UPDATE sqlite_sequence
+    SET seq = MAX(seq, IFNULL((SELECT seq FROM sqlite_sequence WHERE name = 'jobs'), 0))
+    WHERE name = 'jobs_new';
+  DROP TRIGGER jobs_search_insert;
+  DROP TRIGGER jobs_search_delete;
+  DROP INDEX jobs_printed_at;
+  DROP TABLE jobs;
+  ALTER TABLE jobs_new RENAME TO jobs;
+  CREATE INDEX jobs_printed_at ON jobs (created_at) WHERE status = 'printed';
+  CREATE TRIGGER jobs_search_insert AFTER INSERT ON jobs BEGIN
+    INSERT INTO jobs_search (rowid, raw) VALUES (new.seq, new.raw);
+  END;
+  CREATE TRIGGER jobs_search_delete AFTER DELETE ON jobs BEGIN
+    INSERT INTO jobs_search (jobs_search, rowid, raw) VALUES ('delete', old.seq, old.raw);
+  END;
+  `,
 ];

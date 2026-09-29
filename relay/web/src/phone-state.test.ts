@@ -21,7 +21,7 @@ function run(events: PhoneEvent[], start: PhoneState = initialPhoneState(true)):
   return events.reduce(reducePhone, start);
 }
 
-const welcomed: PhoneEvent = { type: 'welcomed', printer: '热敏标签机' };
+const welcomed: PhoneEvent = { type: 'welcomed', printer: '热敏标签机', image: null };
 const submitted = (job: string, raw = RAW, force = false): PhoneEvent => ({ type: 'submitted', job, raw, force });
 const queued = (job: string, ahead: number): PhoneEvent => ({ type: 'queued', positions: [{ job, ahead }] });
 
@@ -41,7 +41,7 @@ describe('reducePhone', () => {
   });
 
   test('follows the desktop printer', () => {
-    expect(run([welcomed, { type: 'printer', printer: null }]).printer).toBeNull();
+    expect(run([welcomed, { type: 'printer', printer: null, image: null }]).printer).toBeNull();
   });
 
   test('lists a scanned job first, then tracks it to its result', () => {

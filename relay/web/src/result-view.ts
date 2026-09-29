@@ -32,6 +32,8 @@ export interface JobView {
   title: string;
   detail: string;
   actions: JobAction[];
+  /** 要手机上手动补的字段（没认出货架号时）：卡片上显示它的输入框和「打印」。 */
+  input?: string;
 }
 
 export interface MessageView {
@@ -65,6 +67,7 @@ const FAILURE_DETAILS: Record<PrintFailureReason, (detail: string | null) => str
     `${PRINT_TIMEOUT_SECONDS} 秒内没有响应，可能已出纸或仍在排队；到打印机旁确认没有出纸，再点「强制补打」`,
   PRINT_ERROR: () => '打印机驱动报错，检查打印机后点「重试」',
   LOOKUP_FAILED: (detail) => `${detail ?? '数据查询失败'}，处理好后点「重试」`,
+  TEXT_NOT_FOUND: (detail) => `${detail ?? '没认出标签上的字'}：对准整张标签重扫，或在下面手动输入`,
 };
 
 const REFUSAL_TITLES: Record<RefusalReason, string> = {
@@ -163,7 +166,9 @@ function resultView(result: PhonePrintResult, forced: boolean, raw: string): Job
       return {
         ...cueView(cue),
         detail: FAILURE_DETAILS[result.reason](result.detail),
-        actions: result.reason === 'PRINT_TIMEOUT' ? ['force'] : ['retry'],
+        // 没认出标签上的字：再发一次同一张图也一样，不给「重试」；在卡片上手动补，或者重扫。
+        actions: result.reason === 'PRINT_TIMEOUT' ? ['force'] : result.reason === 'TEXT_NOT_FOUND' ? [] : ['retry'],
+        ...(result.reason === 'TEXT_NOT_FOUND' && result.field !== null ? { input: result.field } : {}),
       };
     case 'no-printer':
       // 中转服务所有版本共用：这句话对 1.0.x（选一台打印机）和按纸张分配的新版都要成立。

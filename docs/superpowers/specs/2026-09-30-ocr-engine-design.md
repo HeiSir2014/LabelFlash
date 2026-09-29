@@ -166,5 +166,5 @@ pub trait RegionDetector: Send + Sync { fn detect(&self, image: &ImageView<'_>) 
 ## 11. 以后
 
 - 第二部分：手机截图（按二维码角点摆正后截一块）、协议和中转服务、「图中文字识别」加工步骤（区域、正则、字段名、识别不到时的处理）、模板里用货架号、配置中心。
-- 打包：Windows 把 `.node`、VC++ 运行库和模型放进安装包的 resources；macOS 的 ONNX Runtime 方案；CI 编译 `.node`。
+- 打包：Windows 已完成（`resources/ocr/`，见货架号识别设计第 7 节）；macOS 的 ONNX Runtime 方案还没做。
 - 版面 / 标签检测、SIMD、GPU、精简的 ONNX Runtime、零复制的原生帧、包体优化。

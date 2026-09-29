@@ -60,5 +60,7 @@ function failureCue(reason: PrintFailureReason, issue: PrinterIssue | null): Voi
       return 'failed';
     case 'LOOKUP_FAILED':
       return 'lookupFailed';
+    case 'TEXT_NOT_FOUND':
+      return 'textNotFound';
   }
 }

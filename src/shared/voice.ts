@@ -25,6 +25,7 @@ export const VOICE_CUES = [
   'timeout',
   'failed',
   'lookupFailed',
+  'textNotFound',
   'internalError',
 ] as const;
 export type VoiceCue = (typeof VOICE_CUES)[number];
@@ -49,6 +50,7 @@ export const VOICE_CUE_TEXT: Record<VoiceCue, string> = {
   timeout: '打印机没有响应，请检查是否出纸',
   failed: '打印失败',
   lookupFailed: '数据查询失败，没有打印',
+  textNotFound: '没认出标签上的字，没有打印',
   internalError: '程序出错，请重试',
 };
 
@@ -79,6 +81,7 @@ export const VOICE_CUE_LEVEL: Record<VoiceCue, VoiceLevel> = {
   timeout: 'alert',
   failed: 'alert',
   lookupFailed: 'alert',
+  textNotFound: 'alert',
   internalError: 'alert',
 };
 

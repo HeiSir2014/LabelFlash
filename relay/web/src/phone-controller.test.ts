@@ -3,7 +3,8 @@ import { MAX_PENDING_JOBS, MAX_REQUEST_RAW_LENGTH, type PhonePrintResult } from 
 import { FakeTimers } from '../../../src/shared/testing/fake-socket';
 import type { CameraPort } from './camera';
 import { DOUBLE_TAP_MS, type Lens, type Point, type Rect, type Size } from './camera-features';
-import type { DecoderPort } from './decoder';
+import type { Decoded, DecoderPort } from './decoder';
+import type { CodeCorners, PixelImage } from './label-crop';
 import {
   ALERT_VIBRATE_PATTERN_MS,
   HINT_DISPLAY_MS,
@@ -15,6 +16,7 @@ import {
   type ViewExtras,
   type ViewPort,
 } from './phone-controller';
+import type { JobExtras } from './phone-session';
 import { initialPhoneState, type PhoneState } from './phone-state';
 import { FAR_LENS_HINT, NEAR_LENS_HINT, TOO_LONG_HINT, TOO_MANY_PENDING_HINT } from './result-view';
 import { SAME_CODE_REARM_MS } from './scan-gate';
@@ -55,6 +57,9 @@ class FakeCamera implements CameraPort {
   stops = 0;
   torchFails = false;
   grabbed: Rect[] = [];
+  /** 最近一帧的像素（截标签图用）；snapshots 记下取了几次。 */
+  frameImage: PixelImage | null = null;
+  snapshots = 0;
   focused: Point[] = [];
   private pendingStart: ((started: boolean) => void) | null = null;
   /** true 时 start() 等测试调用 finishStart() 才完成（模拟等待授权）。 */
@@ -105,6 +110,11 @@ class FakeCamera implements CameraPort {
     return {} as ImageData;
   }
 
+  snapshot(): ImageData | null {
+    this.snapshots += 1;
+    return this.frameImage as ImageData | null;
+  }
+
   /** 摄像头开着时报告当前焦段；null 表示这台设备不能切换。 */
   lens: Lens | null = 'near';
   lensFails = false;
@@ -127,10 +137,11 @@ class FakeCamera implements CameraPort {
 class FakeDecoder implements DecoderPort {
   isBusy = false;
   text: string | null = null;
+  corners: CodeCorners | null = null;
   disposed = false;
 
-  decode(): Promise<string | null> {
-    return Promise.resolve(this.text);
+  decode(): Promise<Decoded | null> {
+    return Promise.resolve(this.text === null ? null : { text: this.text, corners: this.corners });
   }
 
   dispose(): void {
@@ -184,12 +195,15 @@ let vibrations: (number | number[])[];
 let visible: boolean;
 let visibilityListener: (() => void) | null;
 let submitted: { raw: string; force: boolean }[];
+let extras: JobExtras[];
+let jpeg: string | null;
 let controller: PhoneController;
 let nextJob: number;
 
 const session = {
-  submit(raw: string, force: boolean): string {
+  submit(raw: string, force: boolean, jobExtras: JobExtras): string {
     submitted.push({ raw, force });
+    extras.push(jobExtras);
     nextJob += 1;
     const job = `job${nextJob}`;
     controller.dispatch({ type: 'submitted', job, raw, force });
@@ -204,6 +218,7 @@ function createController(hasLink = true): PhoneController {
       decoder,
       view,
       readPhoto: async () => ({}) as ImageData,
+      encodeJpeg: async () => jpeg,
       vibrate: (pattern) => vibrations.push(pattern),
       sound,
       isVisible: () => visible,
@@ -230,7 +245,7 @@ async function settle(): Promise<void> {
 
 async function scanning(): Promise<void> {
   controller.start(session);
-  controller.dispatch({ type: 'welcomed', printer: '热敏标签机' });
+  controller.dispatch({ type: 'welcomed', printer: '热敏标签机', image: null });
   controller.dispatch({ type: 'decoder', decoder: 'ready' });
   controller.openCamera();
   await settle();
@@ -253,6 +268,8 @@ beforeEach(() => {
   visible = true;
   visibilityListener = null;
   submitted = [];
+  extras = [];
+  jpeg = '/9j/fake';
   nextJob = 0;
   controller = createController();
 });
@@ -268,7 +285,7 @@ describe('PhoneController: the camera', () => {
 
   test('waits for a tap before opening the camera', async () => {
     controller.start(session);
-    controller.dispatch({ type: 'welcomed', printer: null });
+    controller.dispatch({ type: 'welcomed', printer: null, image: null });
     await settle();
     expect(camera.starts).toBe(0);
     controller.openCamera();
@@ -508,7 +525,13 @@ describe('PhoneController: scanning', () => {
     controller.manual('A');
     controller.manual('B');
     vibrations = [];
-    const fault: PhonePrintResult = { status: 'failed', reason: 'PRINTER_NOT_READY', detail: null, issue: 'paperOut' };
+    const fault: PhonePrintResult = {
+      status: 'failed',
+      reason: 'PRINTER_NOT_READY',
+      detail: null,
+      issue: 'paperOut',
+      field: null,
+    };
     controller.dispatch({ type: 'result', job: 'job1', result: { status: 'invalid', reason: 'INVALID_CONTENT' } });
     controller.dispatch({ type: 'result', job: 'job2', result: fault });
     expect(vibrations).toEqual([ALERT_VIBRATE_PATTERN_MS]);
@@ -519,10 +542,87 @@ describe('PhoneController: scanning', () => {
     controller.manual('A');
     controller.manual('B');
     sound.played.length = 0;
-    const fault: PhonePrintResult = { status: 'failed', reason: 'PRINTER_NOT_READY', detail: null, issue: 'paperOut' };
+    const fault: PhonePrintResult = {
+      status: 'failed',
+      reason: 'PRINTER_NOT_READY',
+      detail: null,
+      issue: 'paperOut',
+      field: null,
+    };
     controller.dispatch({ type: 'result', job: 'job1', result: { status: 'invalid', reason: 'INVALID_CONTENT' } });
     controller.dispatch({ type: 'result', job: 'job2', result: fault });
     expect(sound.played).toEqual(['alert']);
+  });
+});
+
+describe('PhoneController: the label image', () => {
+  const REQUEST = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 20 };
+  const CORNERS: CodeCorners = {
+    topLeft: { x: 10, y: 10 },
+    topRight: { x: 30, y: 10 },
+    bottomRight: { x: 30, y: 30 },
+    bottomLeft: { x: 10, y: 30 },
+  };
+  const FRAME: PixelImage = { data: new Uint8ClampedArray(40 * 40 * 4).fill(200), width: 40, height: 40 };
+
+  async function scanningWithImages(): Promise<void> {
+    await scanning();
+    controller.dispatch({ type: 'printer', printer: '热敏标签机', image: REQUEST });
+    camera.frameImage = FRAME;
+    decoder.corners = CORNERS;
+  }
+
+  test('crops the whole label from the same frame and sends it when the desktop asks', async () => {
+    await scanningWithImages();
+    await frame(RAW);
+    expect(submitted).toEqual([{ raw: RAW, force: false }]);
+    expect(extras).toEqual([{ image: { jpeg: '/9j/fake', code: { x: 50, y: 30, size: 20 } }, fields: [] }]);
+    expect(camera.snapshots).toBe(1);
+  });
+
+  test('does not crop when the desktop did not ask', async () => {
+    await scanning();
+    camera.frameImage = FRAME;
+    decoder.corners = CORNERS;
+    await frame(RAW);
+    expect(extras).toEqual([{ image: null, fields: [] }]);
+    expect(camera.snapshots).toBe(0);
+  });
+
+  test('still prints when the image cannot be made small enough', async () => {
+    await scanningWithImages();
+    jpeg = null;
+    await frame(RAW);
+    expect(submitted).toEqual([{ raw: RAW, force: false }]);
+    expect(extras).toEqual([{ image: null, fields: [] }]);
+  });
+
+  test('does not crop a label that is held in view again', async () => {
+    await scanningWithImages();
+    await frame(RAW);
+    await frame(RAW);
+    expect(camera.snapshots).toBe(1);
+  });
+
+  test('sends the same image again when a job is retried', async () => {
+    await scanningWithImages();
+    await frame(RAW);
+    const job = view.state?.jobs[0];
+    if (!job) throw new Error('expected a job');
+    controller.jobAction(job, 'retry');
+    expect(extras).toHaveLength(2);
+    expect(extras[1]).toEqual(extras[0]);
+  });
+
+  test('sends a typed shelf number with the same content and no image', async () => {
+    await scanningWithImages();
+    await frame(RAW);
+    const job = view.state?.jobs[0];
+    if (!job) throw new Error('expected a job');
+    expect(controller.fillField(job, '货架号', '   ')).toBe(false);
+    expect(controller.fillField(job, '货架号', ' A-1-2-3 ')).toBe(true);
+    expect(submitted.at(-1)).toEqual({ raw: RAW, force: false });
+    expect(extras.at(-1)).toEqual({ image: null, fields: [{ name: '货架号', value: 'A-1-2-3' }] });
   });
 });
 

@@ -11,6 +11,7 @@ import {
   type CloseReason,
   type DesktopFrame,
   type DesktopMessage,
+  type ImageRequest,
   MOBILE_PROTOCOL_VERSION,
   type PhonePrintResult,
   parsePhoneMessage,
@@ -21,7 +22,7 @@ import {
 } from '../../shared/mobile-protocol';
 import type { MobileFailure, MobileStatus } from '../../shared/mobile-status';
 import { RelaySocket, type SocketLike, type SocketTimers } from '../../shared/relay-socket';
-import { type Delivery, MobileSession } from './mobile-session';
+import { type Delivery, MobileSession, type PhoneJob } from './mobile-session';
 import { desktopSocketUrl } from './relay-endpoint';
 
 export interface MobileHostDeps {
@@ -30,7 +31,9 @@ export interface MobileHostDeps {
   timers: SocketTimers;
   createSocket: (url: string) => SocketLike;
   /** 执行一个打印任务：PrintService.submit 加结果换算（由 mobile-station 提供）；打到哪台由 PrintService 按模板决定。 */
-  print: (raw: string, force: boolean) => Promise<PhonePrintResult>;
+  print: (request: PhoneJob) => Promise<PhonePrintResult>;
+  /** 要手机随扫码截的标签图；不需要时为 null（见 image-request.ts）。 */
+  imageRequest: () => ImageRequest | null;
   /** 告诉手机的打印机汇总（一台时是它的显示名，几台时是台数）；没有分配打印机时为 null。 */
   printerLabel: () => Promise<string | null>;
   log: (line: string) => void;
@@ -113,7 +116,7 @@ export class MobileHost {
     return () => this.listeners.delete(listener);
   }
 
-  /** 纸张分配变了（打印机汇总可能变了）：告诉所有在线的手机。 */
+  /** 纸张分配变了（打印机汇总可能变了），或者要不要截图变了（加工步骤改了）：告诉所有在线的手机。 */
   printerChanged(): void {
     const run = this.run;
     if (!run) {
@@ -122,8 +125,9 @@ export class MobileHost {
     // 排进收件链：和 welcome 一样按顺序发，不会有手机先收到新打印机、再收到旧的。
     this.enqueue(run, async () => {
       const printer = await this.printerLabel();
+      const image = this.imageRequest();
       for (const connection of run.session.onlineConnections()) {
-        this.send(run, connection, { type: 'printer', printer });
+        this.send(run, connection, { type: 'printer', printer, ...image });
       }
     });
   }
@@ -262,7 +266,13 @@ export class MobileHost {
       const device = JSON.stringify(message.device);
       if (reply.kind === 'welcome') {
         const printer = await this.printerLabel();
-        this.send(run, phone, { type: 'welcome', token: reply.token, nonce: reply.nonce, printer });
+        this.send(run, phone, {
+          type: 'welcome',
+          token: reply.token,
+          nonce: reply.nonce,
+          printer,
+          ...this.imageRequest(),
+        });
         this.deps.log(`mobile: phone welcomed ${device}`);
       } else {
         this.send(run, phone, { type: 'denied', reason: reply.reason });
@@ -282,7 +292,7 @@ export class MobileHost {
       case 'run':
         this.send(run, phone, decision.reply);
         run.jobs = run.jobs
-          .then(() => this.execute(run, decision.job, decision.raw, decision.force))
+          .then(() => this.execute(run, decision.job, decision.request))
           .catch((error: unknown) => this.deps.log(`mobile: a phone job failed unexpectedly: ${String(error)}`));
         this.emit();
         return;
@@ -293,7 +303,7 @@ export class MobileHost {
    * 执行一个任务：告诉它的手机开始打印，打完把结果发回去，并告诉排在后面的手机新的位置。
    * 手机正好断线时结果已保存，它重连后重发任务号就能拿到。
    */
-  private async execute(run: Run, job: string, raw: string, force: boolean): Promise<void> {
+  private async execute(run: Run, job: string, request: PhoneJob): Promise<void> {
     // 会话已经结束（用户点了「结束」）：排队中的任务不再打印。
     if (this.run !== run) {
       return;
@@ -305,7 +315,7 @@ export class MobileHost {
     }
     this.sendAll(run, started);
     this.emit();
-    const result = await this.print(raw, force);
+    const result = await this.print(request);
     const deliveries = run.session.complete(job, result);
     if (this.run === run) {
       this.sendAll(run, deliveries);
@@ -313,14 +323,20 @@ export class MobileHost {
     this.emit();
   }
 
-  private async print(raw: string, force: boolean): Promise<PhonePrintResult> {
+  private async print(request: PhoneJob): Promise<PhonePrintResult> {
     try {
-      return await this.deps.print(raw, force);
+      return await this.deps.print(request);
     } catch (error) {
       // PrintService 自己不抛错；走到这里是接线出了问题，按驱动报错回复，不让任务卡住。
       this.deps.log(`mobile: printing a phone job failed unexpectedly: ${String(error)}`);
-      return { status: 'failed', reason: 'PRINT_ERROR', detail: null, issue: null };
+      return { status: 'failed', reason: 'PRINT_ERROR', detail: null, issue: null, field: null };
     }
+  }
+
+  /** 发给手机的截图要求：不需要时整个字段省略（老手机页面反正也不认它）。 */
+  private imageRequest(): { image?: ImageRequest } {
+    const image = this.deps.imageRequest();
+    return image === null ? {} : { image };
   }
 
   private printerLabel(): Promise<string | null> {

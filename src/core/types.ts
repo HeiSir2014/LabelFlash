@@ -1,5 +1,6 @@
 import type { PrinterIssue } from '../shared/printer-readiness';
 import type { PrinterChoice } from './printing/resolve-printer';
+import type { ScanImage } from './scan/image-text';
 import type { ScanField, ScanResult } from './scan/scan-result';
 import type { LabelTemplate } from './templates/template-model';
 
@@ -15,6 +16,10 @@ export interface PrintRequest {
   force?: boolean;
   /** 谁提交的（写进打印记录）：本机接口为 key:<密钥编号> 或 origin:<网站>；其他入口没有。 */
   caller?: string;
+  /** 手机扫码时拍下的标签图（加工步骤「图中文字识别」用）；其他入口没有。 */
+  image?: ScanImage;
+  /** 手机上手动输入的字段（例如没认出时补的货架号）：图中文字识别直接用它。 */
+  manualFields?: Readonly<Record<string, string>>;
 }
 
 export const PRINT_FAILURE_REASONS = [
@@ -24,6 +29,8 @@ export const PRINT_FAILURE_REASONS = [
   'PRINT_ERROR',
   /** 加工步骤里设为「拦下不打印」的 HTTP 查询失败。 */
   'LOOKUP_FAILED',
+  /** 加工步骤「图中文字识别」设为「拦下不打印」时没认出（例如货架号）。 */
+  'TEXT_NOT_FOUND',
 ] as const;
 export type PrintFailureReason = (typeof PRINT_FAILURE_REASONS)[number];
 
@@ -40,7 +47,14 @@ export type PrintResult =
   | { status: 'printed'; jobId: string; scan: ScanResult }
   | { status: 'duplicate'; recent: RecentPrint; windowMs: number }
   | { status: 'invalid'; reason: InvalidReason }
-  | { status: 'failed'; reason: PrintFailureReason; detail?: string; issue?: PrinterIssue }
+  | {
+      status: 'failed';
+      reason: PrintFailureReason;
+      detail?: string;
+      issue?: PrinterIssue;
+      /** TEXT_NOT_FOUND 时没认出的字段名（手机据此显示输入框）。 */
+      field?: string;
+    }
   /** 这种纸没有可用的打印机：没有打印，不写打印记录，不占防重复窗口。 */
   | { status: 'no-printer'; paperKey: string; missingPrinter: string | null };
 

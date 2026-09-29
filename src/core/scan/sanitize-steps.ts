@@ -6,15 +6,19 @@ import {
   type HttpHeader,
   type HttpOutput,
   type HttpStep,
+  IMAGE_TEXT_MISSING_POLICIES,
+  type ImageTextStep,
   LOOKUP_TABLE_ID_PATTERN,
   type LookupOutput,
   type LookupStep,
+  MATCH_FLAGS,
   REPLACE_FLAGS,
   type RegexReplaceStep,
   STEP_KINDS,
   STEP_LIMITS,
   type TemplateStep,
 } from './enrich-model';
+import { type CodeRelativeArea, wrapImageTextPattern } from './image-text';
 import { parseJsonPath } from './json-path';
 import { isValidFieldName, RULE_LIMITS } from './rule-model';
 
@@ -65,7 +69,7 @@ export function isStepIssue(value: EnrichStep[] | StepIssue): value is StepIssue
 function step(input: Loose): EnrichStep {
   const kind = input['kind'];
   if (typeof kind !== 'string' || !(STEP_KINDS as readonly string[]).includes(kind)) {
-    throw new StepInvalid('类型不对，只能是文本拼接、正则替换、查找表或 HTTP 查询');
+    throw new StepInvalid('类型不对，只能是文本拼接、正则替换、查找表、HTTP 查询或图中文字识别');
   }
   switch (kind as EnrichStep['kind']) {
     case 'template':
@@ -76,7 +80,55 @@ function step(input: Loose): EnrichStep {
       return lookup(input);
     case 'http':
       return http(input);
+    case 'imageText':
+      return imageText(input);
   }
+}
+
+function imageText(input: Loose): ImageTextStep {
+  const pattern = text(input['pattern'], STEP_LIMITS.patternLength, '正则');
+  const flags = flagSet(input['flags'], MATCH_FLAGS);
+  try {
+    new RegExp(wrapImageTextPattern(pattern), flags);
+  } catch {
+    throw new StepInvalid('正则写法不对，无法解析');
+  }
+  return {
+    kind: 'imageText',
+    pattern,
+    flags,
+    preferredArea: codeArea(input['preferredArea']),
+    whenMissing: pick(input['whenMissing'], IMAGE_TEXT_MISSING_POLICIES, '没有说明认不出时怎么办'),
+    output: field(input['output']),
+  };
+}
+
+/** 优先区域：四个有限的数，左 < 右、上 < 下，离二维码不超过 areaExtent 个边长；null 表示不分先后。 */
+function codeArea(value: unknown): CodeRelativeArea | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const area = asLoose(value);
+  const [left, top, right, bottom] = ['left', 'top', 'right', 'bottom'].map((key) => area[key]);
+  const inRange = (n: unknown): n is number =>
+    typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= STEP_LIMITS.areaExtent;
+  if (!inRange(left) || !inRange(top) || !inRange(right) || !inRange(bottom) || left >= right || top >= bottom) {
+    throw new StepInvalid(`优先区域要左小于右、上小于下，离二维码不超过 ${STEP_LIMITS.areaExtent} 个边长`);
+  }
+  return { left, top, right, bottom };
+}
+
+/** 正则标志：只能是 allowed 里的字母、不重复；按字母顺序存。 */
+function flagSet(value: unknown, allowed: string): string {
+  const flags = value ?? '';
+  if (
+    typeof flags !== 'string' ||
+    [...flags].some((flag) => !allowed.includes(flag)) ||
+    new Set(flags).size !== flags.length
+  ) {
+    throw new StepInvalid(`正则标志只能是 ${[...allowed].join(' ')} 中的几个`);
+  }
+  return [...flags].sort().join('');
 }
 
 function template(input: Loose): TemplateStep {
@@ -89,14 +141,7 @@ function template(input: Loose): TemplateStep {
 
 function regexReplace(input: Loose): RegexReplaceStep {
   const pattern = text(input['pattern'], STEP_LIMITS.patternLength, '正则');
-  const flags = input['flags'] ?? '';
-  if (
-    typeof flags !== 'string' ||
-    [...flags].some((flag) => !REPLACE_FLAGS.includes(flag)) ||
-    new Set(flags).size !== flags.length
-  ) {
-    throw new StepInvalid(`正则标志只能是 ${[...REPLACE_FLAGS].join(' ')} 中的几个`);
-  }
+  const flags = flagSet(input['flags'], REPLACE_FLAGS);
   try {
     new RegExp(pattern, flags);
   } catch {
@@ -110,7 +155,7 @@ function regexReplace(input: Loose): RegexReplaceStep {
     kind: 'regexReplace',
     input: inputField(input['input']),
     pattern,
-    flags: [...flags].sort().join(''),
+    flags,
     replacement,
     output: field(input['output']),
   };

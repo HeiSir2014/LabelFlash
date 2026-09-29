@@ -1,0 +1,32 @@
+CDL-云签速印 本地文字识别（resources\ocr）使用的第三方组件
+======================================================
+
+1. PP-OCRv6 模型（det.onnx、rec.onnx、dict.txt）
+   来源：PaddlePaddle/PP-OCRv6_small_det_onnx、PaddlePaddle/PP-OCRv6_small_rec_onnx（Hugging Face）
+   许可：Apache License 2.0（https://www.apache.org/licenses/LICENSE-2.0）
+   Copyright (c) PaddlePaddle Authors. 模型文件未经修改；dict.txt 由识别模型 inference.yml 里的字典逐行写出。
+
+2. ONNX Runtime（静态链接在 ocr-addon.node 里）
+   来源：https://github.com/microsoft/onnxruntime ，经 Rust crate ort（https://github.com/pykeio/ort）提供的预编译静态库
+   许可：MIT License
+   Copyright (c) Microsoft Corporation
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+   documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+   the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+   permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+   the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+   WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+   COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+3. Rust crates（编译进 ocr-addon.node）
+   ort、ort-sys（MIT OR Apache-2.0，pyke.io）；napi、napi-derive、napi-build（MIT，napi-rs）；
+   thiserror（MIT OR Apache-2.0，David Tolnay）。许可证全文见各自的仓库。
+
+4. Microsoft Visual C++ 运行库（msvcp140.dll、msvcp140_1.dll、vcruntime140.dll、vcruntime140_1.dll）
+   随程序分发的可再发行组件（Visual Studio 的 Redist 目录），按 Microsoft 软件许可条款中「可分发代码」的规定随本程序提供。

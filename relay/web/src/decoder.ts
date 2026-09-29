@@ -6,12 +6,19 @@
  * - wasm 或 worker 脚本加载失败：判定识别组件坏了，页面提示刷新，改用手动输入。
  */
 import type { DecodeRequest, WorkerReply } from './decode-worker';
+import type { CodeCorners } from './label-crop';
+
+/** 读出的码：内容和四个角（画面像素坐标，截标签图用；取不到时为 null）。 */
+export interface Decoded {
+  text: string;
+  corners: CodeCorners | null;
+}
 
 /** phone-controller 用到的解码能力；测试里换成假的。 */
 export interface DecoderPort {
   readonly isBusy: boolean;
   /** 解不出码时为 null；识别组件坏了时抛错。像素缓冲区会转交给 worker，调用后 image 不能再用。 */
-  decode(image: ImageData): Promise<string | null>;
+  decode(image: ImageData): Promise<Decoded | null>;
   dispose(): void;
 }
 
@@ -23,7 +30,7 @@ const MAX_RESTARTS = 2;
 interface Request {
   id: number;
   image: ImageData;
-  resolve: (text: string | null) => void;
+  resolve: (result: Decoded | null) => void;
   reject: (error: Error) => void;
   timer: number | null;
 }
@@ -48,7 +55,7 @@ export class Decoder implements DecoderPort {
     return this.status !== 'ready' || this.current !== null || this.waiting.length > 0;
   }
 
-  decode(image: ImageData): Promise<string | null> {
+  decode(image: ImageData): Promise<Decoded | null> {
     if (this.status === 'failed') {
       return Promise.reject(new Error('识别组件没能加载'));
     }
@@ -98,7 +105,7 @@ export class Decoder implements DecoderPort {
         }
         this.finish(request);
         this.restarts = 0;
-        request.resolve(reply.text);
+        request.resolve(reply.text === null ? null : { text: reply.text, corners: reply.corners });
         this.pump();
         return;
       }

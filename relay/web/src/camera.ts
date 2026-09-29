@@ -37,6 +37,8 @@ export interface CameraPort {
   setTorch(on: boolean): Promise<void>;
   /** 画面里 area 这一块（视频像素坐标）；还没有画面时返回 null。 */
   grab(area: Rect): ImageData | null;
+  /** 最近一次 grab 的画面（一份拷贝）：解码交给 worker 的那份已经转走，截标签图从这里取。没有时为 null。 */
+  snapshot(): ImageData | null;
   /** 当前焦段；摄像头没开，或这台设备只有一种变焦（不能切换）时为 null。 */
   readonly currentLens: Lens | null;
   /** 切换焦段；设备拒绝时抛错，焦段不变。重新打开摄像头时沿用选好的焦段。 */
@@ -169,6 +171,14 @@ export class Camera implements CameraPort {
       return null;
     }
     return drawToImageData(this.canvas, this.video, area);
+  }
+
+  snapshot(): ImageData | null {
+    const context = this.canvas.getContext('2d', { willReadFrequently: true });
+    if (!context || this.canvas.width === 0 || this.canvas.height === 0) {
+      return null;
+    }
+    return context.getImageData(0, 0, this.canvas.width, this.canvas.height);
   }
 
   private release(): void {

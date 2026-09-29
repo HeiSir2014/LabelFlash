@@ -5,11 +5,12 @@
  * 不 import electron：打印、打印机汇总、WebSocket、计时器都由参数注入，用 bun test 测试；index.ts 只负责创建它。
  */
 import type { PrintRequest, PrintResult } from '../../core/types';
-import type { CloseReason } from '../../shared/mobile-protocol';
+import type { CloseReason, ImageRequest } from '../../shared/mobile-protocol';
 import type { MobileStatus } from '../../shared/mobile-status';
 import type { AppSettings } from '../../shared/settings';
 import type { MobileHostDeps } from './mobile-host';
 import { toPhonePrintResult } from './mobile-replies';
+import type { PhoneJob } from './mobile-session';
 import { resolveRelayBase } from './relay-endpoint';
 
 /** 检查二维码有没有过期、会话有没有闲置太久的间隔：到期精确到几秒就够了。 */
@@ -36,8 +37,10 @@ export interface MobileStationDeps {
   /** 告诉手机的打印机汇总（src/shared/printer-summary.ts 的 phonePrinterLabel）；没有分配打印机时为 null。 */
   printerLabel: () => Promise<string | null>;
   submit: (request: PrintRequest) => Promise<PrintResult>;
-  /** 按中转地址创建会话编排；deps 里的打印和打印机汇总由 station 提供。 */
-  createHost: (deps: Pick<MobileHostDeps, 'relayBase' | 'print' | 'printerLabel'>) => MobileHostPort;
+  /** 要手机随扫码截的标签图；不需要时为 null（见 image-request.ts）。 */
+  imageRequest: () => ImageRequest | null;
+  /** 按中转地址创建会话编排；deps 里的打印、打印机汇总和截图要求由 station 提供。 */
+  createHost: (deps: Pick<MobileHostDeps, 'relayBase' | 'print' | 'printerLabel' | 'imageRequest'>) => MobileHostPort;
   onStatus: (status: MobileStatus) => void;
   log: (line: string) => void;
 }
@@ -49,6 +52,8 @@ export class MobileStation {
   private unsubscribe: (() => void) | null = null;
   /** 没有中转地址时点了开始：界面提示去配置中心填写，直到下一次开始或结束。 */
   private isUnconfigured = false;
+  /** 已经告诉手机的截图要求（JSON），比较用：新手机加入时 welcome 里带的总是当时的要求。 */
+  private announcedImage = 'null';
 
   constructor(private readonly deps: MobileStationDeps) {}
 
@@ -106,6 +111,15 @@ export class MobileStation {
     this.host?.printerChanged();
   }
 
+  /** 规则或它们的加工步骤变了：要不要截图变了才告诉在线的手机，没变不打扰。 */
+  rulesChanged(): void {
+    const request = JSON.stringify(this.deps.imageRequest());
+    if (request !== this.announcedImage) {
+      this.announcedImage = request;
+      this.host?.printerChanged();
+    }
+  }
+
   settingsChanged(next: StationSettings, previous: StationSettings): void {
     // 设置每次保存都是新对象：按内容比较，分配没变时不打扰手机。
     if (JSON.stringify(next.paperPrinters) !== JSON.stringify(previous.paperPrinters)) {
@@ -125,12 +139,14 @@ export class MobileStation {
     this.discardHost();
     const host = this.deps.createHost({
       relayBase: base,
-      print: (raw, force) => this.print(raw, force),
+      print: (request) => this.print(request),
       printerLabel: () => this.deps.printerLabel(),
+      imageRequest: () => this.deps.imageRequest(),
     });
     this.unsubscribe = host.onStatus(() => this.emit());
     this.host = host;
     this.hostBase = base.href;
+    this.announcedImage = JSON.stringify(this.deps.imageRequest());
   }
 
   private discardHost(): void {
@@ -141,8 +157,15 @@ export class MobileStation {
   }
 
   /** 打到哪台由 PrintService 按模板决定（和扫码枪一样）；这种纸没有打印机时手机收到 no-printer。 */
-  private async print(raw: string, force: boolean) {
-    return toPhonePrintResult(await this.deps.submit({ raw, source: 'mobile', force }));
+  private async print({ raw, force, image, fields }: PhoneJob) {
+    const request: PrintRequest = { raw, source: 'mobile', force };
+    if (image !== null) {
+      request.image = { jpeg: new Uint8Array(Buffer.from(image.jpeg, 'base64')), code: image.code };
+    }
+    if (fields.length > 0) {
+      request.manualFields = Object.fromEntries(fields.map((field) => [field.name, field.value]));
+    }
+    return toPhonePrintResult(await this.deps.submit(request));
   }
 
   private emit(): void {

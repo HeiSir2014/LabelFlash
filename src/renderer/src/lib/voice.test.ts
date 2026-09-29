@@ -98,7 +98,7 @@ describe('describeFeedback', () => {
   });
 
   test('every cue has text and a level', () => {
-    expect(VOICE_CUES).toHaveLength(20);
+    expect(VOICE_CUES).toHaveLength(21);
     for (const cue of VOICE_CUES) {
       expect(VOICE_CUE_TEXT[cue].length).toBeGreaterThan(0);
       expect(VOICE_CUE_LEVEL[cue]).toBeDefined();

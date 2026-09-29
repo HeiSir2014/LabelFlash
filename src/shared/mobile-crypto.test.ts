@@ -12,6 +12,9 @@ import {
   isRandomId,
   isSessionKey,
   MAX_FRAME_BYTES,
+  MAX_IMAGE_BYTES,
+  MAX_MANUAL_FIELDS,
+  MAX_MANUAL_VALUE_LENGTH,
   MAX_MESSAGE_BYTES,
   MAX_REQUEST_RAW_LENGTH,
   type PhoneMessage,
@@ -89,7 +92,21 @@ describe('sealMessage / openMessage', () => {
     const key = await importSessionKey(randomKey());
     // 控制字符在 JSON 里转义成 \u0001 这样的 6 个字节，是最坏情况。
     const raw = String.fromCharCode(1).repeat(MAX_REQUEST_RAW_LENGTH);
-    const message: PhoneMessage = { type: 'submit', nonce: randomId(), seq: 1, job: randomId(), raw, force: false };
+    const jpeg = `/9j/${'A'.repeat(Math.ceil(MAX_IMAGE_BYTES / 3) * 4 - 4)}`;
+    const fields = Array.from({ length: MAX_MANUAL_FIELDS }, (_, i) => ({
+      name: `${String.fromCharCode(0x4e00 + i)}`.repeat(20),
+      value: '\u4e00'.repeat(MAX_MANUAL_VALUE_LENGTH),
+    }));
+    const message: PhoneMessage = {
+      type: 'submit',
+      nonce: randomId(),
+      seq: 1,
+      job: randomId(),
+      raw,
+      force: false,
+      image: { jpeg, code: { x: 325.5, y: 195.25, size: 130 } },
+      fields,
+    };
     const body = await sealMessage(key, 'p2d', SESSION, message);
     const frame = JSON.stringify({ t: 'recv', phone: randomId(), body });
     expect(new TextEncoder().encode(frame).length).toBeLessThanOrEqual(MAX_FRAME_BYTES);

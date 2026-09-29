@@ -9,6 +9,7 @@ import { systemClock } from '../../core/types';
 import { importSessionKey, openMessage, randomId, sealMessage } from '../../shared/mobile-crypto';
 import {
   type DesktopMessage,
+  type ImageRequest,
   MAX_PHONES_PER_SESSION,
   MOBILE_PROTOCOL_VERSION,
   type PhonePrintResult,
@@ -18,6 +19,7 @@ import {
 import type { MobileStatus } from '../../shared/mobile-status';
 import type { SocketLike, SocketTimers } from '../../shared/relay-socket';
 import { MobileHost } from './mobile-host';
+import type { PhoneJob } from './mobile-session';
 
 const ORIGIN = 'https://relay.example.com';
 const RAW = 'CL5640-TK-图片色-XL';
@@ -45,6 +47,8 @@ let relay: RunningRelay;
 let port: number;
 let host: MobileHost;
 let prints: { raw: string; force: boolean }[];
+let requests: PhoneJob[];
+let imageRequest: ImageRequest | null;
 let printerLabel: string | null;
 let printResult: PhonePrintResult;
 /** 打印在这里等着，直到测试放行：排队顺序和位置不再取决于打印有多快。 */
@@ -75,7 +79,10 @@ function createHost(base: URL): MobileHost {
     timers,
     createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
     printerLabel: async () => printerLabel,
-    print: async (raw, force) => {
+    imageRequest: () => imageRequest,
+    print: async (request) => {
+      const { raw, force } = request;
+      requests.push(request);
       running += 1;
       maxRunning = Math.max(maxRunning, running);
       prints.push({ raw, force });
@@ -148,6 +155,8 @@ beforeEach(async () => {
   relay = startTestRelay(0);
   port = Number(relay.url.port);
   prints = [];
+  requests = [];
+  imageRequest = null;
   printerLabel = PRINTER_LABEL;
   printResult = PRINTED;
   held = [];
@@ -180,7 +189,7 @@ describe('MobileHost', () => {
   test('claims the phone that opens the link and names the printer as the desktop shows it', async () => {
     const events: SessionEvent[] = [];
     await welcomedPhone(await activeUrl(), events);
-    expect(events).toContainEqual({ type: 'welcomed', printer: '热敏标签机' });
+    expect(events).toContainEqual({ type: 'welcomed', printer: '热敏标签机', image: null });
     expect(active()).toMatchObject({ phones: [{ device: '测试手机', online: true, printed: 0 }] });
   });
 
@@ -265,7 +274,29 @@ describe('MobileHost', () => {
     printerLabel = '另一台热敏标签机';
     host.printerChanged();
     await waitFor(() => events.some((event) => event.type === 'printer'), 'the printer change');
-    expect(events).toContainEqual({ type: 'printer', printer: '另一台热敏标签机' });
+    expect(events).toContainEqual({ type: 'printer', printer: '另一台热敏标签机', image: null });
+  });
+
+  // 货架号识别：电脑要图时 welcome 里告诉手机截哪块；手机带着图和手动字段提交，电脑原样交给打印。
+  test('asks the phone for the label image and hands the image and typed fields to printing', async () => {
+    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    const events: SessionEvent[] = [];
+    const phone = await welcomedPhone(await activeUrl(), events);
+    expect(events).toContainEqual({ type: 'welcomed', printer: '热敏标签机', image: imageRequest });
+    const image = { jpeg: '/9j/4AAQSkZJRgABAQ==', code: { x: 325, y: 195, size: 130 } };
+    const fields = [{ name: '货架号', value: 'A-1-2-3' }];
+    phone.submit(RAW, false, { image, fields });
+    await waitFor(() => requests.length === 1, 'the job');
+    expect(requests).toEqual([{ raw: RAW, force: false, image, fields }]);
+  });
+
+  test('tells the phone when the image request changes', async () => {
+    const events: SessionEvent[] = [];
+    await welcomedPhone(await activeUrl(), events);
+    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    host.printerChanged();
+    await waitFor(() => events.some((event) => event.type === 'printer'), 'the update');
+    expect(events).toContainEqual({ type: 'printer', printer: '热敏标签机', image: imageRequest });
   });
 
   test('queues jobs from several phones together and moves each phone up with one update', async () => {

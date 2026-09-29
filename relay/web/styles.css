@@ -421,6 +421,12 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+/* 没认出货架号时卡片上的手动输入：和底部的手动输入一样的样式，放在正文那一列。 */
+.job-field {
+  grid-column: 2;
+  margin-top: var(--space-2);
+}
+
 .job-actions {
   grid-column: 2;
   display: flex;

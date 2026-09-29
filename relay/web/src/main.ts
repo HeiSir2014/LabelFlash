@@ -7,6 +7,7 @@ import { parsePhoneFragment } from '../../../src/shared/mobile-protocol';
 import { Camera, imageFromFile } from './camera';
 import { Decoder } from './decoder';
 import { deviceLabel } from './device-label';
+import { encodeJpeg } from './jpeg-encoder';
 import { PhoneController } from './phone-controller';
 import { PhoneSession } from './phone-session';
 import { initialPhoneState } from './phone-state';
@@ -37,6 +38,7 @@ async function start(): Promise<void> {
   const view = new PhoneView(document, {
     onOpenCamera: () => controller?.openCamera(),
     onJobAction: (job, action) => controller?.jobAction(job, action),
+    onJobField: (job, field, value) => controller?.fillField(job, field, value) ?? false,
     onPhoto: (file) => void controller?.photo(file),
     onManual: (raw) => controller?.manual(raw) ?? false,
     onTorch: (on) => controller?.torch(on),
@@ -58,6 +60,7 @@ async function start(): Promise<void> {
       decoder,
       view,
       readPhoto: imageFromFile,
+      encodeJpeg,
       // 没有振动的浏览器（iPhone）上什么都不做；还没点按过页面时浏览器会忽略振动。
       vibrate: (pattern) => void navigator.vibrate?.(pattern),
       sound,

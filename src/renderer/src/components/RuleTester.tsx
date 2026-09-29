@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import type { RuleTestResult } from '../../../shared/rule-api';
-import { fieldsSummary, STEP_KIND_LABELS } from '../lib/rule-text';
+import { describeBlocked, describeTrace, fieldsSummary } from '../lib/rule-text';
 
 /** 输入停下这么久再试：边打字边试，但不每个字都发一次（可能带 HTTP 查询）。 */
 const TEST_DEBOUNCE_MS = 400;
@@ -140,15 +140,13 @@ function TestResultView({ result }: { result: RuleTestResult }) {
           {enriched.traces.map((trace, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: 步骤按顺序执行，序号就是身份
             <li key={index} className={trace.ok ? '' : 'rule-tester__step--failed'}>
-              {STEP_KIND_LABELS[trace.kind]}：{trace.ok ? '完成' : trace.detail}（{Math.round(trace.durationMs)} 毫秒）
+              {describeTrace(trace)}
             </li>
           ))}
         </ol>
       )}
       {enriched.traces.length > 0 && <p>加工后：{fieldsSummary(enriched.scan.fields)}</p>}
-      {enriched.blocked && (
-        <p className="rule-tester__result--error">查询失败且设为不打印：{enriched.blocked.detail}</p>
-      )}
+      {enriched.blocked && <p className="rule-tester__result--error">{describeBlocked(enriched.blocked)}</p>}
     </div>
   );
 }

@@ -23,7 +23,7 @@
 | `dedup-guard.ts` | 防重门限。「检查并占位」是同步的：成功和超时记为已打印（超时说明结果不确定），确定没出纸的失败释放占位；`force` 能跳过已打印，但不能跳过正在打印的同一个码 |
 | `print-queue.ts`、`serial-queue.ts` | 每台打印机一个串行队列（同一台先扫先打，不同打印机并行），单张超时后通过 `AbortSignal` 通知适配器放弃 |
 | `errors.ts` | `PrintError`：失败原因和给用户看的补充说明（打印机问题分类） |
-| `scan/` | 识别规则（`RULE_KINDS`：delimited / keyValue / whole / regex）、加工步骤（`STEP_KINDS`：template / regexReplace / lookup / http）、内置规则、每台电脑的规则设置、规则文件导入导出 |
+| `scan/` | 识别规则（`RULE_KINDS`：delimited / keyValue / whole / regex）、加工步骤（`STEP_KINDS`：template / regexReplace / lookup / http / imageText）；图中文字的查找规则在 `image-text.ts`、内置规则、每台电脑的规则设置、规则文件导入导出 |
 | `templates/` | 模板模型、内置模板、标签内容组装、按宽度缩小字号、备注变量 |
 | `lookup/` | CSV 解析（含 GBK 编码的中文 Excel）和查找索引 |
 | `notify/` | 打印结果通知的事件、投递状态和重试时间表 |

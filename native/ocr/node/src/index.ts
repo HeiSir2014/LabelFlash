@@ -2,7 +2,6 @@
  * 本地 OCR 引擎的 TypeScript 包装：Bun 和 Node.js 共用同一个 Node-API 扩展（native/ocr/crates/ocr-addon）。
  * 模型加载和识别都在线程池上执行，不阻塞事件循环。设计：docs/superpowers/specs/2026-09-30-ocr-engine-design.md。
  */
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { addonFileName } from './addon-name.ts';
 
@@ -126,11 +125,13 @@ function defaultAddonPath(): string {
 
 const addons = new Map<string, Addon>();
 
-/** 同一个扩展文件只加载一次。 */
+/** 同一个扩展文件只加载一次。用 process.dlopen：Node.js、Bun、Electron 都支持，打包成 CommonJS 也不依赖 import.meta。 */
 function loadAddon(path: string): Addon {
   let addon = addons.get(path);
   if (addon === undefined) {
-    addon = createRequire(import.meta.url)(path) as Addon;
+    const module = { exports: {} as unknown };
+    process.dlopen(module, path);
+    addon = module.exports as Addon;
     addons.set(path, addon);
   }
   return addon;

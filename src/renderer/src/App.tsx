@@ -403,7 +403,14 @@ export function App() {
               printers: printers.printers,
               paperPrinters,
             }}
-            rules={{ rules, templates: templates.templates, tester: config.tester, isNarrow }}
+            rules={{
+              rules,
+              templates: templates.templates,
+              tester: config.tester,
+              isNarrow,
+              // 还没读到时按能识别处理，不先闪一下「没有文字识别」。
+              canReadImageText: appInfo?.canReadImageText ?? true,
+            }}
             lookup={{
               tables: rules.lookupTables,
               preview: config.lookupPreview,

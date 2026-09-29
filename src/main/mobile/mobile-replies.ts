@@ -33,6 +33,7 @@ export function toPhonePrintResult(result: PrintResult): PhonePrintResult {
         reason: result.reason,
         detail: result.detail === undefined ? null : clip(result.detail),
         issue: result.issue ?? null,
+        field: result.field === undefined ? null : clip(result.field),
       };
   }
 }

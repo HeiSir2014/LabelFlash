@@ -25,6 +25,9 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run check
+      # 本地 OCR 引擎（Rust）：单元测试、clippy、格式。没有下载模型，真实模型的集成测试会跳过。
+      - name: OCR engine tests (Rust)
+        run: bun run ocr:test
       - name: End-to-end tests (Playwright + Electron)
         run: bun run test:e2e
 

@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../../../core/scan/scan-result';
 import type { LabelPreview } from '../../../shared/ipc-contract';
 import {
+  describeJobMeta,
   describeJobStatus,
   describeResult,
   describeScan,
+  describeSource,
   formatAgo,
+  formatDateTime,
   formatWindow,
   IPC_ERROR_VIEW,
   type ScanContext,
@@ -262,6 +265,23 @@ describe('describeScan', () => {
       print: { status: 'duplicate', recent: { state: 'printing', at: NOW }, windowMs: 10 * MINUTE },
     });
     expect(describeScan(printing, context()).actions.forceReprint).toBe(false);
+  });
+});
+
+describe('describeJobMeta', () => {
+  const job = { id: 'j', createdAt: NOW, raw: SCAN.raw, source: 'desktop' as const, status: 'printed' as const };
+
+  test('shows the time, source, printer and paper of a job', () => {
+    expect(describeJobMeta({ ...job, printerName: '面单机B', forced: false, paper: '100x180' })).toBe(
+      `${formatDateTime(NOW)} · ${describeSource('desktop')} · 面单机B · 100×180 二联面单`,
+    );
+  });
+
+  // 1.0.x 的旧记录没有纸张；识别不了的记录没有打印机。
+  test('shows a dash for jobs without paper and skips an empty printer', () => {
+    expect(describeJobMeta({ ...job, printerName: '', forced: false })).toBe(
+      `${formatDateTime(NOW)} · ${describeSource('desktop')} · —`,
+    );
   });
 });
 

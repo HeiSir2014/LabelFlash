@@ -228,6 +228,7 @@ textarea {
   cursor: pointer;
 }
 
+/* 打印机胶囊是按钮（点开右侧打印机页），外观仍是状态胶囊 */
 .printer-chip {
   display: flex;
   align-items: center;
@@ -238,7 +239,16 @@ textarea {
   padding: 0 var(--space-3);
   border: 1px solid var(--color-on-ink-rule);
   border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   font-size: 12px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.printer-chip:hover {
+  border-color: var(--color-tape);
 }
 
 /* 「配置」「手机扫码」按钮：与打印机胶囊同高、同描边；打开时显示按下 */

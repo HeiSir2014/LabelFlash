@@ -65,6 +65,18 @@ test('prints each paper on the printer assigned to it and records printer and pa
     ['面单机B', '100x180'],
     ['标签机A', '60x40'],
   ]);
+  await page.getByRole('tab', { name: '打印记录' }).click();
+  await expect(page.locator('.job-row__meta')).toContainText(['面单机B · 100×180 二联面单', '标签机A · 60×40 标签']);
+});
+
+test('summarises the assigned printers in the title bar and opens the printers panel', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await assign(page, { '60x40': '标签机A', '100x180': '面单机B' });
+  const chip = page.locator('.printer-chip');
+  await expect(chip).toHaveText('打印机 2 台就绪');
+  await page.getByRole('tab', { name: '打印记录' }).click();
+  await chip.click();
+  await expect(page.getByRole('tab', { name: '打印机' })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('prefers the printer the template names over the paper assignment', async ({ electronApp }) => {
@@ -88,6 +100,11 @@ test('does not print or record when no printer holds the paper, and prints once 
   await expect(page.locator('.status-strip__detail')).toHaveText('100×180 二联面单 还没有打印机');
   expect(await fakePrints(app)).toEqual([]);
   expect((await callApi(page, 'listJobs', { limit: 10 })).jobs).toEqual([]);
+
+  // 状态条的「去指定打印机」切到右侧的打印机页。
+  await page.getByRole('tab', { name: '打印记录' }).click();
+  await page.getByRole('button', { name: '去指定打印机' }).click();
+  await expect(page.getByRole('tab', { name: '打印机' })).toHaveAttribute('aria-selected', 'true');
 
   // 指定好打印机后按 F2 直接重打这一张，不用再扫。
   await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x180': '面单机B' } });

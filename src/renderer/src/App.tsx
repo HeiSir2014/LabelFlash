@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
 import { describePrintersSummary } from '../../shared/printer-summary';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
@@ -14,6 +14,7 @@ import { PrinterList } from './components/PrinterList';
 import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
+import type { SideTab } from './components/workbench/WorkbenchSide';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
 import { describeMobileButton, describeMobileOverlay, describeMobileState } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
@@ -58,6 +59,8 @@ export function App() {
   const platform = platformForChrome(windowChrome());
   const fieldType = scanFieldType(platform);
 
+  // 工作台右侧当前的标签页：标题栏的打印机胶囊、状态条的「去指定打印机」都能切到打印机页。
+  const [sideTab, setSideTab] = useState<SideTab>('printers');
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
   const historyLimit = settings?.historyLimit ?? DEFAULT_SETTINGS.historyLimit;
 
@@ -226,6 +229,12 @@ export function App() {
       <TitleBar
         version={appInfo?.version ?? null}
         printerChip={printerChip}
+        onOpenPrinters={() => {
+          setSideTab('printers');
+          if (!isWorkbench) {
+            appView.close();
+          }
+        }}
         readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
         config={{
           isOpen: !isWorkbench,
@@ -252,6 +261,8 @@ export function App() {
       ) : (
         <Workbench
           isActive={isWorkbench}
+          sideTab={sideTab}
+          onSideTabChange={setSideTab}
           scanBar={{
             autoPrint,
             lineGapMs: settings.scanLineGapMs,
@@ -280,7 +291,9 @@ export function App() {
             onForceReprint: () => station.printCurrent(true),
             onOpenPage: (page) => {
               // 打印机页在工作台右侧，不在配置中心。
-              if (page !== 'printers') {
+              if (page === 'printers') {
+                setSideTab('printers');
+              } else {
                 appView.open(page);
               }
             },

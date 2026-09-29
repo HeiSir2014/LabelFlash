@@ -275,6 +275,19 @@ export function describeScan(scan: ScanSnapshot | null, context: ScanContext): S
   };
 }
 
+/** 打印记录一行的说明：时间 · 来源 · 打印机 · 纸张。旧记录没有纸张时写「—」，识别不了的记录没有打印机。 */
+export function describeJobMeta(job: JobRecord): string {
+  const paper = job.paper === undefined ? null : parsePaperKey(job.paper);
+  return [
+    formatDateTime(job.createdAt),
+    describeSource(job.source),
+    job.printerName === '' ? null : job.printerName,
+    paper === null ? '—' : formatPaperName(paper),
+  ]
+    .filter((part) => part !== null)
+    .join(' · ');
+}
+
 export function describeJobStatus(job: JobRecord): { tone: FeedbackTone; text: string } {
   switch (job.status) {
     case 'printed':

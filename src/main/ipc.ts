@@ -172,7 +172,8 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.PrinterStatus, (printerName) => deps.status.get(requireString(printerName, 'printerName')));
   handle(IpcChannel.CheckDriverPaper, async (printerName, key) => {
     const expected = paperOf(requirePaperKey(key));
-    return checkDriverPaper(await deps.profiles.get(await requireKnownPrinter(printerName)), expected);
+    // 现读：操作员可能刚在系统设置里改过纸张（macOS 的打印机设置不经过程序，改完回来才核对）。
+    return checkDriverPaper(await deps.profiles.fresh(await requireKnownPrinter(printerName)), expected);
   });
   handle(IpcChannel.OpenPrinterPreferences, async (printerName) => {
     const name = await requireKnownPrinter(printerName);

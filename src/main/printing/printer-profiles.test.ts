@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { FakeClock } from '../../core/testing/fake-clock';
-import { PRINTER_PROFILE_TTL_MS, PrinterProfiles } from './printer-profiles';
+import { FAILED_READ_TTL_MS, PRINTER_PROFILE_TTL_MS, PrinterProfiles } from './printer-profiles';
 
 const LABEL = { widthMm: 60, heightMm: 40, dpi: 300 };
 const never = () => new Promise<void>(() => {});
@@ -58,5 +58,44 @@ describe('PrinterProfiles', () => {
     };
     const profiles = new PrinterProfiles(read, new FakeClock(), never);
     expect(await profiles.get('标签机A')).toBeNull();
+  });
+
+  // 缓存过期后重新读取期间，打印仍用上次读到的分辨率：不因为一次慢查询退回 203dpi。
+  test('keeps using the last known resolution while a refresh is slow', async () => {
+    const clock = new FakeClock();
+    let slow = false;
+    const read = () => (slow ? new Promise<null>(() => {}) : Promise.resolve(LABEL));
+    const profiles = new PrinterProfiles(read, clock, immediately);
+    expect(await profiles.dpiOf('标签机A')).toBe(300);
+    clock.advance(PRINTER_PROFILE_TTL_MS);
+    slow = true;
+    expect(await profiles.dpiOf('标签机A')).toBe(300);
+  });
+
+  test('retries a failed read soon instead of keeping it for the full minute', async () => {
+    const clock = new FakeClock();
+    let reads = 0;
+    const read = async () => {
+      reads += 1;
+      return null;
+    };
+    const profiles = new PrinterProfiles(read, clock, never);
+    await profiles.get('标签机A');
+    clock.advance(FAILED_READ_TTL_MS);
+    await profiles.get('标签机A');
+    expect(reads).toBe(2);
+  });
+
+  // 界面上核对驱动纸张时要读到现在的设置（操作员可能刚在系统设置里改过）。
+  test('reads the driver again when asked for a fresh answer', async () => {
+    let reads = 0;
+    const read = async () => {
+      reads += 1;
+      return LABEL;
+    };
+    const profiles = new PrinterProfiles(read, new FakeClock(), never);
+    await profiles.get('标签机A');
+    await profiles.fresh('标签机A');
+    expect(reads).toBe(2);
   });
 });

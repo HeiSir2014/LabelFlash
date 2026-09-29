@@ -64,7 +64,7 @@ function portOf(status: ApiServerStatus): number {
 }
 
 async function start(server: ApiHttpServer): Promise<number> {
-  return portOf(await server.start({ lanEnabled: false, port: null, candidatePorts: [ANY_PORT] }));
+  return portOf(await server.start({ lanEnabled: false, ports: [ANY_PORT] }));
 }
 
 async function occupyPort(): Promise<number> {
@@ -143,18 +143,18 @@ describe('ApiHttpServer', () => {
     expect(await response.text()).not.toContain('secret detail');
   });
 
-  test('moves to the next candidate port when one is taken', async () => {
+  test('moves to the next port when one is taken and says which it skipped', async () => {
     const taken = await occupyPort();
     const { server } = createTestServer();
-    const port = portOf(await server.start({ lanEnabled: false, port: null, candidatePorts: [taken, ANY_PORT] }));
-    expect(port).not.toBe(taken);
+    const status = await server.start({ lanEnabled: false, ports: [taken, ANY_PORT] });
+    expect(status).toMatchObject({ state: 'listening', skippedPorts: [taken] });
+    expect(portOf(status)).not.toBe(taken);
   });
 
-  // 用户指定的端口被占用：报错，不悄悄换成别的端口。
-  test('reports a taken port the user chose instead of moving', async () => {
+  test('reports failure only when every port it may use is taken', async () => {
     const taken = await occupyPort();
     const { server } = createTestServer();
-    expect(await server.start({ lanEnabled: false, port: taken, candidatePorts: [ANY_PORT] })).toEqual({
+    expect(await server.start({ lanEnabled: false, ports: [taken] })).toEqual({
       state: 'failed',
       reason: 'PORT_IN_USE',
       ports: [taken],
@@ -166,15 +166,15 @@ describe('ApiHttpServer', () => {
   test('moves on when another program answers on the loopback address of the port', async () => {
     const taken = await occupyPort();
     const { server } = createTestServer();
-    const port = portOf(await server.start({ lanEnabled: true, port: null, candidatePorts: [taken, ANY_PORT] }));
+    const port = portOf(await server.start({ lanEnabled: true, ports: [taken, ANY_PORT] }));
     expect(port).not.toBe(taken);
     expect((await fetch(`http://127.0.0.1:${port}/v1/service`)).status).toBe(200);
   });
 
-  test('reports a port the user chose that another program answers on locally', async () => {
+  test('treats a port another program answers on locally as taken', async () => {
     const taken = await occupyPort();
     const { server } = createTestServer();
-    expect(await server.start({ lanEnabled: true, port: taken, candidatePorts: [ANY_PORT] })).toMatchObject({
+    expect(await server.start({ lanEnabled: true, ports: [taken] })).toMatchObject({
       state: 'failed',
       ports: [taken],
     });
@@ -182,7 +182,7 @@ describe('ApiHttpServer', () => {
 
   test('listens on every interface when the LAN is enabled', async () => {
     const { server } = createTestServer();
-    const status = await server.start({ lanEnabled: true, port: null, candidatePorts: [ANY_PORT] });
+    const status = await server.start({ lanEnabled: true, ports: [ANY_PORT] });
     expect(status).toMatchObject({ state: 'listening', lanEnabled: true });
     expect((await fetch(`http://127.0.0.1:${portOf(status)}/v1/service`)).status).toBe(200);
   });

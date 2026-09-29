@@ -3,7 +3,7 @@ import type { LocalApiStatus } from '../../../shared/local-api';
 import { describeApiStatus, describeCaller, describeFirewall, describeKeyUsage } from './local-api-text';
 
 const BASE: LocalApiStatus = {
-  server: { state: 'listening', port: 17631, lanEnabled: true },
+  server: { state: 'listening', port: 17631, lanEnabled: true, skippedPorts: [] },
   lanAddresses: ['192.168.1.20'],
   portOwner: null,
   authorizedOrigins: [],
@@ -20,9 +20,29 @@ describe('describeApiStatus', () => {
   });
 
   test('lists only this computer when the LAN is off', () => {
-    const view = describeApiStatus({ ...BASE, server: { state: 'listening', port: 17632, lanEnabled: false } });
+    const view = describeApiStatus({
+      ...BASE,
+      server: { state: 'listening', port: 17632, lanEnabled: false, skippedPorts: [] },
+    });
     expect(view.addresses).toEqual(['http://127.0.0.1:17632']);
     expect(view.detail).toBe('只接受这台电脑上的网页和程序。');
+  });
+
+  // 端口被占用时程序自动换了端口：说清楚被谁占用、换成了哪个，已经配好旧端口的程序要跟着改。
+  test('says which port it moved to and who holds the one it skipped', () => {
+    expect(
+      describeApiStatus({
+        ...BASE,
+        server: { state: 'listening', port: 51234, lanEnabled: true, skippedPorts: [17631, 17632, 17633] },
+        portOwner: 'nginx',
+      }),
+    ).toEqual({
+      tone: 'warning',
+      title: '正在运行（已自动换端口）',
+      addresses: ['http://127.0.0.1:51234', 'http://192.168.1.20:51234'],
+      detail:
+        '端口 17631、17632、17633 被别的程序（nginx）占用，已自动改用 51234。已经配好旧端口的程序要改成新端口。局域网里的程序要带程序密钥；传输是明文 HTTP，只在可信的局域网里使用。',
+    });
   });
 
   test('names the program holding the ports', () => {

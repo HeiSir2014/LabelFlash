@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { createServer, type Server } from 'node:net';
 import type { DatabaseSync } from 'node:sqlite';
 import type { FieldsPrint } from '../../core/print-service';
 import { BUILT_IN_TEMPLATES } from '../../core/templates/builtin-templates';
@@ -9,7 +10,7 @@ import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
 import { openDatabase } from '../storage/database';
 import { SqliteApiJobStore } from '../storage/sqlite-api-job-store';
 import { DEFAULT_PORTS } from './http-server';
-import { API_PORT_ENV, apiCandidatePorts, FRESH_SECRET_MS, LocalApi } from './local-api';
+import { API_PORT_ENV, apiCandidatePorts, apiPortOrder, FRESH_SECRET_MS, LocalApi } from './local-api';
 
 const SITE = 'https://erp.example.com';
 const SENT: PrintResult = {
@@ -26,9 +27,15 @@ afterEach(async () => {
   }
 });
 
-function createLocalApi(options: { askOrigin?: (origin: string) => Promise<boolean> } = {}) {
+interface HarnessOptions {
+  askOrigin?: (origin: string) => Promise<boolean>;
+  settings?: Partial<AppSettings>;
+  candidatePorts?: readonly number[];
+}
+
+function createLocalApi(options: HarnessOptions = {}) {
   const db: DatabaseSync = openDatabase(':memory:');
-  let settings: AppSettings = { ...DEFAULT_SETTINGS, apiLanEnabled: false };
+  let settings: AppSettings = { ...DEFAULT_SETTINGS, apiLanEnabled: false, ...options.settings };
   const printed: FieldsPrint[] = [];
   const statuses: LocalApiStatus[] = [];
   let jobsChanged = 0;
@@ -52,8 +59,8 @@ function createLocalApi(options: { askOrigin?: (origin: string) => Promise<boole
       return SENT;
     },
     renderPdf: async () => new TextEncoder().encode('%PDF-1.7'),
-    candidatePorts: [0],
-    findPortOwner: async () => null,
+    candidatePorts: options.candidatePorts ?? [0],
+    findPortOwner: async () => 'nginx',
     lanAddresses: () => ['192.168.1.20'],
     onStatus: (status) => statuses.push(status),
     onJobsChanged: () => {
@@ -208,6 +215,52 @@ describe('LocalApi', () => {
     expect((await fetch(`${harness.baseUrl()}/v1/templates`, { headers })).status).toBe(200);
     harness.api.removeKey(key.id);
     expect((await fetch(`${harness.baseUrl()}/v1/templates`, { headers })).status).toBe(401);
+  });
+});
+
+async function occupyPort(): Promise<number> {
+  const blocker: Server = createServer();
+  await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
+  cleanups.push(() => new Promise<void>((resolve) => blocker.close(() => resolve())));
+  const address = blocker.address();
+  return typeof address === 'object' && address !== null ? address.port : 0;
+}
+
+describe('LocalApi ports', () => {
+  // 端口被占用时自动换，不要操作员手工填；换了就在状态里说清楚，并记住新端口。
+  test('moves to a free port when the preferred ones are taken, and remembers it', async () => {
+    const taken = await occupyPort();
+    const harness = createLocalApi({ candidatePorts: [taken] });
+    await harness.api.start();
+    const { server, portOwner } = harness.api.status();
+    expect(server).toMatchObject({ state: 'listening', skippedPorts: [taken] });
+    expect(portOwner).toBe('nginx');
+    expect(harness.settings().apiLastPort).toBe(server.state === 'listening' ? server.port : -1);
+  });
+
+  test('moves on from a taken port the user chose, too', async () => {
+    const taken = await occupyPort();
+    const harness = createLocalApi({ settings: { apiPort: taken } });
+    await harness.api.start();
+    expect(harness.api.status().server).toMatchObject({ state: 'listening', skippedPorts: [taken] });
+  });
+
+  // 清空指定的端口就是回到默认端口：不能被上次记住的（指定的）端口留住。
+  test('forgets the remembered port when the user clears a chosen port', async () => {
+    const harness = createLocalApi({ settings: { apiPort: 18_123, apiLastPort: 18_123 } });
+    await harness.setSettings({ ...harness.settings(), apiPort: null });
+    expect(harness.settings().apiLastPort).not.toBe(18_123);
+  });
+});
+
+describe('apiPortOrder', () => {
+  test('tries the chosen port, then the last one that worked, then the defaults, then any free port', () => {
+    expect(apiPortOrder({ apiPort: 18_000, apiLastPort: 17_632 }, [17_631, 17_632, 17_633])).toEqual([
+      18_000, 17_632, 17_631, 17_633, 0,
+    ]);
+    expect(apiPortOrder({ apiPort: null, apiLastPort: null }, [17_631, 17_632, 17_633])).toEqual([
+      17_631, 17_632, 17_633, 0,
+    ]);
   });
 });
 

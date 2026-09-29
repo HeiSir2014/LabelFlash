@@ -49,6 +49,7 @@ describe('sanitizeSettings', () => {
       ],
       mobileRelayUrl: 'https://relay.example.com/labelflash/',
       apiPort: 18000,
+      apiLastPort: 17632,
       apiLanEnabled: false,
       apiAuthorizedOrigins: ['https://erp.example.com', 'http://localhost:8080'],
     };
@@ -171,6 +172,7 @@ describe('local api settings', () => {
   // 局域网里的客户端软件是主要用法之一：默认开启（仍然要程序密钥才能调用）。
   test('uses the default ports and opens the LAN by default', () => {
     expect(DEFAULT_SETTINGS.apiPort).toBeNull();
+    expect(DEFAULT_SETTINGS.apiLastPort).toBeNull();
     expect(DEFAULT_SETTINGS.apiLanEnabled).toBe(true);
     expect(DEFAULT_SETTINGS.apiAuthorizedOrigins).toEqual([]);
   });
@@ -181,6 +183,9 @@ describe('local api settings', () => {
     for (const port of [80, 70_000, 18_000.5, '18000', -1]) {
       expect(sanitizeSettings({ apiPort: port }).apiPort).toBeNull();
     }
+    // 系统分配的空闲端口在 49152 以上，照样记得住。
+    expect(sanitizeSettings({ apiLastPort: 51_234 }).apiLastPort).toBe(51_234);
+    expect(sanitizeSettings({ apiLastPort: 80 }).apiLastPort).toBeNull();
   });
 
   test('keeps only distinct web origins, up to the limit', () => {

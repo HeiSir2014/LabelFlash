@@ -32,10 +32,8 @@ const AUTHORIZATION_REASONS: ReadonlySet<string> = new Set(['ORIGIN_NOT_AUTHORIZ
 
 export interface StartOptions {
   lanEnabled: boolean;
-  /** 用户指定的端口：只用它，被占用就报错，不悄悄换成别的。 */
-  port: number | null;
-  /** 没指定端口时依次尝试。 */
-  candidatePorts: readonly number[];
+  /** 依次尝试的端口，第一个是首选；0 表示由系统分配一个空闲端口。 */
+  ports: readonly number[];
 }
 
 export interface ApiHttpServerDeps {
@@ -76,7 +74,8 @@ export class ApiHttpServer {
 
   async start(options: StartOptions): Promise<ApiServerStatus> {
     await this.stop();
-    const ports = options.port === null ? options.candidatePorts : [options.port];
+    const { ports } = options;
+    const skippedPorts: number[] = [];
     for (const port of ports) {
       try {
         this.servers = await this.listen(port, options.lanEnabled);
@@ -87,13 +86,14 @@ export class ApiHttpServer {
           await this.closeServers();
           throw new PortUnavailableError(`127.0.0.1:${bound} is answered by another program`);
         }
-        this.current = { state: 'listening', port: bound, lanEnabled: options.lanEnabled };
+        this.current = { state: 'listening', port: bound, lanEnabled: options.lanEnabled, skippedPorts };
         return this.current;
       } catch (error) {
         if (!(error instanceof PortUnavailableError)) {
           throw error;
         }
         console.warn(`[api] port ${port} is unavailable`, error.message);
+        skippedPorts.push(port);
       }
     }
     this.current = { state: 'failed', reason: 'PORT_IN_USE', ports: [...ports] };

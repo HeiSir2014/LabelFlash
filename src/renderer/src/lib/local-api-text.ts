@@ -17,17 +17,21 @@ export function describeApiStatus(status: LocalApiStatus): ApiStatusView {
       return { tone: 'idle', title: '没有运行', addresses: [], detail: '程序启动后自动开启。' };
     case 'listening': {
       const hosts = ['127.0.0.1', ...(server.lanEnabled ? status.lanAddresses : [])];
+      const scope = server.lanEnabled
+        ? '局域网里的程序要带程序密钥；传输是明文 HTTP，只在可信的局域网里使用。'
+        : '只接受这台电脑上的网页和程序。';
+      const moved = server.skippedPorts.length > 0;
       return {
-        tone: 'success',
-        title: '正在运行',
+        tone: moved ? 'warning' : 'success',
+        title: moved ? '正在运行（已自动换端口）' : '正在运行',
         addresses: hosts.map((host) => `http://${host}:${server.port}`),
-        detail: server.lanEnabled
-          ? '局域网里的程序要带程序密钥；传输是明文 HTTP，只在可信的局域网里使用。'
-          : '只接受这台电脑上的网页和程序。',
+        detail: moved
+          ? `端口 ${server.skippedPorts.join('、')} 被别的程序${ownerText(status.portOwner)}占用，已自动改用 ${server.port}。已经配好旧端口的程序要改成新端口。${scope}`
+          : scope,
       };
     }
     case 'failed': {
-      const owner = status.portOwner === null ? '' : `（${status.portOwner}）`;
+      const owner = ownerText(status.portOwner);
       const ports = server.ports.join('、');
       const subject = server.ports.length > 1 ? `端口 ${ports} 都` : `端口 ${ports} `;
       return {
@@ -38,6 +42,10 @@ export function describeApiStatus(status: LocalApiStatus): ApiStatusView {
       };
     }
   }
+}
+
+function ownerText(owner: string | null): string {
+  return owner === null ? '' : `（${owner}）`;
 }
 
 const KEY_PREFIX = 'key:';

@@ -41,6 +41,11 @@ export interface AppSettings {
   mobileRelayUrl: string | null;
   /** 本机接口的端口；null = 用默认的 17631，被占用时依次试 17632、17633。指定了就只用它。 */
   apiPort: number | null;
+  /**
+   * 本机接口上次用成功的端口（程序自己记，不在界面上改）：下次启动先用它，端口不会因为重启而变来变去，
+   * 已经配好这个端口的程序也就不会忽然连不上。
+   */
+  apiLastPort: number | null;
   /** 本机接口是否对局域网开放（局域网里的程序要带程序密钥）；关掉时只监听本机。 */
   apiLanEnabled: boolean;
   /** 允许调用本机接口的网站（http/https 的 origin），由电脑上的授权框加入，配置中心可以撤销。 */
@@ -78,6 +83,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   webhooks: [],
   mobileRelayUrl: null,
   apiPort: null,
+  apiLastPort: null,
   // 局域网里的客户端软件是主要用法之一；没有程序密钥时局域网请求一律拒绝，默认开着也不会被随便调用。
   apiLanEnabled: true,
   apiAuthorizedOrigins: [],
@@ -116,6 +122,7 @@ export function sanitizeSettings(value: unknown): AppSettings {
     // 不合法的地址当作没填，回到默认地址：填错一次不该让手机扫码一直连不上。
     mobileRelayUrl: sanitizeRelayUrl(input['mobileRelayUrl']),
     apiPort: sanitizeApiPort(input['apiPort']),
+    apiLastPort: sanitizeApiPort(input['apiLastPort']),
     apiLanEnabled: sanitizeBoolean(input['apiLanEnabled'], DEFAULT_SETTINGS.apiLanEnabled),
     apiAuthorizedOrigins: sanitizeOrigins(input['apiAuthorizedOrigins']),
   };

@@ -228,8 +228,8 @@ test('manages program keys and the LAN switch on the local api page', async ({ e
 });
 
 // Windows 上别的程序占着 127.0.0.1 的端口时，Electron 里监听所有网卡照样成功，本机的请求却到了那个程序：
-// 程序要发现这一点，报端口被占用，而不是显示正在运行。
-test('reports a port that another program answers on locally, even with the LAN open', async ({ electronApp }) => {
+// 程序要发现这一点，自动换一个端口，并说清楚跳过了哪个。
+test('moves off a port that another program answers on locally, even with the LAN open', async ({ electronApp }) => {
   const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   await apiBase(page);
   // 占端口的程序收下连接但从不回应；关掉它之前先断开这些连接，不然 close 会一直等。
@@ -242,7 +242,11 @@ test('reports a port that another program answers on locally, even with the LAN 
     await callApi(page, 'updateSettings', { apiPort: taken, apiLanEnabled: true });
     await expect
       .poll(async () => (await callApi(page, 'getLocalApiStatus')).server)
-      .toEqual({ state: 'failed', reason: 'PORT_IN_USE', ports: [taken] });
+      .toMatchObject({ state: 'listening', lanEnabled: true, skippedPorts: [taken] });
+    const { server } = await callApi(page, 'getLocalApiStatus');
+    const moved = server.state === 'listening' ? server.port : taken;
+    expect(moved).not.toBe(taken);
+    expect((await fetch(`http://127.0.0.1:${moved}/v1/service`)).status).toBe(200);
   } finally {
     for (const socket of sockets) {
       socket.destroy();

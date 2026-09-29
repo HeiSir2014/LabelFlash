@@ -7,8 +7,9 @@ import { ConfirmButton } from '../../ConfirmButton';
 import { Switch } from '../../form-controls';
 import { SettingRow } from '../SettingRow';
 
-/** 默认端口：和主进程的 DEFAULT_PORTS 一致，写在说明里给操作员看。 */
-const DEFAULT_PORT_TEXT = '17631（被占用时依次试 17632、17633）';
+/** 端口怎么选：和主进程的 apiPortOrder 一致，写在说明里给操作员看。 */
+const PORT_HINT =
+  '一般不用填：程序先用上次的端口，其次 17631、17632、17633，都被占用时自动换一个空闲端口。填了就优先用它，被占用时同样自动换，并在上面提示。';
 
 export interface LocalApiPageProps {
   api: LocalApiModel;
@@ -108,11 +109,7 @@ function StatusCard({ api, port, lanEnabled, onChangePort, onChangeLanEnabled }:
         />
       </SettingRow>
       {lanEnabled && <FirewallRow api={api} />}
-      <SettingRow
-        label="端口"
-        htmlFor={portId}
-        hint={`不填就用 ${DEFAULT_PORT_TEXT}。指定了就只用这一个，被占用时不会换。`}
-      >
+      <SettingRow label="端口" htmlFor={portId} hint={PORT_HINT}>
         <input
           id={portId}
           type="text"

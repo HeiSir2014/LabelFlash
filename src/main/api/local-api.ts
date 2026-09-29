@@ -39,6 +39,21 @@ export function apiCandidatePorts(env: NodeJS.ProcessEnv, isPackaged: boolean): 
   return Number.isInteger(port) && port >= 0 && port <= MAX_PORT ? [port] : DEFAULT_PORTS;
 }
 
+/** 最后一个候选：0 = 由系统分配一个空闲端口，保证本机接口总能起来。 */
+const ANY_FREE_PORT = 0;
+
+/**
+ * 依次尝试的端口：指定的 → 上次用成功的 → 默认的几个 → 系统分配的空闲端口。
+ * 先用上次的，端口就不会因为重启而变来变去，局域网里已经配好这个端口的程序也就不会忽然连不上。
+ */
+export function apiPortOrder(
+  settings: Pick<AppSettings, 'apiPort' | 'apiLastPort'>,
+  candidatePorts: readonly number[],
+): number[] {
+  const ports = [settings.apiPort, settings.apiLastPort, ...candidatePorts, ANY_FREE_PORT];
+  return [...new Set(ports.filter((port): port is number => port !== null))];
+}
+
 export interface LocalApiDeps {
   db: DatabaseSync;
   clock: Clock;
@@ -144,6 +159,10 @@ export class LocalApi {
   }
 
   async settingsChanged(next: AppSettings, previous: AppSettings): Promise<void> {
+    if (next.apiPort === null && previous.apiPort !== null) {
+      // 清空指定的端口就是回到默认端口：忘掉记住的那个（它多半就是刚才指定的）。
+      this.deps.updateSettings({ apiLastPort: null });
+    }
     if (next.apiPort !== previous.apiPort || next.apiLanEnabled !== previous.apiLanEnabled) {
       await this.listen();
     } else if (JSON.stringify(next.apiAuthorizedOrigins) !== JSON.stringify(previous.apiAuthorizedOrigins)) {
@@ -210,16 +229,24 @@ export class LocalApi {
     const settings = this.deps.settings();
     const status = await this.server.start({
       lanEnabled: settings.apiLanEnabled,
-      port: settings.apiPort,
-      candidatePorts: this.deps.candidatePorts,
+      ports: apiPortOrder(settings, this.deps.candidatePorts),
     });
     this.portOwner = null;
     if (status.state === 'failed') {
       console.warn(`[api] not started: ports ${status.ports.join(', ')} are unavailable`);
-      const [first] = status.ports;
-      this.portOwner = first === undefined ? null : await this.deps.findPortOwner(first);
     } else if (status.state === 'listening') {
-      console.info(`[api] listening on port ${status.port}${status.lanEnabled ? ' (LAN)' : ' (this computer only)'}`);
+      const where = status.lanEnabled ? ' (LAN)' : ' (this computer only)';
+      const skipped = status.skippedPorts.length > 0 ? `, skipped taken ports ${status.skippedPorts.join(', ')}` : '';
+      console.info(`[api] listening on port ${status.port}${where}${skipped}`);
+      if (status.port !== settings.apiLastPort) {
+        this.deps.updateSettings({ apiLastPort: status.port });
+      }
+    }
+    // 首选的端口被占用时查一下是谁：界面上说清楚「被某某占用，已改用某端口」。
+    const [preferred] =
+      status.state === 'failed' ? status.ports : status.state === 'listening' ? status.skippedPorts : [];
+    if (preferred !== undefined && preferred !== ANY_FREE_PORT) {
+      this.portOwner = await this.deps.findPortOwner(preferred);
     }
     this.publish();
   }

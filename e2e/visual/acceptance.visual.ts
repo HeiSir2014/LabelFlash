@@ -1130,7 +1130,7 @@ const ITEMS: Item[] = [
     id: 'V38',
     title: '配置中心 · 本机接口',
     points:
-      '状态（正在运行 / 端口被占用和占用的程序）、地址列表（等宽字体，可以选中）、局域网访问开关、端口输入框和「恢复默认」；程序密钥列表（名称、最后使用、改名、撤销）；刚生成的密钥单独一块，原文完整显示，旁边「复制」「完成」；已授权的网站和「撤销」；最后一段隐私说明',
+      '状态（正在运行 / 已自动换端口：跳过的端口、占用的程序和新端口）、地址列表（等宽字体，可以选中）、局域网访问开关、端口输入框和「恢复默认」；程序密钥列表（名称、最后使用、改名、撤销）；刚生成的密钥单独一块，原文完整显示，旁边「复制」「完成」；已授权的网站和「撤销」；最后一段隐私说明',
     launch: { fakePrinters: PAPER_PRINTERS },
     setup: async ({ page }) => {
       await callApi(page, 'createApiKey', 'ERP 服务器');
@@ -1151,7 +1151,7 @@ const ITEMS: Item[] = [
           await page.reload();
           await expect(page.locator('.scan-bar__input')).toBeFocused();
           await openConfig(page, '本机接口');
-          await expect(page.locator('.api-status')).toHaveText('正在运行');
+          await expect(page.locator('.api-status').first()).toHaveText('正在运行');
           await page.getByLabel('名称', { exact: true }).fill('门店收银');
           await page.getByRole('button', { name: '生成密钥' }).click();
           await expect(page.getByLabel('新密钥')).toHaveValue(/^lf_/);
@@ -1159,13 +1159,13 @@ const ITEMS: Item[] = [
         },
       },
       {
-        label: '端口被占用',
+        label: '端口被占用 · 已自动换端口',
         prepare: async (ctx) => {
           takenPort ??= await occupyPort(ctx);
           // 在页面上填：经 IPC 改的设置不会推给界面，输入框会和实际不一致。
           await ctx.page.getByLabel('端口', { exact: true }).fill(String(takenPort));
           await blurActiveElement(ctx.page);
-          await expect(ctx.page.locator('.api-status')).toHaveText('端口被占用');
+          await expect(ctx.page.locator('.api-status').first()).toHaveText('正在运行（已自动换端口）');
         },
       },
     ],

@@ -260,6 +260,69 @@ test('keeps the line breaks of a code pasted into the scan box', async ({ electr
   await expect(page.locator('.scan-bar__text')).toHaveText('编码：CL5887⏎颜色：灰色');
 });
 
+test('edits the scan box by hand after a click and goes back to scanning', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  const input = page.locator('.scan-bar__input');
+  // Windows：扫码模式是密码框（关掉输入法），点进去手动编辑时换成普通输入框；macOS 始终是普通输入框。
+  const scanType = process.platform === 'win32' ? 'password' : 'text';
+  await expect(input).toHaveAttribute('type', scanType);
+
+  await input.click();
+  await expect(input).toHaveAttribute('type', 'text');
+  if (process.platform === 'win32') {
+    await expect(page.getByText('手动输入 · 回车提交 · Esc 返回扫码')).toBeVisible();
+  }
+  await page.keyboard.type('CL5887-M');
+  // 在中间改字：光标移到「CL」后面插入。
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.type('X');
+  await expect(input).toHaveValue('CLX5887-M');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：原样打印 · 模板：通用（二维码在左）');
+  await expect(page.frameLocator('.label-frame').locator('.value')).toHaveText(['CLX5887-M']);
+  await expect(input).toHaveAttribute('type', scanType);
+
+  // Esc 回到扫码模式，内容留着。
+  await input.click();
+  await page.keyboard.type('AB');
+  await page.keyboard.press('Escape');
+  await expect(input).toHaveAttribute('type', scanType);
+  await expect(input).toHaveValue('AB');
+});
+
+// 输入法开着时（macOS，或 Windows 的手动编辑模式）扫码枪的按键被输入法截住：keydown 的 key 是 Process，
+// 框里是输入法组出来的错字。按物理按键（code + Shift）拼回扫码枪发出的内容，提交它，丢掉错字。
+test('rebuilds a scan that the input method intercepted from the physical keys', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  const input = page.locator('.scan-bar__input');
+  await input.click();
+  await input.evaluate((element: HTMLInputElement) => {
+    const keys: [string, boolean][] = [
+      ['KeyC', true],
+      ['KeyL', true],
+      ['Digit5', false],
+      ['Digit8', false],
+      ['Digit8', false],
+      ['Digit7', false],
+      ['Minus', false],
+      ['KeyM', true],
+      ['Enter', false],
+    ];
+    for (const [code, shiftKey] of keys) {
+      element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Process', code, shiftKey, bubbles: true, cancelable: true }),
+      );
+    }
+    // 输入法随后把组出来的错字交给框（实测：数字被吞掉）。
+    element.value = 'CL-M';
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect(page.frameLocator('.label-frame').locator('.value')).toHaveText(['CL5887-M']);
+  await expect(input).toHaveValue('');
+});
+
 test('opens the config center over the workbench and comes back to the scan box', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
   const workspaceInert = page.locator('.workspace[inert]');

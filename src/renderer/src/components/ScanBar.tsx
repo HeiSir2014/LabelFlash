@@ -1,6 +1,10 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { NoteOption } from '../lib/note-options';
-import { pasteInto, type ScanFieldType, selectionParts } from '../lib/scan-field';
+import { fromDisplay, pasteInto, type ScanFieldType, selectionParts } from '../lib/scan-field';
+import { IdleWatcher, SCAN_FOCUS_IDLE_MS } from '../lib/scan-focus';
+import { nextScanMode, type ScanMode, type ScanModeEvent } from '../lib/scan-mode';
+import { WINDOW_TIMERS } from '../lib/timers';
+import { useImeScanRescue } from '../view-models/use-ime-scan-rescue';
 import { useScanFocus } from '../view-models/use-scan-focus';
 import { useScanInput } from '../view-models/use-scan-input';
 import { Switch } from './form-controls';
@@ -35,7 +39,52 @@ export interface ScanBarProps {
 
 export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAutoPrintChange, onScan }: ScanBarProps) {
   const inputRef = useScanFocus(isActive);
-  const input = useScanInput(lineGapMs, onScan);
+  // Windows 上的两种模式（见 lib/scan-mode.ts）：点进扫码框手动编辑时换成普通输入框，能用输入法。
+  const [mode, setMode] = useState<ScanMode>('scan');
+  // 输入法截走了扫码枪的按键、又拼不回来时的提醒。
+  const [isScanLost, setIsScanLost] = useState(false);
+  const switchMode = useCallback((event: ScanModeEvent) => {
+    setMode((current) => nextScanMode(current, event));
+    setIsScanLost(false);
+  }, []);
+  const input = useScanInput(lineGapMs, (raw) => {
+    switchMode('submitted');
+    onScan(raw);
+  });
+  // 输入法开着时扫码（macOS、Windows 的手动编辑模式）：按物理按键拼回扫码枪发出的内容，丢掉输入法组出来的字。
+  const rescue = useImeScanRescue({
+    lineGapMs,
+    content: () => fromDisplay(input.value),
+    onRebuilt: (raw) => {
+      // 先让输入法结束组字（失焦会把没上屏的字交出来），再清掉框里被输入法弄乱的内容。
+      const field = inputRef.current;
+      field?.blur();
+      field?.focus();
+      input.clear();
+      switchMode('submitted');
+      if (raw.trim() !== '') {
+        onScan(raw);
+      }
+    },
+    onUnreadable: () => setIsScanLost(true),
+  });
+  const canEditManually = fieldType === 'password';
+  const type: ScanFieldType = mode === 'manual' ? 'text' : fieldType;
+  const idleRef = useRef<IdleWatcher | null>(null);
+
+  // 手动模式下一段时间没有操作就回到扫码模式：操作员走开了，下一个人拿起扫码枪就能扫。
+  useEffect(() => {
+    if (mode !== 'manual') {
+      return;
+    }
+    const idle = new IdleWatcher(SCAN_FOCUS_IDLE_MS, () => switchMode('idle'), WINDOW_TIMERS);
+    idle.activity();
+    idleRef.current = idle;
+    return () => {
+      idle.dispose();
+      idleRef.current = null;
+    };
+  }, [mode, switchMode]);
   const textRef = useRef<HTMLSpanElement>(null);
   const textId = useId();
 
@@ -44,6 +93,14 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
   const caretAfterPaste = useRef<number | null>(null);
   const readSelection = (field: HTMLInputElement) =>
     setSelection({ start: field.selectionStart, end: field.selectionEnd });
+
+  // 换模式时浏览器可能重置选区：换完之后按输入框的真实选区重画光标。
+  useLayoutEffect(() => {
+    const field = inputRef.current;
+    if (field?.type === type) {
+      setSelection({ start: field.selectionStart, end: field.selectionEnd });
+    }
+  }, [type, inputRef]);
 
   // 让光标（或选区的末端）留在看得见的范围里：扫码枪和手动输入都在末尾打字，方向键移到前面时跟着滚回去。
   const { value } = input;
@@ -79,7 +136,7 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
 
   return (
     <section className="scan-bar" aria-label="扫码">
-      <label className="scan-bar__field">
+      <label className={`scan-bar__field${mode === 'manual' ? ' scan-bar__field--manual' : ''}`}>
         <span className="scan-bar__label">扫码</span>
         <span className="scan-bar__box">
           {/*
@@ -113,12 +170,28 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
           </span>
           <input
             ref={inputRef}
-            type={fieldType}
+            type={type}
             className="scan-bar__input"
             value={input.value}
             onChange={(event) => input.onChange(event.target.value)}
-            onKeyDown={input.onKeyDown}
-            onCompositionStart={input.onCompositionStart}
+            onPointerDown={() => {
+              if (canEditManually) {
+                switchMode('pointer-down');
+              }
+            }}
+            onKeyDown={(event) => {
+              idleRef.current?.activity();
+              if (rescue.onKeyDown(event)) {
+                return;
+              }
+              if (mode === 'manual' && event.key === 'Escape' && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                switchMode('escape');
+                return;
+              }
+              input.onKeyDown(event);
+            }}
+            onBlur={() => switchMode('blur')}
             onSelect={(event) => readSelection(event.currentTarget)}
             // 自己处理粘贴：单行输入框会删掉换行，多行的码粘进来就变了。
             onPaste={(event) => {
@@ -140,6 +213,11 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
             spellCheck={false}
           />
         </span>
+        {mode === 'manual' && (
+          <span className="scan-bar__mode" role="status">
+            手动输入 · 回车提交 · Esc 返回扫码
+          </span>
+        )}
       </label>
       {/* 窗口窄时这一组整体换到第二行，扫码框不被挤窄。 */}
       <div className="scan-bar__options">
@@ -163,9 +241,11 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
         </label>
         <Switch checked={autoPrint} onChange={onAutoPrintChange} text={autoPrint ? '自动打印' : '手动打印'} />
       </div>
-      {input.isImeComposing && (
+      {isScanLost && (
         <p className="scan-bar__ime" role="status">
-          输入法在中文状态，扫码枪扫的内容会被输入法截走、也收不到回车。扫码前按一下 Shift 切到英文。
+          {canEditManually
+            ? '扫码枪扫的内容被输入法截走了，这一次没有提交。按 Esc 回到扫码模式，再扫一次。'
+            : '扫码枪扫的内容被输入法截走了，这一次没有提交。按一下 Shift 把输入法切到英文，再扫一次。'}
         </p>
       )}
     </section>

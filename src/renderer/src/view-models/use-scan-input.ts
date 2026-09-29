@@ -12,8 +12,6 @@ type ScanField = HTMLInputElement | HTMLTextAreaElement;
  */
 export function useScanInput(lineGapMs: number, onScan: (raw: string) => void) {
   const [value, setValue] = useState('');
-  // 输入法在这个框里开始组字：扫码枪的按键会被截走，要提醒切到英文（Windows 的密码框里不会发生）。
-  const [isImeComposing, setIsImeComposing] = useState(false);
   // 计时器回调里要读到最新的内容和回调，用 ref 保存（在 effect 里更新，不在渲染中改 ref）。
   const valueRef = useRef('');
   const onScanRef = useRef(onScan);
@@ -32,8 +30,6 @@ export function useScanInput(lineGapMs: number, onScan: (raw: string) => void) {
           const raw = valueRef.current;
           setContent('');
           if (raw.trim() !== '') {
-            // 完整收到一次扫码，说明输入法已经不挡了。
-            setIsImeComposing(false);
             onScanRef.current(raw);
           }
         },
@@ -73,10 +69,8 @@ export function useScanInput(lineGapMs: number, onScan: (raw: string) => void) {
     setContent(next);
   };
 
-  const onCompositionStart = () => setIsImeComposing(true);
-
   /** 丢掉还没扫完的内容（例如接收框里残留的零散按键）。 */
   const clear = useCallback(() => setContent(''), [setContent]);
 
-  return { value: toDisplay(value), isImeComposing, onChange, onKeyDown, onCompositionStart, clear };
+  return { value: toDisplay(value), onChange, onKeyDown, clear };
 }

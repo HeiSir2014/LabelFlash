@@ -896,13 +896,17 @@ const ITEMS: Item[] = [
   },
   {
     id: 'V34',
-    title: '工作台 · 扫码框内容与输入法提醒',
+    title: '工作台 · 扫码框内容、手动编辑模式与提醒',
     points:
-      'Windows 上扫码框是透明密码框盖在文字层上（关掉输入法）：多行码的换行显示为 ⏎；光标和选区画在真实位置（方向键移动光标、双击全选看得见）；内容比框长时光标留在看得见的范围里；输入法在扫码框里开始组字时，扫码条下方出现「按 Shift 切到英文」的提醒，不遮挡预览',
+      'Windows 上扫码框是透明密码框盖在文字层上（关掉输入法）：多行码的换行显示为 ⏎；光标和选区画在真实位置（方向键移动光标、双击全选看得见）；内容比框长时光标留在看得见的范围里；点进扫码框进入手动编辑模式（普通输入框、虚线边框、边框上方有「手动输入 · 回车提交 · Esc 返回扫码」）；输入法截走扫码枪按键又拼不回来时，扫码条下方出现提醒，不遮挡预览',
     shots: [
       {
         label: '多行码（⏎）',
         prepare: async ({ page }) => {
+          // 上一种尺寸停在手动编辑模式：按 Esc 回到扫码模式，这几张截的是扫码模式的文字层。
+          if ((await page.locator('.scan-bar__field--manual').count()) > 0) {
+            await page.locator('.scan-bar__input').press('Escape');
+          }
           await page.locator('.scan-bar__input').fill('编码：CL5887⏎颜色：灰色⏎尺码：M');
         },
       },
@@ -926,19 +930,41 @@ const ITEMS: Item[] = [
         },
       },
       {
-        label: '双击全选',
+        label: '双击全选（进入手动编辑）',
         prepare: async ({ page }) => {
-          await page.locator('.scan-bar__input').dblclick();
-          await expect(page.locator('.scan-bar__selection')).toHaveText('CL5887-灰色-M');
+          const input = page.locator('.scan-bar__input');
+          await input.dblclick();
+          // 双击也是点进扫码框：Windows 上进入手动编辑模式，全选显示在普通输入框里。
+          const selection = await input.evaluate((element: HTMLInputElement) => [
+            element.selectionStart,
+            element.selectionEnd,
+          ]);
+          expect(selection).toEqual([0, 'CL5887-灰色-M'.length]);
         },
       },
       {
-        label: '输入法提醒',
+        label: '手动编辑模式',
         prepare: async ({ page }) => {
           const input = page.locator('.scan-bar__input');
           await input.fill('');
-          // 模拟输入法在扫码框里开始组字（Windows 的密码框里不会发生，macOS 或别的情况下会）。
-          await input.dispatchEvent('compositionstart', { data: '' });
+          // 鼠标点进扫码框：Windows 上换成普通输入框（输入法可用），虚线边框和「手动输入」说明。
+          await input.click();
+          await page.keyboard.type('CL5887-M');
+          await expect(input).toHaveAttribute('type', 'text');
+        },
+      },
+      {
+        label: '输入法截走扫码、拼不回来的提醒',
+        prepare: async ({ page }) => {
+          const input = page.locator('.scan-bar__input');
+          // 输入法开着时扫码枪飞快地按了一串键，没有结尾的回车：拼不回来，不提交，提醒操作员。
+          await input.evaluate((element: HTMLInputElement) => {
+            for (const code of ['KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE']) {
+              element.dispatchEvent(
+                new KeyboardEvent('keydown', { key: 'Process', code, bubbles: true, cancelable: true }),
+              );
+            }
+          });
           await expect(page.locator('.scan-bar__ime')).toBeVisible();
         },
       },

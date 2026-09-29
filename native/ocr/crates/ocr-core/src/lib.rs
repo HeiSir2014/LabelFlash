@@ -6,6 +6,7 @@ pub mod detection;
 pub mod error;
 pub mod geometry;
 pub mod image;
+pub mod postprocess;
 pub mod reading_order;
 pub mod recognition;
 

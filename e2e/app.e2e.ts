@@ -294,6 +294,22 @@ test('edits the scan box by hand after a click and goes back to scanning', async
 
 // 输入法开着时（macOS，或 Windows 的手动编辑模式）扫码枪的按键被输入法截住：keydown 的 key 是 Process，
 // 框里是输入法组出来的错字。按物理按键（code + Shift）拼回扫码枪发出的内容，提交它，丢掉错字。
+test('clears the lost-scan notice once the operator clicks into the scan box', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  const input = page.locator('.scan-bar__input');
+  // 输入法开着时一串扫码枪那样快的按键、没有结尾的回车：拼不回来，不提交，提醒操作员。
+  await input.evaluate((element: HTMLInputElement) => {
+    for (const code of ['KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE']) {
+      element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Process', code, bubbles: true, cancelable: true }));
+    }
+  });
+  const notice = page.locator('.scan-bar__ime');
+  await expect(notice).toBeVisible();
+  // 操作员点进扫码框（macOS 上没有模式可切换，也一样）：提醒不再挂着。
+  await input.click();
+  await expect(notice).toBeHidden();
+});
+
 test('rebuilds a scan that the input method intercepted from the physical keys', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
   const input = page.locator('.scan-bar__input');

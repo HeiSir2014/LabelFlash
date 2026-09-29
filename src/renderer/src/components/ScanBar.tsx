@@ -175,6 +175,8 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
             value={input.value}
             onChange={(event) => input.onChange(event.target.value)}
             onPointerDown={() => {
+              // 操作员点进扫码框就说明看到了提醒、要自己处理了：没有模式可切换的 macOS 上也一样收起。
+              setIsScanLost(false);
               if (canEditManually) {
                 switchMode('pointer-down');
               }

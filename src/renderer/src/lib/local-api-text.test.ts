@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { LocalApiStatus } from '../../../shared/local-api';
-import { describeApiStatus, describeCaller, describeKeyUsage } from './local-api-text';
+import { describeApiStatus, describeCaller, describeFirewall, describeKeyUsage } from './local-api-text';
 
 const BASE: LocalApiStatus = {
   server: { state: 'listening', port: 17631, lanEnabled: true },
@@ -63,5 +63,22 @@ describe('describeKeyUsage', () => {
   test('says when a key was last used', () => {
     expect(describeKeyUsage({ id: 'k', name: 'ERP', createdAt: 0, lastUsedAt: null })).toBe('还没有用过');
     expect(describeKeyUsage({ id: 'k', name: 'ERP', createdAt: 0, lastUsedAt: 0 })).toMatch(/^最后使用：/);
+  });
+});
+
+describe('describeFirewall', () => {
+  test('says whether other computers can get through and offers to add the rule', () => {
+    expect(describeFirewall('allowed')).toEqual({
+      text: '已放行本程序（专用网络和域网络）。',
+      canAdd: false,
+    });
+    expect(describeFirewall('missing')).toEqual({
+      text: 'Windows 防火墙还没有放行本程序，局域网里的电脑可能连不上。',
+      canAdd: true,
+    });
+  });
+
+  test('hides the row when the state is unknown', () => {
+    expect(describeFirewall('unknown')).toBeNull();
   });
 });

@@ -23,6 +23,9 @@ export interface LocalApiStatus {
   authorizedOrigins: string[];
 }
 
+/** Windows 防火墙有没有放行本程序；unknown = 查不到或不是 Windows（界面不显示这一项）。 */
+export type FirewallStatus = 'allowed' | 'missing' | 'unknown';
+
 /** 一个程序密钥（不含密钥原文：原文只在生成时显示一次）。 */
 export interface ApiKeyInfo {
   id: string;

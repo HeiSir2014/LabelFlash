@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { API_KEY_NAME_LENGTH, type ApiKeyInfo } from '../../../../../shared/local-api';
 import { API_PORT_RANGE } from '../../../../../shared/settings';
-import { describeApiStatus, describeKeyUsage } from '../../../lib/local-api-text';
+import { describeApiStatus, describeFirewall, describeKeyUsage } from '../../../lib/local-api-text';
 import type { LocalApiModel } from '../../../view-models/use-local-api';
 import { ConfirmButton } from '../../ConfirmButton';
 import { Switch } from '../../form-controls';
@@ -21,11 +21,12 @@ export interface LocalApiPageProps {
 
 /** 本机接口：运行状态和地址、局域网开关、端口、程序密钥、已授权的网站。 */
 export function LocalApiPage({ api, port, lanEnabled, onChangePort, onChangeLanEnabled }: LocalApiPageProps) {
-  const { refreshKeys } = api;
-  // 打开这一页时重读密钥：最后使用时间在后台变，不推送。
+  const { refreshKeys, checkFirewall } = api;
+  // 打开这一页时重读密钥（最后使用时间在后台变，不推送），并查一次防火墙。
   useEffect(() => {
     void refreshKeys();
-  }, [refreshKeys]);
+    void checkFirewall();
+  }, [refreshKeys, checkFirewall]);
 
   return (
     <div className="config-page">
@@ -106,6 +107,7 @@ function StatusCard({ api, port, lanEnabled, onChangePort, onChangeLanEnabled }:
           onChange={onChangeLanEnabled}
         />
       </SettingRow>
+      {lanEnabled && <FirewallRow api={api} />}
       <SettingRow
         label="端口"
         htmlFor={portId}
@@ -142,6 +144,30 @@ function StatusCard({ api, port, lanEnabled, onChangePort, onChangeLanEnabled }:
         </p>
       )}
     </section>
+  );
+}
+
+/** Windows 防火墙：没放行时给「添加」按钮（弹管理员确认）。不是 Windows 或查不到时不显示。 */
+function FirewallRow({ api }: { api: LocalApiModel }) {
+  const view = describeFirewall(api.firewall);
+  if (view === null) {
+    return null;
+  }
+  return (
+    <SettingRow label="防火墙" hint={view.text}>
+      {view.canAdd ? (
+        <button
+          type="button"
+          className="button button--small"
+          disabled={api.isAddingFirewall}
+          onClick={() => void api.addFirewall()}
+        >
+          {api.isAddingFirewall ? '等待管理员确认…' : '添加防火墙规则（需要管理员确认）'}
+        </button>
+      ) : (
+        <strong className="api-status tone--success">已放行</strong>
+      )}
+    </SettingRow>
   );
 }
 

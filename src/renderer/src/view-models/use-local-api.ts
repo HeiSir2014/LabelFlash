@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ApiKeyInfo, CreatedApiKey, LocalApiStatus } from '../../../shared/local-api';
+import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from '../../../shared/local-api';
 import { reportError } from '../lib/notices';
 
 export interface LocalApiModel {
@@ -16,6 +16,11 @@ export interface LocalApiModel {
   copyNewKey: () => Promise<boolean>;
   dismissNewKey: () => void;
   revokeOrigin: (origin: string) => Promise<void>;
+  firewall: FirewallStatus;
+  /** 正在等操作员在管理员确认框里点选。 */
+  isAddingFirewall: boolean;
+  checkFirewall: () => Promise<void>;
+  addFirewall: () => Promise<void>;
 }
 
 /**
@@ -26,6 +31,8 @@ export function useLocalApi(): LocalApiModel {
   const [status, setStatus] = useState<LocalApiStatus | null>(null);
   const [keys, setKeys] = useState<ApiKeyInfo[]>([]);
   const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
+  const [firewall, setFirewall] = useState<FirewallStatus>('unknown');
+  const [isAddingFirewall, setIsAddingFirewall] = useState(false);
 
   useEffect(() => {
     let isActive = true;
@@ -117,6 +124,26 @@ export function useLocalApi(): LocalApiModel {
     }
   }, []);
 
+  // 防火墙只在打开配置页、添加之后查：查一次要启动 PowerShell，一两秒。
+  const checkFirewall = useCallback(async () => {
+    try {
+      setFirewall(await window.api.getFirewallStatus());
+    } catch (error) {
+      reportError('检查防火墙', error);
+    }
+  }, []);
+
+  const addFirewall = useCallback(async () => {
+    setIsAddingFirewall(true);
+    try {
+      setFirewall(await window.api.addFirewallRule());
+    } catch (error) {
+      reportError('添加防火墙规则', error);
+    } finally {
+      setIsAddingFirewall(false);
+    }
+  }, []);
+
   return {
     status,
     keys,
@@ -128,5 +155,9 @@ export function useLocalApi(): LocalApiModel {
     copyNewKey,
     dismissNewKey,
     revokeOrigin,
+    firewall,
+    isAddingFirewall,
+    checkFirewall,
+    addFirewall,
   };
 }

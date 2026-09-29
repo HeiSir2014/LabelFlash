@@ -1,4 +1,4 @@
-import type { ApiKeyInfo, LocalApiStatus } from '../../../shared/local-api';
+import type { ApiKeyInfo, FirewallStatus, LocalApiStatus } from '../../../shared/local-api';
 import { formatDateTime, type StatusTone } from './status-text';
 
 export interface ApiStatusView {
@@ -57,4 +57,16 @@ export function describeCaller(caller: string | undefined, keys: readonly ApiKey
 
 export function describeKeyUsage(key: ApiKeyInfo): string {
   return key.lastUsedAt === null ? '还没有用过' : `最后使用：${formatDateTime(key.lastUsedAt)}`;
+}
+
+/** 防火墙一行的说明；查不到（或不是 Windows）时不显示这一行。 */
+export function describeFirewall(status: FirewallStatus): { text: string; canAdd: boolean } | null {
+  switch (status) {
+    case 'allowed':
+      return { text: '已放行本程序（专用网络和域网络）。', canAdd: false };
+    case 'missing':
+      return { text: 'Windows 防火墙还没有放行本程序，局域网里的电脑可能连不上。', canAdd: true };
+    case 'unknown':
+      return null;
+  }
 }

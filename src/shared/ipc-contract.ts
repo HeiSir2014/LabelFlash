@@ -6,7 +6,7 @@ import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
 import type { JobPage, JobQuery } from './job-history';
-import type { ApiKeyInfo, CreatedApiKey, LocalApiStatus } from './local-api';
+import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from './local-api';
 import type { MobileStatus } from './mobile-status';
 import type { PaperSize } from './paper-sizes';
 import type { PrinterReadiness } from './printer-readiness';
@@ -82,6 +82,8 @@ export const IpcChannel = {
   RemoveApiKey: 'api:keys:remove',
   CopyNewApiKey: 'api:keys:copy-new',
   RevokeApiOrigin: 'api:origins:remove',
+  FirewallStatus: 'api:firewall:status',
+  AddFirewallRule: 'api:firewall:add',
 } as const;
 
 /** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
@@ -226,6 +228,10 @@ export interface LabelFlashApi {
   removeApiKey(id: string): Promise<void>;
   /** 撤销一个网站的授权。 */
   revokeApiOrigin(origin: string): Promise<void>;
+  /** Windows 防火墙有没有放行本程序（其他平台为 unknown）。 */
+  getFirewallStatus(): Promise<FirewallStatus>;
+  /** 弹管理员确认，添加防火墙规则；返回之后查到的状态（操作员拒绝时仍是 missing）。 */
+  addFirewallRule(): Promise<FirewallStatus>;
 }
 
 export interface WindowControlsApi {

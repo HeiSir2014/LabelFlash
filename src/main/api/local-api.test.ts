@@ -28,6 +28,7 @@ afterEach(async () => {
 });
 
 interface HarnessOptions {
+  firewall?: { status: 'allowed' | 'missing' | 'unknown'; gate: boolean };
   findPortOwner?: (port: number) => Promise<string | null>;
   settings?: Partial<AppSettings>;
   candidatePorts?: readonly number[];
@@ -39,6 +40,7 @@ function createLocalApi(options: HarnessOptions = {}) {
   const printed: FieldsPrint[] = [];
   const statuses: LocalApiStatus[] = [];
   let jobsChanged = 0;
+  let firewall = options.firewall?.status ?? 'unknown';
   const clock = new FakeClock();
   const api = new LocalApi({
     db,
@@ -50,6 +52,14 @@ function createLocalApi(options: HarnessOptions = {}) {
       return settings;
     },
     notifyOriginRequest: () => {},
+    firewall: {
+      check: async () => firewall,
+      add: async () => {
+        firewall = 'allowed';
+        return firewall;
+      },
+    },
+    holdLanUntilFirewallAllows: options.firewall?.gate ?? false,
     findTemplate: (id) => BUILT_IN_TEMPLATES.find((template) => template.id === id) ?? null,
     listTemplates: () => [...BUILT_IN_TEMPLATES],
     installedPrinters: async () => ['P1'],
@@ -259,6 +269,38 @@ describe('LocalApi ports', () => {
     const harness = createLocalApi({ settings: { apiPort: 18_123, apiLastPort: 18_123 } });
     await harness.setSettings({ ...harness.settings(), apiPort: null });
     expect(harness.settings().apiLastPort).not.toBe(18_123);
+  });
+});
+
+describe('LocalApi firewall', () => {
+  // 安装版：防火墙还没放行时先不对局域网监听，Windows 就不会弹自己的防火墙警告（普通用户点取消会留下阻止规则）。
+  test('keeps to this computer until the firewall lets the program through', async () => {
+    const harness = createLocalApi({ settings: { apiLanEnabled: true }, firewall: { status: 'missing', gate: true } });
+    await harness.api.start();
+    expect(harness.api.status()).toMatchObject({
+      server: { state: 'listening', lanEnabled: false },
+      firewall: 'missing',
+      lanHeldBack: true,
+    });
+    expect(await harness.api.addFirewallRule()).toBe('allowed');
+    expect(harness.api.status()).toMatchObject({
+      server: { state: 'listening', lanEnabled: true },
+      firewall: 'allowed',
+      lanHeldBack: false,
+    });
+  });
+
+  test('opens the LAN when the firewall state cannot be read', async () => {
+    const harness = createLocalApi({ settings: { apiLanEnabled: true }, firewall: { status: 'unknown', gate: true } });
+    await harness.api.start();
+    expect(harness.api.status()).toMatchObject({ server: { lanEnabled: true }, lanHeldBack: false });
+  });
+
+  // 开发版和 E2E 不受本机防火墙影响。
+  test('does not hold the LAN back when told not to', async () => {
+    const harness = createLocalApi({ settings: { apiLanEnabled: true }, firewall: { status: 'missing', gate: false } });
+    await harness.api.start();
+    expect(harness.api.status()).toMatchObject({ server: { lanEnabled: true }, lanHeldBack: false });
   });
 });
 

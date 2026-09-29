@@ -26,10 +26,18 @@ export interface LocalApiStatus {
   authorizedOrigins: string[];
   /** 正在等操作员确认的网站（先来的在前）：程序顶部显示「允许 / 拒绝」。 */
   pendingOrigins: string[];
+  /** Windows 防火墙让不让局域网连进来；只在局域网访问打开时查，其余为 unknown。 */
+  firewall: FirewallStatus;
+  /** 局域网访问打开了，但防火墙还没放行本程序，暂时只接受本机：加上防火墙规则后自动对局域网开放。 */
+  lanHeldBack: boolean;
 }
 
-/** Windows 防火墙有没有放行本程序；unknown = 查不到或不是 Windows（界面不显示这一项）。 */
-export type FirewallStatus = 'allowed' | 'missing' | 'unknown';
+/**
+ * Windows 防火墙让不让局域网连进来（见 src/shared/firewall-rule.ts 的查询脚本）：
+ * allowed = 放行；missing = 没放行；unknown = 读不到或不是 Windows（不拦局域网，界面不显示这一项）。
+ */
+export const FIREWALL_STATES = ['allowed', 'missing', 'unknown'] as const;
+export type FirewallStatus = (typeof FIREWALL_STATES)[number];
 
 /** 一个程序密钥（不含密钥原文：原文只在生成时显示一次）。 */
 export interface ApiKeyInfo {

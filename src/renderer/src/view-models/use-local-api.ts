@@ -19,6 +19,8 @@ export interface LocalApiModel {
   /** 对等确认的网站点了「允许」或「拒绝」。 */
   decideOrigin: (origin: string, allow: boolean) => Promise<void>;
   firewall: FirewallStatus;
+  /** 局域网访问开着，但防火墙还没放行，暂时只接受本机。 */
+  lanHeldBack: boolean;
   /** 正在等操作员在管理员确认框里点选。 */
   isAddingFirewall: boolean;
   checkFirewall: () => Promise<void>;
@@ -33,7 +35,6 @@ export function useLocalApi(): LocalApiModel {
   const [status, setStatus] = useState<LocalApiStatus | null>(null);
   const [keys, setKeys] = useState<ApiKeyInfo[]>([]);
   const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
-  const [firewall, setFirewall] = useState<FirewallStatus>('unknown');
   const [isAddingFirewall, setIsAddingFirewall] = useState(false);
 
   useEffect(() => {
@@ -134,10 +135,10 @@ export function useLocalApi(): LocalApiModel {
     }
   }, []);
 
-  // 防火墙只在打开配置页、添加之后查：查一次要启动 PowerShell，一两秒。
+  // 防火墙在打开配置页、添加之后重新查（查一次要启动 PowerShell，一两秒）；结果随状态推送回来。
   const checkFirewall = useCallback(async () => {
     try {
-      setFirewall(await window.api.getFirewallStatus());
+      await window.api.getFirewallStatus();
     } catch (error) {
       reportError('检查防火墙', error);
     }
@@ -146,7 +147,7 @@ export function useLocalApi(): LocalApiModel {
   const addFirewall = useCallback(async () => {
     setIsAddingFirewall(true);
     try {
-      setFirewall(await window.api.addFirewallRule());
+      await window.api.addFirewallRule();
     } catch (error) {
       reportError('添加防火墙规则', error);
     } finally {
@@ -166,7 +167,8 @@ export function useLocalApi(): LocalApiModel {
     dismissNewKey,
     revokeOrigin,
     decideOrigin,
-    firewall,
+    firewall: status?.firewall ?? 'unknown',
+    lanHeldBack: status?.lanHeldBack ?? false,
     isAddingFirewall,
     checkFirewall,
     addFirewall,

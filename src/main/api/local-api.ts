@@ -6,7 +6,13 @@ import type { ScanField } from '../../core/scan/scan-result';
 import { SerialQueue } from '../../core/serial-queue';
 import type { LabelTemplate } from '../../core/templates/template-model';
 import type { Clock, PrintResult } from '../../core/types';
-import type { ApiKeyInfo, ApiServerStatus, CreatedApiKey, LocalApiStatus } from '../../shared/local-api';
+import type {
+  ApiKeyInfo,
+  ApiServerStatus,
+  CreatedApiKey,
+  FirewallStatus,
+  LocalApiStatus,
+} from '../../shared/local-api';
 import type { AppSettings } from '../../shared/settings';
 import { SqliteApiJobStore } from '../storage/sqlite-api-job-store';
 import { SqliteApiKeyStore } from '../storage/sqlite-api-key-store';
@@ -88,6 +94,13 @@ export interface LocalApiDeps {
   updateSettings: (patch: Partial<AppSettings>) => AppSettings;
   /** 有网站在等确认：发系统通知，提醒操作员到程序里处理。 */
   notifyOriginRequest: (origin: string) => void;
+  /** Windows 防火墙：查本程序有没有被放行、弹管理员确认加规则（见 src/main/firewall.ts）。其他平台都是 unknown。 */
+  firewall: { check: () => Promise<FirewallStatus>; add: () => Promise<FirewallStatus> };
+  /**
+   * 防火墙还没放行时先不对局域网监听（安装版为 true）：监听所有网卡时 Windows 会弹它自己的防火墙警告，
+   * 普通用户点不了「允许」，点取消还会留下阻止规则。开发版和 E2E 不受本机防火墙影响。
+   */
+  holdLanUntilFirewallAllows: boolean;
   findTemplate: (templateId: string) => LabelTemplate | null;
   listTemplates: () => LabelTemplate[];
   installedPrinters: () => Promise<string[]>;
@@ -118,6 +131,8 @@ export class LocalApi {
   /** 每次启动加一：查占用程序是后台做的，查到时如果已经又重启过，结果就作废。 */
   private generation = 0;
   private portOwner: string | null = null;
+  private firewall: FirewallStatus = 'unknown';
+  private lanHeldBack = false;
   /** 上次启动不是因为端口失败（详情在日志里）。 */
   private startError = false;
   private purgeTimer: ReturnType<typeof setInterval> | null = null;
@@ -220,6 +235,8 @@ export class LocalApi {
       portOwner: this.portOwner,
       authorizedOrigins: this.deps.settings().apiAuthorizedOrigins,
       pendingOrigins: this.prompts.pending(),
+      firewall: this.firewall,
+      lanHeldBack: this.lanHeldBack,
     };
   }
 
@@ -255,6 +272,23 @@ export class LocalApi {
     this.freshSecrets.delete(id);
   }
 
+  /** 重新查一次防火墙（打开「本机接口」页时）；放行情况变了就按新的情况重新监听。 */
+  async checkFirewall(): Promise<FirewallStatus> {
+    const before = this.firewall;
+    const status = await this.deps.firewall.check();
+    if (status !== before) {
+      await this.listen();
+    }
+    return this.firewall;
+  }
+
+  /** 弹管理员确认加防火墙规则；加上了就重新监听，对局域网开放。 */
+  async addFirewallRule(): Promise<FirewallStatus> {
+    await this.deps.firewall.add();
+    await this.listen();
+    return this.firewall;
+  }
+
   /** 操作员在程序里点了「允许」或「拒绝」。 */
   decideOrigin(origin: string, allow: boolean): void {
     this.prompts.decide(origin, allow);
@@ -283,10 +317,12 @@ export class LocalApi {
     const settings = this.deps.settings();
     this.generation += 1;
     this.portOwner = null;
+    this.firewall = settings.apiLanEnabled ? await this.deps.firewall.check() : 'unknown';
+    this.lanHeldBack = settings.apiLanEnabled && this.deps.holdLanUntilFirewallAllows && this.firewall === 'missing';
     let status: ApiServerStatus;
     try {
       status = await this.server.start({
-        lanEnabled: settings.apiLanEnabled,
+        lanEnabled: settings.apiLanEnabled && !this.lanHeldBack,
         ports: apiPortOrder(settings, this.deps.candidatePorts),
       });
     } catch (error) {

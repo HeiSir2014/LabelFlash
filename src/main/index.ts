@@ -28,6 +28,7 @@ import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BUILD_NUMBER } from './build-info';
+import { addFirewallRule, firewallStatus } from './firewall';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
 import { LOGS_DIR_NAME } from './log-files';
@@ -373,6 +374,11 @@ async function bootstrap(): Promise<void> {
     // 只改授权网站：不影响别的设置，不需要走 onSettingsChanged。
     updateSettings: (patch) => settings.update(patch),
     notifyOriginRequest,
+    firewall: {
+      check: () => firewallStatus(app.getPath('exe')),
+      add: () => addFirewallRule(app.getPath('exe')),
+    },
+    holdLanUntilFirewallAllows: app.isPackaged,
     findTemplate: (id) => templates.get(id),
     listTemplates: () => templates.list(),
     installedPrinters: () => adapter.knownPrinterNames(),

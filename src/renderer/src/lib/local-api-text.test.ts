@@ -8,9 +8,23 @@ const BASE: LocalApiStatus = {
   portOwner: null,
   authorizedOrigins: [],
   pendingOrigins: [],
+  firewall: 'unknown',
+  lanHeldBack: false,
 };
 
 describe('describeApiStatus', () => {
+  test('warns that only this computer is served until the firewall lets the program through', () => {
+    const view = describeApiStatus({
+      ...BASE,
+      server: { state: 'listening', port: 17631, lanEnabled: false, skippedPorts: [] },
+      firewall: 'missing',
+      lanHeldBack: true,
+    });
+    expect(view).toMatchObject({ tone: 'warning', title: '正在运行（局域网暂未开放）' });
+    expect(view.addresses).toEqual(['http://127.0.0.1:17631']);
+    expect(view.detail).toContain('暂时只接受这台电脑上的网页和程序');
+  });
+
   test('lists the addresses callers can use on this computer and the LAN', () => {
     expect(describeApiStatus(BASE)).toEqual({
       tone: 'success',
@@ -109,17 +123,25 @@ describe('describeKeyUsage', () => {
 
 describe('describeFirewall', () => {
   test('says whether other computers can get through and offers to add the rule', () => {
-    expect(describeFirewall('allowed')).toEqual({
-      text: '已放行本程序（专用网络和域网络）。',
+    expect(describeFirewall('allowed', false)).toEqual({
+      text: '已放行本程序，所有网络类型（专用、公用、域）都生效。',
       canAdd: false,
     });
-    expect(describeFirewall('missing')).toEqual({
+    expect(describeFirewall('missing', false)).toEqual({
       text: 'Windows 防火墙还没有放行本程序，局域网里的电脑可能连不上。',
       canAdd: true,
     });
   });
 
+  // 安装版：防火墙没放行时局域网先不开，说清楚加上规则后会自动开放。
+  test('explains that the LAN opens once the rule is added', () => {
+    expect(describeFirewall('missing', true)).toEqual({
+      text: '局域网访问暂时没打开：Windows 防火墙还没放行本程序，点下面的「添加防火墙规则」后自动对局域网开放。',
+      canAdd: true,
+    });
+  });
+
   test('hides the row when the state is unknown', () => {
-    expect(describeFirewall('unknown')).toBeNull();
+    expect(describeFirewall('unknown', false)).toBeNull();
   });
 });

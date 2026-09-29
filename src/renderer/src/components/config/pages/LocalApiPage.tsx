@@ -146,7 +146,7 @@ function StatusCard({ api, port, lanEnabled, onChangePort, onChangeLanEnabled }:
 
 /** Windows 防火墙：没放行时给「添加」按钮（弹管理员确认）。不是 Windows 或查不到时不显示。 */
 function FirewallRow({ api }: { api: LocalApiModel }) {
-  const view = describeFirewall(api.firewall);
+  const view = describeFirewall(api.firewall, api.lanHeldBack);
   if (view === null) {
     return null;
   }

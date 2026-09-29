@@ -1,5 +1,4 @@
 import {
-  app,
   type BrowserWindow,
   clipboard,
   dialog,
@@ -30,7 +29,6 @@ import { DEFAULT_PAPER } from '../shared/label-paper';
 import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
 import type { AppSettings } from '../shared/settings';
 import type { LocalApi } from './api/local-api';
-import { addFirewallRule, firewallStatus } from './firewall';
 import { logFailures } from './ipc-errors';
 import {
   requireApiKeyId,
@@ -337,8 +335,8 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.DecideApiOrigin, (origin, allow) =>
     deps.localApi.decideOrigin(requireWebOrigin(origin), requireBoolean(allow, 'allow')),
   );
-  handle(IpcChannel.FirewallStatus, () => firewallStatus(app.getPath('exe')));
-  handle(IpcChannel.AddFirewallRule, () => addFirewallRule(app.getPath('exe')));
+  handle(IpcChannel.FirewallStatus, () => deps.localApi.checkFirewall());
+  handle(IpcChannel.AddFirewallRule, () => deps.localApi.addFirewallRule());
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());
   on(IpcChannel.WindowToggleMaximize, () => {

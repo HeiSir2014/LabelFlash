@@ -19,11 +19,13 @@ export function describeApiStatus(status: LocalApiStatus): ApiStatusView {
       const hosts = ['127.0.0.1', ...(server.lanEnabled ? status.lanAddresses : [])];
       const scope = server.lanEnabled
         ? '局域网里的程序要带程序密钥；传输是明文 HTTP，只在可信的局域网里使用。'
-        : '只接受这台电脑上的网页和程序。';
+        : status.lanHeldBack
+          ? `暂时只接受这台电脑上的网页和程序：${HELD_BACK_REASON}`
+          : '只接受这台电脑上的网页和程序。';
       const moved = server.skippedPorts.length > 0;
       return {
-        tone: moved ? 'warning' : 'success',
-        title: moved ? '正在运行（已自动换端口）' : '正在运行',
+        tone: moved || status.lanHeldBack ? 'warning' : 'success',
+        title: moved ? '正在运行（已自动换端口）' : status.lanHeldBack ? '正在运行（局域网暂未开放）' : '正在运行',
         addresses: hosts.map((host) => `http://${host}:${server.port}`),
         detail: moved
           ? `端口 ${server.skippedPorts.join('、')} 被别的程序${ownerText(status.portOwner)}占用，已自动改用 ${server.port}。已经配好旧端口的程序要改成新端口。${scope}`
@@ -57,6 +59,8 @@ export function describeApiStatus(status: LocalApiStatus): ApiStatusView {
   }
 }
 
+const HELD_BACK_REASON = 'Windows 防火墙还没放行本程序，点下面的「添加防火墙规则」后自动对局域网开放。';
+
 /** 端口列表里的 0：由系统分配一个空闲端口（和主进程的 apiPortOrder 一致）。 */
 const ANY_FREE_PORT = 0;
 
@@ -84,12 +88,20 @@ export function describeKeyUsage(key: ApiKeyInfo): string {
 }
 
 /** 防火墙一行的说明；查不到（或不是 Windows）时不显示这一行。 */
-export function describeFirewall(status: FirewallStatus): { text: string; canAdd: boolean } | null {
+export function describeFirewall(
+  status: FirewallStatus,
+  lanHeldBack: boolean,
+): { text: string; canAdd: boolean } | null {
   switch (status) {
     case 'allowed':
-      return { text: '已放行本程序（专用网络和域网络）。', canAdd: false };
+      return { text: '已放行本程序，所有网络类型（专用、公用、域）都生效。', canAdd: false };
     case 'missing':
-      return { text: 'Windows 防火墙还没有放行本程序，局域网里的电脑可能连不上。', canAdd: true };
+      return {
+        text: lanHeldBack
+          ? `局域网访问暂时没打开：${HELD_BACK_REASON}`
+          : 'Windows 防火墙还没有放行本程序，局域网里的电脑可能连不上。',
+        canAdd: true,
+      };
     case 'unknown':
       return null;
   }

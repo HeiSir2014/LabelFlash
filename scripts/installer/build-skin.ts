@@ -51,7 +51,7 @@ async function buildSkin(scale: SkinScale): Promise<Buffer> {
  */
 const UTF8_BOM = '﻿';
 
-/** 生成全部比例的皮肤包、挑选皮肤的 NSIS 宏，以及安装时加防火墙规则的脚本。 */
+/** 生成全部比例的皮肤包、挑选皮肤的 NSIS 宏，以及安装、卸载时加 / 删防火墙规则的脚本（见 resources/installer/firewall.nsh）。 */
 export async function buildSkins(outputDir = SKIN_OUTPUT_DIR): Promise<void> {
   await mkdir(outputDir, { recursive: true });
   for (const scale of SKIN_SCALES) {

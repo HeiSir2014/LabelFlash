@@ -6,7 +6,8 @@
 ;   - 提供两个函数：
 ;       skinStartInstall  启动安装（通常调用 skinSpawn）；$0 返回 "" 表示已启动，否则是给用户看的错误
 ;       skinRunApp        启动安装好的程序
-;       skinAddFirewallRule  装完、启动程序之前加防火墙规则（弹管理员确认；更新时不调用）
+;       skinAddFirewallRule  装完、启动程序之前启动加防火墙规则的进程（通常调用 skinSpawn，弹管理员确认；
+;                            $0 同 skinStartInstall；更新时不调用）
 ; 调用 skinShow 前设置 $skinIsUpdate（1 = 自动更新拉起的安装：跳过配置页）。
 
 !include "LogicLib.nsh"
@@ -36,8 +37,11 @@ Var skinTicks
 Var skinHoldTicks
 Var skinInstalled
 Var skinIsUpdate
-; 1 = 装完了、提示已显示，下一帧弹管理员确认加防火墙规则
+; 1 = 装完了、提示已显示，下一帧弹管理员确认加防火墙规则；2 = 正在加，等它结束再显示「完成」
 Var skinFirewallPending
+Var skinFirewallTicks
+; 加规则的 PowerShell 一般几秒就结束；超过 30 秒不再等它，照常装完、启动程序（没加上的话程序里可以再加）。
+!define SKIN_FIREWALL_TIMEOUT_TICKS 500
 
 !define /ifndef SEE_MASK_NOCLOSEPROCESS 0x00000040
 !define /ifndef WAIT_OBJECT_0 0
@@ -45,10 +49,10 @@ Var skinFirewallPending
 
 Var skinProcess
 
-; 启动安装进程（$R0 = 程序，$R1 = 参数），保留进程句柄以便按退出码判断结果：
-; 子进程中途出错退出也不会漏判。$0 返回 "" 表示已启动，否则是给用户看的错误。
+; 启动进程（$R0 = 程序，$R1 = 参数，$R2 = "open" 或以管理员身份运行的 "runas"），保留进程句柄以便按退出码判断结果：
+; 子进程中途出错退出也不会漏判。$0 返回 "" 表示已启动，否则是给用户看的错误（runas 时用户点了「否」也算没启动）。
 Function skinSpawn
-  System::Call '*(&l4, i ${SEE_MASK_NOCLOSEPROCESS}, p $HWNDPARENT, w "open", w "$R0", w "$R1", p 0, i ${SW_HIDE}, p, p, p, p, i, p, p) p .r2'
+  System::Call '*(&l4, i ${SEE_MASK_NOCLOSEPROCESS}, p $HWNDPARENT, w "$R2", w "$R0", w "$R1", p 0, i ${SW_HIDE}, p, p, p, p, i, p, p) p .r2'
   System::Call 'shell32::ShellExecuteExW(p r2) i .r3'
   ${If} $3 == 0
     System::Free $2
@@ -61,7 +65,7 @@ Function skinSpawn
   StrCpy $0 ""
 FunctionEnd
 
-; $0 返回 "running"，或安装进程的退出码；等待失败时返回 -1。
+; $0 返回 "running"，或 skinSpawn 启动的进程的退出码；等待失败时返回 -1。结束后关闭句柄。
 Function skinPollInstall
   System::Call 'kernel32::WaitForSingleObject(p $skinProcess, i 0) i .r0'
   ${If} $0 = ${WAIT_TIMEOUT}
@@ -277,6 +281,23 @@ Function skinOnTick
   ${If} $skinFirewallPending == 1
     StrCpy $skinFirewallPending 0
     Call skinAddFirewallRule
+    ${If} $0 == ""
+      StrCpy $skinFirewallPending 2
+      StrCpy $skinFirewallTicks 0
+    ${EndIf}
+  ${ElseIf} $skinFirewallPending == 2
+    ; 加规则的进程结束（或等太久）之前，进度停在这里：先有规则再启动程序。
+    IntOp $skinFirewallTicks $skinFirewallTicks + 1
+    Call skinPollInstall
+    ${If} $0 != "running"
+      StrCpy $skinFirewallPending 0
+    ${ElseIf} $skinFirewallTicks >= ${SKIN_FIREWALL_TIMEOUT_TICKS}
+      System::Call 'kernel32::CloseHandle(p $skinProcess)'
+      StrCpy $skinFirewallPending 0
+    ${Else}
+      Call skinShowProgress
+      Return
+    ${EndIf}
   ${EndIf}
 
   ${If} $skinInstalled == 1

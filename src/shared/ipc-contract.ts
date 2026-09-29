@@ -119,12 +119,14 @@ export interface LabelFlashApi {
   preview(raw: string): Promise<LabelPreview>;
   /** 模板编辑时的实时预览：用未保存的草稿模板渲染。 */
   previewTemplate(raw: string, template: LabelTemplate): Promise<LabelPreview>;
-  print(raw: string, printerName: string, options: PrintOptions): Promise<PrintResult>;
-  printTest(printerName: string): Promise<PrintResult>;
+  /** 打到哪台打印机由主进程按模板决定（模板指定 → 纸张分配）；这种纸没有打印机时返回 no-printer。 */
+  print(raw: string, options: PrintOptions): Promise<PrintResult>;
+  /** 测试页按 paperKey（这台打印机负责的纸，例如 100x180）的尺寸打印。 */
+  printTest(printerName: string, paperKey: string): Promise<PrintResult>;
   listPrinters(): Promise<PrinterInfo[]>;
   printerStatus(printerName: string): Promise<PrinterReadiness | null>;
-  /** 驱动默认纸张是否为 60×40（每次调用都重新读取驱动设置）。 */
-  checkDriverPaper(printerName: string): Promise<PaperCheck>;
+  /** 驱动默认纸张和 paperKey（这台打印机应该装的纸）是否一致；驱动资料短时缓存，打开打印首选项后重新读取。 */
+  checkDriverPaper(printerName: string, paperKey: string): Promise<PaperCheck>;
   /** 打开驱动的「打印首选项」窗口；窗口关闭后才完成。 */
   openPrinterPreferences(printerName: string): Promise<void>;
   listJobs(query: JobQuery): Promise<JobPage>;

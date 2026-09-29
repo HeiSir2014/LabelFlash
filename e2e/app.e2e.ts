@@ -17,7 +17,7 @@ import { expect, test } from './support/fixtures';
 
 /** 选一台假打印机、设好打印方式，重新加载界面让设置生效（打印处理要先用 stubPrinting 换掉）。 */
 async function usePrinter(page: Page, autoPrint: boolean): Promise<void> {
-  await callApi(page, 'updateSettings', { selectedPrinter: 'E2E 打印机', autoPrint });
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': 'E2E 打印机' }, autoPrint });
   await page.reload();
   await expect(page.locator('.scan-bar__input')).toBeFocused();
 }
@@ -47,7 +47,7 @@ test('loads the UI over app:// and previews a scanned label', async ({ electronA
 
   // 横杠三段：默认绑定样衣标准模板，只显示编码 / 颜色 / 尺码。
   await scan(page, 'CL5640-TK-图片色-XXL');
-  await expect(page.locator('.status-strip__title')).toHaveText('还没选打印机');
+  await expect(page.locator('.status-strip__title')).toHaveText('没有可用的打印机');
   await expect(usage).toHaveText('规则：横杠三段（编码-颜色-尺码） · 模板：样衣标准（二维码在左）（规则指定）');
   const values = page.frameLocator('.label-frame').locator('.value');
   await expect(values).toHaveText(['CL5640-TK', '图片色', 'XXL']);

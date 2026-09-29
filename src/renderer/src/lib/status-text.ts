@@ -53,7 +53,6 @@ export interface ScanSnapshot {
 
 export interface ScanContext {
   autoPrint: boolean;
-  hasPrinter: boolean;
   now: number;
   /** 刚扫的内容还在识别或查询（超过一小会儿才算）；界面暂时保留上一张的预览。 */
   queryingRaw: string | null;
@@ -231,28 +230,32 @@ export function describeScan(scan: ScanSnapshot | null, context: ScanContext): S
   }
   if (scan.print) {
     const { print } = scan;
-    const canRetry = print.status === 'failed' && RETRYABLE_FAILURES.has(print.reason);
+    // 没有打印机时指定好打印机就能直接重打这一张（主进程每次打印都重新决定打印机），不用再扫。
+    const canRetry =
+      print.status === 'no-printer' || (print.status === 'failed' && RETRYABLE_FAILURES.has(print.reason));
     const canForce =
       (print.status === 'duplicate' && print.recent.state === 'printed') ||
       (print.status === 'failed' && print.reason === 'PRINT_TIMEOUT');
     return {
       status: describeResult(print, context.now),
       actions: {
-        print: canRetry && context.hasPrinter ? 'retry' : null,
-        forceReprint: canForce && context.hasPrinter,
+        print: canRetry ? 'retry' : null,
+        forceReprint: canForce,
       },
     };
   }
   if (previewResult.lookupFailure !== null) {
     return {
       status: { tone: 'error', title: '数据查询失败', detail: lookupFailureDetail(previewResult.lookupFailure) },
-      actions: { print: context.hasPrinter ? 'retry' : null, forceReprint: false },
+      actions: { print: 'retry', forceReprint: false },
     };
   }
-  if (!context.hasPrinter) {
+  // 预览时这种纸还没有打印机（手动模式）：说清是哪种纸；指定好之后按 F2，主进程会重新决定打印机。
+  const { printer } = previewResult;
+  if (printer.printerName === null) {
     return {
-      status: { tone: 'warning', title: '还没选打印机', detail: '在右侧「打印机」列表里点选一台，选好后按 F2 打印' },
-      actions: NO_ACTIONS,
+      status: describeNoPrinter(printer.paperKey, printer.missingPrinter),
+      actions: { print: 'retry', forceReprint: false },
     };
   }
   const { recent } = previewResult;

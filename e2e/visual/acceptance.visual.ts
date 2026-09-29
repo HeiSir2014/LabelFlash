@@ -136,7 +136,7 @@ interface ItemRecord {
 /** 选一台假打印机、打开自动打印（打印处理先换成只计数的假实现），重新加载界面让设置生效。 */
 async function useFakePrinter(ctx: Context): Promise<void> {
   ctx.printCalls = await stubPrinting(ctx.app);
-  await callApi(ctx.page, 'updateSettings', { selectedPrinter: FAKE_PRINTER, autoPrint: true });
+  await callApi(ctx.page, 'updateSettings', { paperPrinters: { '60x40': FAKE_PRINTER }, autoPrint: true });
   await ctx.page.reload();
 }
 
@@ -834,7 +834,10 @@ const ITEMS: Item[] = [
       ctx.cleanups.push(relay.stop);
       mobileRelay = relay;
       mobilePhone = null;
-      await callApi(ctx.page, 'updateSettings', { mobileRelayUrl: relay.baseUrl, selectedPrinter: FAKE_PRINTER });
+      await callApi(ctx.page, 'updateSettings', {
+        mobileRelayUrl: relay.baseUrl,
+        paperPrinters: { '60x40': FAKE_PRINTER },
+      });
       await ctx.page.reload();
       ctx.cleanups.push(async () => mobilePhone?.session.stop());
     },

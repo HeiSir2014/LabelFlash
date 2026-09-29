@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PaperCheck } from '../../../shared/driver-paper';
+import { DEFAULT_PAPER } from '../../../shared/label-paper';
+import { paperKey } from '../../../shared/paper-sizes';
 import { reportError } from '../lib/notices';
 
 /**
@@ -21,7 +23,8 @@ export function useDriverPaper(printerName: string | null, isListed: boolean) {
       return;
     }
     try {
-      const next = await window.api.checkDriverPaper(target);
+      // 暂时按 60×40 核对：打印机页按纸张分配改写后，改为这台打印机负责的纸。
+      const next = await window.api.checkDriverPaper(target, paperKey(DEFAULT_PAPER));
       if (currentTarget.current === target) {
         setCheck(next);
       }

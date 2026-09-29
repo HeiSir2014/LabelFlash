@@ -18,6 +18,8 @@ interface PrinterListCache {
 /** 通过打印机驱动静默打印：隐藏窗口渲染标签 HTML，然后调用 webContents.print。 */
 export class ElectronDriverAdapter implements PrinterDriver {
   private cache: PrinterListCache | null = null;
+  /** 正在进行的系统查询：同时来的几张共用它，按调用顺序继续，不会因为谁先查完而插队（先扫先打）。 */
+  private pending: Promise<PrinterInfo[]> | null = null;
 
   constructor(
     private readonly getWebContents: () => WebContents,
@@ -78,11 +80,14 @@ export class ElectronDriverAdapter implements PrinterDriver {
     return (await this.knownPrinters()).map((printer) => printer.name);
   }
 
-  private async knownPrinters(): Promise<PrinterInfo[]> {
+  private knownPrinters(): Promise<PrinterInfo[]> {
     if (this.cache && this.clock.now() - this.cache.at < PRINTER_LIST_TTL_MS) {
-      return this.cache.printers;
+      return Promise.resolve(this.cache.printers);
     }
-    return this.listPrinters();
+    this.pending ??= this.listPrinters().finally(() => {
+      this.pending = null;
+    });
+    return this.pending;
   }
 }
 

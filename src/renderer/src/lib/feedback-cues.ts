@@ -9,7 +9,6 @@ export type { PrintMode };
 export type FeedbackEvent =
   | { kind: 'result'; result: PrintResult; mode: PrintMode }
   | { kind: 'invalid' }
-  | { kind: 'no-printer' }
   /** 手动模式下扫码成功、预览已出来（等待按 F2）。 */
   | { kind: 'scanned' }
   /** 配置中心里扫了码：不打印，提醒操作员回工作台。 */
@@ -44,8 +43,6 @@ function cueFor(event: FeedbackEvent): VoiceCue {
       return printResultCue(event.result, event.mode);
     case 'invalid':
       return 'invalid';
-    case 'no-printer':
-      return 'noPrinter';
     case 'configuring':
       return 'configuring';
     case 'scanned':

@@ -12,7 +12,13 @@ const SCAN: ScanResult = {
 
 function preview(overrides: Partial<LabelPreview> = {}): LabelPreview {
   return {
-    result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: null },
+    result: {
+      status: 'ok',
+      scan: SCAN,
+      recent: null,
+      lookupFailure: null,
+      printer: { printerName: '热敏标签机', reason: 'paper' },
+    },
     html: '<html></html>',
     templateName: '样衣标准（二维码在左）',
     isTemplateBound: true,

@@ -68,7 +68,7 @@ beforeAll(async () => {
       clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
     },
     createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
-    selectedPrinter: async () => ({ name: 'LABEL_PRINTER_01', displayName: '热敏标签机' }),
+    printerLabel: async () => '热敏标签机',
     print: async (raw) => {
       prints.push(raw);
       return PRINTED;

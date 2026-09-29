@@ -24,8 +24,15 @@ const SCAN: ScanResult = {
     { name: '尺码', value: 'XL' },
   ],
 };
+const PRINTER_CHOICE = { printerName: '热敏标签机', reason: 'paper' } as const;
 const OK_PREVIEW: LabelPreview = {
-  result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: null },
+  result: {
+    status: 'ok',
+    scan: SCAN,
+    recent: null,
+    lookupFailure: null,
+    printer: PRINTER_CHOICE,
+  },
   html: '<html></html>',
   templateName: '样衣标准（二维码在左）',
   isTemplateBound: true,
@@ -49,7 +56,6 @@ const snapshot = (overrides: Partial<ScanSnapshot> = {}): ScanSnapshot => ({
 });
 const context = (overrides: Partial<ScanContext> = {}): ScanContext => ({
   autoPrint: false,
-  hasPrinter: true,
   now: NOW,
   queryingRaw: null,
   ...overrides,
@@ -186,7 +192,13 @@ describe('describeScan', () => {
   test('manual mode still lets F2 submit a recently printed label (the threshold decides) and offers force', () => {
     const preview: LabelPreview = {
       ...OK_PREVIEW,
-      result: { status: 'ok', scan: SCAN, recent: { state: 'printed', at: NOW - 2 * MINUTE }, lookupFailure: null },
+      result: {
+        status: 'ok',
+        scan: SCAN,
+        recent: { state: 'printed', at: NOW - 2 * MINUTE },
+        lookupFailure: null,
+        printer: PRINTER_CHOICE,
+      },
     };
     const view = describeScan(snapshot({ preview }), context());
     expect(view.status).toMatchObject({ tone: 'warning', title: '2 分钟前已打印过' });
@@ -196,7 +208,7 @@ describe('describeScan', () => {
   test('a lookup that failed during preview offers a retry instead of printing blank data', () => {
     const preview: LabelPreview = {
       ...OK_PREVIEW,
-      result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: '查询超时' },
+      result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: '查询超时', printer: PRINTER_CHOICE },
     };
     const view = describeScan(snapshot({ preview }), context());
     expect(view.status).toMatchObject({ tone: 'error', title: '数据查询失败' });
@@ -210,12 +222,26 @@ describe('describeScan', () => {
     expect(view.detail).toContain('返回 500');
   });
 
-  test('no printer selected blocks printing in both modes', () => {
-    for (const autoPrint of [true, false]) {
-      const view = describeScan(snapshot(), context({ hasPrinter: false, autoPrint }));
-      expect(view.status.title).toBe('还没选打印机');
-      expect(view.actions.print).toBeNull();
-    }
+  // 手动模式下预览出来这种纸没有打印机：说清是哪种纸；指定好打印机后 F2 直接打（主进程重新决定打印机）。
+  test('names the paper that has no printer and still lets F2 try again', () => {
+    const preview: LabelPreview = {
+      ...OK_PREVIEW,
+      result: {
+        status: 'ok',
+        scan: SCAN,
+        recent: null,
+        lookupFailure: null,
+        printer: { printerName: null, reason: 'unassigned', paperKey: '100x180', missingPrinter: null },
+      },
+    };
+    const view = describeScan(snapshot({ preview }), context());
+    expect(view.status).toMatchObject({ title: '没有可用的打印机', detail: '100×180 二联面单 还没有打印机' });
+    expect(view.actions.print).toBe('retry');
+  });
+
+  test('offers a retry after a no-printer result', () => {
+    const print = { status: 'no-printer', paperKey: '100x180', missingPrinter: null } as const;
+    expect(describeScan(snapshot({ print }), context()).actions.print).toBe('retry');
   });
 
   test('retryable failures offer retry; timeouts only offer force reprint', () => {

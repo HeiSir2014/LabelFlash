@@ -4,7 +4,7 @@
  * 不依赖 Electron：WebSocket、计时器、打印函数都由参数注入，集成测试用真实的中转服务和手机端代码跑通。
  * 会话规则（手机加入与移除、防重放、打印队列、任务去重、背压、到期）在 mobile-session.ts；这里只做编排。
  */
-import type { Clock, PrinterInfo } from '../../core/types';
+import type { Clock } from '../../core/types';
 import { importSessionKey, openMessage, randomId, randomKey, sealMessage } from '../../shared/mobile-crypto';
 import {
   buildPhoneUrl,
@@ -29,10 +29,10 @@ export interface MobileHostDeps {
   clock: Clock;
   timers: SocketTimers;
   createSocket: (url: string) => SocketLike;
-  /** 执行一个打印任务：PrintService.submit 加结果换算（由 mobile-station 提供）。printerName 是系统里的打印机名。 */
-  print: (raw: string, force: boolean, printerName: string) => Promise<PhonePrintResult>;
-  /** 设置里当前选中的打印机（系统名用来打印，显示名告诉手机）；没选时为 null。 */
-  selectedPrinter: () => Promise<PrinterInfo | null>;
+  /** 执行一个打印任务：PrintService.submit 加结果换算（由 mobile-station 提供）；打到哪台由 PrintService 按模板决定。 */
+  print: (raw: string, force: boolean) => Promise<PhonePrintResult>;
+  /** 告诉手机的打印机汇总（一台时是它的显示名，几台时是台数）；没有分配打印机时为 null。 */
+  printerLabel: () => Promise<string | null>;
   log: (line: string) => void;
 }
 
@@ -113,7 +113,7 @@ export class MobileHost {
     return () => this.listeners.delete(listener);
   }
 
-  /** 设置里的打印机变了：告诉所有在线的手机。 */
+  /** 纸张分配变了（打印机汇总可能变了）：告诉所有在线的手机。 */
   printerChanged(): void {
     const run = this.run;
     if (!run) {
@@ -315,11 +315,7 @@ export class MobileHost {
 
   private async print(raw: string, force: boolean): Promise<PhonePrintResult> {
     try {
-      const printer = await this.deps.selectedPrinter();
-      if (printer === null) {
-        return { status: 'no-printer' };
-      }
-      return await this.deps.print(raw, force, printer.name);
+      return await this.deps.print(raw, force);
     } catch (error) {
       // PrintService 自己不抛错；走到这里是接线出了问题，按驱动报错回复，不让任务卡住。
       this.deps.log(`mobile: printing a phone job failed unexpectedly: ${String(error)}`);
@@ -327,9 +323,8 @@ export class MobileHost {
     }
   }
 
-  /** 告诉手机的打印机名：用界面上显示的名字。 */
-  private async printerLabel(): Promise<string | null> {
-    return (await this.deps.selectedPrinter())?.displayName ?? null;
+  private printerLabel(): Promise<string | null> {
+    return this.deps.printerLabel();
   }
 
   private handleRelayError(run: Run, code: RelayErrorCode): void {

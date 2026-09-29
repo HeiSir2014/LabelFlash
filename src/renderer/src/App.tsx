@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
+import { DEFAULT_PAPER } from '../../shared/label-paper';
+import { paperKey } from '../../shared/paper-sizes';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
 import { ConfigCenter } from './components/config/ConfigCenter';
@@ -44,6 +46,9 @@ import { useTemplates } from './view-models/use-templates';
 import { useUpdateStatus } from './view-models/use-update-status';
 import { windowChrome } from './view-models/use-window-controls';
 
+/** 1.0.x 的标签纸（60×40）：打印机页按纸张分配改写之前，列表里点选的打印机就分配给它。 */
+const LABEL_PAPER_KEY = paperKey(DEFAULT_PAPER);
+
 /** 与 app.css 里编辑视图改成上下排列的断点一致。 */
 const NARROW_QUERY = '(max-width: 1099px)';
 
@@ -59,7 +64,8 @@ export function App() {
   const platform = platformForChrome(windowChrome());
   const fieldType = scanFieldType(platform);
 
-  const printerName = settings?.selectedPrinter ?? null;
+  // 暂时把「60×40 分配到的打印机」当作标题栏和打印机列表里的那一台；打印机页按纸张分配改写后换成汇总。
+  const printerName = settings?.paperPrinters[LABEL_PAPER_KEY] ?? null;
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
   const historyLimit = settings?.historyLimit ?? DEFAULT_SETTINGS.historyLimit;
   const readiness = usePrinterStatus(printerName);
@@ -72,10 +78,9 @@ export function App() {
   });
   const driverPaper = useDriverPaper(printerName, isPrinterListed);
 
-  // 是否能打印由主进程最终判断（找不到打印机会返回 PRINTER_NOT_FOUND），界面只要求选过打印机。
+  // 打到哪台、能不能打由主进程按模板决定（没有打印机时返回 no-printer，找不到打印机返回 PRINTER_NOT_FOUND）。
   const feedback = useFeedback(settings?.voice ?? DEFAULT_SETTINGS.voice);
   const station = useScanStation({
-    printerName,
     autoPrint,
     onJobRecorded: jobLog.refresh,
     announce: feedback.announce,
@@ -146,7 +151,6 @@ export function App() {
 
   const scanView = describeScan(station.scan, {
     autoPrint,
-    hasPrinter: printerName !== null,
     now: Date.now(),
     queryingRaw: station.queryingRaw,
   });
@@ -172,7 +176,7 @@ export function App() {
 
   /** 测试页的结果也要播报：操作员通常站在打印机旁边，不看屏幕。 */
   const printTest = async (name: string) => {
-    const result = await printers.printTest(name);
+    const result = await printers.printTest(name, LABEL_PAPER_KEY);
     feedback.announce(result ? { kind: 'result', result, mode: 'test' } : { kind: 'internal-error' });
     return result;
   };
@@ -255,7 +259,9 @@ export function App() {
                 isOpening: driverPaper.isOpening,
                 onOpenPreferences: () => void driverPaper.openPreferences(),
               }}
-              onSelect={(name) => void update({ selectedPrinter: name })}
+              onSelect={(name) =>
+                void update({ paperPrinters: { ...settings?.paperPrinters, [LABEL_PAPER_KEY]: name } })
+              }
               onRefresh={() => void printers.refresh()}
               onTestPrint={printTest}
             />
@@ -347,7 +353,10 @@ export function App() {
       )}
       {isMobileOverlayShown && (
         <MobileOverlay
-          view={describeMobileOverlay(mobile.status, { hasPrinter: printerName !== null, now: mobile.now })}
+          view={describeMobileOverlay(mobile.status, {
+            hasPrinter: Object.keys(settings?.paperPrinters ?? {}).length > 0,
+            now: mobile.now,
+          })}
           qrImage={mobileQr}
           onStart={mobile.start}
           onStop={mobile.stop}

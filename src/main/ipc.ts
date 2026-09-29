@@ -24,6 +24,8 @@ import {
   type LookupImportResult,
   RECENT_DELIVERY_COUNT,
 } from '../shared/ipc-contract';
+import { DEFAULT_PAPER } from '../shared/label-paper';
+import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
 import type { AppSettings } from '../shared/settings';
 import { logFailures } from './ipc-errors';
 import {
@@ -31,6 +33,7 @@ import {
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
+  requirePaperKey,
   requirePositiveInteger,
   requirePrintOptions,
   requireRaw,
@@ -60,6 +63,11 @@ import type { VoiceClips } from './voice/voice-clips';
 
 const DRAFT_TEMPLATE_ID = `${CUSTOM_TEMPLATE_PREFIX}draft`;
 
+/** 已校验的纸张键 → 纸张（requirePaperKey 保证能解析，兜底只为类型）。 */
+function paperOf(key: string): PaperSize {
+  return parsePaperKey(key) ?? DEFAULT_PAPER;
+}
+
 export interface IpcDeps {
   service: PrintService;
   adapter: PrinterDriver;
@@ -79,6 +87,8 @@ export interface IpcDeps {
   profiles: PrinterProfiles;
   getWindow: () => BrowserWindow | null;
   onSettingsChanged: (next: AppSettings, previous: AppSettings) => Promise<void>;
+  /** 模板保存或删除之后：模板指定的打印机可能变了，要检测的打印机跟着变。 */
+  onTemplatesChanged: () => void;
 }
 
 /**
@@ -138,19 +148,19 @@ export function registerIpc(deps: IpcDeps): void {
     // 模板页指定了要看的模板，不是规则选的。
     return renderPreview(result, { template: draft, isBound: false });
   });
-  handle(IpcChannel.Print, (raw, printerName, options) =>
-    deps.service.submit({
-      raw: requireRaw(raw),
-      printerName: requireString(printerName, 'printerName'),
-      ...requirePrintOptions(options),
-    }),
+  handle(IpcChannel.Print, (raw, options) =>
+    deps.service.submit({ raw: requireRaw(raw), ...requirePrintOptions(options) }),
   );
-  handle(IpcChannel.PrintTest, (printerName) => deps.service.printTest(requireString(printerName, 'printerName')));
+  // 打印机名不在这里核对：找不到时由适配器返回 PRINTER_NOT_FOUND，和正式打印一样显示在界面上。
+  handle(IpcChannel.PrintTest, (printerName, key) =>
+    deps.service.printTest(requireString(printerName, 'printerName'), paperOf(requirePaperKey(key))),
+  );
   handle(IpcChannel.ListPrinters, () => deps.adapter.listPrinters());
   handle(IpcChannel.PrinterStatus, (printerName) => deps.status.get(requireString(printerName, 'printerName')));
-  handle(IpcChannel.CheckDriverPaper, async (printerName) =>
-    checkDriverPaper(await deps.profiles.get(await requireKnownPrinter(printerName))),
-  );
+  handle(IpcChannel.CheckDriverPaper, async (printerName, key) => {
+    const expected = paperOf(requirePaperKey(key));
+    return checkDriverPaper(await deps.profiles.get(await requireKnownPrinter(printerName)), expected);
+  });
   handle(IpcChannel.OpenPrinterPreferences, async (printerName) => {
     const name = await requireKnownPrinter(printerName);
     await openPrinterPreferences(name);
@@ -164,11 +174,14 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.DuplicateTemplate, (sourceId) => deps.templates.duplicate(requireTemplateId(sourceId)));
   handle(IpcChannel.SaveTemplate, (template) => {
     const record = requireRecord(template, 'template');
-    return deps.templates.save(requireTemplateId(record['id']), record);
+    const saved = deps.templates.save(requireTemplateId(record['id']), record);
+    deps.onTemplatesChanged();
+    return saved;
   });
   handle(IpcChannel.DeleteTemplate, (id) => {
     const templateId = requireTemplateId(id);
     deps.templates.remove(templateId);
+    deps.onTemplatesChanged();
     return deps.settings.current.activeTemplateId === templateId
       ? updateSettings({ activeTemplateId: DEFAULT_TEMPLATE_ID })
       : deps.settings.current;

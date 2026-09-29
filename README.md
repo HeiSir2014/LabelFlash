@@ -115,10 +115,10 @@ bun run dist:win   # 在 Windows 上打安装包，输出到 dist/
 - 编码约定、提交前必须通过的检查、各层的规则：见根目录和各目录下的 `CLAUDE.md`。
 - 安装包的构建、运行方式和插件来源：见 `resources/installer/README.md`。
 
-GitHub Actions 在 Windows 上运行：
+GitHub Actions：
 
-- 推送到 `master` 或提交 PR：执行检查和 E2E 测试，并上传安装包产物。
-- 推送 `v*` 标签：electron-builder 把安装包和 `latest.yml` 发布到 GitHub Release，已安装的客户端会自动更新。
+- 推送到 `master` 或提交 PR：在 Windows 和 macOS 上执行检查和 E2E 测试，并在 Windows 上打包、上传安装包产物。
+- 推送 `v*` 标签：两个平台的检查都通过后，electron-builder 把 Windows 安装包和 `latest.yml` 发布到 GitHub Release，已安装的客户端会自动更新（macOS 暂无安装包）。
 - 安装包的默认中转地址来自仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL`（代码里不写域名）；自己构建时可以用环境变量 `CDL_LABELFLASH_DEFAULT_RELAY_URL` 指定，不设就没有默认值。
 
 发布新版本：

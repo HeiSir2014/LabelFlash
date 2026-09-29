@@ -117,7 +117,7 @@ function BasicSection({ draft, onChange }: SectionProps) {
           onChange({
             ...draft,
             paddingMm,
-            qr: { ...draft.qr, sizeMm: Math.min(draft.qr.sizeMm, maxQrSizeMm(paddingMm)) },
+            qr: { ...draft.qr, sizeMm: Math.min(draft.qr.sizeMm, maxQrSizeMm(draft.paper, paddingMm)) },
           })
         }
       />
@@ -141,7 +141,7 @@ function QrSection({ draft, onChange }: SectionProps) {
         label="边长"
         value={draft.qr.sizeMm}
         min={TEMPLATE_LIMITS.qrSizeMm.min}
-        max={maxQrSizeMm(draft.paddingMm)}
+        max={maxQrSizeMm(draft.paper, draft.paddingMm)}
         step={QR_STEP_MM}
         onChange={(sizeMm) => onChange({ ...draft, qr: { ...draft.qr, sizeMm } })}
       />

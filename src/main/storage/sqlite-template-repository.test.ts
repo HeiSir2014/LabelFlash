@@ -48,6 +48,25 @@ describe('SqliteTemplateRepository', () => {
     const [only] = repository.listCustom();
     expect(repository.listCustom()).toHaveLength(1);
     expect(only?.name).toBe('旧版');
-    expect(only?.qr.sizeMm).toBe(maxQrSizeMm(STANDARD_TEMPLATE.paddingMm));
+    expect(only?.qr.sizeMm).toBe(maxQrSizeMm(STANDARD_TEMPLATE.paper, STANDARD_TEMPLATE.paddingMm));
+  });
+
+  test('keeps the paper and printer of a template', () => {
+    const waybill = {
+      ...structuredClone(STANDARD_TEMPLATE),
+      id: 'custom:waybill',
+      paper: { widthMm: 100, heightMm: 180 },
+      printer: '面单机B',
+    };
+    repository.save(waybill);
+    expect(repository.listCustom()[0]).toMatchObject({ paper: { widthMm: 100, heightMm: 180 }, printer: '面单机B' });
+  });
+
+  // 1.0.x 存的模板没有纸张和打印机：读出来是 60×40、按纸张分配。
+  test('reads a 1.0.x template as 60x40 with no printer of its own', () => {
+    db.prepare(
+      `INSERT INTO templates (id, body, created_at, updated_at) VALUES ('custom:old', '{"name":"旧版"}', 1, 1)`,
+    ).run();
+    expect(repository.listCustom()[0]).toMatchObject({ paper: { widthMm: 60, heightMm: 40 }, printer: null });
   });
 });

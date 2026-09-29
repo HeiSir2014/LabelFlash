@@ -7,10 +7,12 @@ import { sanitizeTemplate } from './sanitize-template';
 import { TemplateCatalog, TemplateError } from './template-catalog';
 import {
   CUSTOM_TEMPLATE_PREFIX,
+  fullTextWidthMm,
   isBuiltInTemplateId,
   maxQrSizeMm,
   TEMPLATE_ID_PATTERN,
   TEMPLATE_LIMITS,
+  withPaper,
 } from './template-model';
 
 const SCAN: ScanResult = {
@@ -77,7 +79,7 @@ describe('sanitizeTemplate', () => {
       STANDARD_TEMPLATE,
     );
     expect(result.paddingMm).toBe(TEMPLATE_LIMITS.paddingMm.max);
-    expect(result.qr.sizeMm).toBe(maxQrSizeMm(TEMPLATE_LIMITS.paddingMm.max));
+    expect(result.qr.sizeMm).toBe(maxQrSizeMm(STANDARD_TEMPLATE.paper, TEMPLATE_LIMITS.paddingMm.max));
     expect(result.fieldsArea.all.fontSizeMm).toBe(TEMPLATE_LIMITS.fontSizeMm.max);
     expect(result.fieldsArea.slots[0]).toEqual({
       field: '编码',
@@ -206,5 +208,51 @@ describe('TemplateCatalog', () => {
   test('resolve falls back to the generic template', () => {
     const { catalog } = createCatalog();
     expect(catalog.resolve('custom:deleted')).toBe(GENERIC_TEMPLATE);
+  });
+});
+
+describe('template paper and printer', () => {
+  const fallback = STANDARD_TEMPLATE;
+
+  test('an old template without paper is 60x40 with no printer of its own', () => {
+    const { paper: _paper, printer: _printer, ...old } = fallback;
+    const template = sanitizeTemplate(old, 'custom:old', fallback);
+    expect(template.paper).toEqual({ widthMm: 60, heightMm: 40 });
+    expect(template.printer).toBeNull();
+  });
+
+  test('keeps a waybill paper and a named printer', () => {
+    const template = sanitizeTemplate(
+      { ...fallback, paper: { widthMm: 100, heightMm: 180 }, printer: '面单机B' },
+      'custom:waybill',
+      fallback,
+    );
+    expect(template.paper).toEqual({ widthMm: 100, heightMm: 180 });
+    expect(template.printer).toBe('面单机B');
+  });
+
+  test('treats a blank or oversized printer name as no printer', () => {
+    expect(sanitizeTemplate({ ...fallback, printer: '  ' }, 'custom:a', fallback).printer).toBeNull();
+    expect(sanitizeTemplate({ ...fallback, printer: 'x'.repeat(257) }, 'custom:a', fallback).printer).toBeNull();
+  });
+
+  test('limits the QR code to the short side of the paper', () => {
+    const small = sanitizeTemplate(
+      { ...fallback, paper: { widthMm: 40, heightMm: 30 }, qr: { ...fallback.qr, sizeMm: 36 } },
+      'custom:small',
+      fallback,
+    );
+    expect(small.qr.sizeMm).toBe(maxQrSizeMm(small.paper, small.paddingMm));
+  });
+
+  test('measures the text areas on the template paper', () => {
+    const wide = { ...fallback, paper: { widthMm: 100, heightMm: 100 } };
+    expect(fullTextWidthMm(wide)).toBe(100 - 2 * wide.paddingMm);
+  });
+
+  test('moves a template to another paper and shrinks the QR code to fit', () => {
+    const moved = withPaper({ ...fallback, qr: { ...fallback.qr, sizeMm: 36 } }, { widthMm: 40, heightMm: 30 });
+    expect(moved.paper).toEqual({ widthMm: 40, heightMm: 30 });
+    expect(moved.qr.sizeMm).toBe(maxQrSizeMm(moved.paper, moved.paddingMm));
   });
 });

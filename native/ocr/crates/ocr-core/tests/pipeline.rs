@@ -66,7 +66,9 @@ fn recognize(
 
 /// RGB 转成别的格式（RGBA/BGRA 的 alpha 填 255）。
 fn convert(rgb: &[u8], format: PixelFormat) -> Vec<u8> {
-    rgb.chunks_exact(3)
+    rgb.as_chunks::<3>()
+        .0
+        .iter()
         .flat_map(|p| match format {
             PixelFormat::Rgb => vec![p[0], p[1], p[2]],
             PixelFormat::Bgr => vec![p[2], p[1], p[0]],

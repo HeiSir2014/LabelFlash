@@ -29,10 +29,11 @@ describe('config navigation', () => {
     expect(pageLabel('notes')).toBe('常用备注');
   });
 
-  test('keeps mobile scanning with the other integrations', () => {
+  test('keeps mobile scanning and the local api with the other integrations', () => {
     const integrations = CONFIG_NAV.find((group) => group.label === '集成');
-    expect(integrations?.pages.map((item) => item.page)).toEqual(['webhooks', 'mobile']);
+    expect(integrations?.pages.map((item) => item.page)).toEqual(['webhooks', 'mobile', 'localApi']);
     expect(pageLabel('mobile')).toBe('手机扫码');
+    expect(pageLabel('localApi')).toBe('本机接口');
   });
 
   test('lets only the pages with a fixed preview or tester lay out their own scrolling', () => {

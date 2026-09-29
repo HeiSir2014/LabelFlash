@@ -2959,3 +2959,87 @@ textarea {
   color: var(--color-error);
   font-size: 12px;
 }
+
+/* ── 本机接口页 ── */
+.api-status {
+  color: var(--tone);
+}
+
+/* idle 的 --tone 是分隔线色，做文字太淡：没有运行时用正文色 */
+.api-status.tone--idle {
+  color: var(--color-ink);
+}
+
+.api-addresses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.api-address {
+  font-family: var(--font-data);
+  user-select: text;
+}
+
+/* 新密钥：只显示一次，醒目地单独放一块 */
+.api-new-key {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius);
+}
+
+.api-new-key__title,
+.api-new-key__issue {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.api-new-key__secret {
+  font-family: var(--font-data);
+}
+
+.api-key-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.api-key-card__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.api-key-card__name {
+  font-weight: 600;
+}
+
+.api-key-card__usage {
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+/* 名称输入框最宽 360px：名称最多 40 个字 */
+.api-key-form {
+  display: grid;
+  grid-template-columns: var(--config-label-width) minmax(0, 360px) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.api-key-form__label {
+  font-weight: 600;
+}

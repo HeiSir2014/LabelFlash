@@ -283,6 +283,12 @@ describe('describeJobMeta', () => {
       `${formatDateTime(NOW)} · ${describeSource('desktop')} · —`,
     );
   });
+
+  test('names who submitted a job through the local api', () => {
+    expect(
+      describeJobMeta({ ...job, source: 'api', printerName: '标签机A', forced: false, paper: '60x40' }, 'ERP'),
+    ).toBe(`${formatDateTime(NOW)} · 本机接口（ERP） · 标签机A · 60×40 标签`);
+  });
 });
 
 describe('describeJobStatus', () => {

@@ -17,6 +17,7 @@ import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
 import type { SideTab } from './components/workbench/WorkbenchSide';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
+import { describeCaller } from './lib/local-api-text';
 import { describeMobileButton, describeMobileOverlay, describeMobileState } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
@@ -32,6 +33,7 @@ import { useConfigCenter } from './view-models/use-config-center';
 import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
+import { useLocalApi } from './view-models/use-local-api';
 import { useMediaQuery } from './view-models/use-media-query';
 import { useMobileStation } from './view-models/use-mobile-station';
 import { useNotices } from './view-models/use-notices';
@@ -53,6 +55,7 @@ export function App() {
   const { settings, hasLoadError, reload, update, replace } = useSettings();
   const printers = usePrinters();
   const jobLog = useJobLog();
+  const localApi = useLocalApi();
   const appInfo = useAppInfo();
   const { notices, dismiss } = useNotices();
   const updates = useUpdateStatus();
@@ -357,6 +360,7 @@ export function App() {
               isLoadingMore={jobLog.isLoadingMore}
               onSearchChange={jobLog.setSearch}
               onLoadMore={() => void jobLog.loadMore()}
+              callerOf={(job) => describeCaller(job.caller, localApi.keys)}
               reprintModeOf={reprintModeOf}
               onReview={(job) => station.review(historyTarget(job))}
               onReprint={(job) => station.reprint(historyTarget(job))}
@@ -422,6 +426,7 @@ export function App() {
               defaultRelayUrl: appInfo?.defaultRelayUrl ?? null,
               statusText: describeMobileState(mobile.status),
             }}
+            localApi={localApi}
             general={{
               jobTotal: jobLog.total,
               update: updateView,

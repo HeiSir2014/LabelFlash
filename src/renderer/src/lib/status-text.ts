@@ -276,12 +276,16 @@ export function describeScan(scan: ScanSnapshot | null, context: ScanContext): S
   };
 }
 
-/** 打印记录一行的说明：时间 · 来源 · 打印机 · 纸张。旧记录没有纸张时写「—」，识别不了的记录没有打印机。 */
-export function describeJobMeta(job: JobRecord): string {
+/**
+ * 打印记录一行的说明：时间 · 来源 · 打印机 · 纸张。旧记录没有纸张时写「—」，识别不了的记录没有打印机。
+ * caller 是本机接口的调用方（密钥名称或网站，见 local-api-text 的 describeCaller），写在来源后面的括号里。
+ */
+export function describeJobMeta(job: JobRecord, caller: string | null = null): string {
   const paper = job.paper === undefined ? null : parsePaperKey(job.paper);
+  const source = describeSource(job.source);
   return [
     formatDateTime(job.createdAt),
-    describeSource(job.source),
+    caller === null ? source : `${source}（${caller}）`,
     job.printerName === '' ? null : job.printerName,
     paper === null ? '—' : formatPaperName(paper),
   ]

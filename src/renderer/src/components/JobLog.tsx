@@ -19,6 +19,8 @@ interface JobLogProps {
   isLoadingMore: boolean;
   onSearchChange: (search: string) => void;
   onLoadMore: () => void;
+  /** 本机接口记录的调用方（密钥名称或网站）；其他记录为 null。 */
+  callerOf: (job: JobRecord) => string | null;
   /** 这条记录能不能、怎么预览和重打（见 lib/reprint.ts）；unavailable 时不显示按钮。 */
   reprintModeOf: (job: JobRecord) => ReprintMode;
   onReview: (job: JobRecord) => void;
@@ -34,6 +36,7 @@ export function JobLog({
   isLoadingMore,
   onSearchChange,
   onLoadMore,
+  callerOf,
   reprintModeOf,
   onReview,
   onReprint,
@@ -58,7 +61,7 @@ export function JobLog({
       <ol className="scroll-list">
         {jobs.map((job) => {
           const status = describeJobStatus(job);
-          const meta = describeJobMeta(job);
+          const meta = describeJobMeta(job, callerOf(job));
           return (
             <li key={job.id} className="job-row">
               <div className="job-row__main">

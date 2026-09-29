@@ -1,7 +1,7 @@
 import { request as httpRequest } from 'node:http';
 import type { ElectronApplication, Page } from '@playwright/test';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
-import { callApi, fakePrints } from './support/app-helpers';
+import { callApi, fakePrints, openConfig, recordClipboard } from './support/app-helpers';
 import { expect, test } from './support/fixtures';
 
 /** 两种纸各一台（打印只记下来，不碰真打印机）。 */
@@ -123,7 +123,7 @@ test('prints a job from a program, records it with its fields and reprints it fr
   // 打印记录由主进程推送刷新；本机接口的记录按当时的模板和字段重打。
   await page.getByRole('tab', { name: '打印记录' }).click();
   const row = page.locator('.job-row').first();
-  await expect(row.locator('.job-row__meta')).toContainText('本机接口');
+  await expect(row.locator('.job-row__meta')).toContainText('本机接口（E2E）');
   await row.getByRole('button', { name: '重打' }).click();
   await expect.poll(async () => (await fakePrints(app)).length).toBe(2);
   expect((await fakePrints(app))[1]).toMatchObject({ raw: 'CL5640-TK-XL', templateId: 'builtin:standard' });
@@ -183,4 +183,45 @@ test('asks the operator before a website may use it, and forgets it when revoked
   expect(await requestAsWebsite(templatesUrl, SITE)).toBe(200);
   await callApi(page, 'revokeApiOrigin', SITE);
   expect(await requestAsWebsite(templatesUrl, SITE)).toBe(403);
+});
+
+test('manages program keys and the LAN switch on the local api page', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  const copied = await recordClipboard(app);
+  const base = await apiBase(page);
+  await openConfig(page, '本机接口');
+  await expect(page.getByRole('status').filter({ hasText: '正在运行' })).toBeVisible();
+  await expect(page.locator('.api-address').first()).toHaveText(base);
+
+  await page.getByLabel('名称', { exact: true }).fill('仓库');
+  await page.getByRole('button', { name: '生成密钥' }).click();
+  const secretField = page.getByLabel('新密钥');
+  await expect(secretField).toHaveValue(/^lf_/);
+  const secret = await secretField.inputValue();
+  await page.getByRole('button', { name: '复制', exact: true }).click();
+  await expect(page.getByRole('button', { name: '已复制' })).toBeVisible();
+  expect(await copied()).toEqual([secret]);
+  await page.getByRole('button', { name: '完成' }).click();
+  await expect(secretField).toHaveCount(0);
+
+  const headers = { authorization: `Bearer ${secret}` };
+  expect((await fetch(`${base}/v1/templates`, { headers })).status).toBe(200);
+  const card = page.locator('.api-key-card').filter({ hasText: '仓库' });
+  await card.getByRole('button', { name: '撤销' }).click();
+  await card.getByRole('button', { name: '确认撤销' }).click();
+  await expect(page.getByText('还没有程序密钥。')).toBeVisible();
+  expect((await fetch(`${base}/v1/templates`, { headers })).status).toBe(401);
+
+  // 原生复选框被画出来的滑轨盖着：像用户一样点开关本身。
+  await page
+    .locator('label.switch')
+    .filter({ has: page.getByRole('switch', { name: '局域网访问' }) })
+    .click();
+  await expect
+    .poll(async () => (await callApi(page, 'getLocalApiStatus')).server)
+    .toMatchObject({
+      state: 'listening',
+      lanEnabled: false,
+    });
+  await expect(page.locator('.api-address')).toHaveCount(1);
 });

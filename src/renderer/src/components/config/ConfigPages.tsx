@@ -2,8 +2,10 @@ import type { AppSettings } from '../../../../shared/settings';
 import type { VoiceCue } from '../../../../shared/voice';
 import type { ConfigPage } from '../../lib/app-view';
 import type { UpdateView } from '../../lib/update-text';
+import type { LocalApiModel } from '../../view-models/use-local-api';
 import { AboutPage, type AboutPageProps } from './pages/AboutPage';
 import { GeneralPage } from './pages/GeneralPage';
+import { LocalApiPage } from './pages/LocalApiPage';
 import { LookupTablesPage, type LookupTablesPageProps } from './pages/LookupTablesPage';
 import { MobilePage, type MobilePageProps } from './pages/MobilePage';
 import { NotePresetsPage } from './pages/NotePresetsPage';
@@ -30,6 +32,7 @@ interface ConfigPagesProps {
   secrets: SecretsPageProps;
   webhooks: Omit<WebhooksPageProps, 'webhooks' | 'onChange' | 'onOpenPage'>;
   mobile: Pick<MobilePageProps, 'defaultRelayUrl' | 'statusText'>;
+  localApi: LocalApiModel;
   general: GeneralPageExtras;
   about: AboutPageProps;
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
@@ -48,6 +51,7 @@ export function ConfigPages({
   secrets,
   webhooks,
   mobile,
+  localApi,
   general,
   about,
   onChange,
@@ -85,6 +89,16 @@ export function ConfigPages({
           {...mobile}
           relayUrl={settings.mobileRelayUrl}
           onChangeRelayUrl={async (mobileRelayUrl) => (await onChange({ mobileRelayUrl })) !== null}
+        />
+      );
+    case 'localApi':
+      return (
+        <LocalApiPage
+          api={localApi}
+          port={settings.apiPort}
+          lanEnabled={settings.apiLanEnabled}
+          onChangePort={async (apiPort) => (await onChange({ apiPort })) !== null}
+          onChangeLanEnabled={(apiLanEnabled) => void onChange({ apiLanEnabled })}
         />
       );
     case 'voice':

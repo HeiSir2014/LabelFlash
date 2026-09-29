@@ -359,9 +359,11 @@ export function App() {
               search={jobLog.search}
               hasMore={jobLog.hasMore}
               isLoadingMore={jobLog.isLoadingMore}
+              hasNewJobs={jobLog.hasNewJobs}
+              onShowNewJobs={() => void jobLog.refresh()}
               onSearchChange={jobLog.setSearch}
               onLoadMore={() => void jobLog.loadMore()}
-              callerOf={(job) => describeCaller(job.caller, localApi.keys)}
+              callerOf={(job) => describeCaller(job.caller, localApi.hasLoadedKeys ? localApi.keys : null)}
               reprintModeOf={reprintModeOf}
               onReview={(job) => station.review(historyTarget(job))}
               onReprint={(job) => station.reprint(historyTarget(job))}

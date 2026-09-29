@@ -6,12 +6,13 @@ import type { ScanField } from '../../core/scan/scan-result';
 import { SerialQueue } from '../../core/serial-queue';
 import type { LabelTemplate } from '../../core/templates/template-model';
 import type { Clock, PrintResult } from '../../core/types';
-import type {
-  ApiKeyInfo,
-  ApiServerStatus,
-  CreatedApiKey,
-  FirewallStatus,
-  LocalApiStatus,
+import {
+  type ApiKeyInfo,
+  type ApiServerStatus,
+  type CreatedApiKey,
+  type FirewallStatus,
+  FRESH_SECRET_MS,
+  type LocalApiStatus,
 } from '../../shared/local-api';
 import type { AppSettings } from '../../shared/settings';
 import { SqliteApiJobStore } from '../storage/sqlite-api-job-store';
@@ -39,9 +40,6 @@ const PRINTER_LIST_TIMEOUT_MS = 5_000;
 const API_PURGE_INTERVAL_MS = 60 * 60_000;
 /** 接口打印后通知界面刷新打印记录，最多这么久一次：一批几百张时不让界面每张都刷新。 */
 const JOBS_CHANGED_COALESCE_MS = 500;
-
-/** 新生成的密钥原文在内存里留这么久，给「复制」按钮用：够操作员复制到调用方的配置里，又不长期留着。 */
-export const FRESH_SECRET_MS = 10 * 60_000;
 
 /** 仅开发 / E2E：本机接口用这个端口（0 = 系统随便给一个），不和本机上跑着的安装版抢端口。安装版忽略它。 */
 export const API_PORT_ENV = 'CDL_LABELFLASH_API_PORT';

@@ -71,12 +71,18 @@ function ownerText(owner: string | null): string {
 const KEY_PREFIX = 'key:';
 const ORIGIN_PREFIX = 'origin:';
 
-/** 打印记录里的调用方显示成什么：密钥的名称，或网站；不是本机接口的记录为 null。 */
-export function describeCaller(caller: string | undefined, keys: readonly ApiKeyInfo[]): string | null {
+/**
+ * 打印记录里的调用方显示成什么：密钥的名称，或网站；不是本机接口的记录为 null。
+ * keys 为 null 表示密钥列表还没读到：这时只说「程序密钥」，不能说成已撤销。
+ */
+export function describeCaller(caller: string | undefined, keys: readonly ApiKeyInfo[] | null): string | null {
   if (caller === undefined) {
     return null;
   }
   if (caller.startsWith(KEY_PREFIX)) {
+    if (keys === null) {
+      return '程序密钥';
+    }
     const id = caller.slice(KEY_PREFIX.length);
     return keys.find((key) => key.id === id)?.name ?? '已撤销的密钥';
   }

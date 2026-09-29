@@ -1223,6 +1223,11 @@ textarea {
   text-align: center;
 }
 
+/* 翻到后面几页时接口打了新标签：列表上方的一条提示，点了回到最新。 */
+.job-log__new {
+  margin: 0 var(--space-3) var(--space-2);
+}
+
 .job-log__count {
   color: var(--color-ink-soft);
   font: 12px var(--font-data);

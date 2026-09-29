@@ -10,7 +10,13 @@ export function useJobLog() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState<JobPage>(EMPTY_PAGE);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasNewJobs, setHasNewJobs] = useState(false);
   const searchRef = useRef(search);
+  // 加载过更早的记录（不止第一页）：这时刷新会把列表拉回第一页，操作员正在翻的内容就没了。
+  const isPagedRef = useRef(false);
+  useEffect(() => {
+    isPagedRef.current = page.jobs.length > JOB_PAGE_SIZE;
+  }, [page]);
   const requestId = useRef(0);
 
   const loadFirstPage = useCallback(async (query: string) => {
@@ -20,6 +26,7 @@ export function useJobLog() {
       const first = await window.api.listJobs({ limit: JOB_PAGE_SIZE, search: query });
       if (id === requestId.current) {
         setPage(first);
+        setHasNewJobs(false);
       }
     } catch (error) {
       reportError('读取打印记录', error);
@@ -35,7 +42,18 @@ export function useJobLog() {
   const refresh = useCallback(() => loadFirstPage(searchRef.current), [loadFirstPage]);
 
   // 本机接口打的标签不经过界面：主进程写了打印记录后推送，这里跟着刷新（不播报）。
-  useEffect(() => window.api.onJobsChanged(() => void refresh()), [refresh]);
+  // 翻到后面几页时不自动刷新，只提示有新记录，由操作员点了再回到第一页。
+  useEffect(
+    () =>
+      window.api.onJobsChanged(() => {
+        if (isPagedRef.current) {
+          setHasNewJobs(true);
+        } else {
+          void refresh();
+        }
+      }),
+    [refresh],
+  );
 
   const loadMore = useCallback(async () => {
     if (page.nextCursor === null || isLoadingMore) {
@@ -68,6 +86,7 @@ export function useJobLog() {
     total: page.total,
     hasMore: page.nextCursor !== null,
     isLoadingMore,
+    hasNewJobs,
     search,
     setSearch,
     refresh,

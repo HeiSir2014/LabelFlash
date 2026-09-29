@@ -279,13 +279,15 @@ export function describeScan(scan: ScanSnapshot | null, context: ScanContext): S
 /**
  * 打印记录一行的说明：时间 · 来源 · 打印机 · 纸张。旧记录没有纸张时写「—」，识别不了的记录没有打印机。
  * caller 是本机接口的调用方（密钥名称或网站，见 local-api-text 的 describeCaller），写在来源后面的括号里。
+ * 从这种记录重打的那一张也带着调用方，但不是调用方这次提交的：写成「原提交」。
  */
 export function describeJobMeta(job: JobRecord, caller: string | null = null): string {
   const paper = job.paper === undefined ? null : parsePaperKey(job.paper);
   const source = describeSource(job.source);
+  const submitter = job.source === 'history' ? `原提交：${caller}` : caller;
   return [
     formatDateTime(job.createdAt),
-    caller === null ? source : `${source}（${caller}）`,
+    caller === null ? source : `${source}（${submitter}）`,
     job.printerName === '' ? null : job.printerName,
     paper === null ? '—' : formatPaperName(paper),
   ]

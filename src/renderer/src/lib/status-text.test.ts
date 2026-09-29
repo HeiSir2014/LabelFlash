@@ -289,6 +289,13 @@ describe('describeJobMeta', () => {
       describeJobMeta({ ...job, source: 'api', printerName: '标签机A', forced: false, paper: '60x40' }, 'ERP'),
     ).toBe(`${formatDateTime(NOW)} · 本机接口（ERP） · 标签机A · 60×40 标签`);
   });
+
+  // 从接口记录重打的那一张不是调用方这次提交的。
+  test('says a reprint of a local api job was originally submitted by the caller', () => {
+    expect(
+      describeJobMeta({ ...job, source: 'history', printerName: '标签机A', forced: false, paper: '60x40' }, 'ERP'),
+    ).toBe(`${formatDateTime(NOW)} · 记录重打（原提交：ERP） · 标签机A · 60×40 标签`);
+  });
 });
 
 describe('describeJobStatus', () => {

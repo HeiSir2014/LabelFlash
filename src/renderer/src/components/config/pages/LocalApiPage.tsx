@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { API_KEY_NAME_LENGTH, type ApiKeyInfo } from '../../../../../shared/local-api';
 import { API_PORT_RANGE } from '../../../../../shared/settings';
 import { describeApiStatus, describeFirewall, describeKeyUsage } from '../../../lib/local-api-text';
-import type { LocalApiModel } from '../../../view-models/use-local-api';
+import type { CopyResult, LocalApiModel } from '../../../view-models/use-local-api';
 import { ConfirmButton } from '../../ConfirmButton';
 import { Switch } from '../../form-controls';
 import { SettingRow } from '../SettingRow';
@@ -22,12 +22,14 @@ export interface LocalApiPageProps {
 
 /** 本机接口：运行状态和地址、局域网开关、端口、程序密钥、已授权的网站。 */
 export function LocalApiPage({ api, port, lanEnabled, onChangePort, onChangeLanEnabled }: LocalApiPageProps) {
-  const { refreshKeys, checkFirewall } = api;
+  const { refreshKeys, checkFirewall, dismissNewKey } = api;
   // 打开这一页时重读密钥（最后使用时间在后台变，不推送），并查一次防火墙。
+  // 离开这一页时收起刚生成的密钥：原文不该在别人回到这一页时还显示着。
   useEffect(() => {
     void refreshKeys();
     void checkFirewall();
-  }, [refreshKeys, checkFirewall]);
+    return dismissNewKey;
+  }, [refreshKeys, checkFirewall, dismissNewKey]);
 
   return (
     <div className="config-page">
@@ -45,7 +47,8 @@ export function LocalApiPage({ api, port, lanEnabled, onChangePort, onChangeLanE
       <KeysCard api={api} />
       <OriginsCard origins={api.status?.authorizedOrigins ?? []} onRevoke={(origin) => void api.revokeOrigin(origin)} />
       <p className="config-page__intro">
-        本机接口打的每一张都完整保存字段（面单上可能有收件人的姓名、电话、地址），只存在这台电脑的打印记录里，超过保留条数时和其他记录一起删除。
+        本机接口提交的每一张都完整保存字段（面单上可能有收件人的姓名、电话、地址），只存在这台电脑上：打印记录里的超过保留条数时和其他记录一起删除；给调用方查询进度的任务记录保留
+        7 天后自动删除。
       </p>
     </div>
   );
@@ -172,14 +175,26 @@ function KeysCard({ api }: { api: LocalApiModel }) {
   const titleId = useId();
   const nameId = useId();
   const [name, setName] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
   // 复制结果按密钥记：生成了下一个密钥时，上一个的「已复制」不能沿用。
-  const [copyResult, setCopyResult] = useState<{ id: string; isCopied: boolean } | null>(null);
+  const [copyResult, setCopyResult] = useState<{ id: string; result: CopyResult } | null>(null);
   const { newKey } = api;
-  const copied = newKey !== null && copyResult?.id === newKey.key.id ? copyResult.isCopied : null;
+  const copied = newKey !== null && copyResult?.id === newKey.key.id ? copyResult.result : null;
+  const canCreate = name.trim() !== '' && !isCreating;
 
+  // 连按回车或连点只生成一个；没生成成功时名称留着，改一下再点就行。
   const create = async () => {
-    await api.createKey(name.trim());
-    setName('');
+    if (!canCreate) {
+      return;
+    }
+    setIsCreating(true);
+    try {
+      if (await api.createKey(name.trim())) {
+        setName('');
+      }
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -192,8 +207,9 @@ function KeysCard({ api }: { api: LocalApiModel }) {
         。每个程序用一个密钥，撤销后它立即不能再调用。
       </p>
       {newKey && (
-        <div className="api-new-key" role="status">
-          <p className="api-new-key__title">
+        <div className="api-new-key">
+          {/* 只让读屏软件读这句话，不读密钥原文。 */}
+          <p className="api-new-key__title" role="status">
             「{newKey.key.name}」的密钥只显示这一次，关掉后就看不到了，请现在复制到调用方的配置里：
           </p>
           <input
@@ -206,16 +222,21 @@ function KeysCard({ api }: { api: LocalApiModel }) {
           <button
             type="button"
             className="button button--small"
-            onClick={() => void api.copyNewKey().then((isCopied) => setCopyResult({ id: newKey.key.id, isCopied }))}
+            onClick={() => void api.copyNewKey().then((result) => setCopyResult({ id: newKey.key.id, result }))}
           >
-            {copied === true ? '已复制' : '复制'}
+            {copied === 'copied' ? '已复制' : '复制'}
           </button>
           <button type="button" className="button button--small button--quiet" onClick={api.dismissNewKey}>
             完成
           </button>
-          {copied === false && (
+          {copied === 'expired' && (
             <p className="form-hint form-hint--error api-new-key__issue">
               已超过 10 分钟，不能再复制：请撤销后重新生成。
+            </p>
+          )}
+          {copied === 'failed' && (
+            <p className="form-hint form-hint--error api-new-key__issue">
+              没能复制到剪贴板：请选中上面的密钥，按 Ctrl+C 复制。
             </p>
           )}
         </div>
@@ -242,18 +263,13 @@ function KeysCard({ api }: { api: LocalApiModel }) {
           maxLength={API_KEY_NAME_LENGTH}
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && name.trim() !== '') {
+            if (event.key === 'Enter') {
               void create();
             }
           }}
         />
-        <button
-          type="button"
-          className="button button--primary"
-          disabled={name.trim() === ''}
-          onClick={() => void create()}
-        >
-          生成密钥
+        <button type="button" className="button button--primary" disabled={!canCreate} onClick={() => void create()}>
+          {isCreating ? '生成中…' : '生成密钥'}
         </button>
       </div>
     </section>
@@ -331,7 +347,9 @@ function OriginsCard({ origins, onRevoke }: { origins: readonly string[]; onRevo
         已授权的网站
       </h2>
       {origins.length === 0 ? (
-        <p className="config-empty">网页第一次调用时，电脑上会弹框询问；点「允许」的网站会列在这里。</p>
+        <p className="config-empty">
+          网页第一次调用时，程序顶部会出现询问，同时弹出系统通知；点「允许」的网站会列在这里，撤销之前一直有效。
+        </p>
       ) : (
         <ul className="config-list">
           {origins.map((origin) => (

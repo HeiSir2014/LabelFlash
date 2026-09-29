@@ -17,6 +17,9 @@ interface JobLogProps {
   search: string;
   hasMore: boolean;
   isLoadingMore: boolean;
+  /** 翻到后面几页时本机接口打了新标签：显示「有新记录」，点了回到第一页。 */
+  hasNewJobs: boolean;
+  onShowNewJobs: () => void;
   onSearchChange: (search: string) => void;
   onLoadMore: () => void;
   /** 本机接口记录的调用方（密钥名称或网站）；其他记录为 null。 */
@@ -34,6 +37,8 @@ export function JobLog({
   search,
   hasMore,
   isLoadingMore,
+  hasNewJobs,
+  onShowNewJobs,
   onSearchChange,
   onLoadMore,
   callerOf,
@@ -58,6 +63,11 @@ export function JobLog({
           {NUMBER_FORMAT.format(total)} / {NUMBER_FORMAT.format(historyLimit)}
         </span>
       </div>
+      {hasNewJobs && (
+        <button type="button" className="button button--small job-log__new" onClick={onShowNewJobs}>
+          有新记录，回到最新
+        </button>
+      )}
       <ol className="scroll-list">
         {jobs.map((job) => {
           const status = describeJobStatus(job);

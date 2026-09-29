@@ -6,11 +6,12 @@ import { BUILT_IN_TEMPLATES } from '../../core/templates/builtin-templates';
 import { FakeClock } from '../../core/testing/fake-clock';
 import type { PrintResult } from '../../core/types';
 import type { LocalApiStatus } from '../../shared/local-api';
+import { FRESH_SECRET_MS } from '../../shared/local-api';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
 import { openDatabase } from '../storage/database';
 import { SqliteApiJobStore } from '../storage/sqlite-api-job-store';
 import { DEFAULT_PORTS } from './http-server';
-import { API_PORT_ENV, apiCandidatePorts, apiPortOrder, FRESH_SECRET_MS, LocalApi } from './local-api';
+import { API_PORT_ENV, apiCandidatePorts, apiPortOrder, LocalApi } from './local-api';
 
 const SITE = 'https://erp.example.com';
 const SENT: PrintResult = {

@@ -112,6 +112,12 @@ describe('describeCaller', () => {
     expect(describeCaller('origin:https://erp.example.com', [])).toBe('https://erp.example.com');
     expect(describeCaller(undefined, [])).toBeNull();
   });
+
+  // 启动时密钥列表还没读到：不能把还在用的密钥说成已撤销。
+  test('does not call a key revoked before the key list has loaded', () => {
+    expect(describeCaller('key:k1', null)).toBe('程序密钥');
+    expect(describeCaller('origin:https://erp.example.com', null)).toBe('https://erp.example.com');
+  });
 });
 
 describe('describeKeyUsage', () => {

@@ -255,4 +255,17 @@ describe('template paper and printer', () => {
     expect(moved.paper).toEqual({ widthMm: 40, heightMm: 30 });
     expect(moved.qr.sizeMm).toBe(maxQrSizeMm(moved.paper, moved.paddingMm));
   });
+
+  // 60×40 的 22mm 二维码放到 50×30 上：按短边等比缩小，底部整行才放得下（不缩的话会被挤出标签裁掉）。
+  test('scales the QR code down with the short side of a smaller paper', () => {
+    const moved = withPaper({ ...fallback, qr: { ...fallback.qr, sizeMm: 22 } }, { widthMm: 50, heightMm: 30 });
+    expect(moved.qr.sizeMm).toBe(16.5);
+  });
+
+  test('keeps the QR size on a larger paper and never goes below the minimum', () => {
+    const larger = withPaper({ ...fallback, qr: { ...fallback.qr, sizeMm: 22 } }, { widthMm: 100, heightMm: 180 });
+    expect(larger.qr.sizeMm).toBe(22);
+    const tiny = withPaper({ ...fallback, qr: { ...fallback.qr, sizeMm: 12 } }, { widthMm: 30, heightMm: 25 });
+    expect(tiny.qr.sizeMm).toBe(TEMPLATE_LIMITS.qrSizeMm.min);
+  });
 });

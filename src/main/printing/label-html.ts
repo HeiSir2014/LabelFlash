@@ -49,6 +49,9 @@ export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI
   const { scan, template } = job;
   const printedAt = new Date(job.printedAt);
   const { widthMm: width, heightMm: height } = template.paper;
+  const qr = template.qr.visible
+    ? planQr(resolveQrText(template, scan, printedAt), template.qr.errorCorrection, template.qr.sizeMm, dpi)
+    : null;
   const sideWidthMm = sideTextWidthMm(template);
   const fullWidthMm = fullTextWidthMm(template);
 
@@ -70,11 +73,6 @@ export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI
 
   const mainHeightMm =
     height - 2 * template.paddingMm - bottomParagraphs.reduce((sum, p) => sum + p.heightMm + LAYOUT_GAP_MM, 0);
-  // 二维码方框不高过底部整行上面剩下的高度：模板换到矮的纸上时，底部内容不会被挤出标签裁掉。
-  const qrBoxMm = Math.min(template.qr.sizeMm, Math.max(0, mainHeightMm));
-  const qr = template.qr.visible
-    ? planQr(resolveQrText(template, scan, printedAt), template.qr.errorCorrection, qrBoxMm, dpi)
-    : null;
   const { arrangement } = template.fieldsArea;
   const fields = resolveFields(template, scan);
   const rows = fitRows(
@@ -106,7 +104,7 @@ export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI
   .layout-qr-right .main { flex-direction: row-reverse; }
   .qr {
     display: flex; flex: none; align-items: center; justify-content: center;
-    width: ${mm(qrBoxMm)}; height: ${mm(qrBoxMm)};
+    width: ${mm(template.qr.sizeMm)}; height: ${mm(template.qr.sizeMm)};
   }
   .qr__code svg { display: block; width: 100%; height: 100%; }
   .side { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }

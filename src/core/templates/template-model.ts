@@ -135,8 +135,19 @@ export function fullTextWidthMm(template: LabelTemplate): number {
   return template.paper.widthMm - 2 * template.paddingMm;
 }
 
-/** 换一种纸打同一个模板（测试页按打印机负责的纸打印、编辑器换纸张）：二维码边长夹到新纸张的上限内。 */
+/** 换一种纸打同一个模板（测试页按打印机负责的纸打印、编辑器换纸张）：二维码跟着纸张缩小，并夹到新纸张的上限内。 */
 export function withPaper(template: LabelTemplate, paper: PaperSize): LabelTemplate {
-  const sizeMm = Math.min(template.qr.sizeMm, maxQrSizeMm(paper, template.paddingMm));
+  // 纸变小时二维码按短边等比缩小：只夹到上限的话，60×40 的 22mm 二维码放到 50×30 上，底部整行会被挤出标签裁掉。
+  // 纸变大时不放大，免得二维码突然占满面单。
+  const shrink = Math.min(1, shortSideMm(paper) / shortSideMm(template.paper));
+  const scaled = Math.round(template.qr.sizeMm * shrink * QR_SIZE_TENTHS_PER_MM) / QR_SIZE_TENTHS_PER_MM;
+  const sizeMm = Math.max(TEMPLATE_LIMITS.qrSizeMm.min, Math.min(scaled, maxQrSizeMm(paper, template.paddingMm)));
   return { ...template, paper: { ...paper }, qr: { ...template.qr, sizeMm } };
+}
+
+/** 二维码边长保留到 0.1mm：和纸张尺寸的精度一致。 */
+const QR_SIZE_TENTHS_PER_MM = 10;
+
+function shortSideMm(paper: PaperSize): number {
+  return Math.min(paper.widthMm, paper.heightMm);
 }

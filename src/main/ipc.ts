@@ -334,6 +334,9 @@ export function registerIpc(deps: IpcDeps): void {
     return true;
   });
   handle(IpcChannel.RevokeApiOrigin, (origin) => deps.localApi.revokeOrigin(requireWebOrigin(origin)));
+  handle(IpcChannel.DecideApiOrigin, (origin, allow) =>
+    deps.localApi.decideOrigin(requireWebOrigin(origin), requireBoolean(allow, 'allow')),
+  );
   handle(IpcChannel.FirewallStatus, () => firewallStatus(app.getPath('exe')));
   handle(IpcChannel.AddFirewallRule, () => addFirewallRule(app.getPath('exe')));
 

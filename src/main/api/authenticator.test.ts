@@ -6,14 +6,17 @@ const KEY = 'lf_test';
 const PORT = 17631;
 const SITE = 'https://erp.example.com';
 
-function createAuth(options: { origins?: string[]; hasKeys?: boolean } = {}) {
+function createAuth(options: { origins?: string[]; hasKeys?: boolean; answer?: 'pending' | 'denied' | 'busy' } = {}) {
   const prompts: string[] = [];
   const touched: string[] = [];
   const auth = new Authenticator({
     findKeyByHash: (hash) => (hash === hashApiKey(KEY) ? { id: 'k1', name: 'ERP' } : null),
     hasAnyKey: () => options.hasKeys ?? true,
     isOriginAuthorized: (origin) => (options.origins ?? []).includes(origin),
-    requestOrigin: (origin) => prompts.push(origin),
+    requestOrigin: (origin) => {
+      prompts.push(origin);
+      return options.answer ?? 'pending';
+    },
     touchKey: (id) => touched.push(id),
   });
   return { auth, prompts, touched };
@@ -59,6 +62,14 @@ describe('Authenticator', () => {
       expect.objectContaining({ status: 'PERMISSION_DENIED', reason: 'ORIGIN_NOT_AUTHORIZED' }),
     );
     expect(prompts).toEqual(['https://new.example.com']);
+  });
+
+  // 被拒绝的网站要能分清「等确认」和「已被拒绝」，不然网页会一直让用户去电脑上点允许。
+  test('tells a refused website that it was refused', () => {
+    const { auth } = createAuth({ answer: 'denied' });
+    expect(() => auth.authenticate(local({ origin: 'https://new.example.com', host: `127.0.0.1:${PORT}` }))).toThrow(
+      expect.objectContaining({ status: 'PERMISSION_DENIED', reason: 'ORIGIN_DENIED' }),
+    );
   });
 
   test('refuses a page without a web origin without asking', () => {

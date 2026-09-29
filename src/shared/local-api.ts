@@ -24,6 +24,8 @@ export interface LocalApiStatus {
   portOwner: string | null;
   /** 已授权的网站：放在这里是因为授权发生在主进程（电脑上的授权框），界面要跟着刷新。 */
   authorizedOrigins: string[];
+  /** 正在等操作员确认的网站（先来的在前）：程序顶部显示「允许 / 拒绝」。 */
+  pendingOrigins: string[];
 }
 
 /** Windows 防火墙有没有放行本程序；unknown = 查不到或不是 Windows（界面不显示这一项）。 */

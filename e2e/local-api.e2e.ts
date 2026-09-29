@@ -1,6 +1,6 @@
 import { request as httpRequest } from 'node:http';
 import { createServer, type Socket } from 'node:net';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
 import { callApi, fakePrints, openConfig, recordClipboard } from './support/app-helpers';
 import { expect, test } from './support/fixtures';
@@ -61,20 +61,6 @@ function requestAsWebsite(url: string, origin: string): Promise<number> {
     outgoing.on('error', reject);
     outgoing.end();
   });
-}
-
-/** 换掉系统对话框：网站授权框一律点「允许」，并记下问过哪些网站。 */
-async function allowEveryWebsite(app: ElectronApplication): Promise<() => Promise<string[]>> {
-  await app.evaluate(({ dialog }) => {
-    const asked: string[] = [];
-    (globalThis as { e2eAskedOrigins?: string[] }).e2eAskedOrigins = asked;
-    dialog.showMessageBox = (async (...args: unknown[]) => {
-      const options = args.at(-1) as { detail?: string };
-      asked.push((options.detail ?? '').split('\n')[0] ?? '');
-      return { response: 0, checkboxChecked: false };
-    }) as typeof dialog.showMessageBox;
-  });
-  return () => app.evaluate(() => [...((globalThis as { e2eAskedOrigins?: string[] }).e2eAskedOrigins ?? [])]);
 }
 
 /** 复制一个模板改成 100×180；返回它在接口里的名字。 */
@@ -174,16 +160,30 @@ test('renders a PDF on the paper of the template', async ({ electronApp }) => {
 });
 
 test('asks the operator before a website may use it, and forgets it when revoked', async ({ electronApp }) => {
-  const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
-  const asked = await allowEveryWebsite(app);
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   const base = await apiBase(page);
   const templatesUrl = `${base}/v1/templates`;
   expect(await requestAsWebsite(templatesUrl, SITE)).toBe(403);
-  await expect.poll(async () => (await callApi(page, 'getLocalApiStatus')).authorizedOrigins).toEqual([SITE]);
-  expect(await asked()).toEqual([SITE]);
+  // 程序顶部列出等确认的网站；按钮只能用鼠标点。
+  const request = page.getByRole('region', { name: '等待确认的网站' });
+  await expect(request).toContainText(SITE);
+  await request.getByRole('button', { name: '允许' }).click();
+  await expect(request).toHaveCount(0);
+  expect((await callApi(page, 'getLocalApiStatus')).authorizedOrigins).toEqual([SITE]);
   expect(await requestAsWebsite(templatesUrl, SITE)).toBe(200);
   await callApi(page, 'revokeApiOrigin', SITE);
   expect(await requestAsWebsite(templatesUrl, SITE)).toBe(403);
+});
+
+test('tells a website the operator refused that it was refused', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  const base = await apiBase(page);
+  const templatesUrl = `${base}/v1/templates`;
+  await requestAsWebsite(templatesUrl, SITE);
+  await page.getByRole('region', { name: '等待确认的网站' }).getByRole('button', { name: '拒绝' }).click();
+  expect(await requestAsWebsite(templatesUrl, SITE)).toBe(403);
+  await expect(page.getByRole('region', { name: '等待确认的网站' })).toHaveCount(0);
+  expect((await callApi(page, 'getLocalApiStatus')).authorizedOrigins).toEqual([]);
 });
 
 test('manages program keys and the LAN switch on the local api page', async ({ electronApp }) => {

@@ -40,7 +40,10 @@ function createTestServer(options: Options = {}) {
       findKeyByHash: (hash) => (hash === hashApiKey(KEY) ? { id: 'k1', name: 'ERP' } : null),
       hasAnyKey: () => true,
       isOriginAuthorized: (origin) => origins.includes(origin),
-      requestOrigin: (origin) => prompts.push(origin),
+      requestOrigin: (origin) => {
+        prompts.push(origin);
+        return 'pending';
+      },
       touchKey: () => {},
     }),
     rateLimiter: new RateLimiter(new FakeClock(), { perSecond: 1, burst: options.burst ?? 100 }),

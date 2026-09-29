@@ -10,6 +10,7 @@ import { ConfirmDialog } from './components/config/ConfirmDialog';
 import { JobLog } from './components/JobLog';
 import { MOBILE_QR_SIZE_PX, MobileOverlay } from './components/MobileOverlay';
 import { NoticeBar } from './components/NoticeBar';
+import { OriginRequests } from './components/OriginRequests';
 import type { PreviewOverride } from './components/PreviewStage';
 import { PrinterList } from './components/PrinterList';
 import { TitleBar } from './components/TitleBar';
@@ -470,6 +471,10 @@ export function App() {
           onCancel={appView.leaveConfirm.onContinue}
         />
       )}
+      <OriginRequests
+        origins={localApi.status?.pendingOrigins ?? []}
+        onDecide={(origin, allow) => void localApi.decideOrigin(origin, allow)}
+      />
       <NoticeBar notices={notices} onDismiss={dismiss} />
     </div>
   );

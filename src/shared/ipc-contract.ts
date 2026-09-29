@@ -82,6 +82,7 @@ export const IpcChannel = {
   RemoveApiKey: 'api:keys:remove',
   CopyNewApiKey: 'api:keys:copy-new',
   RevokeApiOrigin: 'api:origins:remove',
+  DecideApiOrigin: 'api:origins:decide',
   FirewallStatus: 'api:firewall:status',
   AddFirewallRule: 'api:firewall:add',
 } as const;
@@ -228,6 +229,8 @@ export interface LabelFlashApi {
   removeApiKey(id: string): Promise<void>;
   /** 撤销一个网站的授权。 */
   revokeApiOrigin(origin: string): Promise<void>;
+  /** 操作员对等确认的网站点了「允许」或「拒绝」。 */
+  decideApiOrigin(origin: string, allow: boolean): Promise<void>;
   /** Windows 防火墙有没有放行本程序（其他平台为 unknown）。 */
   getFirewallStatus(): Promise<FirewallStatus>;
   /** 弹管理员确认，添加防火墙规则；返回之后查到的状态（操作员拒绝时仍是 missing）。 */

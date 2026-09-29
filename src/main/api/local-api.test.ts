@@ -29,7 +29,6 @@ afterEach(async () => {
 
 interface HarnessOptions {
   findPortOwner?: (port: number) => Promise<string | null>;
-  askOrigin?: (origin: string) => Promise<boolean>;
   settings?: Partial<AppSettings>;
   candidatePorts?: readonly number[];
 }
@@ -50,7 +49,7 @@ function createLocalApi(options: HarnessOptions = {}) {
       settings = { ...settings, ...patch };
       return settings;
     },
-    askOrigin: options.askOrigin ?? (async () => false),
+    notifyOriginRequest: () => {},
     findTemplate: (id) => BUILT_IN_TEMPLATES.find((template) => template.id === id) ?? null,
     listTemplates: () => [...BUILT_IN_TEMPLATES],
     installedPrinters: async () => ['P1'],
@@ -154,20 +153,29 @@ describe('LocalApi', () => {
   });
 
   test('remembers a website the operator allows and tells the page to retry', async () => {
-    const harness = createLocalApi({ askOrigin: async () => true });
+    const harness = createLocalApi();
     await harness.api.start();
     const denied = await fetch(`${harness.baseUrl()}/v1/templates`, { headers: { origin: SITE } });
     expect(denied.status).toBe(403);
-    await poll(
-      async () => harness.settings().apiAuthorizedOrigins,
-      (origins) => origins.includes(SITE),
-    );
+    expect(harness.statuses.at(-1)?.pendingOrigins).toEqual([SITE]);
+    harness.api.decideOrigin(SITE, true);
+    expect(harness.settings().apiAuthorizedOrigins).toEqual([SITE]);
     expect(harness.statuses.at(-1)?.authorizedOrigins).toEqual([SITE]);
     const allowed = await fetch(`${harness.baseUrl()}/v1/templates`, { headers: { origin: SITE } });
     expect(allowed.status).toBe(200);
     harness.api.revokeOrigin(SITE);
     expect(harness.settings().apiAuthorizedOrigins).toEqual([]);
     expect((await fetch(`${harness.baseUrl()}/v1/templates`, { headers: { origin: SITE } })).status).toBe(403);
+  });
+
+  test('tells a website the operator refused that it was refused', async () => {
+    const harness = createLocalApi();
+    await harness.api.start();
+    await fetch(`${harness.baseUrl()}/v1/templates`, { headers: { origin: SITE } });
+    harness.api.decideOrigin(SITE, false);
+    const response = await fetch(`${harness.baseUrl()}/v1/templates`, { headers: { origin: SITE } });
+    expect(JSON.stringify(await response.json())).toContain('ORIGIN_DENIED');
+    expect(harness.statuses.at(-1)?.pendingOrigins).toEqual([]);
   });
 
   test('marks jobs left unfinished by the last run as interrupted on start', async () => {

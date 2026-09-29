@@ -86,8 +86,8 @@ export interface LocalApiDeps {
   appVersion: string;
   settings: () => AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => AppSettings;
-  /** 电脑上弹框询问是否允许这个网站；返回是否允许。 */
-  askOrigin: (origin: string) => Promise<boolean>;
+  /** 有网站在等确认：发系统通知，提醒操作员到程序里处理。 */
+  notifyOriginRequest: (origin: string) => void;
   findTemplate: (templateId: string) => LabelTemplate | null;
   listTemplates: () => LabelTemplate[];
   installedPrinters: () => Promise<string[]>;
@@ -141,8 +141,9 @@ export class LocalApi {
     });
     this.prompts = new OriginPrompts({
       clock: deps.clock,
-      ask: deps.askOrigin,
+      notify: deps.notifyOriginRequest,
       grant: (origin) => this.grantOrigin(origin),
+      onChange: () => this.publish(),
     });
     const isOriginAuthorized = (origin: string) => deps.settings().apiAuthorizedOrigins.includes(origin);
     this.server = new ApiHttpServer({
@@ -218,6 +219,7 @@ export class LocalApi {
       lanAddresses: this.deps.lanAddresses(),
       portOwner: this.portOwner,
       authorizedOrigins: this.deps.settings().apiAuthorizedOrigins,
+      pendingOrigins: this.prompts.pending(),
     };
   }
 
@@ -251,6 +253,11 @@ export class LocalApi {
   removeKey(id: string): void {
     this.keys.remove(id);
     this.freshSecrets.delete(id);
+  }
+
+  /** 操作员在程序里点了「允许」或「拒绝」。 */
+  decideOrigin(origin: string, allow: boolean): void {
+    this.prompts.decide(origin, allow);
   }
 
   revokeOrigin(origin: string): void {

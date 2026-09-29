@@ -72,6 +72,7 @@ const api: LabelFlashApi = {
   removeApiKey: (id) => ipcRenderer.invoke(IpcChannel.RemoveApiKey, id),
   copyNewApiKey: (id) => ipcRenderer.invoke(IpcChannel.CopyNewApiKey, id),
   revokeApiOrigin: (origin) => ipcRenderer.invoke(IpcChannel.RevokeApiOrigin, origin),
+  decideApiOrigin: (origin, allow) => ipcRenderer.invoke(IpcChannel.DecideApiOrigin, origin, allow),
   getFirewallStatus: () => ipcRenderer.invoke(IpcChannel.FirewallStatus),
   addFirewallRule: () => ipcRenderer.invoke(IpcChannel.AddFirewallRule),
 };

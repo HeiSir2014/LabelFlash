@@ -16,6 +16,8 @@ export interface LocalApiModel {
   copyNewKey: () => Promise<boolean>;
   dismissNewKey: () => void;
   revokeOrigin: (origin: string) => Promise<void>;
+  /** 对等确认的网站点了「允许」或「拒绝」。 */
+  decideOrigin: (origin: string, allow: boolean) => Promise<void>;
   firewall: FirewallStatus;
   /** 正在等操作员在管理员确认框里点选。 */
   isAddingFirewall: boolean;
@@ -116,6 +118,14 @@ export function useLocalApi(): LocalApiModel {
 
   const dismissNewKey = useCallback(() => setNewKey(null), []);
 
+  const decideOrigin = useCallback(async (origin: string, allow: boolean) => {
+    try {
+      await window.api.decideApiOrigin(origin, allow);
+    } catch (error) {
+      reportError(allow ? '允许网站' : '拒绝网站', error);
+    }
+  }, []);
+
   const revokeOrigin = useCallback(async (origin: string) => {
     try {
       await window.api.revokeApiOrigin(origin);
@@ -155,6 +165,7 @@ export function useLocalApi(): LocalApiModel {
     copyNewKey,
     dismissNewKey,
     revokeOrigin,
+    decideOrigin,
     firewall,
     isAddingFirewall,
     checkFirewall,

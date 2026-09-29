@@ -23,8 +23,11 @@ export interface AuthenticatorDeps {
   findKeyByHash: (hash: string) => { id: string; name: string } | null;
   hasAnyKey: () => boolean;
   isOriginAuthorized: (origin: string) => boolean;
-  /** 电脑上弹授权框；不等结果：网页先收到「请在电脑上点允许」，允许后重试。 */
-  requestOrigin: (origin: string) => void;
+  /**
+   * 把网站列进「等确认」（程序里由操作员用鼠标点允许或拒绝）；不等结果，网页先收到答复，允许后重试。
+   * 返回这个网站现在的状态：等确认、刚被拒绝、等确认的网站已满。
+   */
+  requestOrigin: (origin: string) => 'pending' | 'denied' | 'busy';
   /** 记下密钥最后一次使用的时间（配置中心显示）。 */
   touchKey: (id: string) => void;
 }
@@ -75,7 +78,17 @@ export class Authenticator {
     if (this.deps.isOriginAuthorized(origin)) {
       return { id: `origin:${origin}`, label: origin };
     }
-    this.deps.requestOrigin(origin);
-    throw new ApiError('PERMISSION_DENIED', 'ORIGIN_NOT_AUTHORIZED', '请在电脑上点「允许」，然后重试');
+    switch (this.deps.requestOrigin(origin)) {
+      case 'denied':
+        throw new ApiError('PERMISSION_DENIED', 'ORIGIN_DENIED', '操作员在电脑上拒绝了这个网站：10 分钟后可以再请求');
+      case 'busy':
+        throw new ApiError(
+          'PERMISSION_DENIED',
+          'ORIGIN_NOT_AUTHORIZED',
+          '电脑上已经有几个网站在等确认：请稍后重试，或请操作员先处理',
+        );
+      case 'pending':
+        throw new ApiError('PERMISSION_DENIED', 'ORIGIN_NOT_AUTHORIZED', '请在电脑上的程序里点「允许」，然后重试');
+    }
   }
 }

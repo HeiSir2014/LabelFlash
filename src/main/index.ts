@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { hostname, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { app, type BrowserWindow, dialog, Menu, net } from 'electron';
+import { app, type BrowserWindow, dialog, Menu, Notification, net } from 'electron';
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
@@ -118,27 +118,20 @@ function quit(): void {
   app.quit();
 }
 
-/** 网站授权框的两个按钮：默认选「拒绝」，误按回车不会放行。 */
-const ORIGIN_DIALOG_BUTTONS = ['允许', '拒绝'];
-const ORIGIN_ALLOW_BUTTON = 0;
-const ORIGIN_DENY_BUTTON = 1;
-
-/** 网页第一次调用本机接口时，在电脑上问操作员是否允许这个网站。 */
-async function askOriginPermission(origin: string): Promise<boolean> {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return false;
+/**
+ * 有网站在等授权：发一条系统通知，点通知回到主窗口。「允许 / 拒绝」在程序里用鼠标点，
+ * 不弹模态对话框：它会抢焦点，扫码枪敲的 Tab、回车可能正好点中「允许」。
+ */
+function notifyOriginRequest(origin: string): void {
+  if (!Notification.isSupported()) {
+    return;
   }
-  showMainWindow();
-  const { response } = await dialog.showMessageBox(mainWindow, {
-    type: 'question',
-    buttons: ORIGIN_DIALOG_BUTTONS,
-    defaultId: ORIGIN_DENY_BUTTON,
-    cancelId: ORIGIN_DENY_BUTTON,
-    title: BRAND.productName,
-    message: '网站想使用打印服务',
-    detail: `${origin}\n\n允许后，这个网站可以在这台电脑上提交打印、读取模板和打印机列表。可以在配置中心「本机接口」页撤销。`,
+  const notification = new Notification({
+    title: '网站想使用打印服务',
+    body: `${origin}。请在程序顶部点「允许」或「拒绝」。`,
   });
-  return response === ORIGIN_ALLOW_BUTTON;
+  notification.on('click', showMainWindow);
+  notification.show();
 }
 
 function closeDatabase(): void {
@@ -379,7 +372,7 @@ async function bootstrap(): Promise<void> {
     settings: () => settings.current,
     // 只改授权网站：不影响别的设置，不需要走 onSettingsChanged。
     updateSettings: (patch) => settings.update(patch),
-    askOrigin: askOriginPermission,
+    notifyOriginRequest,
     findTemplate: (id) => templates.get(id),
     listTemplates: () => templates.list(),
     installedPrinters: () => adapter.knownPrinterNames(),

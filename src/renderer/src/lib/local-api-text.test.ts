@@ -7,6 +7,7 @@ const BASE: LocalApiStatus = {
   lanAddresses: ['192.168.1.20'],
   portOwner: null,
   authorizedOrigins: [],
+  pendingOrigins: [],
 };
 
 describe('describeApiStatus', () => {

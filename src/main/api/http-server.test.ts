@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createServer, type Server } from 'node:net';
 import { FakeClock } from '../../core/testing/fake-clock';
+import type { ApiServerStatus } from '../../shared/local-api';
 import type { ApiError } from './api-error';
 import { hashApiKey } from './api-keys';
 import { Authenticator } from './authenticator';
-import { ApiHttpServer, type ApiServerStatus } from './http-server';
+import { ApiHttpServer } from './http-server';
 import { RateLimiter } from './rate-limiter';
 import type { ApiRequest, ApiResponse } from './router';
 

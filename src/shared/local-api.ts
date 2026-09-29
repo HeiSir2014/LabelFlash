@@ -6,6 +6,23 @@ export const API_KEY_NAME_LENGTH = 40;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: 名称里不允许任何控制字符
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
+/** 本机接口的 HTTP 服务状态。 */
+export type ApiServerStatus =
+  | { state: 'off' }
+  | { state: 'listening'; port: number; lanEnabled: boolean }
+  | { state: 'failed'; reason: 'PORT_IN_USE'; ports: number[] };
+
+/** 配置中心「本机接口」页要显示的全部状态（主进程在变化时推送）。 */
+export interface LocalApiStatus {
+  server: ApiServerStatus;
+  /** 这台电脑在局域网里的 IPv4 地址（局域网里的程序用它访问）。 */
+  lanAddresses: string[];
+  /** 端口都被占用时，占用它的程序名；查不到（或 macOS）为 null。 */
+  portOwner: string | null;
+  /** 已授权的网站：放在这里是因为授权发生在主进程（电脑上的授权框），界面要跟着刷新。 */
+  authorizedOrigins: string[];
+}
+
 /** 一个程序密钥（不含密钥原文：原文只在生成时显示一次）。 */
 export interface ApiKeyInfo {
   id: string;

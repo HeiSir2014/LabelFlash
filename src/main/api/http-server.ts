@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { isWebOrigin } from '../../shared/local-api';
+import { type ApiServerStatus, isWebOrigin } from '../../shared/local-api';
 import { ApiError, errorBody } from './api-error';
 import type { Authenticator, Caller } from './authenticator';
 import { corsHeaders } from './cors';
@@ -17,11 +17,6 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const PORT_UNAVAILABLE_CODES: ReadonlySet<string> = new Set(['EADDRINUSE', 'EACCES']);
 /** 授权相关的错误：没授权的网站也要能读到它们，才知道该去电脑上点「允许」。 */
 const AUTHORIZATION_REASONS: ReadonlySet<string> = new Set(['ORIGIN_NOT_AUTHORIZED', 'ORIGIN_UNSUPPORTED']);
-
-export type ApiServerStatus =
-  | { state: 'off' }
-  | { state: 'listening'; port: number; lanEnabled: boolean }
-  | { state: 'failed'; reason: 'PORT_IN_USE'; ports: number[] };
 
 export interface StartOptions {
   lanEnabled: boolean;

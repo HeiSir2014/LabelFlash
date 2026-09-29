@@ -132,6 +132,8 @@ GitHub Actions：
 1. 修改 `package.json` 里的 `version`，经 PR 合进 `master`。
 2. 在 `master` 的提交上打同名标签，例如 `git tag v1.0.1 && git push --tags`。发布作业会先检查：标签所在的提交在 `master` 上；标签和 `package.json` 的版本一致（客户端按版本号比较、按文件名里的版本找旧版 blockmap 做差分下载）；设置了默认中转地址。任何一项不符合都不发布。
 
+CI 的构建号（每跑一次自增）写进 Windows 文件版本和 macOS 的 CFBundleVersion，「关于」里显示为「v1.0.2（构建 123）」，报问题时能对上是哪一次构建；版本号本身不带它。
+
 ## 目录结构
 
 ```

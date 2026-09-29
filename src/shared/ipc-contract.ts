@@ -106,6 +106,8 @@ export interface AppInfo {
   productName: string;
   brandOwner: string;
   version: string;
+  /** CI 的构建号；本机构建时为 null。 */
+  buildNumber: string | null;
   dataPath: string;
   /** 日志目录：每天一个 labelflash-<日期>.log。 */
   logsDir: string;

@@ -76,8 +76,8 @@ interface ImageTextStep {
 
 ## 7. 打包（Windows）
 
-- 安装包带上 OCR：`resources/ocr/ocr-addon.node`、VC++ 运行库（`msvcp140.dll`、`vcruntime140.dll`、`vcruntime140_1.dll`，放在同一目录，libuv 按扩展所在目录找依赖）、模型 `models/small/{det.onnx, rec.onnx, dict.txt}`。安装包大约增加 50 MB（未压缩）。
-- 构建：`dist:win` 之前先 `ocr:models`、`ocr:build`；CI 的 Windows 打包作业同样执行（Windows 上自带 Rust 工具链）。VC++ 运行库从构建机的 Visual Studio 里取。
+- 安装包带上 OCR：`resources/ocr/ocr-addon.node`、VC++ 运行库（`msvcp140.dll`、`msvcp140_1.dll`、`vcruntime140.dll`、`vcruntime140_1.dll`，放在同一目录，Windows 按扩展所在目录找依赖）、模型 `models/small/{det.onnx, rec.onnx, dict.txt}`。安装包大约增加 50 MB（未压缩）。
+- 构建：`dist:win` 里由 `scripts/ocr/stage-resources.ts` 下载模型、编译扩展、收集运行库到 `dist/.ocr`；CI 的 Windows 打包作业同样执行（Windows 上自带 Rust 工具链）。VC++ 运行库从构建机的 Visual Studio 里取（vswhere 定位）。
 - macOS：这一版不带 OCR，这一步按「OCR 不可用」处理。
 
 ## 8. 测试与验收
@@ -87,3 +87,9 @@ interface ImageTextStep {
 - **扫码页浏览器测试**（`test:relay-browser`）：假摄像头的画面里二维码下面印一行货架号，电脑要图时手机截图发出。
 - **真实 OCR**：主进程里加载扩展、识别样张（和第一部分的样张同一张）。
 - **人工**：真手机扫真标签（横着、斜着拍），货架号读对；识别不到时手动输入。记进 `docs/windows-acceptance.md`。
+
+## 9. 实现结果（2026-09-30）
+
+- 全部按上面的设计完成，Windows 上验收见 `docs/windows-acceptance.md` #53–#56；真手机、干净系统待验收（#57）。
+- 真实照片上货架号在二维码左边（不在默认的优先区域「二维码下方」里），按「优先区域先看、再找别处」照样读出 `A-1-2-3`。
+- 安装包 137 MB（多约 31 MB：扩展 21 MB、small 模型 30 MB，压缩后）。第一次更新到这个版本时差分下载会多下这一部分。

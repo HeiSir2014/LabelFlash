@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createServer, type Server } from 'node:net';
+import { connect, createServer, type Server } from 'node:net';
 import { FakeClock } from '../../core/testing/fake-clock';
 import type { ApiServerStatus } from '../../shared/local-api';
 import type { ApiError } from './api-error';
@@ -18,6 +18,9 @@ interface Options {
   origins?: string[];
   bodyLimitBytes?: number;
   burst?: number;
+  /** 按来源地址限速的突发量；测试里把本机也当作局域网来源，才测得到。 */
+  addressBurst?: number;
+  handlerDelayMs?: number;
 }
 
 const servers: ApiHttpServer[] = [];
@@ -44,6 +47,9 @@ function createTestServer(options: Options = {}) {
     isOriginAuthorized: (origin) => origins.includes(origin),
     handle: async (request): Promise<ApiResponse> => {
       handled.push(request);
+      if (options.handlerDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.handlerDelayMs));
+      }
       if (request.url === '/v1/boom') {
         throw new Error('secret detail');
       }
@@ -51,6 +57,11 @@ function createTestServer(options: Options = {}) {
     },
     requiresCaller: (_method, url) => url !== '/v1/service',
     bodyLimitBytes: options.bodyLimitBytes,
+    addressLimiter:
+      options.addressBurst === undefined
+        ? undefined
+        : new RateLimiter(new FakeClock(), { perSecond: 1, burst: options.addressBurst }),
+    limitLoopback: options.addressBurst !== undefined,
   });
   servers.push(server);
   return { server, handled, prompts };
@@ -79,6 +90,22 @@ async function occupyPort(): Promise<number> {
 }
 
 const withKey = { authorization: `Bearer ${KEY}` };
+
+/** 直接发一行原始请求（fetch 会把 //x 这类路径规范掉）；返回响应的原文。 */
+function rawRequest(port: number, requestLine: string, headers: Record<string, string>): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1', () => {
+      const lines = Object.entries(headers).map(([name, value]) => `${name}: ${value}`);
+      socket.write([requestLine, 'Host: 127.0.0.1', 'Connection: close', ...lines, '', ''].join('\r\n'));
+    });
+    let text = '';
+    socket.on('data', (chunk) => {
+      text += chunk.toString('utf8');
+    });
+    socket.on('end', () => resolve(text));
+    socket.on('error', reject);
+  });
+}
 
 describe('ApiHttpServer', () => {
   test('serves open routes without a caller and routes authenticated requests', async () => {
@@ -185,6 +212,56 @@ describe('ApiHttpServer', () => {
     const status = await server.start({ lanEnabled: true, ports: [ANY_PORT] });
     expect(status).toMatchObject({ state: 'listening', lanEnabled: true });
     expect((await fetch(`http://127.0.0.1:${portOf(status)}/v1/service`)).status).toBe(200);
+  });
+
+  // 请求体在认证之后才读：局域网里不带密钥的机器不能让程序先收下几 MB 的数据。
+  test('refuses an unauthenticated request before reading its body', async () => {
+    const { server, handled } = createTestServer({ bodyLimitBytes: 16 });
+    const port = await start(server);
+    const response = await fetch(`http://127.0.0.1:${port}/v1/printJobs`, {
+      method: 'POST',
+      body: JSON.stringify({ fields: 'x'.repeat(100) }),
+    });
+    expect(response.status).toBe(401);
+    expect(handled).toEqual([]);
+  });
+
+  // 路径解析不了也只是「找不到」，不当作程序出错写日志（局域网里的机器可以借此刷日志）。
+  test('answers an unparsable path without an internal error', async () => {
+    const { server } = createTestServer();
+    const port = await start(server);
+    const response = await rawRequest(port, 'GET //x HTTP/1.1', withKey);
+    expect(response).not.toContain(' 500 ');
+  });
+
+  test('limits the request rate per address before authentication', async () => {
+    const { server } = createTestServer({ addressBurst: 1 });
+    const port = await start(server);
+    expect((await fetch(`http://127.0.0.1:${port}/v1/templates`)).status).toBe(401);
+    expect((await fetch(`http://127.0.0.1:${port}/v1/templates`)).status).toBe(429);
+  });
+
+  // 同时来两次启动（改了端口又马上点开关）：只能留下最后那次的服务，旧的必须关掉。
+  test('leaves only the last of two overlapping starts listening', async () => {
+    const { server } = createTestServer();
+    const [first, second] = await Promise.all([
+      server.start({ lanEnabled: true, ports: [ANY_PORT] }),
+      server.start({ lanEnabled: false, ports: [ANY_PORT] }),
+    ]);
+    expect(server.status).toEqual(second);
+    await server.stop();
+    await expect(fetch(`http://127.0.0.1:${portOf(first)}/v1/service`)).rejects.toThrow();
+    await expect(fetch(`http://127.0.0.1:${portOf(second)}/v1/service`)).rejects.toThrow();
+  });
+
+  // 改设置重启服务时，正在处理的请求要处理完：不然任务已经收下，调用方却收到断线，重试就重复打印。
+  test('lets a request in flight finish when it restarts', async () => {
+    const { server } = createTestServer({ handlerDelayMs: 300 });
+    const port = await start(server);
+    const pending = fetch(`http://127.0.0.1:${port}/v1/templates`, { headers: withKey });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await server.start({ lanEnabled: false, ports: [ANY_PORT] });
+    expect((await pending).status).toBe(200);
   });
 
   test('stops listening', async () => {

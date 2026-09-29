@@ -10,6 +10,7 @@ import type { AppSettings } from '../../shared/settings';
 import { SqliteApiJobStore } from '../storage/sqlite-api-job-store';
 import { SqliteApiKeyStore } from '../storage/sqlite-api-key-store';
 import { Authenticator } from './authenticator';
+import { ConcurrencyLimit } from './concurrency-limit';
 import { ApiHttpServer, DEFAULT_PORTS } from './http-server';
 import { OriginPrompts } from './origin-prompts';
 import { RateLimiter } from './rate-limiter';
@@ -20,6 +21,11 @@ import { requiresCaller, route } from './router';
 export const API_QUEUE_LIMIT = 5000;
 /** 每个调用方每秒 20 个请求、可以突发 40 个：正常逐张提交、轮询状态绰绰有余。 */
 const API_RATE_LIMITS = { perSecond: 20, burst: 40 };
+/** 局域网来的请求在认证之前按来源地址限速：比每个调用方的限额宽一些，正常使用碰不到。 */
+const API_ADDRESS_LIMITS = { perSecond: 40, burst: 80 };
+/** 只排版（PDF）同时最多 2 个、再排 8 个：每个都开一个隐藏窗口（渲染进程），不能和打印抢资源。 */
+const PDF_MAX_RUNNING = 2;
+const PDF_MAX_QUEUED = 8;
 /** 过期任务每小时清理一次：保留期是 7 天，不需要更勤。 */
 const API_PURGE_INTERVAL_MS = 60 * 60_000;
 /** 接口打印后通知界面刷新打印记录，最多这么久一次：一批几百张时不让界面每张都刷新。 */
@@ -86,6 +92,7 @@ export class LocalApi {
   private readonly keys: SqliteApiKeyStore;
   private readonly server: ApiHttpServer;
   private readonly prompts: OriginPrompts;
+  private readonly pdfLimit = new ConcurrencyLimit(PDF_MAX_RUNNING, PDF_MAX_QUEUED);
   private portOwner: string | null = null;
   private purgeTimer: ReturnType<typeof setInterval> | null = null;
   private jobsChangedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -121,6 +128,7 @@ export class LocalApi {
         touchKey: (id) => this.keys.touch(id),
       }),
       rateLimiter: new RateLimiter(deps.clock, API_RATE_LIMITS),
+      addressLimiter: new RateLimiter(deps.clock, API_ADDRESS_LIMITS),
       isOriginAuthorized,
       requiresCaller,
       handle: (request) =>
@@ -130,7 +138,8 @@ export class LocalApi {
             listTemplates: deps.listTemplates,
             findTemplate: deps.findTemplate,
             listPrinters: deps.listPrinters,
-            renderPdf: deps.renderPdf,
+            renderPdf: (template, fields, content) =>
+              this.pdfLimit.run(() => deps.renderPdf(template, fields, content)),
             service: { version: deps.appVersion, port: () => this.server.port() ?? 0 },
           },
           request,

@@ -195,7 +195,11 @@ interface Match {
 }
 
 function match(method: string, url: string): Match | null {
-  const parsed = new URL(url, 'http://localhost');
+  // 解析不了的路径（例如 //x）当作没有这个接口，不当作程序出错。
+  const parsed = URL.parse(url, 'http://localhost');
+  if (parsed === null) {
+    return null;
+  }
   for (const route of ROUTES) {
     const found = route.method === method ? route.pattern.exec(parsed.pathname) : null;
     if (found) {

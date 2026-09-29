@@ -80,6 +80,10 @@ export interface JobRecord {
   status: PrintStatus;
   forced: boolean;
   failureReason?: PrintFailureReason;
+  /** 这一张的纸张键（例如 100x180）；1.0.x 的旧记录和识别不了的记录没有。 */
+  paper?: string;
+  /** 这一张用的模板；1.0.x 的旧记录和识别不了的记录没有。 */
+  templateId?: string;
 }
 
 export interface Clock {

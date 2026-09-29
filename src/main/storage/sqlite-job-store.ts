@@ -8,7 +8,8 @@ import { type Row, readEnum, readInteger, readString } from './row-readers';
 
 const JOB_COLUMNS = `
   jobs.seq, jobs.id, jobs.created_at AS createdAt, jobs.raw, jobs.printer_name AS printerName,
-  jobs.source, jobs.status, jobs.forced, jobs.failure_reason AS failureReason`;
+  jobs.source, jobs.status, jobs.forced, jobs.failure_reason AS failureReason, jobs.paper,
+  jobs.template_id AS templateId`;
 /** trigram 索引至少需要 3 个字符；更短的搜索词退回 LIKE（LIMIT 保证找够一页就停）。 */
 const FTS_MIN_QUERY_LENGTH = 3;
 /** 调小容量时每批删除的行数；批与批之间让出主线程，避免卡住打印。 */
@@ -36,8 +37,8 @@ export class SqliteJobStore implements JobStore {
   ) {
     this.capacity = assertCapacity(capacity);
     this.insertJob = db.prepare(`
-      INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason)
-      VALUES (:id, :createdAt, :raw, :printerName, :source, :status, :forced, :failureReason)`);
+      INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id)
+      VALUES (:id, :createdAt, :raw, :printerName, :source, :status, :forced, :failureReason, :paper, :templateId)`);
     // 插入后使用：只保留 seq 落在最新 capacity 个序号内的记录，走主键，开销与容量无关。
     this.trimBehind = db.prepare('DELETE FROM jobs WHERE seq <= :lastSeq - :capacity');
     this.trimOldestBatch = db.prepare(`
@@ -79,6 +80,8 @@ export class SqliteJobStore implements JobStore {
         status: job.status,
         forced: job.forced ? 1 : 0,
         failureReason: job.failureReason ?? null,
+        paper: job.paper ?? null,
+        templateId: job.templateId ?? null,
       });
       return Number(this.trimBehind.run({ lastSeq: lastInsertRowid, capacity: this.capacity }).changes);
     });
@@ -158,6 +161,12 @@ function toJobRecord(row: Row): JobRecord {
   };
   if (row['failureReason'] !== null) {
     job.failureReason = readEnum(row, 'failureReason', PRINT_FAILURE_REASONS);
+  }
+  if (row['paper'] !== null) {
+    job.paper = readString(row, 'paper');
+  }
+  if (row['templateId'] !== null) {
+    job.templateId = readString(row, 'templateId');
   }
   return job;
 }

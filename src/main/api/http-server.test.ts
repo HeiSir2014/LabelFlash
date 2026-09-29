@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { connect, createServer, type Server } from 'node:net';
+import { connect, createServer, type Server, type Socket } from 'node:net';
 import { FakeClock } from '../../core/testing/fake-clock';
 import type { ApiServerStatus } from '../../shared/local-api';
 import type { ApiError } from './api-error';
@@ -24,11 +24,20 @@ interface Options {
 }
 
 const servers: ApiHttpServer[] = [];
-const blockers: Server[] = [];
+/** 占着端口、收下连接却从不回应的「别的程序」；连上来的连接记下来，关掉它之前先断开。 */
+const blockers: Array<{ server: Server; sockets: Set<Socket> }> = [];
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.stop()));
-  await Promise.all(blockers.splice(0).map((blocker) => new Promise((resolve) => blocker.close(resolve))));
+  // close 要等所有连接结束：自检超时后服务端这一头不一定马上收到断开（macOS 上会一直挂着），先主动断开。
+  await Promise.all(
+    blockers.splice(0).map(({ server, sockets }) => {
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      return new Promise((resolve) => server.close(resolve));
+    }),
+  );
 });
 
 function createTestServer(options: Options = {}) {
@@ -82,8 +91,12 @@ async function start(server: ApiHttpServer): Promise<number> {
 }
 
 async function occupyPort(): Promise<number> {
-  const blocker = createServer();
-  blockers.push(blocker);
+  const sockets = new Set<Socket>();
+  const blocker = createServer((socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  blockers.push({ server: blocker, sockets });
   await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
   const address = blocker.address();
   if (address === null || typeof address === 'string') {

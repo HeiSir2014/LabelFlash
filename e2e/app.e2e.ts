@@ -508,6 +508,11 @@ test('previews a label on the paper of its template', async ({ electronApp }) =>
   await scan(page, 'hello');
   await expect(page.locator('.ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 100 /);
   await expect(page.locator('.ruler--vertical')).toHaveAttribute('viewBox', /^0 0 \S+ 100$/);
-  const frame = await page.locator('.label-frame').boundingBox();
-  expect(frame && Math.abs(frame.width / frame.height - 1)).toBeLessThan(0.02);
+  // 标签框按纸张缩放后才有最终尺寸：等它排好再量，不在刚渲染出来的那一刻读。
+  await expect
+    .poll(async () => {
+      const frame = await page.locator('.label-frame').boundingBox();
+      return frame === null ? Number.POSITIVE_INFINITY : Math.abs(frame.width / frame.height - 1);
+    })
+    .toBeLessThan(0.02);
 });

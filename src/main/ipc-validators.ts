@@ -5,7 +5,9 @@ import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-mo
 import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
+import { isWebOrigin, normalizeApiKeyName } from '../shared/local-api';
 import { isRandomId } from '../shared/mobile-protocol';
+import { paperKey, parsePaperKey } from '../shared/paper-sizes';
 import { isRecord } from '../shared/settings';
 import { isVoiceCue, type VoiceCue } from '../shared/voice';
 
@@ -96,6 +98,15 @@ export function requireTemplateId(value: unknown): string {
   return value;
 }
 
+/** 纸张键（例如 100x180，见 src/shared/paper-sizes.ts）；返回统一写法。 */
+export function requirePaperKey(value: unknown): string {
+  const paper = typeof value === 'string' ? parsePaperKey(value) : null;
+  if (paper === null) {
+    throw new TypeError('Invalid paper key');
+  }
+  return paperKey(paper);
+}
+
 export function requireVoiceCue(value: unknown): VoiceCue {
   if (!isVoiceCue(value)) {
     throw new TypeError('Invalid voice cue');
@@ -143,4 +154,29 @@ export function requireJobQuery(value: unknown): JobQuery {
     throw new TypeError('Invalid job query cursor');
   }
   return { limit, search, before };
+}
+
+/** 程序密钥的编号：生成时用的 UUID。 */
+const API_KEY_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export function requireApiKeyId(value: unknown): string {
+  if (typeof value !== 'string' || !API_KEY_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid api key id');
+  }
+  return value;
+}
+
+export function requireApiKeyName(value: unknown): string {
+  const name = normalizeApiKeyName(value);
+  if (name === null) {
+    throw new TypeError('Invalid api key name');
+  }
+  return name;
+}
+
+export function requireWebOrigin(value: unknown): string {
+  if (typeof value !== 'string' || value.length > MAX_IPC_STRING_LENGTH || !isWebOrigin(value)) {
+    throw new TypeError('Invalid web origin');
+  }
+  return value;
 }

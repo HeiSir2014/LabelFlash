@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import {
   MAX_IPC_STRING_LENGTH,
   MAX_RAW_INPUT_LENGTH,
+  requireApiKeyId,
+  requireApiKeyName,
   requireBoolean,
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
+  requirePaperKey,
   requirePositiveInteger,
   requirePrintOptions,
   requireRaw,
@@ -17,6 +20,7 @@ import {
   requireTemplateId,
   requireVoiceCue,
   requireWebhookId,
+  requireWebOrigin,
 } from './ipc-validators';
 
 describe('ipc validators', () => {
@@ -73,6 +77,13 @@ describe('ipc validators', () => {
     expect(() => requireJobQuery({ limit: 10, search: 3 })).toThrow(TypeError);
   });
 
+  test('requirePaperKey accepts width x height keys only, in their normal form', () => {
+    expect(requirePaperKey('100x180')).toBe('100x180');
+    expect(() => requirePaperKey('100×180')).toThrow(TypeError);
+    expect(() => requirePaperKey('0x40')).toThrow(TypeError);
+    expect(() => requirePaperKey(60)).toThrow(TypeError);
+  });
+
   test('requireTemplateId accepts built-in and custom ids only', () => {
     expect(requireTemplateId('builtin:standard')).toBe('builtin:standard');
     expect(requireTemplateId('custom:3f2c9a1e-0b4d-4c55-9b0e-7d8f1a2b3c4d')).toBe(
@@ -104,5 +115,23 @@ describe('ipc validators', () => {
     expect(() => requireSecretName('')).toThrow(TypeError);
     expect(() => requireSecretName('a}b')).toThrow(TypeError);
     expect(() => requireSecretName(1)).toThrow(TypeError);
+  });
+
+  test('requireApiKeyId accepts the UUIDs keys are created with only', () => {
+    expect(requireApiKeyId('7c9e6679-7425-40de-944b-e07fc1f90ae7')).toBe('7c9e6679-7425-40de-944b-e07fc1f90ae7');
+    expect(() => requireApiKeyId('k1')).toThrow(TypeError);
+    expect(() => requireApiKeyId(1)).toThrow(TypeError);
+  });
+
+  test('requireApiKeyName trims a name and rejects empty or control-character names', () => {
+    expect(requireApiKeyName(' ERP ')).toBe('ERP');
+    expect(() => requireApiKeyName('  ')).toThrow(TypeError);
+    expect(() => requireApiKeyName('a\nb')).toThrow(TypeError);
+  });
+
+  test('requireWebOrigin accepts http and https origins only', () => {
+    expect(requireWebOrigin('https://erp.example.com')).toBe('https://erp.example.com');
+    expect(() => requireWebOrigin('null')).toThrow(TypeError);
+    expect(() => requireWebOrigin(7)).toThrow(TypeError);
   });
 });

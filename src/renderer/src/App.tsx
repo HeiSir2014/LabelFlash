@@ -1,5 +1,7 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
+import type { JobRecord } from '../../core/types';
+import { describePrintersSummary } from '../../shared/printer-summary';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
 import { ConfigCenter } from './components/config/ConfigCenter';
@@ -8,36 +10,39 @@ import { ConfirmDialog } from './components/config/ConfirmDialog';
 import { JobLog } from './components/JobLog';
 import { MOBILE_QR_SIZE_PX, MobileOverlay } from './components/MobileOverlay';
 import { NoticeBar } from './components/NoticeBar';
+import { OriginRequests } from './components/OriginRequests';
 import type { PreviewOverride } from './components/PreviewStage';
 import { PrinterList } from './components/PrinterList';
 import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
+import type { SideTab } from './components/workbench/WorkbenchSide';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
+import { describeCaller } from './lib/local-api-text';
 import { describeMobileButton, describeMobileOverlay, describeMobileState } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
-import { describePaperCheck } from './lib/paper-text';
 import { describePreviewUsage } from './lib/preview-usage';
-import { describePrinterChip } from './lib/printer-chip';
+import { expectedPaperKey, paperRows, responsibilitiesOf, withAssignment } from './lib/printer-assignment';
+import { reprintMode } from './lib/reprint';
 import { scanFieldType } from './lib/scan-field';
 import { isWorkbenchActive } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
 import { useConfigCenter } from './view-models/use-config-center';
-import { useDriverPaper } from './view-models/use-driver-paper';
 import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
+import { useLocalApi } from './view-models/use-local-api';
 import { useMediaQuery } from './view-models/use-media-query';
 import { useMobileStation } from './view-models/use-mobile-station';
 import { useNotices } from './view-models/use-notices';
-import { usePrinterStatus } from './view-models/use-printer-status';
+import { usePrinterProfiles } from './view-models/use-printer-profiles';
 import { usePrinters } from './view-models/use-printers';
 import { useQrImage } from './view-models/use-qr-image';
 import { useRules } from './view-models/use-rules';
-import { useScanStation } from './view-models/use-scan-station';
+import { type HistoryTarget, useScanStation } from './view-models/use-scan-station';
 import { useSettings } from './view-models/use-settings';
 import { useTemplatePreview } from './view-models/use-template-preview';
 import { useTemplates } from './view-models/use-templates';
@@ -51,6 +56,7 @@ export function App() {
   const { settings, hasLoadError, reload, update, replace } = useSettings();
   const printers = usePrinters();
   const jobLog = useJobLog();
+  const localApi = useLocalApi();
   const appInfo = useAppInfo();
   const { notices, dismiss } = useNotices();
   const updates = useUpdateStatus();
@@ -59,23 +65,14 @@ export function App() {
   const platform = platformForChrome(windowChrome());
   const fieldType = scanFieldType(platform);
 
-  const printerName = settings?.selectedPrinter ?? null;
+  // 工作台右侧当前的标签页：标题栏的打印机胶囊、状态条的「去指定打印机」都能切到打印机页。
+  const [sideTab, setSideTab] = useState<SideTab>('printers');
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
   const historyLimit = settings?.historyLimit ?? DEFAULT_SETTINGS.historyLimit;
-  const readiness = usePrinterStatus(printerName);
-  const isPrinterListed = printers.printers.some((printer) => printer.name === printerName);
-  const printerChip = describePrinterChip({
-    printerName,
-    isLoading: printers.isLoading,
-    isListed: isPrinterListed,
-    readiness,
-  });
-  const driverPaper = useDriverPaper(printerName, isPrinterListed);
 
-  // 是否能打印由主进程最终判断（找不到打印机会返回 PRINTER_NOT_FOUND），界面只要求选过打印机。
+  // 打到哪台、能不能打由主进程按模板决定（没有打印机时返回 no-printer，找不到打印机返回 PRINTER_NOT_FOUND）。
   const feedback = useFeedback(settings?.voice ?? DEFAULT_SETTINGS.voice);
   const station = useScanStation({
-    printerName,
     autoPrint,
     onJobRecorded: jobLog.refresh,
     announce: feedback.announce,
@@ -86,6 +83,84 @@ export function App() {
     replaceSettings: replace,
     onActiveTemplateChanged: () => void station.refreshPreview(),
   });
+  // 打印记录的预览、重打：本机接口的记录按当时的模板和字段（模板删了就不能按原样重打）。
+  const reprintModeOf = useCallback(
+    (job: JobRecord) => reprintMode(job, (id) => templates.templates.some((template) => template.id === id)),
+    [templates.templates],
+  );
+  const historyTarget = useCallback(
+    (job: JobRecord): HistoryTarget => ({ raw: job.raw, jobId: reprintModeOf(job) === 'stored' ? job.id : null }),
+    [reprintModeOf],
+  );
+  // 打印机：按纸张分配，模板也可以自己指定（规则见 src/core/printing/resolve-printer.ts）。
+  const paperPrinters = settings?.paperPrinters ?? DEFAULT_SETTINGS.paperPrinters;
+  const installedNames = useMemo(() => printers.printers.map((printer) => printer.name), [printers.printers]);
+  /** 被分配到的打印机（纸张分配和模板指定里出现的）：标题栏汇总它们，主进程检测它们的状态。 */
+  const assignedNames = useMemo(
+    () => [
+      ...new Set([
+        ...Object.values(paperPrinters),
+        ...templates.templates.flatMap((template) => (template.printer ? [template.printer] : [])),
+      ]),
+    ],
+    [paperPrinters, templates.templates],
+  );
+  const responsibilitiesByName = useCallback(
+    (name: string) => responsibilitiesOf(name, templates.templates, paperPrinters),
+    [templates.templates, paperPrinters],
+  );
+  const expectedPapers = useMemo(
+    () =>
+      Object.fromEntries(
+        installedNames.flatMap((name) => {
+          const key = expectedPaperKey(responsibilitiesByName(name));
+          return key === null ? [] : [[name, key]];
+        }),
+      ),
+    [installedNames, responsibilitiesByName],
+  );
+  const printerProfiles = usePrinterProfiles(installedNames, assignedNames, expectedPapers);
+  // 第一次读完打印机列表之前，不把分配到的打印机说成「这台电脑上没有」。
+  const knownNames = printers.hasLoaded ? installedNames : [...installedNames, ...assignedNames];
+  /** 系统打印机名 → 界面上显示的名字（macOS 上系统名是打印队列名）。 */
+  const displayNameOf = useCallback(
+    (name: string) => printers.printers.find((printer) => printer.name === name)?.displayName ?? name,
+    [printers.printers],
+  );
+  /** 打印机设置变了（纸张分配、本机打印机）：预览里的「打印机：…」要跟着变。 */
+  const printerSetupKey = `${JSON.stringify(paperPrinters)}${installedNames.join('|')}`;
+  // 连着点两个「建议」时，第二次要在第一次的基础上改：按最新的分配合并，不按这一帧渲染时的。
+  const latestPaperPrinters = useRef(paperPrinters);
+  useEffect(() => {
+    latestPaperPrinters.current = paperPrinters;
+  }, [paperPrinters]);
+  const assignPaper = async (key: string, name: string | null) => {
+    const next = withAssignment(latestPaperPrinters.current, key, name);
+    latestPaperPrinters.current = next;
+    if (await update({ paperPrinters: next })) {
+      // 这一张会打到哪台可能变了：按新的分配重新预览。
+      void station.refreshPreview();
+    }
+  };
+  const paperRowsView = paperRows(
+    templates.templates,
+    paperPrinters,
+    knownNames,
+    Object.fromEntries(
+      installedNames.map((name) => {
+        const check = printerProfiles.profileOf(name).paper;
+        return [name, check && check.status !== 'unknown' ? check.paper : null];
+      }),
+    ),
+  );
+  const printerChip = describePrintersSummary(
+    assignedNames.map((name) => ({
+      name: displayNameOf(name),
+      isListed: knownNames.includes(name),
+      readiness: printerProfiles.profileOf(name).readiness,
+    })),
+  );
+
   // 规则、顺序、模板绑定变了：当前扫码的识别结果和用的模板都可能变，重新预览。
   const rules = useRules({ onRulesChanged: () => void station.refreshPreview() });
   const config = useConfigCenter({
@@ -122,7 +197,7 @@ export function App() {
     () => (templates.active ? applyNoteOverride(templates.active, noteOverride) : null),
     [templates.active, noteOverride],
   );
-  const samplePreview = useTemplatePreview(SAMPLE_LABEL_RAW, station.scan ? null : effectiveTemplate);
+  const samplePreview = useTemplatePreview(SAMPLE_LABEL_RAW, station.scan ? null : effectiveTemplate, printerSetupKey);
   const override: PreviewOverride | null =
     station.scan || !effectiveTemplate
       ? null
@@ -130,6 +205,8 @@ export function App() {
           html: samplePreview?.html ?? null,
           qrOmitted: samplePreview?.qrOmitted ?? false,
           feedKey: samplePreview?.templateId ?? effectiveTemplate.id,
+          // 和正在显示的标签内容用同一份结果的纸张，换模板时框和内容一起变。
+          paper: samplePreview?.paper ?? effectiveTemplate.paper,
         };
 
   const noteOptions = buildNoteOptions(settings?.notePresets ?? [], noteOverride);
@@ -146,7 +223,6 @@ export function App() {
 
   const scanView = describeScan(station.scan, {
     autoPrint,
-    hasPrinter: printerName !== null,
     now: Date.now(),
     queryingRaw: station.queryingRaw,
   });
@@ -171,8 +247,8 @@ export function App() {
   };
 
   /** 测试页的结果也要播报：操作员通常站在打印机旁边，不看屏幕。 */
-  const printTest = async (name: string) => {
-    const result = await printers.printTest(name);
+  const printTest = async (name: string, key: string) => {
+    const result = await printers.printTest(name, key);
     feedback.announce(result ? { kind: 'result', result, mode: 'test' } : { kind: 'internal-error' });
     return result;
   };
@@ -190,6 +266,12 @@ export function App() {
       <TitleBar
         version={appInfo?.version ?? null}
         printerChip={printerChip}
+        onOpenPrinters={() => {
+          setSideTab('printers');
+          if (!isWorkbench) {
+            appView.close();
+          }
+        }}
         readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
         config={{
           isOpen: !isWorkbench,
@@ -216,6 +298,8 @@ export function App() {
       ) : (
         <Workbench
           isActive={isWorkbench}
+          sideTab={sideTab}
+          onSideTabChange={setSideTab}
           scanBar={{
             autoPrint,
             lineGapMs: settings.scanLineGapMs,
@@ -229,7 +313,12 @@ export function App() {
               <PreviewToolbar
                 templates={templates.templates}
                 activeTemplateId={templates.active?.id ?? null}
-                usage={describePreviewUsage(station.scan?.preview ?? null, templates.active?.name ?? null)}
+                usage={describePreviewUsage(
+                  station.scan?.preview ?? null,
+                  templates.active?.name ?? null,
+                  samplePreview?.result.status === 'ok' ? samplePreview.result.printer : null,
+                  displayNameOf,
+                )}
                 onActivate={(id) => void templates.activate(id)}
               />
             ),
@@ -238,19 +327,26 @@ export function App() {
             override,
             onPrint: () => station.printCurrent(false),
             onForceReprint: () => station.printCurrent(true),
-            onOpenPage: appView.open,
+            onOpenPage: (page) => {
+              // 打印机页在工作台右侧，不在配置中心。
+              if (page === 'printers') {
+                setSideTab('printers');
+              } else {
+                appView.open(page);
+              }
+            },
           }}
           printers={
             <PrinterList
               printers={printers.printers}
-              selected={printerName}
               isLoading={printers.isLoading}
-              paper={{
-                view: describePaperCheck(driverPaper.check),
-                isOpening: driverPaper.isOpening,
-                onOpenPreferences: () => void driverPaper.openPreferences(),
-              }}
-              onSelect={(name) => void update({ selectedPrinter: name })}
+              rows={paperRowsView}
+              profileOf={printerProfiles.profileOf}
+              responsibilitiesOf={responsibilitiesByName}
+              openingName={printerProfiles.openingName}
+              displayName={displayNameOf}
+              onAssign={(key, name) => void assignPaper(key, name)}
+              onOpenPreferences={(name) => void printerProfiles.openPreferences(name)}
               onRefresh={() => void printers.refresh()}
               onTestPrint={printTest}
             />
@@ -263,10 +359,14 @@ export function App() {
               search={jobLog.search}
               hasMore={jobLog.hasMore}
               isLoadingMore={jobLog.isLoadingMore}
+              hasNewJobs={jobLog.hasNewJobs}
+              onShowNewJobs={() => void jobLog.refresh()}
               onSearchChange={jobLog.setSearch}
               onLoadMore={() => void jobLog.loadMore()}
-              onReview={station.review}
-              onReprint={station.reprint}
+              callerOf={(job) => describeCaller(job.caller, localApi.hasLoadedKeys ? localApi.keys : null)}
+              reprintModeOf={reprintModeOf}
+              onReview={(job) => station.review(historyTarget(job))}
+              onReprint={(job) => station.reprint(historyTarget(job))}
             />
           }
         />
@@ -300,6 +400,8 @@ export function App() {
               onDraftChange: templates.changeDraft,
               onSave: () => void templates.saveDraft(),
               onCancel: templates.cancelEdit,
+              printers: printers.printers,
+              paperPrinters,
             }}
             rules={{ rules, templates: templates.templates, tester: config.tester, isNarrow }}
             lookup={{
@@ -327,6 +429,7 @@ export function App() {
               defaultRelayUrl: appInfo?.defaultRelayUrl ?? null,
               statusText: describeMobileState(mobile.status),
             }}
+            localApi={localApi}
             general={{
               jobTotal: jobLog.total,
               update: updateView,
@@ -342,7 +445,11 @@ export function App() {
       )}
       {isMobileOverlayShown && (
         <MobileOverlay
-          view={describeMobileOverlay(mobile.status, { hasPrinter: printerName !== null, now: mobile.now })}
+          view={describeMobileOverlay(mobile.status, {
+            // 至少有一台被分配到的打印机在这台电脑上（纸张分配或模板指定）。
+            hasPrinter: assignedNames.some((name) => installedNames.includes(name)),
+            now: mobile.now,
+          })}
           qrImage={mobileQr}
           onStart={mobile.start}
           onStop={mobile.stop}
@@ -366,6 +473,10 @@ export function App() {
           onCancel={appView.leaveConfirm.onContinue}
         />
       )}
+      <OriginRequests
+        origins={localApi.status?.pendingOrigins ?? []}
+        onDecide={(origin, allow) => void localApi.decideOrigin(origin, allow)}
+      />
       <NoticeBar notices={notices} onDismiss={dismiss} />
     </div>
   );

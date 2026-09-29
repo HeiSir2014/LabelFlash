@@ -1,4 +1,5 @@
 import { type ElectronApplication, expect, type Page } from '@playwright/test';
+import type { FakePrint } from '../../src/main/printing/fake-printers';
 import { IpcChannel, type LabelFlashApi } from '../../src/shared/ipc-contract';
 
 /** 工作台扫码框：填入内容再按回车。 */
@@ -51,6 +52,34 @@ export async function callApi<K extends keyof LabelFlashApi>(
     },
     { name: method, params: args as unknown[] },
   ) as Promise<Awaited<ReturnType<LabelFlashApi[K]>>>;
+}
+
+/** 假打印机收到的打印（启动时带 fakePrinters，见 src/main/printing/fake-printers.ts）。 */
+export function fakePrints(app: ElectronApplication): Promise<FakePrint[]> {
+  return app.evaluate(
+    () => (globalThis as { e2eFakePrinters?: { printed: FakePrint[] } }).e2eFakePrinters?.printed ?? [],
+  );
+}
+
+/**
+ * 模拟 1.0.x 留下的设置：只有「选中的打印机」（selectedPrinter），还没有纸张分配。
+ * 借运行中程序的主进程另开一个数据库连接来写（WAL 模式下可以同时开）；Playwright 所在的运行时不一定带 node:sqlite。
+ * 调用方随后关掉程序，再用同一个数据目录启动。
+ */
+export async function seedLegacySelectedPrinter(app: ElectronApplication, printerName: string): Promise<void> {
+  await app.evaluate(({ app: electronApp }, name) => {
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+    const { join } = process.getBuiltinModule('node:path');
+    const db = new DatabaseSync(join(electronApp.getPath('userData'), 'labelflash.db'));
+    try {
+      db.exec("DELETE FROM settings WHERE key = 'paperPrinters'");
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('selectedPrinter', ?)").run(
+        JSON.stringify(name),
+      );
+    } finally {
+      db.close();
+    }
+  }, printerName);
 }
 
 /** 换掉主进程的打印处理：只计数，不碰真实打印机。返回读取打印次数的函数。 */

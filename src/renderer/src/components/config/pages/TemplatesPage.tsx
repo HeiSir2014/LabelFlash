@@ -1,6 +1,10 @@
 import { useId } from 'react';
 import { isBuiltInTemplateId, type LabelTemplate } from '../../../../../core/templates/template-model';
+import type { PrinterInfo } from '../../../../../core/types';
+import { DEFAULT_PAPER } from '../../../../../shared/label-paper';
+import { formatPaperName } from '../../../../../shared/paper-sizes';
 import { FIELD_NAME_LIST_ID } from '../../../lib/field-names';
+import { describeTemplatePrinter } from '../../../lib/printer-assignment';
 import type { TemplatePreview } from '../../../view-models/use-template-preview';
 import { DeleteButton } from '../../ConfirmButton';
 import { LabelPreview } from '../../LabelPreview';
@@ -30,6 +34,9 @@ export interface TemplatesPageProps {
   preview: TemplatePreview | null;
   /** 字段名输入框的候选。 */
   fieldNames: readonly string[];
+  /** 本机的打印机和纸张分配：编辑器选打印机、列表显示实际会用哪台。 */
+  printers: readonly PrinterInfo[];
+  paperPrinters: Readonly<Record<string, string>>;
   onSelect: (id: string) => void;
   onActivate: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -66,15 +73,22 @@ function ListView({
   onDuplicate,
   onEdit,
   onRemove,
+  printers,
+  paperPrinters,
 }: TemplatesPageProps) {
   const builtIn = templates.filter((template) => isBuiltInTemplateId(template.id));
   const custom = templates.filter((template) => !isBuiltInTemplateId(template.id));
-  const groupProps = { selectedId: selected?.id ?? null, activeId, onSelect };
+  const names = printers.map((printer) => printer.name);
+  const displayName = (name: string) => printers.find((printer) => printer.name === name)?.displayName ?? name;
+  // 每一行写上纸张和实际会用的打印机：纸张分配改了，这里跟着变。
+  const describeUse = (template: LabelTemplate) =>
+    `${formatPaperName(template.paper)} · ${describeTemplatePrinter(template, paperPrinters, names, displayName)}`;
+  const groupProps = { selectedId: selected?.id ?? null, activeId, onSelect, describeUse };
 
   return (
     <div className="templates-page">
       <div className="template-list">
-        <p className="template-list__intro">纸张固定 60×40mm。点一套模板即可预览，不会改变正在使用的模板。</p>
+        <p className="template-list__intro">点一套模板即可预览，不会改变正在使用的模板。</p>
         <TemplateGroup label="内置" items={builtIn} empty="" {...groupProps} />
         <TemplateGroup
           label="自定义"
@@ -90,6 +104,7 @@ function ListView({
           qrOmitted={preview?.qrOmitted ?? false}
           feedKey={preview?.templateId ?? 'none'}
           maxScale={MAX_PREVIEW_SCALE}
+          paper={preview?.paper ?? selected?.paper ?? DEFAULT_PAPER}
           placeholder={previewPlaceholder(preview)}
         />
         {selected && (
@@ -114,10 +129,12 @@ interface TemplateGroupProps {
   selectedId: string | null;
   activeId: string | null;
   onSelect: (id: string) => void;
+  /** 纸张和实际会用的打印机，例如「100×180 二联面单 · 面单机B」。 */
+  describeUse: (template: LabelTemplate) => string;
 }
 
 /** 一组模板：点选即预览（按下状态表示正在预览的那一套）。 */
-function TemplateGroup({ label, items, empty, selectedId, activeId, onSelect }: TemplateGroupProps) {
+function TemplateGroup({ label, items, empty, selectedId, activeId, onSelect, describeUse }: TemplateGroupProps) {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId}>
@@ -136,7 +153,10 @@ function TemplateGroup({ label, items, empty, selectedId, activeId, onSelect }: 
                 aria-pressed={template.id === selectedId}
                 onClick={() => onSelect(template.id)}
               >
-                <span className="template-item__name">{template.name}</span>
+                <span className="template-item__text">
+                  <span className="template-item__name">{template.name}</span>
+                  <span className="template-item__use">{describeUse(template)}</span>
+                </span>
                 {template.id === activeId && <span className="badge">使用中</span>}
               </button>
             </li>
@@ -188,11 +208,19 @@ function EditView({
   onDraftChange,
   onSave,
   onCancel,
+  printers,
+  paperPrinters,
 }: TemplatesPageProps & { draft: LabelTemplate }) {
   return (
     <div className="template-editing">
       <div className="template-editing__form">
-        <TemplateEditor draft={draft} onChange={onDraftChange} />
+        <TemplateEditor
+          key={draft.id}
+          draft={draft}
+          onChange={onDraftChange}
+          printers={printers}
+          paperPrinters={paperPrinters}
+        />
       </div>
       <section className="template-editing__preview" aria-label="模板预览">
         <SampleInput sample={sample} />
@@ -201,6 +229,7 @@ function EditView({
           qrOmitted={preview?.qrOmitted ?? false}
           feedKey={preview?.templateId ?? 'none'}
           maxScale={MAX_PREVIEW_SCALE}
+          paper={preview?.paper ?? draft.paper}
           placeholder={previewPlaceholder(preview)}
         />
       </section>

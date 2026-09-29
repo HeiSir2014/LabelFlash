@@ -28,6 +28,8 @@ export const SKIN_TEXT = {
   /** 安装时轮换的一句话：各说一个功能，短到能放进刻度圈里。 */
   tips: ['扫码自动预览并打印', '3 秒内同一标签只打一次', '缺纸、卡纸会语音提醒'],
   installedLaunching: '安装完成，正在启动',
+  /** 装完、启动程序之前加防火墙规则：接着会弹管理员确认框，点「否」照常启动。 */
+  firewallPrompt: '允许局域网连接：请在弹出的窗口里点「是」',
   updatedLaunching: '更新完成，正在启动',
   invalidPath: '请填写完整的本地路径，例如 D:\\Programs',
   startFailed: '无法启动安装，请重试',

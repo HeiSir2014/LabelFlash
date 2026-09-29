@@ -228,6 +228,7 @@ textarea {
   cursor: pointer;
 }
 
+/* 打印机胶囊是按钮（点开右侧打印机页），外观仍是状态胶囊 */
 .printer-chip {
   display: flex;
   align-items: center;
@@ -238,7 +239,16 @@ textarea {
   padding: 0 var(--space-3);
   border: 1px solid var(--color-on-ink-rule);
   border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   font-size: 12px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.printer-chip:hover {
+  border-color: var(--color-tape);
 }
 
 /* 「配置」「手机扫码」按钮：与打印机胶囊同高、同描边；打开时显示按下 */
@@ -704,9 +714,10 @@ textarea {
   white-space: pre;
 }
 
-/* 放不下时先省略内容来源；模板名不收缩，只在超过「整行减去来源的最小宽度」时才省略。 */
+/* 放不下时先省略内容来源，再省略打印机；模板名不收缩，只在超过「整行减去来源和打印机的最小宽度」时才省略。 */
 .preview-toolbar__source,
-.preview-toolbar__used-template {
+.preview-toolbar__used-template,
+.preview-toolbar__printer {
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -722,14 +733,22 @@ textarea {
 
 .preview-toolbar__used-template {
   --source-min: 5em;
+  --printer-min: 6em;
   flex-shrink: 0;
-  max-width: calc(100% - var(--source-min));
+  max-width: calc(100% - var(--source-min) - var(--printer-min));
   color: var(--color-ink);
+}
+
+.preview-toolbar__printer {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /* 软尺框住实物比例的标签：工作台和配置中心共用 */
 .label-preview {
   --preview-scale: 2;
+  --paper-w: 60;
+  --paper-h: 40;
   --mm: calc(3.7795px * var(--preview-scale));
   --ruler-depth: calc(4 * var(--mm));
   display: grid;
@@ -745,8 +764,9 @@ textarea {
   grid-template-areas:
     "corner top"
     "side label";
-  grid-template-columns: var(--ruler-depth) calc(60 * var(--mm));
-  grid-template-rows: var(--ruler-depth) calc(40 * var(--mm));
+  /* --paper-w、--paper-h 是模板纸张的毫米数（无单位），由 LabelPreview 设置。 */
+  grid-template-columns: var(--ruler-depth) calc(var(--paper-w) * var(--mm));
+  grid-template-rows: var(--ruler-depth) calc(var(--paper-h) * var(--mm));
   filter: drop-shadow(0 2px 6px rgb(24 33 30 / 0.12));
 }
 
@@ -824,8 +844,8 @@ textarea {
 
 .label-frame {
   display: block;
-  width: 60mm;
-  height: 40mm;
+  width: calc(var(--paper-w) * 1mm);
+  height: calc(var(--paper-h) * 1mm);
   border: 0;
   background: var(--color-field);
   pointer-events: none;
@@ -1058,20 +1078,88 @@ textarea {
   border-bottom: 1px solid var(--color-housing);
 }
 
-.printer-row--selected {
-  background: linear-gradient(90deg, var(--color-tape) 0 4px, var(--color-tape-wash) 4px);
-}
-
-.printer-row__select {
+.printer-row__title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
   padding: var(--space-2) 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
+}
+
+/* 状态点：只给被分配到的打印机（主进程只检测它们） */
+.printer-row__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.printer-row__dot--ready {
+  background: var(--color-success);
+}
+
+.printer-row__dot--error {
+  background: var(--color-error);
+}
+
+/* 纸张 → 打印机：打印机页顶部，每种纸一行 */
+.paper-assignments {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.paper-assignments__title {
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.paper-assignments__empty {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+.paper-assignments__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.paper-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.paper-row__name {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paper-row__select {
+  min-width: 0;
+}
+
+.paper-row__suggestion {
+  grid-column: 2;
+  justify-self: start;
+}
+
+/* 用这种纸的模板没有可用的打印机：标红 */
+.paper-row--missing .paper-row__name {
+  color: var(--color-error);
+  font-weight: 700;
+}
+
+.paper-row--missing .paper-row__select {
+  border-color: var(--color-error);
 }
 
 .printer-row__name {
@@ -1087,7 +1175,7 @@ textarea {
   font-size: 12px;
 }
 
-/* 驱动默认纸张不是 60×40：贴在选中的打印机下面，附处理按钮 */
+/* 驱动默认纸张和这台负责的纸对不上：贴在那一台下面，附处理按钮 */
 .paper-warning {
   display: flex;
   grid-column: 1 / -1;
@@ -1108,11 +1196,6 @@ textarea {
   line-height: 1.5;
 }
 
-.badge--quiet {
-  background: var(--color-housing);
-  color: var(--color-ink-soft);
-}
-
 .badge {
   flex: none;
   padding: 0 6px;
@@ -1122,10 +1205,27 @@ textarea {
   font-size: 11px;
 }
 
+/* 变体都写在 .badge 后面才能盖住它的底色 */
+.badge--quiet {
+  background: var(--color-housing);
+  color: var(--color-ink-soft);
+}
+
+/* 打印机的问题（缺纸、离线……） */
+.badge--error {
+  background: var(--color-error);
+  color: var(--color-paper);
+}
+
 /* 打印记录 */
 .job-log__more {
   padding: var(--space-3);
   text-align: center;
+}
+
+/* 翻到后面几页时接口打了新标签：列表上方的一条提示，点了回到最新。 */
+.job-log__new {
+  margin: 0 var(--space-3) var(--space-2);
 }
 
 .job-log__count {
@@ -2534,13 +2634,29 @@ textarea {
   background: var(--color-tape-wash);
 }
 
-.template-item__name {
+.template-item__text {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.template-item__name,
+.template-item__use {
   min-width: 0;
   overflow: hidden;
-  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.template-item__name {
+  font-weight: 600;
+}
+
+/* 纸张和实际会用的打印机：小一号、淡一点，名称仍然是主角 */
+.template-item__use {
+  color: var(--color-ink-soft);
+  font-size: 12px;
 }
 
 .template-stage,
@@ -2847,4 +2963,138 @@ textarea {
   margin: var(--space-1) 0 0 calc(var(--config-label-width) + var(--space-4));
   color: var(--color-error);
   font-size: 12px;
+}
+
+/* ── 本机接口页 ── */
+/* 状态色画成圆点，文字用正文色：状态色做文字对比度不够 */
+.api-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.api-status::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone);
+  content: "";
+}
+
+.api-addresses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.api-address {
+  font-family: var(--font-data);
+  user-select: text;
+}
+
+/* 新密钥：只显示一次，醒目地单独放一块 */
+.api-new-key {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius);
+}
+
+.api-new-key__title,
+.api-new-key__issue {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.api-new-key__secret {
+  font-family: var(--font-data);
+}
+
+.api-key-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.api-key-card__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.api-key-card__name {
+  font-weight: 600;
+}
+
+.api-key-card__usage {
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+/* 名称输入框最宽 360px：名称最多 40 个字 */
+.api-key-form {
+  display: grid;
+  grid-template-columns: var(--config-label-width) minmax(0, 360px) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.api-key-form__label {
+  font-weight: 600;
+}
+
+/* ── 网站授权请求：程序顶部，只能用鼠标点 ── */
+.origin-requests {
+  position: fixed;
+  z-index: var(--layer-notice);
+  top: calc(var(--title-bar-height) + var(--space-2));
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(560px, calc(100% - var(--space-5) * 2));
+  transform: translateX(-50%);
+}
+
+.origin-request {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-left: 4px solid var(--color-warning);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+  box-shadow: 0 6px 20px rgb(24 33 30 / 0.18);
+  font-size: 13px;
+}
+
+.origin-request__text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 网站名单独一行、用等宽字体：一眼看清是哪个网站，不被「127.0.0.1.某某.com」这种名字骗到 */
+.origin-request__site {
+  display: block;
+  font-family: var(--font-data);
+}
+
+.origin-request__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-2);
 }

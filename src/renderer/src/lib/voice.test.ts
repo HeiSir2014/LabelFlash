@@ -74,12 +74,19 @@ describe('describeFeedback', () => {
     expect(cueOf(failed('PRINT_TIMEOUT'))).toBe('timeout');
     expect(cueOf(failed('PRINT_ERROR'), 'test')).toBe('failed');
     expect(cueOf(failed('LOOKUP_FAILED'))).toBe('lookupFailed');
+    // 这种纸没有打印机：主进程返回的结果，和手机扫码页说同一句。
+    expect(
+      describeFeedback({
+        kind: 'result',
+        result: { status: 'no-printer', paperKey: '100x180', missingPrinter: null },
+        mode: 'scan',
+      }),
+    ).toEqual({ cue: 'noPrinter', tone: 'warning' });
     expect(describeFeedback({ kind: 'configuring' })).toEqual({ cue: 'configuring', tone: 'warning' });
   });
 
   test('covers events that are not print results, with a fallback tone per level', () => {
     expect(describeFeedback({ kind: 'invalid' })).toEqual({ cue: 'invalid', tone: 'warning' });
-    expect(describeFeedback({ kind: 'no-printer' })).toEqual({ cue: 'noPrinter', tone: 'warning' });
     expect(describeFeedback({ kind: 'scanned' })).toEqual({ cue: 'scanned', tone: 'success' });
     expect(describeFeedback({ kind: 'internal-error' })).toEqual({ cue: 'internalError', tone: 'error' });
     expect(describeFeedback({ kind: 'result', result: failed('PRINT_ERROR'), mode: 'scan' }).tone).toBe('error');

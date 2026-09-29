@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import sharp from 'sharp';
+import { firewallInstallerScript } from '../../src/shared/firewall-rule';
 import {
   buildInstallXml,
   nsisSkinInclude,
@@ -44,7 +45,13 @@ async function buildSkin(scale: SkinScale): Promise<Buffer> {
   return createZip(entries);
 }
 
-/** 生成全部比例的皮肤包和挑选皮肤的 NSIS 宏。 */
+/**
+ * Windows PowerShell 5.1 把没有 BOM 的 .ps1 当作系统代码页（中文系统是 GBK）读：带上 UTF-8 的 BOM，
+ * 脚本里的中文注释、以后可能出现的中文都不会读错。
+ */
+const UTF8_BOM = '﻿';
+
+/** 生成全部比例的皮肤包、挑选皮肤的 NSIS 宏，以及安装、卸载时加 / 删防火墙规则的脚本（见 resources/installer/firewall.nsh）。 */
 export async function buildSkins(outputDir = SKIN_OUTPUT_DIR): Promise<void> {
   await mkdir(outputDir, { recursive: true });
   for (const scale of SKIN_SCALES) {
@@ -53,6 +60,7 @@ export async function buildSkins(outputDir = SKIN_OUTPUT_DIR): Promise<void> {
     console.log(`[installer] skin-${scale}.zip  ${Math.round(zip.length / 1024)} KB`);
   }
   await writeFile(join(outputDir, 'skins.nsh'), nsisSkinInclude(), 'utf8');
+  await writeFile(join(outputDir, 'firewall.ps1'), `${UTF8_BOM}${firewallInstallerScript()}`, 'utf8');
 }
 
 if (import.meta.main) {

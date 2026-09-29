@@ -1,14 +1,13 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import type { PrinterInfo, PrintRequest, PrintResult } from '../../core/types';
+import type { PrintRequest, PrintResult } from '../../core/types';
 import type { MobileStatus } from '../../shared/mobile-status';
 import type { MobileHostDeps } from './mobile-host';
 import { type MobileHostPort, MobileStation } from './mobile-station';
 
 const OFFICIAL = 'https://official.example.com/labelflash/';
 const MINE = 'https://mine.example.com/relay/';
-const PRINTERS: PrinterInfo[] = [{ name: 'LABEL_PRINTER_01', displayName: '热敏标签机' }];
 
-type HostDeps = Pick<MobileHostDeps, 'relayBase' | 'print' | 'selectedPrinter'>;
+type HostDeps = Pick<MobileHostDeps, 'relayBase' | 'print' | 'printerLabel'>;
 
 class FakeHost implements MobileHostPort {
   readonly calls: string[] = [];
@@ -58,7 +57,8 @@ class FakeHost implements MobileHostPort {
   }
 }
 
-let settings: { mobileRelayUrl: string | null; selectedPrinter: string | null };
+let settings: { mobileRelayUrl: string | null; paperPrinters: Record<string, string> };
+let printerLabel: string | null;
 let hosts: FakeHost[];
 let statuses: MobileStatus[];
 let submitted: PrintRequest[];
@@ -68,7 +68,7 @@ function createStation(buildDefaultRelayUrl: string | null = OFFICIAL): MobileSt
   return new MobileStation({
     settings: () => settings,
     buildDefaultRelayUrl,
-    listPrinters: async () => PRINTERS,
+    printerLabel: async () => printerLabel,
     submit: async (request) => {
       submitted.push(request);
       return printResult;
@@ -92,7 +92,8 @@ function onlyHost(): FakeHost {
 }
 
 beforeEach(() => {
-  settings = { mobileRelayUrl: null, selectedPrinter: 'LABEL_PRINTER_01' };
+  settings = { mobileRelayUrl: null, paperPrinters: { '60x40': 'LABEL_PRINTER_01' } };
+  printerLabel = '热敏标签机';
   hosts = [];
   statuses = [];
   submitted = [];
@@ -148,24 +149,39 @@ describe('MobileStation', () => {
     const station = createStation();
     station.start();
     const previous = { ...settings };
-    settings.selectedPrinter = 'OTHER';
+    settings = { ...settings, paperPrinters: { '60x40': 'OTHER' } };
     station.settingsChanged(settings, previous);
     expect(onlyHost().calls).toContain('printerChanged');
   });
 
-  test('names the printer as the desktop shows it, or by its system name when it is gone', async () => {
+  test('tells the phones when a template changes which printers are used', () => {
+    const station = createStation();
+    station.start();
+    station.printersChanged();
+    expect(onlyHost().calls).toContain('printerChanged');
+  });
+
+  // 设置每次保存都是新对象：分配没变时不打扰手机。
+  test('does not tell the phones anything when the assignment is saved unchanged', () => {
+    const station = createStation();
+    station.start();
+    const previous = { ...settings };
+    settings = { ...settings, paperPrinters: { ...settings.paperPrinters } };
+    station.settingsChanged(settings, previous);
+    expect(onlyHost().calls).not.toContain('printerChanged');
+  });
+
+  test('names the printers as the desktop summarises them', async () => {
     createStation().start();
-    expect(await onlyHost().deps.selectedPrinter()).toEqual({ name: 'LABEL_PRINTER_01', displayName: '热敏标签机' });
-    settings.selectedPrinter = 'UNPLUGGED';
-    expect(await onlyHost().deps.selectedPrinter()).toEqual({ name: 'UNPLUGGED', displayName: 'UNPLUGGED' });
-    settings.selectedPrinter = null;
-    expect(await onlyHost().deps.selectedPrinter()).toBeNull();
+    expect(await onlyHost().deps.printerLabel()).toBe('热敏标签机');
+    printerLabel = null;
+    expect(await onlyHost().deps.printerLabel()).toBeNull();
   });
 
   test('prints a phone job as a mobile print and trims the result for the phone', async () => {
     createStation().start();
-    const result = await onlyHost().deps.print('CL5640', true, 'LABEL_PRINTER_01');
-    expect(submitted).toEqual([{ raw: 'CL5640', printerName: 'LABEL_PRINTER_01', source: 'mobile', force: true }]);
+    const result = await onlyHost().deps.print('CL5640', true);
+    expect(submitted).toEqual([{ raw: 'CL5640', source: 'mobile', force: true }]);
     expect(result).toEqual({ status: 'printed', ruleName: '原样打印', fields: [{ name: '内容', value: 'CL5640' }] });
   });
 

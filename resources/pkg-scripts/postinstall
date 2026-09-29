@@ -1,0 +1,13 @@
+#!/bin/sh
+# macOS 安装包（pkg）装完后运行，以 root 身份：把程序加进系统防火墙的允许列表，
+# 局域网里的电脑才能连本机接口。只在用户打开了防火墙时起作用；任何一步失败都不影响安装。
+# 参数：$2 是安装位置（/Applications）。
+
+APP="${2:-/Applications}/CDL-云签速印.app"
+FIREWALL="/usr/libexec/ApplicationFirewall/socketfilterfw"
+
+if [ -x "$FIREWALL" ] && [ -d "$APP" ]; then
+  "$FIREWALL" --add "$APP" >/dev/null 2>&1 || true
+  "$FIREWALL" --unblockapp "$APP" >/dev/null 2>&1 || true
+fi
+exit 0

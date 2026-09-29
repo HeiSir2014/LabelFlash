@@ -90,7 +90,7 @@
 
 **目标**：有纸张预设和纸张键；模板带纸张和指定打印机；60×40 的一切结果不变。
 **成功标准**：`bun run check` 通过；60×40 排版快照不变；模板存进数据库再读出来纸张和打印机不丢。
-**状态**：Not Started
+**状态**：Complete
 
 ### Task 1.1：先给 60×40 的排版结果拍快照（防退步）
 
@@ -585,7 +585,7 @@ git commit -m "feat(templates): templates carry their paper size and an optional
 - 300dpi、600dpi 下二维码模块不小于 0.25mm；
 - Windows 和 macOS 各实打一张 60×40。
 
-**状态**：Not Started
+**状态**：Complete（真机出纸没做：本机没有真打印机，见执行记录）
 
 ### Task 2.1：二维码按打印机分辨率对齐
 
@@ -989,7 +989,7 @@ export function pageSizeMicrons(paper: PaperSize): { width: number; height: numb
 - E2E 能用假打印机验证。
 
 **成功标准**：每个提交都通过 `bun run check`；阶段结束时 `bun run test:e2e`、`bun run test:relay-browser` 通过。
-**状态**：Not Started
+**状态**：Complete
 
 提交顺序（每个都能单独通过检查）：3.1 → 3.2 → 3.3 → 3.4 → 3.5 → 3.6 → 3.7 → 3.8（切换，一个提交）。
 
@@ -2240,7 +2240,7 @@ git commit -m "feat(printing): choose the printer from the template's paper or i
 - 打印记录显示纸张。
 
 **成功标准**：E2E 新用例通过；新增的视觉验收 V35–V37 自动检查全过；原有 V01–V34 重截没有问题。
-**状态**：Not Started
+**状态**：Complete
 
 顺序：
 1. 4.1 纯逻辑；
@@ -2808,7 +2808,7 @@ describe('describeJobMeta', () => {
 ## 阶段 5：验收与文档
 
 **目标**：真机验证、文档跟上。
-**状态**：Not Started
+**状态**：In Progress（文档已更新；两台真打印机的实测、中转服务部署待做）
 
 - [ ] **Step 1：真机（Windows）**：
   - 两台打印机（至少一台真的热敏标签机）按纸张分配各打一张；
@@ -2840,6 +2840,21 @@ describe('describeJobMeta', () => {
 - [ ] **Step 6**：PR 合进 master。发版前按项目规定先问用户（版本号建议 1.1.0）。
 
 ---
+
+## 执行记录（和计划的差异）
+
+- **阶段 2 的真机出纸**没有做：这台 Windows 电脑没有真打印机。用两台指向文件的「Microsoft Print to PDF」核对了按纸张分配和驱动打印路径（`docs/windows-acceptance.md` #45），但这个驱动只按 A4 出纸，页面尺寸要在热敏标签机上核对（#46）。
+- **视觉验收的 `useFakePrinter`** 仍然用 `stubPrinting`（原有各项不需要假打印机），只有 V35–V37 用假打印机启动。
+- **驱动纸张提醒**写「不是 100×180mm」（毫米），不写预设名：和「驱动默认纸张是 60×40mm」同一种写法，读起来对得上。
+- **测试页的 IPC** 用 `requireString` 而不是 `requireKnownPrinter`：打印机找不到时由适配器返回 PRINTER_NOT_FOUND，界面照常显示，和正式打印一致；交给系统命令之前适配器仍会核对。
+- **`ScanContext.hasPrinter`** 去掉了，改为按这一张预览里的打印机判断；`LabelPreview.paper` 识别不了时为 null。
+- **代码审核（合并后）**改了几处设计，已写进设计文档：
+  - 二维码不再在排版时按剩下的高度缩小，改为模板换到更小的纸时按比例缩小；
+  - 界面核对驱动纸张总是现读，窗口回到前台时重查；
+  - 驱动资料缓存过期后打印仍用上次读到的分辨率；
+  - 手机顶部只说名字或台数；
+  - 被模板指定的打印机不再被建议；
+  - 纸张分配按最接近的尺寸匹配。
 
 ## 自查记录
 

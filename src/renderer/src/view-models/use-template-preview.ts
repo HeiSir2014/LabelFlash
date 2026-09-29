@@ -14,9 +14,15 @@ export interface TemplatePreview extends LabelPreview {
  * 用指定模板渲染 raw：用于没有扫码时的示例标签，以及模板页里选中的模板或草稿。
  * template 需要是稳定引用（useMemo），变化时才重新生成；生成期间保留上一次的结果，第一次生成前为 null。
  */
-export function useTemplatePreview(raw: string, template: LabelTemplate | null): TemplatePreview | null {
+export function useTemplatePreview(
+  raw: string,
+  template: LabelTemplate | null,
+  /** 打印机设置（纸张分配、本机打印机）：变了就重新生成，预览里的「打印机：…」跟着变。 */
+  printerSetup = '',
+): TemplatePreview | null {
   const [preview, setPreview] = useState<TemplatePreview | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: printerSetup 只用来触发重新生成，打印机由主进程按最新的设置决定。
   useEffect(() => {
     if (!template) {
       setPreview(null);
@@ -37,7 +43,7 @@ export function useTemplatePreview(raw: string, template: LabelTemplate | null):
       isActive = false;
       window.clearTimeout(timer);
     };
-  }, [raw, template]);
+  }, [raw, template, printerSetup]);
 
   return preview;
 }

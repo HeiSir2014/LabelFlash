@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { FakeClock } from '../../core/testing/fake-clock';
-import { ALERT_COOLDOWN_MS, AlertThrottle, MAX_ALERTS_PER_KIND_PER_DAY } from './alert-throttle';
+import { ALERT_COOLDOWN_MS, AlertThrottle, alertKey, MAX_ALERTS_PER_KIND_PER_DAY } from './alert-throttle';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -26,5 +26,15 @@ describe('AlertThrottle', () => {
     expect(throttle.shouldNotify('卡纸')).toBe(false);
     clock.advance(DAY_MS);
     expect(throttle.shouldNotify('卡纸')).toBe(true);
+  });
+});
+
+describe('alertKey', () => {
+  // 一台缺纸不能压住另一台的缺纸通知。
+  test('counts the cooldown per printer', () => {
+    const throttle = new AlertThrottle(new FakeClock());
+    expect(throttle.shouldNotify(alertKey('标签机A', '缺纸'))).toBe(true);
+    expect(throttle.shouldNotify(alertKey('面单机B', '缺纸'))).toBe(true);
+    expect(throttle.shouldNotify(alertKey('标签机A', '缺纸'))).toBe(false);
   });
 });

@@ -23,7 +23,7 @@ test.afterAll(async () => {
 });
 
 async function useLocalRelay(page: Page): Promise<void> {
-  await callApi(page, 'updateSettings', { mobileRelayUrl: relay.baseUrl, selectedPrinter: MISSING_PRINTER });
+  await callApi(page, 'updateSettings', { mobileRelayUrl: relay.baseUrl, paperPrinters: { '60x40': MISSING_PRINTER } });
   await page.reload();
   await expect(page.locator('.scan-bar__input')).toBeFocused();
 }

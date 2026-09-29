@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { PreviewStage, type PreviewStageProps } from '../PreviewStage';
 import { ScanBar, type ScanBarProps } from '../ScanBar';
-import { WorkbenchSide } from './WorkbenchSide';
+import { type SideTab, WorkbenchSide } from './WorkbenchSide';
 
 interface WorkbenchProps {
   /** 配置中心打开时为 false：整个工作台设为 inert，扫码框的自动回焦也停用。 */
@@ -10,17 +10,19 @@ interface WorkbenchProps {
   preview: PreviewStageProps;
   printers: ReactNode;
   history: ReactNode;
+  sideTab: SideTab;
+  onSideTabChange: (tab: SideTab) => void;
 }
 
 /** 工作台：左边扫码栏 + 标签预览，右边打印机 | 打印记录。 */
-export function Workbench({ isActive, scanBar, preview, printers, history }: WorkbenchProps) {
+export function Workbench({ isActive, scanBar, preview, printers, history, sideTab, onSideTabChange }: WorkbenchProps) {
   return (
     <main className="workspace" inert={!isActive}>
       <div className="station">
         <ScanBar isActive={isActive} {...scanBar} />
         <PreviewStage {...preview} />
       </div>
-      <WorkbenchSide printers={printers} history={history} />
+      <WorkbenchSide printers={printers} history={history} active={sideTab} onSelect={onSideTabChange} />
     </main>
   );
 }

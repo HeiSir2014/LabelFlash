@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { type RunningRelay, startRelay } from '../../../relay/src/server';
 import { PhoneSession, type SessionEvent } from '../../../relay/web/src/phone-session';
 import { openSessionStore } from '../../../relay/web/src/session-store';
-import { type PrinterInfo, systemClock } from '../../core/types';
+import { systemClock } from '../../core/types';
 import { importSessionKey, openMessage, randomId, sealMessage } from '../../shared/mobile-crypto';
 import {
   type DesktopMessage,
@@ -27,7 +27,8 @@ const PRINTED: PhonePrintResult = {
   fields: [{ name: '编码', value: 'CL5640' }],
 };
 /** 系统里的打印机名和界面上显示的名字不一样：打印用前者，告诉手机用后者。 */
-const PRINTER: PrinterInfo = { name: 'LABEL_PRINTER_01', displayName: '热敏标签机' };
+/** 电脑上的打印机汇总（一台时是它的显示名）。 */
+const PRINTER_LABEL = '热敏标签机';
 const WAIT_LIMIT_MS = 10_000;
 /** 中转服务重启要等电脑和手机按退避重连（1 秒、2 秒……）。 */
 const RESTART_TEST_TIMEOUT_MS = 30_000;
@@ -43,8 +44,9 @@ let webRoot: string;
 let relay: RunningRelay;
 let port: number;
 let host: MobileHost;
-let prints: { raw: string; printer: string; force: boolean }[];
-let printer: PrinterInfo | null;
+let prints: { raw: string; force: boolean }[];
+let printerLabel: string | null;
+let printResult: PhonePrintResult;
 /** 打印在这里等着，直到测试放行：排队顺序和位置不再取决于打印有多快。 */
 let held: (() => void)[];
 let isHolding: boolean;
@@ -72,16 +74,16 @@ function createHost(base: URL): MobileHost {
     clock: systemClock,
     timers,
     createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
-    selectedPrinter: async () => printer,
-    print: async (raw, force, printerName) => {
+    printerLabel: async () => printerLabel,
+    print: async (raw, force) => {
       running += 1;
       maxRunning = Math.max(maxRunning, running);
-      prints.push({ raw, force, printer: printerName });
+      prints.push({ raw, force });
       if (isHolding) {
         await new Promise<void>((resolve) => held.push(resolve));
       }
       running -= 1;
-      return PRINTED;
+      return printResult;
     },
     log: () => {},
   });
@@ -146,7 +148,8 @@ beforeEach(async () => {
   relay = startTestRelay(0);
   port = Number(relay.url.port);
   prints = [];
-  printer = PRINTER;
+  printerLabel = PRINTER_LABEL;
+  printResult = PRINTED;
   held = [];
   isHolding = false;
   running = 0;
@@ -189,7 +192,7 @@ describe('MobileHost', () => {
     expect(positions(events, job)).toEqual([0]);
     expect(events).toContainEqual({ type: 'started', job });
     expect(events).toContainEqual({ type: 'result', job, result: PRINTED });
-    expect(prints).toEqual([{ raw: RAW, force: false, printer: 'LABEL_PRINTER_01' }]);
+    expect(prints).toEqual([{ raw: RAW, force: false }]);
     expect(active()).toMatchObject({ printed: 1, queued: 0, phones: [{ printed: 1 }] });
   });
 
@@ -246,20 +249,20 @@ describe('MobileHost', () => {
     socket.close();
   });
 
-  test('answers no-printer without printing when none is selected', async () => {
-    printer = null;
+  // 电脑上决定打印机（按模板的纸张）：这种纸没有打印机时，手机收到 no-printer。
+  test('passes on a no-printer answer from the desktop', async () => {
+    printResult = { status: 'no-printer' };
     const events: SessionEvent[] = [];
     const phone = await welcomedPhone(await activeUrl(), events);
     const job = phone.submit(RAW, false);
     await waitFor(() => events.some((event) => event.type === 'result'), 'the result');
     expect(events).toContainEqual({ type: 'result', job, result: { status: 'no-printer' } });
-    expect(prints).toEqual([]);
   });
 
   test('tells the phone when the printer changes', async () => {
     const events: SessionEvent[] = [];
     await welcomedPhone(await activeUrl(), events);
-    printer = { name: 'LABEL_PRINTER_02', displayName: '另一台热敏标签机' };
+    printerLabel = '另一台热敏标签机';
     host.printerChanged();
     await waitFor(() => events.some((event) => event.type === 'printer'), 'the printer change');
     expect(events).toContainEqual({ type: 'printer', printer: '另一台热敏标签机' });

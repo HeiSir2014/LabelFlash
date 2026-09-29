@@ -41,6 +41,7 @@ Var isSkinChild
 !addplugindir /x86-unicode "${BUILD_RESOURCES_DIR}\installer\plugins\x86-unicode"
 !include "${LABELFLASH_SKIN_DIR}\skins.nsh"
 !include "${BUILD_RESOURCES_DIR}\installer\skin-ui.nsh"
+!include "${BUILD_RESOURCES_DIR}\installer\firewall.nsh"
 
 Page custom showInstaller
 !insertmacro MUI_PAGE_INSTFILES
@@ -112,6 +113,7 @@ FunctionEnd
 ; 不会启动两次。
 Function skinStartInstall
   StrCpy $R0 "$EXEPATH"
+  StrCpy $R2 "open"
   StrCpy $R1 "/skin-child /S"
   ${If} $skinIsUpdate == 1
     StrCpy $R1 "$R1 --updated"
@@ -123,4 +125,16 @@ FunctionEnd
 
 Function skinRunApp
   Exec '"$INSTDIR\${APP_EXECUTABLE_FILENAME}"'
+FunctionEnd
+
+; 装完、启动程序之前：弹管理员确认，加一条只放行本程序的防火墙入站规则（所有网络类型都生效；
+; 脚本和配置中心「本机接口」页的按钮是同一份，见 src/shared/firewall-rule.ts）。
+; 先加规则再启动：程序一启动就按规则决定要不要对局域网开放，有规则就直接开放。
+; 操作员点「否」时照常装完、启动，程序只接受本机请求，之后可以在「本机接口」页再加。
+; 更新时不走这里：规则按程序路径，路径不变。
+Function skinAddFirewallRule
+  File "/oname=$PLUGINSDIR\firewall.ps1" "${LABELFLASH_SKIN_DIR}\firewall.ps1"
+  !insertmacro labelflashFirewallCommand ""
+  StrCpy $R2 "runas"
+  Call skinSpawn
 FunctionEnd

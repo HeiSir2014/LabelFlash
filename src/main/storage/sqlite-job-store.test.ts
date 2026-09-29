@@ -159,6 +159,46 @@ describe('SqliteJobStore', () => {
   test.each([0, -1, 2.5])('rejects capacity %p', (capacity) => {
     expect(() => new SqliteJobStore(db, capacity)).toThrow(RangeError);
   });
+  test('keeps the paper and template of each job and leaves them empty for 1.0.x jobs', () => {
+    const store = new SqliteJobStore(db, 10);
+    store.append(job(1, { paper: '100x180', templateId: 'custom:waybill' }));
+    store.append(job(2));
+    const { jobs } = store.listPage({ limit: 10 });
+    expect(jobs.find((item) => item.id === 'job-1')).toMatchObject({ paper: '100x180', templateId: 'custom:waybill' });
+    const old = jobs.find((item) => item.id === 'job-2');
+    expect(old?.paper).toBeUndefined();
+    expect(old?.templateId).toBeUndefined();
+  });
+
+  // 扫码的防重复窗口只管扫码：本机接口打的（带调用方的）不算，重启前后一致。
+  test('leaves jobs printed through the local api out of the recent prints', () => {
+    const store = new SqliteJobStore(db, 10);
+    store.append(job(1, { raw: 'A001', caller: 'key:k1', source: 'api' }));
+    store.append(job(2, { raw: 'B002' }));
+    expect(store.listLastPrinted(0).map((item) => item.raw)).toEqual(['B002']);
+  });
+
+  test('keeps the fields and caller of a job and finds a job by id', () => {
+    const store = new SqliteJobStore(db, 10);
+    const fields = [{ name: '订单号', value: 'A001' }];
+    store.append(job(1, { fields, caller: 'origin:https://erp.example.com' }));
+    store.append(job(2));
+    expect(store.get('job-1')).toMatchObject({ fields, caller: 'origin:https://erp.example.com' });
+    expect(store.get('job-2')?.fields).toBeUndefined();
+    expect(store.get('job-2')?.caller).toBeUndefined();
+    expect(store.get('nope')).toBeNull();
+  });
+
+  // 库里的数据不可信：字段 JSON 坏了或混进不合格的项，读出时丢掉，不让整页记录读不出来。
+  test('drops malformed stored fields instead of failing the page', () => {
+    const store = new SqliteJobStore(db, 10);
+    store.append(job(1));
+    store.append(job(2));
+    db.prepare("UPDATE jobs SET fields = 'not json' WHERE id = 'job-1'").run();
+    db.prepare(`UPDATE jobs SET fields = '[{"name":"a","value":"1"},{"name":2}]' WHERE id = 'job-2'`).run();
+    expect(store.get('job-1')?.fields).toBeUndefined();
+    expect(store.get('job-2')?.fields).toEqual([{ name: 'a', value: '1' }]);
+  });
 });
 
 describe('SqliteJobStore persistence', () => {

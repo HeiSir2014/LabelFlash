@@ -7,7 +7,7 @@
 - **逻辑和接线分开**：能不依赖 Electron 的逻辑，单独放进不 import `electron` 的文件，用 `bun test` 测试。现成的例子：
   - `window-state.ts`、`window-bounds.ts`、`gpu-fallback.ts`、`context-menu.ts`
   - `log-files.ts`、`ipc-errors.ts`、`ipc-validators.ts`、`update-settings.ts`
-  - `printing/printer-status.ts`
+  - `printing/printer-status.ts`、`printing/printer-profiles.ts`、`printing/page-size.ts`、`printing/fake-printers.ts`
   - `mobile/` 整个目录
 - **接线文件保持薄**：`window.ts`、`window-placement.ts`、`updater.ts`、`index.ts` 这类只负责接线，不写业务判断。
 - **依赖注入**：外部依赖由构造参数传入，测试时换成假的，例如 `PrinterProbeHost` 的进程工厂。
@@ -37,8 +37,12 @@
 - **打印机探测** `printer-probe-host.ts`（只在 Windows 上）：常驻一个 PowerShell 进程，用行协议查询打印机状态和驱动纸张。
   - 打印机名用 base64 编码后传入，并转义通配符。
   - 不要改成每次查询都新启动一个 PowerShell：启动一次约耗 1 秒 CPU。
-- **状态判定** `printer-status.ts`：只有驱动明确报告问题（离线、缺纸、卡纸……）才判定为不能打印；查询失败按「未知」处理，不阻止打印。
-- **二维码** `qr-code.ts`：每个模块取整数个打印点（203dpi），边缘才清晰。
+- **状态判定** `printer-status.ts`：检测所有被分配到的打印机（纸张分配和模板指定里出现的），每轮重新取名单；只有驱动明确报告问题（离线、缺纸、卡纸……）才判定为不能打印；查询失败按「未知」处理，不阻止打印。异常通知按「打印机 + 问题」限频。
+- **二维码** `qr-code.ts`：每个模块取整数个打印点（按打印机的分辨率，读不到按 203dpi），边缘才清晰；模块的最小、最大尺寸按毫米定，分辨率高的打印机不会把二维码打得更小。
+- **打印机资料** `printer-profiles.ts`：每台打印机的驱动纸张和分辨率，缓存 1 分钟；打印时最多等 1 秒，等不到按 203dpi；打开「打印首选项」后丢掉那一台的缓存。
+- **页面尺寸** `page-size.ts`：按模板的纸张算 `webContents.print` 的 pageSize。
+- **决定打印机**：规则在 core 的 `printing/resolve-printer.ts`，主进程只提供本机打印机列表（`PrinterDriver.knownPrinterNames`）。读打印机列表要用主窗口，启动时窗口还没建好，检测和预读在窗口建好之后再做。
+- **假打印机** `fake-printers.ts`：环境变量 `CDL_LABELFLASH_FAKE_PRINTERS`（只对未打包的程序生效）换掉适配器、驱动纸张查询和状态探测，E2E 和视觉验收用。
 
 ## 其他子系统
 
@@ -54,6 +58,20 @@
 | `window-placement.ts` | 按显示器记忆窗口位置。保存时扣掉 Windows 小数缩放下创建窗口的尺寸误差，否则窗口每次启动都会变大一点 |
 | `security.ts`、`app-protocol.ts` | 拒绝导航、新窗口、重定向和 webview；只经 `app://bundle/` 提供界面文件 |
 | `mobile/` | 手机扫码的电脑端，见下一节 |
+
+## 本机接口（`api/`）
+
+设计见 `docs/superpowers/specs/2026-09-30-local-api-design.md`，给第三方的说明在 `docs/local-api.md`。
+
+- **分层**：除了 `pdf-render.ts`（隐藏窗口 + `printToPDF`），都不 import electron，用 `bun test` 测试，`http-server.test.ts` 和 `local-api.test.ts` 真的启动服务。
+  - `local-api.ts`：组装（任务服务、密钥、授权、网站询问、HTTP 服务、防火墙），跟随设置启停，启停排成一队；防火墙没放行时（安装版）只监听本机；`index.ts` 只把 Electron 的能力传进来；
+  - `http-server.ts`：`node:http`，依次试端口（`apiPortOrder`：指定的 → 上次用成功的 → 17631–17640 → 系统分配），监听后从 `127.0.0.1` 和 `::1` 自检；先认证再读请求体、请求体上限、预检、限速；
+  - `origin-prompts.ts`：等操作员确认的网站（最多 3 个、10 分钟收起、拒绝后 10 分钟冷却），界面顶部显示询问条，同时发系统通知；
+  - `authenticator.ts`：先认程序密钥（不核对 Host），再认本机来的网站（核对 Host、只认 http/https 的 Origin），其余一律要密钥；
+  - `router.ts` + `resources.ts` + `request-schema.ts`：AIP 风格的路由、资源和校验；`openapi.ts` 和路由表由测试核对一致。
+- **密钥**：只存 SHA-256 摘要。原文只在生成的那次 IPC 返回值里出现，另在内存里留 10 分钟给「复制」按钮，不写库、不写日志。
+- **打印**：经 `PrintService.printFields`（来源 `api`），不播报；写了打印记录后推送 `jobs:changed`（合并成最多 0.5 秒一次）。
+- **防火墙**：`firewall.ts` 执行 `src/shared/firewall-rule.ts` 生成的 PowerShell 脚本（系统目录里的 powershell.exe，整段 Base64 交给 `-EncodedCommand`，不经过命令行转义）；只动本程序路径下的规则。安装包用同一份脚本（见 `resources/installer/firewall.nsh`）。
 
 ## 手机扫码（`mobile/`）
 

@@ -6,6 +6,11 @@ export const NOTE_VARIABLES = ['{完整内容}', '{规则}', '{日期}', '{时�
 /** 花括号里 1–20 个字符（与字段名长度上限一致），不含花括号和换行。 */
 const VARIABLE_PATTERN = /\{([^{}\n]{1,20})\}/g;
 
+/** 文本里出现的变量名（不带花括号），按出现顺序，可能重复；包括固定变量。 */
+export function variableNames(text: string): string[] {
+  return [...text.matchAll(VARIABLE_PATTERN)].map((match) => match[1] ?? '');
+}
+
 /** 展开备注（和二维码文本）里的变量；本次没有识别到的字段名和未知变量原样保留。 */
 export function expandNoteText(text: string, scan: ScanResult, printedAt: Date): string {
   return expandVariables(text, scan, printedAt);

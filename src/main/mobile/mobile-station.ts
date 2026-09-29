@@ -1,10 +1,10 @@
 /**
  * 「手机扫码」在主进程里的接线：按设置找到中转地址，创建 MobileHost，把手机的任务交给 PrintService 打印，
- * 跟着设置变化（打印机、中转地址）调整，状态推给界面。
+ * 跟着设置变化（纸张分配、中转地址）调整，状态推给界面。打印到哪台由 PrintService 按模板决定。
  *
- * 不 import electron：打印、打印机列表、WebSocket、计时器都由参数注入，用 bun test 测试；index.ts 只负责创建它。
+ * 不 import electron：打印、打印机汇总、WebSocket、计时器都由参数注入，用 bun test 测试；index.ts 只负责创建它。
  */
-import type { PrinterInfo, PrintRequest, PrintResult } from '../../core/types';
+import type { PrintRequest, PrintResult } from '../../core/types';
 import type { CloseReason } from '../../shared/mobile-protocol';
 import type { MobileStatus } from '../../shared/mobile-status';
 import type { AppSettings } from '../../shared/settings';
@@ -27,16 +27,17 @@ export interface MobileHostPort {
   tick(): void;
 }
 
-type StationSettings = Pick<AppSettings, 'mobileRelayUrl' | 'selectedPrinter'>;
+type StationSettings = Pick<AppSettings, 'mobileRelayUrl' | 'paperPrinters'>;
 
 export interface MobileStationDeps {
   settings: () => StationSettings;
   /** 安装包自带的中转地址（设置里没填时用它）。 */
   buildDefaultRelayUrl: string | null;
-  listPrinters: () => Promise<PrinterInfo[]>;
+  /** 告诉手机的打印机汇总（src/shared/printer-summary.ts 的 phonePrinterLabel）；没有分配打印机时为 null。 */
+  printerLabel: () => Promise<string | null>;
   submit: (request: PrintRequest) => Promise<PrintResult>;
-  /** 按中转地址创建会话编排；deps 里的打印和打印机由 station 提供。 */
-  createHost: (deps: Pick<MobileHostDeps, 'relayBase' | 'print' | 'selectedPrinter'>) => MobileHostPort;
+  /** 按中转地址创建会话编排；deps 里的打印和打印机汇总由 station 提供。 */
+  createHost: (deps: Pick<MobileHostDeps, 'relayBase' | 'print' | 'printerLabel'>) => MobileHostPort;
   onStatus: (status: MobileStatus) => void;
   log: (line: string) => void;
 }
@@ -100,8 +101,14 @@ export class MobileStation {
     this.host?.stop('quit');
   }
 
+  /** 被分配到的打印机变了（例如模板指定了别的打印机）：告诉在线的手机新的打印机汇总。 */
+  printersChanged(): void {
+    this.host?.printerChanged();
+  }
+
   settingsChanged(next: StationSettings, previous: StationSettings): void {
-    if (next.selectedPrinter !== previous.selectedPrinter) {
+    // 设置每次保存都是新对象：按内容比较，分配没变时不打扰手机。
+    if (JSON.stringify(next.paperPrinters) !== JSON.stringify(previous.paperPrinters)) {
       this.host?.printerChanged();
     }
     // 换了中转地址：结束当前会话，旧二维码作废；下次开始时连新地址。
@@ -118,8 +125,8 @@ export class MobileStation {
     this.discardHost();
     const host = this.deps.createHost({
       relayBase: base,
-      print: (raw, force, printerName) => this.print(raw, force, printerName),
-      selectedPrinter: () => this.selectedPrinter(),
+      print: (raw, force) => this.print(raw, force),
+      printerLabel: () => this.deps.printerLabel(),
     });
     this.unsubscribe = host.onStatus(() => this.emit());
     this.host = host;
@@ -133,18 +140,9 @@ export class MobileStation {
     this.hostBase = null;
   }
 
-  private async print(raw: string, force: boolean, printerName: string) {
-    return toPhonePrintResult(await this.deps.submit({ raw, printerName, source: 'mobile', force }));
-  }
-
-  /** 设置里选的打印机；显示名取打印机列表里的，列表里没有（例如拔掉了）时用系统名，打印时会报找不到。 */
-  private async selectedPrinter(): Promise<PrinterInfo | null> {
-    const name = this.deps.settings().selectedPrinter;
-    if (name === null) {
-      return null;
-    }
-    const printers = await this.deps.listPrinters();
-    return printers.find((printer) => printer.name === name) ?? { name, displayName: name };
+  /** 打到哪台由 PrintService 按模板决定（和扫码枪一样）；这种纸没有打印机时手机收到 no-printer。 */
+  private async print(raw: string, force: boolean) {
+    return toPhonePrintResult(await this.deps.submit({ raw, source: 'mobile', force }));
   }
 
   private emit(): void {

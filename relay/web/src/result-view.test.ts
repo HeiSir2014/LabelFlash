@@ -88,7 +88,7 @@ describe('jobView', () => {
 
   test('asks for a printer to be chosen on the desktop', () => {
     const view = jobView(done({ status: 'no-printer' }), 'online');
-    expect(view).toMatchObject({ tone: 'warning', title: '请先选择打印机', actions: ['retry'] });
+    expect(view).toMatchObject({ tone: 'warning', title: '没有可用的打印机', actions: ['retry'] });
     expect(view.detail).toContain('电脑上');
   });
 

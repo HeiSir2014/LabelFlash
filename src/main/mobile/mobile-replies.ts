@@ -25,6 +25,8 @@ export function toPhonePrintResult(result: PrintResult): PhonePrintResult {
       return { status: 'duplicate', recent: result.recent, windowMs: result.windowMs };
     case 'invalid':
       return { status: 'invalid', reason: result.reason };
+    case 'no-printer':
+      return { status: 'no-printer' };
     case 'failed':
       return {
         status: 'failed',

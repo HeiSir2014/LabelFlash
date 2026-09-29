@@ -23,3 +23,11 @@ export function isAdHocSigned(codesignDisplay: string): boolean {
 export function installLocation(packageInfo: string): string | null {
   return /\binstall-location="([^"]*)"/.exec(packageInfo)?.[1] ?? null;
 }
+
+/**
+ * pkgutil --expand 展开的文件里有没有装完后运行的脚本（把程序加进系统防火墙的允许列表）。
+ * 脚本丢了不会报错，只是局域网里的电脑连不上本机接口，所以打包后核对。
+ */
+export function hasPostinstallScript(expandedPaths: readonly string[]): boolean {
+  return expandedPaths.some((path) => /(^|[/])Scripts[/]postinstall$/.test(path));
+}

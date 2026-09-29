@@ -17,8 +17,7 @@ import {
   textHeightMm,
 } from '../../core/templates/text-fit';
 import type { LabelJob } from '../../core/types';
-import { LABEL_PAPER_MM } from '../../shared/label-paper';
-import { planQr } from './qr-code';
+import { DEFAULT_PRINTER_DPI, planQr } from './qr-code';
 
 /** 底部整行和备注允许占用的最多行数；超出时自动缩小字号，保证不被标签边缘裁掉。 */
 const MAX_LINES = { bottom: 3, noteBeside: 3, noteBottom: 2 } as const;
@@ -41,17 +40,17 @@ interface FittedRow extends FieldRow {
 }
 
 /**
- * 由模板生成 60×40mm 标签 HTML：预览和打印共用同一份输出。
+ * 按模板的纸张生成标签 HTML：预览和打印共用同一份输出。dpi 是打印机的分辨率，二维码按它对齐打印点。
  * 排版顺序：先定底部（底部整行、底部备注），剩下的高度给二维码旁的字段区和旁侧备注；
  * 横向排列时字段是「前缀列 + 值列」的网格，无论前缀长短、字号大小，同一列的值始终对齐。
  * 文本全部转义，样式值只来自已校验的模板。
  */
-export function renderLabelHtml(job: LabelJob): RenderedLabel {
+export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI): RenderedLabel {
   const { scan, template } = job;
   const printedAt = new Date(job.printedAt);
-  const { width, height } = LABEL_PAPER_MM;
+  const { widthMm: width, heightMm: height } = template.paper;
   const qr = template.qr.visible
-    ? planQr(resolveQrText(template, scan, printedAt), template.qr.errorCorrection, template.qr.sizeMm)
+    ? planQr(resolveQrText(template, scan, printedAt), template.qr.errorCorrection, template.qr.sizeMm, dpi)
     : null;
   const sideWidthMm = sideTextWidthMm(template);
   const fullWidthMm = fullTextWidthMm(template);

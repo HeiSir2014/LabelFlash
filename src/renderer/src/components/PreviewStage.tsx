@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { LABEL_PAPER_MM } from '../../../shared/label-paper';
-import type { ConfigPage } from '../lib/app-view';
-import type { ScanView } from '../lib/status-text';
+import { DEFAULT_PAPER } from '../../../shared/label-paper';
+import { formatPaperName, type PaperSize } from '../../../shared/paper-sizes';
+import type { ScanView, StatusLinkTarget } from '../lib/status-text';
 import type { ScanState } from '../view-models/use-scan-station';
 import { ConfirmButton } from './ConfirmButton';
 import { LabelPreview } from './LabelPreview';
@@ -14,6 +14,8 @@ export interface PreviewOverride {
   qrOmitted: boolean;
   /** 换了模板就换一个值：预览做一次出纸动画。 */
   feedKey: string;
+  /** 这个模板的纸张。 */
+  paper: PaperSize;
 }
 
 export interface PreviewStageProps {
@@ -24,8 +26,8 @@ export interface PreviewStageProps {
   override: PreviewOverride | null;
   onPrint: () => void;
   onForceReprint: () => void;
-  /** 状态条上的直达按钮：打开配置中心的对应页面。 */
-  onOpenPage: (page: ConfigPage) => void;
+  /** 状态条的直达按钮：配置中心的页面，或工作台右侧的打印机页。 */
+  onOpenPage: (page: StatusLinkTarget) => void;
 }
 
 export function PreviewStage({
@@ -41,6 +43,7 @@ export function PreviewStage({
   const html = override ? override.html : (scan?.preview.html ?? null);
   const isQrOmitted = override ? override.qrOmitted : (scan?.preview.qrOmitted ?? false);
   const feedKey = override ? `override-${override.feedKey}` : `scan-${scan?.seq ?? 0}`;
+  const paper = override?.paper ?? scan?.preview.paper ?? DEFAULT_PAPER;
 
   return (
     <section className={`preview-stage tone--${view.status.tone}`} aria-label="标签预览">
@@ -50,9 +53,8 @@ export function PreviewStage({
         qrOmitted={isQrOmitted}
         feedKey={feedKey}
         maxScale={MAX_PREVIEW_SCALE}
-        placeholder={
-          scan ? '这次扫码无法生成标签' : `扫码后在这里预览 ${LABEL_PAPER_MM.width}×${LABEL_PAPER_MM.height} 标签`
-        }
+        paper={paper}
+        placeholder={scan ? '这次扫码无法生成标签' : `扫码后在这里预览 ${formatPaperName(paper)}`}
       />
       <div className="status-strip" role="status" aria-live="polite">
         <div className="status-strip__text">

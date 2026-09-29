@@ -17,7 +17,7 @@ import { expect, test } from './support/fixtures';
 
 /** 选一台假打印机、设好打印方式，重新加载界面让设置生效（打印处理要先用 stubPrinting 换掉）。 */
 async function usePrinter(page: Page, autoPrint: boolean): Promise<void> {
-  await callApi(page, 'updateSettings', { selectedPrinter: 'E2E 打印机', autoPrint });
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': 'E2E 打印机' }, autoPrint });
   await page.reload();
   await expect(page.locator('.scan-bar__input')).toBeFocused();
 }
@@ -43,24 +43,26 @@ test('loads the UI over app:// and previews a scanned label', async ({ electronA
 
   // 没扫码时用示例内容展示当前模板。
   const usage = page.locator('.preview-toolbar__usage');
-  await expect(usage).toHaveText('示例内容 · 模板：通用（二维码在左）');
+  await expect(usage).toHaveText('示例内容 · 模板：通用（二维码在左） · 打印机：还没有');
 
   // 横杠三段：默认绑定样衣标准模板，只显示编码 / 颜色 / 尺码。
   await scan(page, 'CL5640-TK-图片色-XXL');
-  await expect(page.locator('.status-strip__title')).toHaveText('还没选打印机');
-  await expect(usage).toHaveText('规则：横杠三段（编码-颜色-尺码） · 模板：样衣标准（二维码在左）（规则指定）');
+  await expect(page.locator('.status-strip__title')).toHaveText('没有可用的打印机');
+  await expect(usage).toHaveText(
+    '规则：横杠三段（编码-颜色-尺码） · 模板：样衣标准（二维码在左）（规则指定） · 打印机：还没有',
+  );
   const values = page.frameLocator('.label-frame').locator('.value');
   await expect(values).toHaveText(['CL5640-TK', '图片色', 'XXL']);
 
   // 纯数字订单号：用当前模板（通用），字段区列出「订单号」。
   await scan(page, '202609280001');
-  await expect(usage).toHaveText('规则：纯数字订单号 · 模板：通用（二维码在左）');
+  await expect(usage).toHaveText('规则：纯数字订单号 · 模板：通用（二维码在左） · 打印机：还没有');
   await expect(values).toHaveText(['202609280001']);
   await expect(page.frameLocator('.label-frame').locator('.prefix')).toHaveText(['订单号：']);
 
   // 任意内容原样打印。
   await scan(page, 'hello');
-  await expect(usage).toHaveText('规则：原样打印 · 模板：通用（二维码在左）');
+  await expect(usage).toHaveText('规则：原样打印 · 模板：通用（二维码在左） · 打印机：还没有');
   await expect(values).toHaveText(['hello']);
 
   // 含不可见字符的内容无法识别。
@@ -74,7 +76,9 @@ test('takes a burst of lines with Enters in between as one multi-line scan', asy
   await input.focus();
   // 像扫码枪一样连续发出按键：码里的换行后面紧跟着下一个字符，只有最后的回车后面是停顿。
   await typeLikeScanner(page, ['订单号：A001', '款号：CL5640', '尺码：XL']);
-  await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：多行键值 · 模板：通用（二维码在左）');
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText(
+    '规则：多行键值 · 模板：通用（二维码在左） · 打印机：还没有',
+  );
   await expect(page.frameLocator('.label-frame').locator('.value')).toHaveText(['A001', 'CL5640', 'XL']);
   await expect(input).toHaveValue('');
 });
@@ -104,7 +108,7 @@ test('tries content against the rules and previews with the template a rule is b
   await page.getByRole('button', { name: '返回工作台' }).click();
   await scan(page, '202609280001');
   await expect(page.locator('.preview-toolbar__usage')).toHaveText(
-    '规则：纯数字订单号 · 模板：样衣标准（二维码在左）（规则指定）',
+    '规则：纯数字订单号 · 模板：样衣标准（二维码在左）（规则指定） · 打印机：还没有',
   );
 });
 
@@ -128,7 +132,9 @@ test('imports a lookup table and shows its first rows', async ({ electronApp }) 
 test('switches the current template from the preview toolbar', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
   await page.getByRole('combobox', { name: '当前模板' }).selectOption({ label: '通用（二维码在右）' });
-  await expect(page.locator('.preview-toolbar__usage')).toHaveText('示例内容 · 模板：通用（二维码在右）');
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText(
+    '示例内容 · 模板：通用（二维码在右） · 打印机：还没有',
+  );
   await expect(page.frameLocator('.label-frame').locator('body')).toHaveClass(/layout-qr-right/);
   await expect(page.locator('.scan-bar__input')).toBeFocused();
 });
@@ -160,7 +166,7 @@ test('keeps a saved custom template and the note selection after a restart', asy
   await first.app.close();
 
   const second = await electronApp.launch();
-  await expect(second.page.locator('.preview-toolbar__usage')).toHaveText('示例内容 · 模板：E2E 模板');
+  await expect(second.page.locator('.preview-toolbar__usage')).toHaveText('示例内容 · 模板：E2E 模板 · 打印机：还没有');
   await expect(second.page.getByRole('combobox', { name: '备注' }).locator('option:checked')).toHaveText(
     'E2E 备注 {日期}',
   );
@@ -280,7 +286,9 @@ test('edits the scan box by hand after a click and goes back to scanning', async
   await page.keyboard.type('X');
   await expect(input).toHaveValue('CLX5887-M');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：原样打印 · 模板：通用（二维码在左）');
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText(
+    '规则：原样打印 · 模板：通用（二维码在左） · 打印机：还没有',
+  );
   await expect(page.frameLocator('.label-frame').locator('.value')).toHaveText(['CLX5887-M']);
   await expect(input).toHaveAttribute('type', scanType);
 
@@ -488,4 +496,23 @@ test('keeps the page isolated from Node, the clipboard and new windows', async (
     clipboard: 'NotAllowedError',
   });
   expect(app.windows()).toHaveLength(1);
+});
+
+// 模板换成别的纸：软尺刻度和标签框按这种纸的实际毫米数。
+test('previews a label on the paper of its template', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  const copy = await callApi(page, 'duplicateTemplate', 'builtin:generic');
+  await callApi(page, 'saveTemplate', { ...copy, paper: { widthMm: 100, heightMm: 100 } });
+  await callApi(page, 'updateSettings', { activeTemplateId: copy.id, autoPrint: false });
+  await page.reload();
+  await scan(page, 'hello');
+  await expect(page.locator('.ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 100 /);
+  await expect(page.locator('.ruler--vertical')).toHaveAttribute('viewBox', /^0 0 \S+ 100$/);
+  // 标签框按纸张缩放后才有最终尺寸：等它排好再量，不在刚渲染出来的那一刻读。
+  await expect
+    .poll(async () => {
+      const frame = await page.locator('.label-frame').boundingBox();
+      return frame === null ? Number.POSITIVE_INFINITY : Math.abs(frame.width / frame.height - 1);
+    })
+    .toBeLessThan(0.02);
 });

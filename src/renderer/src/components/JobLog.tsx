@@ -1,5 +1,6 @@
 import type { JobRecord } from '../../../core/types';
-import { describeJobStatus, describeSource, formatDateTime } from '../lib/status-text';
+import type { ReprintMode } from '../lib/reprint';
+import { describeJobMeta, describeJobStatus } from '../lib/status-text';
 
 /** 多行内容在列表里只显示第一行，完整内容放在悬停提示里。 */
 function firstLine(raw: string): string {
@@ -16,10 +17,17 @@ interface JobLogProps {
   search: string;
   hasMore: boolean;
   isLoadingMore: boolean;
+  /** 翻到后面几页时本机接口打了新标签：显示「有新记录」，点了回到第一页。 */
+  hasNewJobs: boolean;
+  onShowNewJobs: () => void;
   onSearchChange: (search: string) => void;
   onLoadMore: () => void;
-  onReview: (raw: string) => void;
-  onReprint: (raw: string) => void;
+  /** 本机接口记录的调用方（密钥名称或网站）；其他记录为 null。 */
+  callerOf: (job: JobRecord) => string | null;
+  /** 这条记录能不能、怎么预览和重打（见 lib/reprint.ts）；unavailable 时不显示按钮。 */
+  reprintModeOf: (job: JobRecord) => ReprintMode;
+  onReview: (job: JobRecord) => void;
+  onReprint: (job: JobRecord) => void;
 }
 
 export function JobLog({
@@ -29,8 +37,12 @@ export function JobLog({
   search,
   hasMore,
   isLoadingMore,
+  hasNewJobs,
+  onShowNewJobs,
   onSearchChange,
   onLoadMore,
+  callerOf,
+  reprintModeOf,
   onReview,
   onReprint,
 }: JobLogProps) {
@@ -51,10 +63,15 @@ export function JobLog({
           {NUMBER_FORMAT.format(total)} / {NUMBER_FORMAT.format(historyLimit)}
         </span>
       </div>
+      {hasNewJobs && (
+        <button type="button" className="button button--small job-log__new" onClick={onShowNewJobs}>
+          有新记录，回到最新
+        </button>
+      )}
       <ol className="scroll-list">
         {jobs.map((job) => {
           const status = describeJobStatus(job);
-          const meta = `${formatDateTime(job.createdAt)} · ${describeSource(job.source)} · ${job.printerName}`;
+          const meta = describeJobMeta(job, callerOf(job));
           return (
             <li key={job.id} className="job-row">
               <div className="job-row__main">
@@ -67,16 +84,12 @@ export function JobLog({
               <div className="job-row__meta" title={meta}>
                 {meta}
               </div>
-              {job.status !== 'invalid' && (
+              {reprintModeOf(job) !== 'unavailable' && (
                 <div className="job-row__actions">
-                  <button
-                    type="button"
-                    className="button button--small button--quiet"
-                    onClick={() => onReview(job.raw)}
-                  >
+                  <button type="button" className="button button--small button--quiet" onClick={() => onReview(job)}>
                     预览
                   </button>
-                  <button type="button" className="button button--small" onClick={() => onReprint(job.raw)}>
+                  <button type="button" className="button button--small" onClick={() => onReprint(job)}>
                     重打
                   </button>
                 </div>

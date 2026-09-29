@@ -2,6 +2,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ElectronApplication, _electron as electron, expect, type Page } from '@playwright/test';
+import { API_PORT_ENV } from '../../src/main/api/local-api';
+import { FAKE_PRINTERS_ENV, type FakePrinterSpec } from '../../src/main/printing/fake-printers';
 
 /**
  * 以项目根目录启动：Electron 读 package.json 的 main 找到构建产物，app.getVersion() 才是软件版本。
@@ -35,8 +37,13 @@ export async function removeUserDataDir(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true, maxRetries: REMOVE_RETRIES, retryDelay: REMOVE_RETRY_DELAY_MS });
 }
 
+export interface LaunchOptions {
+  /** 用假打印机代替系统打印机（见 src/main/printing/fake-printers.ts）：打印只记下来，不碰真打印机。 */
+  fakePrinters?: FakePrinterSpec[];
+}
+
 /** 用指定的数据目录（不传则新建一个）启动构建好的程序，等到扫码框出现。 */
-export async function launchApp(userData?: string): Promise<LaunchedApp> {
+export async function launchApp(userData?: string, options: LaunchOptions = {}): Promise<LaunchedApp> {
   const dataDir = userData ?? (await createUserDataDir());
   // 不带 ELECTRON_RENDERER_URL：界面必须走 app:// 协议，和安装版一致。
   const env: Record<string, string> = { [USER_DATA_ENV]: dataDir };
@@ -45,6 +52,11 @@ export async function launchApp(userData?: string): Promise<LaunchedApp> {
       env[key] = value;
     }
   }
+  if (options.fakePrinters) {
+    env[FAKE_PRINTERS_ENV] = JSON.stringify(options.fakePrinters);
+  }
+  // 本机接口用系统随便给的端口：并行的用例之间、和本机上跑着的安装版之间都不抢 17631。
+  env[API_PORT_ENV] = '0';
   const platformArgs = process.platform === 'darwin' ? MAC_TEST_ARGS : [];
   const app = await electron.launch({ args: [APP_ROOT, ...platformArgs], env });
   let page: Page;

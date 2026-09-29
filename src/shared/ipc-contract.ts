@@ -6,7 +6,9 @@ import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
 import type { JobPage, JobQuery } from './job-history';
+import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from './local-api';
 import type { MobileStatus } from './mobile-status';
+import type { PaperSize } from './paper-sizes';
 import type { PrinterReadiness } from './printer-readiness';
 import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
@@ -24,6 +26,8 @@ export const IpcChannel = {
   CheckDriverPaper: 'printer:driver-paper',
   OpenPrinterPreferences: 'printer:open-preferences',
   ListJobs: 'jobs:list',
+  PreviewJob: 'jobs:preview',
+  ReprintJob: 'jobs:reprint',
   GetSettings: 'settings:get',
   UpdateSettings: 'settings:update',
   ListTemplates: 'templates:list',
@@ -69,6 +73,18 @@ export const IpcChannel = {
   MobileRemovePhone: 'mobile:remove-phone',
   MobileSetJoinLocked: 'mobile:set-join-locked',
   MobileStatusChanged: 'mobile:status-changed',
+  JobsChanged: 'jobs:changed',
+  LocalApiStatus: 'api:status',
+  LocalApiStatusChanged: 'api:status-changed',
+  ListApiKeys: 'api:keys:list',
+  CreateApiKey: 'api:keys:create',
+  RenameApiKey: 'api:keys:rename',
+  RemoveApiKey: 'api:keys:remove',
+  CopyNewApiKey: 'api:keys:copy-new',
+  RevokeApiOrigin: 'api:origins:remove',
+  DecideApiOrigin: 'api:origins:decide',
+  FirewallStatus: 'api:firewall:status',
+  AddFirewallRule: 'api:firewall:add',
 } as const;
 
 /** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
@@ -95,6 +111,8 @@ export interface LabelPreview {
   isTemplateBound: boolean;
   /** 内容太长，二维码放不下被省略了。 */
   qrOmitted: boolean;
+  /** 这次用的模板的纸张（预览的软尺和标签框按它）；识别不了时为 null。 */
+  paper: PaperSize | null;
 }
 
 export type LookupImportResult =
@@ -119,15 +137,21 @@ export interface LabelFlashApi {
   preview(raw: string): Promise<LabelPreview>;
   /** 模板编辑时的实时预览：用未保存的草稿模板渲染。 */
   previewTemplate(raw: string, template: LabelTemplate): Promise<LabelPreview>;
-  print(raw: string, printerName: string, options: PrintOptions): Promise<PrintResult>;
-  printTest(printerName: string): Promise<PrintResult>;
+  /** 打到哪台打印机由主进程按模板决定（模板指定 → 纸张分配）；这种纸没有打印机时返回 no-printer。 */
+  print(raw: string, options: PrintOptions): Promise<PrintResult>;
+  /** 测试页按 paperKey（这台打印机负责的纸，例如 100x180）的尺寸打印。 */
+  printTest(printerName: string, paperKey: string): Promise<PrintResult>;
   listPrinters(): Promise<PrinterInfo[]>;
   printerStatus(printerName: string): Promise<PrinterReadiness | null>;
-  /** 驱动默认纸张是否为 60×40（每次调用都重新读取驱动设置）。 */
-  checkDriverPaper(printerName: string): Promise<PaperCheck>;
+  /** 驱动默认纸张和 paperKey（这台打印机应该装的纸）是否一致；驱动资料短时缓存，打开打印首选项后重新读取。 */
+  checkDriverPaper(printerName: string, paperKey: string): Promise<PaperCheck>;
   /** 打开驱动的「打印首选项」窗口；窗口关闭后才完成。 */
   openPrinterPreferences(printerName: string): Promise<void>;
   listJobs(query: JobQuery): Promise<JobPage>;
+  /** 按记录里的模板和字段预览（本机接口的记录，见 lib/reprint.ts）；记录或模板不在了会失败。 */
+  previewJob(jobId: string): Promise<LabelPreview>;
+  /** 按记录里的模板和字段重打，来源记为记录重打；打印机按现在的分配决定。 */
+  reprintJob(jobId: string): Promise<PrintResult>;
   getSettings(): Promise<AppSettings>;
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   listTemplates(): Promise<LabelTemplate[]>;
@@ -191,6 +215,26 @@ export interface LabelFlashApi {
   /** 暂停或重新允许新手机加入。 */
   setMobileJoinLocked(locked: boolean): Promise<void>;
   onMobileStatus(listener: (status: MobileStatus) => void): () => void;
+  /** 界面以外的入口（本机接口）写了打印记录：刷新打印记录（合并推送，一批几百张不会每张都推）。 */
+  onJobsChanged(listener: () => void): () => void;
+  getLocalApiStatus(): Promise<LocalApiStatus>;
+  onLocalApiStatus(listener: (status: LocalApiStatus) => void): () => void;
+  listApiKeys(): Promise<ApiKeyInfo[]>;
+  /** 生成程序密钥：返回的 secret 是原文，只在这一次返回，之后看不到。 */
+  createApiKey(name: string): Promise<CreatedApiKey>;
+  renameApiKey(id: string, name: string): Promise<void>;
+  /** 把刚生成的密钥原文复制到剪贴板（生成后 10 分钟内）；过期返回 false。 */
+  copyNewApiKey(id: string): Promise<boolean>;
+  /** 撤销：用这个密钥的程序立即不能再调用。 */
+  removeApiKey(id: string): Promise<void>;
+  /** 撤销一个网站的授权。 */
+  revokeApiOrigin(origin: string): Promise<void>;
+  /** 操作员对等确认的网站点了「允许」或「拒绝」。 */
+  decideApiOrigin(origin: string, allow: boolean): Promise<void>;
+  /** Windows 防火墙有没有放行本程序（其他平台为 unknown）。 */
+  getFirewallStatus(): Promise<FirewallStatus>;
+  /** 弹管理员确认，添加防火墙规则；返回之后查到的状态（操作员拒绝时仍是 missing）。 */
+  addFirewallRule(): Promise<FirewallStatus>;
 }
 
 export interface WindowControlsApi {

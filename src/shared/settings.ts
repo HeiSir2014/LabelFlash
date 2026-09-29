@@ -4,11 +4,18 @@ import { defaultRuleSettings, type RuleSetting, sanitizeRuleSettings } from '../
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { DEFAULT_NOTE_OVERRIDE, type NoteOverride } from '../core/templates/note-override';
 import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
+import { DEFAULT_PAPER } from './label-paper';
+import { isWebOrigin } from './local-api';
+import { paperKey, parsePaperKey } from './paper-sizes';
 import { sanitizeRelayUrl } from './relay-url';
 import { DEFAULT_VOICE_NAME, isVoiceName, VOICE_RATE_RANGE, type VoiceSettings } from './voice';
 
 export interface AppSettings {
-  selectedPrinter: string | null;
+  /**
+   * 纸张 → 打印机：键是纸张键（src/shared/paper-sizes.ts 的 paperKey），值是系统里的打印机名。
+   * 模板按自己的纸张打到对应的打印机；模板也可以自己指定打印机（优先）。
+   */
+  paperPrinters: Record<string, string>;
   activeTemplateId: string;
   /** 主界面「备注」下拉框的当前选择。 */
   noteOverride: NoteOverride;
@@ -32,6 +39,25 @@ export interface AppSettings {
    * 规则见 src/shared/relay-url.ts。
    */
   mobileRelayUrl: string | null;
+  /**
+   * 操作员指定的本机接口端口；null = 不指定。指定了就优先用它，被别的程序占用时照样自动换（见 apiPortOrder），
+   * 界面上提示换成了哪个。
+   */
+  apiPort: number | null;
+  /**
+   * 本机接口上次用成功的端口（程序自己记，不在界面上改）：下次启动先用它，端口不会因为重启而变来变去，
+   * 已经配好这个端口的程序也就不会忽然连不上。
+   */
+  apiLastPort: number | null;
+  /**
+   * 本机接口的实例编号（程序第一次启动接口时生成，之后不变），由 /v1/service 返回：
+   * 局域网里的程序据此确认找到的还是原来那台电脑，不是另一台也装了本程序的电脑。
+   */
+  apiInstanceId: string | null;
+  /** 本机接口是否对局域网开放（局域网里的程序要带程序密钥）；关掉时只监听本机。 */
+  apiLanEnabled: boolean;
+  /** 允许调用本机接口的网站（http/https 的 origin），由电脑上的授权框加入，配置中心可以撤销。 */
+  apiAuthorizedOrigins: string[];
 }
 
 export const MS_PER_SECOND = 1_000;
@@ -39,11 +65,17 @@ export const MAX_DEDUP_WINDOW_SECONDS = MAX_DEDUP_WINDOW_MS / MS_PER_SECOND;
 export const HISTORY_LIMIT_RANGE = { min: 1_000, max: 1_000_000 } as const;
 const MAX_PRINTER_NAME_LENGTH = 256;
 export const MAX_NOTE_PRESETS = 20;
+/** 纸张分配最多这么多种纸：预设 12 种加自定义，足够一台电脑用；防止异常数据撑大设置。 */
+export const MAX_PAPER_ASSIGNMENTS = 32;
 /** 扫码枪逐字输入只间隔几毫秒；80ms 足以区分「码里的换行」和「一次扫码结束」，人手按回车也感觉不到延迟。 */
 export const SCAN_LINE_GAP_RANGE = { min: 20, max: 500, default: 80 } as const;
+/** 本机接口的端口：1024 以下是系统保留端口，macOS、Linux 上普通程序不能监听。 */
+export const API_PORT_RANGE = { min: 1024, max: 65_535 } as const;
+/** 授权网站最多这么多个：一台电脑用到的网页系统不会太多；防止异常数据撑大设置。 */
+export const MAX_AUTHORIZED_ORIGINS = 50;
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  selectedPrinter: null,
+  paperPrinters: {},
   activeTemplateId: DEFAULT_TEMPLATE_ID,
   noteOverride: DEFAULT_NOTE_OVERRIDE,
   notePresets: [],
@@ -58,12 +90,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
   scanLineGapMs: SCAN_LINE_GAP_RANGE.default,
   webhooks: [],
   mobileRelayUrl: null,
+  apiPort: null,
+  apiLastPort: null,
+  apiInstanceId: null,
+  // 局域网里的客户端软件是主要用法之一；没有程序密钥时局域网请求一律拒绝，默认开着也不会被随便调用。
+  apiLanEnabled: true,
+  apiAuthorizedOrigins: [],
 };
 
 export function sanitizeSettings(value: unknown): AppSettings {
   const input = isRecord(value) ? value : {};
   return {
-    selectedPrinter: sanitizePrinterName(input['selectedPrinter']),
+    paperPrinters: sanitizePaperPrinters(input['paperPrinters'], input['selectedPrinter']),
     activeTemplateId: sanitizeTemplateId(input['activeTemplateId']),
     noteOverride: sanitizeNoteOverride(input['noteOverride']),
     notePresets: sanitizeNotePresets(input['notePresets']),
@@ -92,7 +130,37 @@ export function sanitizeSettings(value: unknown): AppSettings {
     webhooks: sanitizeWebhooks(input['webhooks']),
     // 不合法的地址当作没填，回到默认地址：填错一次不该让手机扫码一直连不上。
     mobileRelayUrl: sanitizeRelayUrl(input['mobileRelayUrl']),
+    apiPort: sanitizeApiPort(input['apiPort']),
+    apiLastPort: sanitizeApiPort(input['apiLastPort']),
+    apiInstanceId: sanitizeInstanceId(input['apiInstanceId']),
+    apiLanEnabled: sanitizeBoolean(input['apiLanEnabled'], DEFAULT_SETTINGS.apiLanEnabled),
+    apiAuthorizedOrigins: sanitizeOrigins(input['apiAuthorizedOrigins']),
   };
+}
+
+/** 端口不合法时回到默认端口（不夹到范围里）：夹出来的端口不是用户想要的。 */
+function sanitizeApiPort(value: unknown): number | null {
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= API_PORT_RANGE.min &&
+    value <= API_PORT_RANGE.max
+    ? value
+    : null;
+}
+
+/** 实例编号是 UUID；不合格的丢掉，接口启动时重新生成。 */
+const INSTANCE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function sanitizeInstanceId(value: unknown): string | null {
+  return typeof value === 'string' && INSTANCE_ID_PATTERN.test(value) ? value : null;
+}
+
+function sanitizeOrigins(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const origins = value.filter((item): item is string => typeof item === 'string' && isWebOrigin(item));
+  return [...new Set(origins)].slice(0, MAX_AUTHORIZED_ORIGINS);
 }
 
 function sanitizeVoice(value: unknown): VoiceSettings {
@@ -114,6 +182,29 @@ export function secondsToMs(seconds: number): number {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 1.0.x 的「选中的打印机」（selectedPrinter）：设置里还没有 paperPrinters 时（第一次升级）迁移成「60×40 → 这台」。
+ * 保存过一次设置后 paperPrinters 就存在了，以后不再读 selectedPrinter，清空分配也不会让旧打印机回来。
+ */
+function sanitizePaperPrinters(value: unknown, legacySelected: unknown): Record<string, string> {
+  if (value === undefined) {
+    const legacy = sanitizePrinterName(legacySelected);
+    return legacy === null ? {} : { [paperKey(DEFAULT_PAPER)]: legacy };
+  }
+  if (!isRecord(value)) {
+    return {};
+  }
+  const result: Record<string, string> = {};
+  for (const [key, name] of Object.entries(value)) {
+    const paper = parsePaperKey(key);
+    const printer = sanitizePrinterName(name);
+    if (paper !== null && printer !== null && Object.keys(result).length < MAX_PAPER_ASSIGNMENTS) {
+      result[paperKey(paper)] = printer;
+    }
+  }
+  return result;
 }
 
 function sanitizePrinterName(value: unknown): string | null {

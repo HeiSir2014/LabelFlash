@@ -22,6 +22,12 @@ function messageBytes(message: DesktopMessage): number {
 }
 
 describe('toPhonePrintResult', () => {
+  test('tells the phone there is no printer for this paper', () => {
+    expect(toPhonePrintResult({ status: 'no-printer', paperKey: '100x180', missingPrinter: null })).toEqual({
+      status: 'no-printer',
+    });
+  });
+
   test('sends the rule and fields of a printed label, without the rest of the scan', () => {
     expect(toPhonePrintResult({ status: 'printed', jobId: 'j1', scan })).toEqual({
       status: 'printed',

@@ -1,17 +1,20 @@
 import type { PrinterIssue } from '../shared/printer-readiness';
-import type { ScanResult } from './scan/scan-result';
+import type { PrinterChoice } from './printing/resolve-printer';
+import type { ScanField, ScanResult } from './scan/scan-result';
 import type { LabelTemplate } from './templates/template-model';
 
-/** desktop = 扫码枪，history = 从打印记录重打，mobile = 手机（Phase 2）。 */
-export const PRINT_SOURCES = ['desktop', 'history', 'mobile'] as const;
+/** desktop = 扫码枪，history = 从打印记录重打，mobile = 手机，api = 本机接口。 */
+export const PRINT_SOURCES = ['desktop', 'history', 'mobile', 'api'] as const;
 export type PrintSource = (typeof PRINT_SOURCES)[number];
 
+/** 打印请求不带打印机：主进程按模板决定（见 printing/resolve-printer.ts）。 */
 export interface PrintRequest {
   raw: string;
-  printerName: string;
   source: PrintSource;
   /** 强制补打：跳过门限窗口（不跳过正在打印的同一个码）。 */
   force?: boolean;
+  /** 谁提交的（写进打印记录）：本机接口为 key:<密钥编号> 或 origin:<网站>；其他入口没有。 */
+  caller?: string;
 }
 
 export const PRINT_FAILURE_REASONS = [
@@ -37,9 +40,13 @@ export type PrintResult =
   | { status: 'printed'; jobId: string; scan: ScanResult }
   | { status: 'duplicate'; recent: RecentPrint; windowMs: number }
   | { status: 'invalid'; reason: InvalidReason }
-  | { status: 'failed'; reason: PrintFailureReason; detail?: string; issue?: PrinterIssue };
+  | { status: 'failed'; reason: PrintFailureReason; detail?: string; issue?: PrinterIssue }
+  /** 这种纸没有可用的打印机：没有打印，不写打印记录，不占防重复窗口。 */
+  | { status: 'no-printer'; paperKey: string; missingPrinter: string | null };
 
-export type PrintStatus = PrintResult['status'];
+/** 写进打印记录的结果（no-printer 不写记录）。 */
+export type RecordedResult = Exclude<PrintResult, { status: 'no-printer' }>;
+export type PrintStatus = RecordedResult['status'];
 export const PRINT_STATUSES = ['printed', 'duplicate', 'invalid', 'failed'] as const satisfies readonly PrintStatus[];
 
 export type PreviewResult =
@@ -50,6 +57,8 @@ export type PreviewResult =
       recent: RecentPrint | null;
       /** 设为「拦下不打印」的 HTTP 查询失败了：打印会被拦下，这里是原因。 */
       lookupFailure: string | null;
+      /** 这一张会打到哪台打印机（或为什么没有）。 */
+      printer: PrinterChoice;
     }
   | { status: 'invalid'; reason: InvalidReason };
 
@@ -80,6 +89,14 @@ export interface JobRecord {
   status: PrintStatus;
   forced: boolean;
   failureReason?: PrintFailureReason;
+  /** 这一张的纸张键（例如 100x180）；1.0.x 的旧记录和识别不了的记录没有。 */
+  paper?: string;
+  /** 这一张用的模板；1.0.x 的旧记录和识别不了的记录没有。 */
+  templateId?: string;
+  /** 这一张打出来的字段（识别、加工后的，或本机接口给的）；识别不了的、1.0.x 的旧记录没有。 */
+  fields?: ScanField[];
+  /** 谁提交的：本机接口为 key:<密钥编号> 或 origin:<网站>；其他来源暂时没有。 */
+  caller?: string;
 }
 
 export interface Clock {

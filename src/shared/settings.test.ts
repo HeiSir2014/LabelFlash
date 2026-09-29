@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  API_PORT_RANGE,
   type AppSettings,
   DEFAULT_SETTINGS,
   HISTORY_LIMIT_RANGE,
+  MAX_AUTHORIZED_ORIGINS,
   MAX_DEDUP_WINDOW_SECONDS,
   MAX_NOTE_PRESETS,
+  MAX_PAPER_ASSIGNMENTS,
   SCAN_LINE_GAP_RANGE,
   sanitizeSettings,
   secondsToMs,
@@ -20,7 +23,7 @@ describe('sanitizeSettings', () => {
 
   test('keeps valid values', () => {
     const settings: AppSettings = {
-      selectedPrinter: '标签',
+      paperPrinters: { '60x40': '标签', '100x180': '面单' },
       activeTemplateId: 'custom:3f2c-9a',
       noteOverride: { kind: 'text', text: '返修' },
       notePresets: ['返修', '样衣间 {日期}'],
@@ -45,6 +48,11 @@ describe('sanitizeSettings', () => {
         },
       ],
       mobileRelayUrl: 'https://relay.example.com/labelflash/',
+      apiPort: 18000,
+      apiLastPort: 17632,
+      apiInstanceId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+      apiLanEnabled: false,
+      apiAuthorizedOrigins: ['https://erp.example.com', 'http://localhost:8080'],
     };
     expect(sanitizeSettings(settings)).toEqual(settings);
   });
@@ -124,5 +132,78 @@ describe('sanitizeSettings', () => {
     expect(
       sanitizeSettings({ selectedPrinter: '', autoPrint: 'yes', dedupWindowSeconds: Number.NaN, launchAtLogin: 1 }),
     ).toEqual(DEFAULT_SETTINGS);
+  });
+});
+
+describe('paperPrinters', () => {
+  test('keeps valid paper keys and printer names', () => {
+    const settings = sanitizeSettings({ paperPrinters: { '60x40': '标签机A', '100x180': '面单机B', bad: 'x' } });
+    expect(settings.paperPrinters).toEqual({ '60x40': '标签机A', '100x180': '面单机B' });
+  });
+
+  // 1.0.x 只有一台「选中的打印机」，打的都是 60×40：升级后不用重新设置。
+  test('moves the old selected printer to 60x40', () => {
+    expect(sanitizeSettings({ selectedPrinter: '标签机A' }).paperPrinters).toEqual({ '60x40': '标签机A' });
+  });
+
+  test('does not bring the old printer back once paper is assigned, even when cleared', () => {
+    const assigned = sanitizeSettings({ selectedPrinter: '旧打印机', paperPrinters: { '100x180': '面单机B' } });
+    expect(assigned.paperPrinters).toEqual({ '100x180': '面单机B' });
+    expect(sanitizeSettings({ selectedPrinter: '旧打印机', paperPrinters: {} }).paperPrinters).toEqual({});
+  });
+
+  test('keeps at most MAX_PAPER_ASSIGNMENTS papers', () => {
+    const many = Object.fromEntries(
+      Array.from({ length: MAX_PAPER_ASSIGNMENTS + 5 }, (_, index) => [`${30 + index}x40`, 'P']),
+    );
+    expect(Object.keys(sanitizeSettings({ paperPrinters: many }).paperPrinters)).toHaveLength(MAX_PAPER_ASSIGNMENTS);
+  });
+
+  test('has no printer assigned by default', () => {
+    expect(sanitizeSettings({}).paperPrinters).toEqual({});
+  });
+
+  // 只有设置里完全没有纸张分配（1.0.x 升级上来）才迁移；分配表坏了不能把旧打印机请回来。
+  test('only migrates when there is no paper assignment at all', () => {
+    expect(sanitizeSettings({ selectedPrinter: '旧打印机', paperPrinters: null }).paperPrinters).toEqual({});
+  });
+});
+
+describe('local api settings', () => {
+  // 局域网里的客户端软件是主要用法之一：默认开启（仍然要程序密钥才能调用）。
+  test('uses the default ports and opens the LAN by default', () => {
+    expect(DEFAULT_SETTINGS.apiPort).toBeNull();
+    expect(DEFAULT_SETTINGS.apiLastPort).toBeNull();
+    expect(DEFAULT_SETTINGS.apiInstanceId).toBeNull();
+    expect(sanitizeSettings({ apiInstanceId: 'not-a-uuid' }).apiInstanceId).toBeNull();
+    expect(DEFAULT_SETTINGS.apiLanEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.apiAuthorizedOrigins).toEqual([]);
+  });
+
+  test('accepts only unprivileged whole-number ports', () => {
+    expect(sanitizeSettings({ apiPort: API_PORT_RANGE.min }).apiPort).toBe(API_PORT_RANGE.min);
+    expect(sanitizeSettings({ apiPort: API_PORT_RANGE.max }).apiPort).toBe(API_PORT_RANGE.max);
+    for (const port of [80, 70_000, 18_000.5, '18000', -1]) {
+      expect(sanitizeSettings({ apiPort: port }).apiPort).toBeNull();
+    }
+    // 系统分配的空闲端口在 49152 以上，照样记得住。
+    expect(sanitizeSettings({ apiLastPort: 51_234 }).apiLastPort).toBe(51_234);
+    expect(sanitizeSettings({ apiLastPort: 80 }).apiLastPort).toBeNull();
+  });
+
+  test('keeps only distinct web origins, up to the limit', () => {
+    const origins = [
+      'https://erp.example.com',
+      'https://erp.example.com',
+      'https://erp.example.com/path',
+      'null',
+      'file://',
+      7,
+      ...Array.from({ length: MAX_AUTHORIZED_ORIGINS + 5 }, (_, index) => `https://site${index}.example.com`),
+    ];
+    const kept = sanitizeSettings({ apiAuthorizedOrigins: origins }).apiAuthorizedOrigins;
+    expect(kept[0]).toBe('https://erp.example.com');
+    expect(kept).toHaveLength(MAX_AUTHORIZED_ORIGINS);
+    expect(new Set(kept).size).toBe(kept.length);
   });
 });

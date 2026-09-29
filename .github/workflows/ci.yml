@@ -73,6 +73,9 @@ jobs:
           CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
           # 不去钥匙串里找证书：没有开发者证书，签名固定用 ad-hoc。
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # electron-builder 在 PR 里默认不签名（防止把证书交给别人的 PR）。这里只有 ad-hoc 签名、不涉及任何证书，
+          # 不签的话 PR 打出的包和发布的包不一样，Apple 芯片上也打不开，verify-package 会拦下。
+          CSC_FOR_PULL_REQUEST: 'true'
       - uses: actions/upload-artifact@v4
         with:
           name: CDL-LabelFlash-macos

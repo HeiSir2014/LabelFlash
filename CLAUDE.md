@@ -121,7 +121,7 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
 ## 打包、更新与发布
 
 - **Windows 安装包**：自绘的圆形安装界面（nsNiuniuSkin 插件），由 `bun run dist:win` 分两段构建。不要直接运行 `electron-builder` 打 Windows 包，那样得到的是默认界面，也没有卸载程序。
-- **macOS 安装包**：`bun run dist:mac` 打 pkg，装进「应用程序」，Apple 芯片和 Intel 共用（universal）。配置和取舍写在 `electron-builder.yml` 的 `mac`、`pkg` 两段。
+- **macOS 安装包**：`bun run dist:mac` 打 pkg，装进「应用程序」，Apple 芯片和 Intel 共用（universal）。配置和取舍写在 `electron-builder.yml` 的 `mac`、`pkg` 两段。打完由 `scripts/mac/verify-package.ts` 核对签名完好且是 ad-hoc、程序同时有 x86_64 和 arm64、pkg 装进 `/Applications`，不通过就算打包失败。
   - 还没有 Apple 开发者证书：程序是 ad-hoc 签名，安装包没有签名、没有公证，下载后第一次打开要在「系统设置 → 隐私与安全性」里点「仍要打开」。
   - 不能自动更新（Squirrel.Mac 要校验签名），程序里不检查更新，「关于」提示到发布页下载。有了证书之后再做签名、公证和自动更新。
 - **自动更新**：只有 Windows 版。electron-updater 从 GitHub Releases 下载，支持 blockmap 差分下载。启动时是否检查、所有更新行为都在 `src/main/update-settings.ts` 里显式设置。

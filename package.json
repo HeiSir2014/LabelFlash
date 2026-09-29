@@ -20,7 +20,7 @@
     "icons": "bun scripts/generate-icons.ts",
     "installer:skin": "bun scripts/installer/build-skin.ts",
     "dist:win": "electron-vite build && bun run verify:bundle && bun scripts/installer/build-installer.ts --publish never",
-    "dist:mac": "electron-vite build && bun run verify:bundle && electron-builder --mac --publish never",
+    "dist:mac": "electron-vite build && bun run verify:bundle && electron-builder --mac --publish never && bun scripts/mac/verify-package.ts",
     "test:relay-browser": "bun test ./relay/test/phone-page.browser.ts",
     "relay:build": "bun scripts/relay/build.ts",
     "relay:dev": "bun scripts/relay/dev.ts",

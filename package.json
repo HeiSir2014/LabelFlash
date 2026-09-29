@@ -25,6 +25,8 @@
     "relay:build": "bun scripts/relay/build.ts",
     "relay:dev": "bun scripts/relay/dev.ts",
     "relay:deploy": "bun scripts/relay/deploy.ts",
+    "ocr:models": "bun scripts/ocr/fetch-models.ts",
+    "ocr:test": "cargo test --manifest-path native/ocr/Cargo.toml && cargo clippy --manifest-path native/ocr/Cargo.toml --all-targets -- -D warnings && cargo fmt --manifest-path native/ocr/Cargo.toml --check",
     "release:win": "electron-vite build && bun run verify:bundle && bun scripts/installer/build-installer.ts --publish always"
   },
   "dependencies": {

@@ -1,3 +1,5 @@
+import { DEFAULT_PAPER } from '../../shared/label-paper';
+import { paperKey } from '../../shared/paper-sizes';
 import type { ScanResult } from '../scan/scan-result';
 import type { JobRecord, PrintFailureReason, PrintSource, PrintStatus } from '../types';
 import type { WebhookEvent, WebhookEventType } from './webhook-model';
@@ -20,6 +22,8 @@ export interface WebhookPayload {
   /** 识别和加工后的字段（字段名 → 值）；识别不了时为 null。 */
   fields: Record<string, string> | null;
   printer: string;
+  /** 纸张键（例如 100x180）；旧记录和识别不了的记录为 null。新增字段，不影响已有的接收方。 */
+  paper: string | null;
   source: PrintSource | null;
   forced: boolean;
   failureReason: PrintFailureReason | null;
@@ -47,6 +51,7 @@ export function payloadOf(job: JobRecord, scan: ScanResult | null, station: Stat
     rule: scan ? { id: scan.ruleId, name: scan.ruleName } : null,
     fields: scan ? Object.fromEntries(scan.fields.map((field) => [field.name, field.value])) : null,
     printer: job.printerName,
+    paper: job.paper ?? null,
     source: job.source,
     forced: job.forced,
     failureReason: job.failureReason ?? null,
@@ -64,6 +69,7 @@ export function testPayload(id: string, now: number, station: Station): WebhookP
     rule: { id: 'builtin:dash-three', name: '横杠三段（编码-颜色-尺码）' },
     fields: { 编码: 'TEST-0001', 颜色: '测试色', 尺码: 'XL' },
     printer: '',
+    paper: paperKey(DEFAULT_PAPER),
     source: null,
     forced: false,
     failureReason: null,

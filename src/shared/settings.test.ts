@@ -5,6 +5,7 @@ import {
   HISTORY_LIMIT_RANGE,
   MAX_DEDUP_WINDOW_SECONDS,
   MAX_NOTE_PRESETS,
+  MAX_PAPER_ASSIGNMENTS,
   SCAN_LINE_GAP_RANGE,
   sanitizeSettings,
   secondsToMs,
@@ -20,7 +21,7 @@ describe('sanitizeSettings', () => {
 
   test('keeps valid values', () => {
     const settings: AppSettings = {
-      selectedPrinter: '标签',
+      paperPrinters: { '60x40': '标签', '100x180': '面单' },
       activeTemplateId: 'custom:3f2c-9a',
       noteOverride: { kind: 'text', text: '返修' },
       notePresets: ['返修', '样衣间 {日期}'],
@@ -124,5 +125,34 @@ describe('sanitizeSettings', () => {
     expect(
       sanitizeSettings({ selectedPrinter: '', autoPrint: 'yes', dedupWindowSeconds: Number.NaN, launchAtLogin: 1 }),
     ).toEqual(DEFAULT_SETTINGS);
+  });
+});
+
+describe('paperPrinters', () => {
+  test('keeps valid paper keys and printer names', () => {
+    const settings = sanitizeSettings({ paperPrinters: { '60x40': '标签机A', '100x180': '面单机B', bad: 'x' } });
+    expect(settings.paperPrinters).toEqual({ '60x40': '标签机A', '100x180': '面单机B' });
+  });
+
+  // 1.0.x 只有一台「选中的打印机」，打的都是 60×40：升级后不用重新设置。
+  test('moves the old selected printer to 60x40', () => {
+    expect(sanitizeSettings({ selectedPrinter: '标签机A' }).paperPrinters).toEqual({ '60x40': '标签机A' });
+  });
+
+  test('does not bring the old printer back once paper is assigned, even when cleared', () => {
+    const assigned = sanitizeSettings({ selectedPrinter: '旧打印机', paperPrinters: { '100x180': '面单机B' } });
+    expect(assigned.paperPrinters).toEqual({ '100x180': '面单机B' });
+    expect(sanitizeSettings({ selectedPrinter: '旧打印机', paperPrinters: {} }).paperPrinters).toEqual({});
+  });
+
+  test('keeps at most MAX_PAPER_ASSIGNMENTS papers', () => {
+    const many = Object.fromEntries(
+      Array.from({ length: MAX_PAPER_ASSIGNMENTS + 5 }, (_, index) => [`${30 + index}x40`, 'P']),
+    );
+    expect(Object.keys(sanitizeSettings({ paperPrinters: many }).paperPrinters)).toHaveLength(MAX_PAPER_ASSIGNMENTS);
+  });
+
+  test('has no printer assigned by default', () => {
+    expect(sanitizeSettings({}).paperPrinters).toEqual({});
   });
 });

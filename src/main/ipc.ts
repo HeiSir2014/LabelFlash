@@ -9,11 +9,12 @@ import {
   shell,
 } from 'electron';
 import type { PrintService } from '../core/print-service';
+import type { PrinterChoice } from '../core/printing/resolve-printer';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
-import { CUSTOM_TEMPLATE_PREFIX } from '../core/templates/template-model';
+import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { checkDriverPaper } from '../shared/driver-paper';
@@ -24,6 +25,8 @@ import {
   type LookupImportResult,
   RECENT_DELIVERY_COUNT,
 } from '../shared/ipc-contract';
+import { DEFAULT_PAPER } from '../shared/label-paper';
+import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
 import type { AppSettings } from '../shared/settings';
 import { logFailures } from './ipc-errors';
 import {
@@ -31,6 +34,7 @@ import {
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
+  requirePaperKey,
   requirePositiveInteger,
   requirePrintOptions,
   requireRaw,
@@ -45,11 +49,12 @@ import type { LookupTables } from './lookup/lookup-tables';
 import type { MobileStation } from './mobile/mobile-station';
 import type { WebhookOutbox } from './notify/webhook-outbox';
 import { type PrintTemplate, resolvePrintTemplate } from './print-template';
-import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
-import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
+import { openPrinterPreferences } from './printing/driver-paper';
 import { renderLabelHtml } from './printing/label-html';
-import type { PrinterProbeHost } from './printing/printer-probe-host';
+import type { PrinterDriver } from './printing/printer-driver';
+import type { PrinterProfiles } from './printing/printer-profiles';
 import type { PrinterStatusMonitor } from './printing/printer-status';
+import { DEFAULT_PRINTER_DPI } from './printing/qr-code';
 import { registerRuleIpc } from './scan/rule-ipc';
 import type { RuleService } from './scan/rule-service';
 import type { SqliteJobStore } from './storage/sqlite-job-store';
@@ -60,9 +65,14 @@ import type { VoiceClips } from './voice/voice-clips';
 
 const DRAFT_TEMPLATE_ID = `${CUSTOM_TEMPLATE_PREFIX}draft`;
 
+/** 已校验的纸张键 → 纸张（requirePaperKey 保证能解析，兜底只为类型）。 */
+function paperOf(key: string): PaperSize {
+  return parsePaperKey(key) ?? DEFAULT_PAPER;
+}
+
 export interface IpcDeps {
   service: PrintService;
-  adapter: ElectronDriverAdapter;
+  adapter: PrinterDriver;
   jobs: SqliteJobStore;
   settings: SqliteSettingsStore;
   templates: TemplateCatalog;
@@ -75,10 +85,14 @@ export interface IpcDeps {
   updater: AppUpdater;
   voice: VoiceClips;
   mobile: MobileStation;
-  /** Windows 上的常驻打印机探测进程；其他平台为 null。 */
-  probeHost: PrinterProbeHost | null;
+  /** 每台打印机的驱动纸张和分辨率（短时缓存）。 */
+  profiles: PrinterProfiles;
   getWindow: () => BrowserWindow | null;
   onSettingsChanged: (next: AppSettings, previous: AppSettings) => Promise<void>;
+  /** 模板保存或删除之后：模板指定的打印机可能变了，要检测的打印机跟着变。 */
+  onTemplatesChanged: () => void;
+  /** 这个模板用哪台打印机（和打印时同一个规则）：模板页预览草稿时用。 */
+  choosePrinter: (template: LabelTemplate) => Promise<PrinterChoice>;
 }
 
 /**
@@ -127,33 +141,45 @@ export function registerIpc(deps: IpcDeps): void {
     return next;
   };
 
+  /** 这张要打到的打印机的分辨率；没有打印机、或打印机不在系统里时按 203dpi（名字不在系统里就不交给系统命令）。 */
+  const dpiFor = async (result: PreviewResult): Promise<number> => {
+    const printerName = result.status === 'ok' ? result.printer.printerName : null;
+    return printerName !== null && (await deps.adapter.hasPrinter(printerName))
+      ? deps.profiles.dpiOf(printerName)
+      : DEFAULT_PRINTER_DPI;
+  };
   handle(IpcChannel.Preview, async (raw) => {
     const result = await deps.service.preview(requireRaw(raw));
-    return renderPreview(result, printTemplateFor(result));
+    return renderPreview(result, printTemplateFor(result), await dpiFor(result));
   });
   handle(IpcChannel.PreviewTemplate, async (raw, template) => {
     const result = await deps.service.preview(requireRaw(raw));
     const fallback = printTemplateFor(result).template;
     const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, fallback);
-    // 模板页指定了要看的模板，不是规则选的。
-    return renderPreview(result, { template: draft, isBound: false });
+    // 模板页指定了要看的模板，不是规则选的；打印机也按这个模板重新决定（示例内容本来绑的是别的模板）。
+    const forDraft: PreviewResult =
+      result.status === 'ok' ? { ...result, printer: await deps.choosePrinter(draft) } : result;
+    return renderPreview(forDraft, { template: draft, isBound: false }, await dpiFor(forDraft));
   });
-  handle(IpcChannel.Print, (raw, printerName, options) =>
-    deps.service.submit({
-      raw: requireRaw(raw),
-      printerName: requireString(printerName, 'printerName'),
-      ...requirePrintOptions(options),
-    }),
+  handle(IpcChannel.Print, (raw, options) =>
+    deps.service.submit({ raw: requireRaw(raw), ...requirePrintOptions(options) }),
   );
-  handle(IpcChannel.PrintTest, (printerName) => deps.service.printTest(requireString(printerName, 'printerName')));
+  // 打印机名不在这里核对：找不到时由适配器返回 PRINTER_NOT_FOUND，和正式打印一样显示在界面上。
+  handle(IpcChannel.PrintTest, (printerName, key) =>
+    deps.service.printTest(requireString(printerName, 'printerName'), paperOf(requirePaperKey(key))),
+  );
   handle(IpcChannel.ListPrinters, () => deps.adapter.listPrinters());
   handle(IpcChannel.PrinterStatus, (printerName) => deps.status.get(requireString(printerName, 'printerName')));
-  handle(IpcChannel.CheckDriverPaper, async (printerName) =>
-    checkDriverPaper(await queryDriverPaper(await requireKnownPrinter(printerName), deps.probeHost)),
-  );
-  handle(IpcChannel.OpenPrinterPreferences, async (printerName) =>
-    openPrinterPreferences(await requireKnownPrinter(printerName)),
-  );
+  handle(IpcChannel.CheckDriverPaper, async (printerName, key) => {
+    const expected = paperOf(requirePaperKey(key));
+    return checkDriverPaper(await deps.profiles.get(await requireKnownPrinter(printerName)), expected);
+  });
+  handle(IpcChannel.OpenPrinterPreferences, async (printerName) => {
+    const name = await requireKnownPrinter(printerName);
+    await openPrinterPreferences(name);
+    // 操作员可能刚改了纸张：界面随后重新检查时要读到新的设置。
+    deps.profiles.forget(name);
+  });
   handle(IpcChannel.ListJobs, (query) => deps.jobs.listPage(requireJobQuery(query)));
   handle(IpcChannel.GetSettings, () => deps.settings.current);
   handle(IpcChannel.UpdateSettings, (patch) => updateSettings(requireRecord(patch, 'settings patch')));
@@ -161,11 +187,14 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.DuplicateTemplate, (sourceId) => deps.templates.duplicate(requireTemplateId(sourceId)));
   handle(IpcChannel.SaveTemplate, (template) => {
     const record = requireRecord(template, 'template');
-    return deps.templates.save(requireTemplateId(record['id']), record);
+    const saved = deps.templates.save(requireTemplateId(record['id']), record);
+    deps.onTemplatesChanged();
+    return saved;
   });
   handle(IpcChannel.DeleteTemplate, (id) => {
     const templateId = requireTemplateId(id);
     deps.templates.remove(templateId);
+    deps.onTemplatesChanged();
     return deps.settings.current.activeTemplateId === templateId
       ? updateSettings({ activeTemplateId: DEFAULT_TEMPLATE_ID })
       : deps.settings.current;
@@ -251,10 +280,11 @@ export function registerIpc(deps: IpcDeps): void {
   on(IpcChannel.WindowClose, () => deps.getWindow()?.close());
 }
 
-function renderPreview(result: PreviewResult, { template, isBound }: PrintTemplate): LabelPreview {
+/** 预览和实际打印用同一份 HTML：二维码按这张要打到的打印机的分辨率对齐。 */
+function renderPreview(result: PreviewResult, { template, isBound }: PrintTemplate, dpi: number): LabelPreview {
   if (result.status !== 'ok') {
-    return { result, html: null, templateName: null, isTemplateBound: false, qrOmitted: false };
+    return { result, html: null, templateName: null, isTemplateBound: false, qrOmitted: false, paper: null };
   }
-  const { html, qrOmitted } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() });
-  return { result, html, templateName: template.name, isTemplateBound: isBound, qrOmitted };
+  const { html, qrOmitted } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() }, dpi);
+  return { result, html, templateName: template.name, isTemplateBound: isBound, qrOmitted, paper: template.paper };
 }

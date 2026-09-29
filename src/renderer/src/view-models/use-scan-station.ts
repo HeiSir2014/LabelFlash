@@ -13,6 +13,7 @@ const NO_PREVIEW: LabelPreview = {
   templateName: null,
   isTemplateBound: false,
   qrOmitted: false,
+  paper: null,
 };
 /** 识别超过这么久（通常是查找表或接口查询）才显示「正在查询」，快的扫码不闪一下。 */
 const QUERYING_DELAY_MS = 200;
@@ -24,7 +25,6 @@ export interface ScanState extends ScanSnapshot {
 }
 
 interface StationOptions {
-  printerName: string | null;
   autoPrint: boolean;
   onJobRecorded: () => void;
   /** 语音确认 / 提示音。 */
@@ -44,7 +44,7 @@ function printMode(source: RendererPrintSource, force: boolean): PrintMode {
   return source === 'history' ? 'history' : 'scan';
 }
 
-export function useScanStation({ printerName, autoPrint, onJobRecorded, announce }: StationOptions) {
+export function useScanStation({ autoPrint, onJobRecorded, announce }: StationOptions) {
   const [scan, setScan] = useState<ScanState | null>(null);
   const [queryingRaw, setQueryingRaw] = useState<string | null>(null);
   // 查询慢时先说「正在查询」，上一张的预览留着，不清空成白板。
@@ -55,15 +55,12 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded, announce
   }, []);
 
   const print = useCallback(
+    // 打到哪台由主进程按模板决定；这种纸没有打印机时返回 no-printer，照常显示和播报。
     async (seq: number, raw: string, source: RendererPrintSource, force: boolean) => {
-      if (!printerName) {
-        announce({ kind: 'no-printer' });
-        return;
-      }
       patchIfCurrent(seq, { isPrinting: true, print: null, hasIpcError: false });
       let result: PrintResult;
       try {
-        result = await window.api.print(raw, printerName, { source, force });
+        result = await window.api.print(raw, { source, force });
       } catch (error) {
         reportError('打印', error);
         patchIfCurrent(seq, { isPrinting: false, hasIpcError: true });
@@ -75,7 +72,7 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded, announce
       announce({ kind: 'result', result, mode: printMode(source, force) });
       onJobRecorded();
     },
-    [printerName, patchIfCurrent, onJobRecorded, announce],
+    [patchIfCurrent, onJobRecorded, announce],
   );
 
   const load = useCallback(
@@ -92,7 +89,7 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded, announce
         querying.finish(seq);
       }
       const isValid = !hasIpcError && preview.result.status === 'ok';
-      const willPrint = mode.printNow && isValid && printerName !== null;
+      const willPrint = mode.printNow && isValid;
       if (querying.isLatest(seq)) {
         setScan({ seq, raw, preview, source: mode.source, print: null, isPrinting: willPrint, hasIpcError });
       }
@@ -101,14 +98,14 @@ export function useScanStation({ printerName, autoPrint, onJobRecorded, announce
         return;
       }
       if (mode.printNow) {
-        // 自动模式下每一次扫码都要打印，哪怕界面已被更新的扫描取代；没选打印机时 print 会提醒。
+        // 自动模式下每一次扫码都要打印，哪怕界面已被更新的扫描取代；没有打印机时主进程返回 no-printer。
         await print(seq, raw, mode.source, false);
       } else {
         // 手动模式：确认扫到了，等操作员核对预览后按 F2。
         announce({ kind: 'scanned' });
       }
     },
-    [printerName, print, announce, querying],
+    [print, announce, querying],
   );
 
   // 扫码枪连按由主进程的防重复窗口统一拦截（设置里可调，默认 3 秒），拦截结果会显示、播报并记入打印记录。

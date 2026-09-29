@@ -24,16 +24,29 @@ describe('SqliteSettingsStore', () => {
     db.close();
   });
 
-  test('persists the selected printer across reopen', () => {
+  test('persists the paper assignment across reopen', () => {
     const first = openDatabase(path);
-    new SqliteSettingsStore(first).update({ selectedPrinter: '热敏标签机', autoPrint: false });
+    new SqliteSettingsStore(first).update({ paperPrinters: { '60x40': '热敏标签机' }, autoPrint: false });
     first.close();
     const second = openDatabase(path);
     expect(new SqliteSettingsStore(second).current).toMatchObject({
-      selectedPrinter: '热敏标签机',
+      paperPrinters: { '60x40': '热敏标签机' },
       autoPrint: false,
     });
     second.close();
+  });
+
+  // 数据库里 1.0.x 留下的 selectedPrinter 行不会被删：核对它只迁移一次，保存后不会复活。
+  test('migrates the old selected printer once and never brings it back', () => {
+    const db = openDatabase(path);
+    db.prepare(`INSERT INTO settings (key, value) VALUES ('selectedPrinter', '"标签机A"')`).run();
+    const store = new SqliteSettingsStore(db);
+    expect(store.current.paperPrinters).toEqual({ '60x40': '标签机A' });
+    store.update({ autoPrint: false });
+    expect(new SqliteSettingsStore(db).current.paperPrinters).toEqual({ '60x40': '标签机A' });
+    store.update({ paperPrinters: {} });
+    expect(new SqliteSettingsStore(db).current.paperPrinters).toEqual({});
+    db.close();
   });
 
   test('sanitizes updates', () => {

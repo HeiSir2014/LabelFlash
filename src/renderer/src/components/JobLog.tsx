@@ -1,5 +1,5 @@
 import type { JobRecord } from '../../../core/types';
-import { describeJobStatus, describeSource, formatDateTime } from '../lib/status-text';
+import { describeJobMeta, describeJobStatus } from '../lib/status-text';
 
 /** 多行内容在列表里只显示第一行，完整内容放在悬停提示里。 */
 function firstLine(raw: string): string {
@@ -54,7 +54,7 @@ export function JobLog({
       <ol className="scroll-list">
         {jobs.map((job) => {
           const status = describeJobStatus(job);
-          const meta = `${formatDateTime(job.createdAt)} · ${describeSource(job.source)} · ${job.printerName}`;
+          const meta = describeJobMeta(job);
           return (
             <li key={job.id} className="job-row">
               <div className="job-row__main">

@@ -60,7 +60,7 @@ const INVALID_DETAILS: Record<InvalidReason, string> = {
 /** 确定没有出纸的失败可以直接重试；超时结果不确定，只能确认没出纸后强制补打。 */
 const FAILURE_DETAILS: Record<PrintFailureReason, (detail: string | null) => string> = {
   PRINTER_NOT_READY: (detail) => `${detail ?? '打印机当前无法打印'}，处理好后点「重试」`,
-  PRINTER_NOT_FOUND: () => '电脑上选的打印机找不到了，请在电脑上重新选择打印机后点「重试」',
+  PRINTER_NOT_FOUND: () => '电脑上分配的打印机找不到了，请在电脑上重新指定打印机后点「重试」',
   PRINT_TIMEOUT: () =>
     `${PRINT_TIMEOUT_SECONDS} 秒内没有响应，可能已出纸或仍在排队；到打印机旁确认没有出纸，再点「强制补打」`,
   PRINT_ERROR: () => '打印机驱动报错，检查打印机后点「重试」',
@@ -166,7 +166,7 @@ function resultView(result: PhonePrintResult, forced: boolean, raw: string): Job
         actions: result.reason === 'PRINT_TIMEOUT' ? ['force'] : ['retry'],
       };
     case 'no-printer':
-      return { ...cueView(cue), detail: '在电脑上选择打印机后点「重试」', actions: ['retry'] };
+      return { ...cueView(cue), detail: '在电脑上为这种纸指定打印机后点「重试」', actions: ['retry'] };
   }
 }
 

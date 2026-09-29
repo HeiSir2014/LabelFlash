@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../../../core/scan/scan-result';
 import type { LabelPreview } from '../../../shared/ipc-contract';
 import {
+  describeJobMeta,
   describeJobStatus,
   describeResult,
   describeScan,
+  describeSource,
   formatAgo,
+  formatDateTime,
   formatWindow,
   IPC_ERROR_VIEW,
   type ScanContext,
@@ -24,12 +27,20 @@ const SCAN: ScanResult = {
     { name: '尺码', value: 'XL' },
   ],
 };
+const PRINTER_CHOICE = { printerName: '热敏标签机', reason: 'paper' } as const;
 const OK_PREVIEW: LabelPreview = {
-  result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: null },
+  result: {
+    status: 'ok',
+    scan: SCAN,
+    recent: null,
+    lookupFailure: null,
+    printer: PRINTER_CHOICE,
+  },
   html: '<html></html>',
   templateName: '样衣标准（二维码在左）',
   isTemplateBound: true,
   qrOmitted: false,
+  paper: { widthMm: 60, heightMm: 40 },
 };
 const INVALID_PREVIEW = (reason: 'INVALID_CONTENT' | 'NO_MATCHING_RULE'): LabelPreview => ({
   result: { status: 'invalid', reason },
@@ -37,6 +48,7 @@ const INVALID_PREVIEW = (reason: 'INVALID_CONTENT' | 'NO_MATCHING_RULE'): LabelP
   templateName: null,
   isTemplateBound: false,
   qrOmitted: false,
+  paper: null,
 });
 
 const snapshot = (overrides: Partial<ScanSnapshot> = {}): ScanSnapshot => ({
@@ -49,7 +61,6 @@ const snapshot = (overrides: Partial<ScanSnapshot> = {}): ScanSnapshot => ({
 });
 const context = (overrides: Partial<ScanContext> = {}): ScanContext => ({
   autoPrint: false,
-  hasPrinter: true,
   now: NOW,
   queryingRaw: null,
   ...overrides,
@@ -71,6 +82,22 @@ describe('formatAgo / formatWindow', () => {
 });
 
 describe('describeResult', () => {
+  test('tells which paper has no printer and offers to open the printer panel', () => {
+    expect(describeResult({ status: 'no-printer', paperKey: '100x180', missingPrinter: null }, NOW)).toEqual({
+      tone: 'warning',
+      title: '没有可用的打印机',
+      detail: '100×180 二联面单 还没有打印机',
+      link: { page: 'printers', label: '去指定打印机' },
+    });
+  });
+
+  test('says when the printer named by the template is not on this computer', () => {
+    const result = { status: 'no-printer', paperKey: '100x180', missingPrinter: '面单机D' } as const;
+    expect(describeResult(result, NOW).detail).toBe(
+      '模板指定的 面单机D 不在这台电脑上，100×180 二联面单 也还没有打印机',
+    );
+  });
+
   test('printed means sent to the printer', () => {
     expect(describeResult({ status: 'printed', jobId: 'j', scan: SCAN }, NOW)).toEqual({
       tone: 'success',
@@ -170,7 +197,13 @@ describe('describeScan', () => {
   test('manual mode still lets F2 submit a recently printed label (the threshold decides) and offers force', () => {
     const preview: LabelPreview = {
       ...OK_PREVIEW,
-      result: { status: 'ok', scan: SCAN, recent: { state: 'printed', at: NOW - 2 * MINUTE }, lookupFailure: null },
+      result: {
+        status: 'ok',
+        scan: SCAN,
+        recent: { state: 'printed', at: NOW - 2 * MINUTE },
+        lookupFailure: null,
+        printer: PRINTER_CHOICE,
+      },
     };
     const view = describeScan(snapshot({ preview }), context());
     expect(view.status).toMatchObject({ tone: 'warning', title: '2 分钟前已打印过' });
@@ -180,7 +213,7 @@ describe('describeScan', () => {
   test('a lookup that failed during preview offers a retry instead of printing blank data', () => {
     const preview: LabelPreview = {
       ...OK_PREVIEW,
-      result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: '查询超时' },
+      result: { status: 'ok', scan: SCAN, recent: null, lookupFailure: '查询超时', printer: PRINTER_CHOICE },
     };
     const view = describeScan(snapshot({ preview }), context());
     expect(view.status).toMatchObject({ tone: 'error', title: '数据查询失败' });
@@ -194,12 +227,26 @@ describe('describeScan', () => {
     expect(view.detail).toContain('返回 500');
   });
 
-  test('no printer selected blocks printing in both modes', () => {
-    for (const autoPrint of [true, false]) {
-      const view = describeScan(snapshot(), context({ hasPrinter: false, autoPrint }));
-      expect(view.status.title).toBe('还没选打印机');
-      expect(view.actions.print).toBeNull();
-    }
+  // 手动模式下预览出来这种纸没有打印机：说清是哪种纸；指定好打印机后 F2 直接打（主进程重新决定打印机）。
+  test('names the paper that has no printer and still lets F2 try again', () => {
+    const preview: LabelPreview = {
+      ...OK_PREVIEW,
+      result: {
+        status: 'ok',
+        scan: SCAN,
+        recent: null,
+        lookupFailure: null,
+        printer: { printerName: null, reason: 'unassigned', paperKey: '100x180', missingPrinter: null },
+      },
+    };
+    const view = describeScan(snapshot({ preview }), context());
+    expect(view.status).toMatchObject({ title: '没有可用的打印机', detail: '100×180 二联面单 还没有打印机' });
+    expect(view.actions.print).toBe('retry');
+  });
+
+  test('offers a retry after a no-printer result', () => {
+    const print = { status: 'no-printer', paperKey: '100x180', missingPrinter: null } as const;
+    expect(describeScan(snapshot({ print }), context()).actions.print).toBe('retry');
   });
 
   test('retryable failures offer retry; timeouts only offer force reprint', () => {
@@ -218,6 +265,23 @@ describe('describeScan', () => {
       print: { status: 'duplicate', recent: { state: 'printing', at: NOW }, windowMs: 10 * MINUTE },
     });
     expect(describeScan(printing, context()).actions.forceReprint).toBe(false);
+  });
+});
+
+describe('describeJobMeta', () => {
+  const job = { id: 'j', createdAt: NOW, raw: SCAN.raw, source: 'desktop' as const, status: 'printed' as const };
+
+  test('shows the time, source, printer and paper of a job', () => {
+    expect(describeJobMeta({ ...job, printerName: '面单机B', forced: false, paper: '100x180' })).toBe(
+      `${formatDateTime(NOW)} · ${describeSource('desktop')} · 面单机B · 100×180 二联面单`,
+    );
+  });
+
+  // 1.0.x 的旧记录没有纸张；识别不了的记录没有打印机。
+  test('shows a dash for jobs without paper and skips an empty printer', () => {
+    expect(describeJobMeta({ ...job, printerName: '', forced: false })).toBe(
+      `${formatDateTime(NOW)} · ${describeSource('desktop')} · —`,
+    );
   });
 });
 

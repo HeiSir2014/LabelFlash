@@ -1,3 +1,4 @@
+import { DEFAULT_PAPER } from '../../shared/label-paper';
 import {
   BUILT_IN_TEMPLATE_PREFIX,
   type FieldSlot,
@@ -50,6 +51,8 @@ const NO_PREFIX: [string, string, string] = ['', '', ''];
 export const GENERIC_TEMPLATE: LabelTemplate = {
   id: `${BUILT_IN_TEMPLATE_PREFIX}generic`,
   name: '通用（二维码在左）',
+  paper: { ...DEFAULT_PAPER },
+  printer: null,
   paddingMm: 2.5,
   layout: 'qr-left',
   sideAlign: 'left',
@@ -64,6 +67,8 @@ export const GENERIC_TEMPLATE: LabelTemplate = {
 export const STANDARD_TEMPLATE: LabelTemplate = {
   id: `${BUILT_IN_TEMPLATE_PREFIX}standard`,
   name: '样衣标准（二维码在左）',
+  paper: { ...DEFAULT_PAPER },
+  printer: null,
   paddingMm: 2.5,
   layout: 'qr-left',
   sideAlign: 'left',
@@ -74,7 +79,7 @@ export const STANDARD_TEMPLATE: LabelTemplate = {
   note: note(),
 };
 
-/** 内置模板都是 60×40mm，只读；要修改先复制成自定义模板。 */
+/** 内置模板都是 60×40mm、不指定打印机，只读；要修改先复制成自定义模板（复制后可以换纸张）。 */
 export const BUILT_IN_TEMPLATES: readonly LabelTemplate[] = [
   GENERIC_TEMPLATE,
   {

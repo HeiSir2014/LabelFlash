@@ -8,14 +8,17 @@ import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
 import { PrintQueue } from '../core/print-queue';
 import { PrintService } from '../core/print-service';
+import { type PrinterChoice, resolvePrinter } from '../core/printing/resolve-printer';
 import { type EnrichDeps, enrich } from '../core/scan/enrich';
 import { recognize } from '../core/scan/recognize';
 import { RuleCatalog } from '../core/scan/rule-catalog';
 import { TemplateCatalog } from '../core/templates/template-catalog';
+import type { LabelTemplate } from '../core/templates/template-model';
 import { systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { IpcChannel } from '../shared/ipc-contract';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
+import { phonePrinterLabel } from '../shared/printer-summary';
 import type { SocketLike } from '../shared/relay-socket';
 import { secondsToMs } from '../shared/settings';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
@@ -32,10 +35,14 @@ import { WebhookOutbox } from './notify/webhook-outbox';
 import { createWebhookSender } from './notify/webhook-sender';
 import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
+import { queryDriverPaper } from './printing/driver-paper';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
+import { FakeDriverAdapter, FakePrinters, parseFakePrinters } from './printing/fake-printers';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
+import type { PrinterDriver } from './printing/printer-driver';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
-import { createReadinessProbe, PrinterStatusMonitor } from './printing/printer-status';
+import { PrinterProfiles } from './printing/printer-profiles';
+import { createReadinessProbe, type PrinterReadiness, PrinterStatusMonitor } from './printing/printer-status';
 import { createHttpStepRunner } from './scan/http-step';
 import { RuleService } from './scan/rule-service';
 import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './scan/sandboxed-regex';
@@ -181,18 +188,79 @@ async function bootstrap(): Promise<void> {
     now: () => performance.now(),
   };
   const guard = new DedupGuard(systemClock, secondsToMs(settings.current.dedupWindowSeconds));
+  // 仅开发 / E2E：用假打印机代替系统打印机（见 printing/fake-printers.ts），安装版不读这个变量。
+  const fakeSpecs = parseFakePrinters(process.env, app.isPackaged);
+  const fakePrinters = fakeSpecs ? new FakePrinters(fakeSpecs) : null;
+  if (fakeSpecs && fakePrinters) {
+    console.info(`[print] using ${fakeSpecs.length} fake printers`);
+    (globalThis as { e2eFakePrinters?: FakePrinters }).e2eFakePrinters = fakePrinters;
+  }
   // 打印机状态和驱动纸张都经这一个常驻 PowerShell 查询（只在 Windows 上有）。
   const probeHost =
-    process.platform === 'win32'
+    process.platform === 'win32' && fakePrinters === null
       ? new PrinterProbeHost(spawnPowerShellProbe, PROBE_QUERY_TIMEOUT_MS, (message) => console.warn(message))
       : null;
+  /**
+   * 系统里有没有这台打印机。读打印机列表要用主窗口，启动时窗口还没建好会抛错：这时按「没有」处理，
+   * 下一轮状态检测（窗口建好之后）再查。
+   */
+  const isInstalled = async (name: string): Promise<boolean> => {
+    try {
+      return await adapter.hasPrinter(name);
+    } catch (error) {
+      console.warn(`[print] cannot check whether printer ${name} is installed`, error);
+      return false;
+    }
+  };
+  const profiles = new PrinterProfiles(
+    (name) => (fakePrinters ? fakePrinters.driverPaper(name) : queryDriverPaper(name, probeHost)),
+    systemClock,
+  );
+  const adapter: PrinterDriver = fakePrinters
+    ? new FakeDriverAdapter(fakePrinters)
+    : new ElectronDriverAdapter(
+        requireWebContents,
+        (name): PrinterReadiness | null => status.get(name),
+        systemClock,
+        profiles,
+      );
+  const probeReadiness = fakePrinters
+    ? (name: string) => fakePrinters.readiness(name)
+    : createReadinessProbe(probeHost);
   const status = new PrinterStatusMonitor(
-    createReadinessProbe(probeHost),
+    // 打印机名来自设置和模板：交给探测进程之前先核对系统里有这台打印机。
+    async (name): Promise<PrinterReadiness | null> => ((await isInstalled(name)) ? probeReadiness(name) : null),
     createPrinterAlertNotifier(new AlertThrottle(systemClock), showMainWindow),
   );
+  /** 要检测状态的打印机：纸张分配和模板指定里出现的（交给探测进程前再核对系统里有）。 */
+  const assignedPrinterNames = (): string[] => [
+    ...new Set([
+      ...Object.values(settings.current.paperPrinters),
+      ...templates.list().flatMap((template) => (template.printer ? [template.printer] : [])),
+    ]),
+  ];
+  // 预先读好分配到的打印机的驱动资料：第一张打印就能用上驱动的分辨率，不用等冷查询。
+  const warmProfiles = async () => {
+    for (const name of assignedPrinterNames()) {
+      if (await isInstalled(name)) {
+        void profiles.get(name);
+      }
+    }
+  };
+  const choosePrinter = async (template: LabelTemplate): Promise<PrinterChoice> => {
+    let installed: string[];
+    try {
+      installed = await adapter.knownPrinterNames();
+    } catch (error) {
+      // 读不到打印机列表时不能让打印抛错：当作模板指定的在（交给适配器去报找不到），不悄悄换打印机。
+      console.error('[print] cannot list printers', error);
+      installed = template.printer ? [template.printer] : [];
+    }
+    return resolvePrinter(template, settings.current.paperPrinters, installed);
+  };
   status.start();
-  void status.watch(settings.current.selectedPrinter);
-  const adapter = new ElectronDriverAdapter(requireWebContents, status, systemClock);
+  // 这时主窗口还没建好（读不到打印机列表）：只登记要检测哪些打印机，窗口建好后再立即检测。
+  void status.watchPrinters(assignedPrinterNames);
   const outbox = new WebhookOutbox({
     store: new SqliteWebhookStore(database),
     send: createWebhookSender({
@@ -220,6 +288,7 @@ async function bootstrap(): Promise<void> {
     recognize: (raw) => recognize(raw, activeRules(rules, settings.current), runRegex),
     enrich: (scan) => enrich(scan, rules.get(scan.ruleId)?.steps ?? [], enrichDeps, new Date()),
     resolveTemplate: (scan) => resolvePrintTemplate(templates, settings.current, scan).template,
+    choosePrinter,
     onRecorded: (job, scan) => outbox.enqueueResult(job, scan),
   });
   service.restore();
@@ -240,7 +309,15 @@ async function bootstrap(): Promise<void> {
   const mobile = new MobileStation({
     settings: () => settings.current,
     buildDefaultRelayUrl: BUILD_DEFAULT_RELAY_URL,
-    listPrinters: () => adapter.listPrinters(),
+    printerLabel: async () => {
+      const known = await adapter.knownPrinterNames().catch((error: unknown): string[] => {
+        console.warn('[mobile] cannot list printers for the phone header', error);
+        return [];
+      });
+      return phonePrinterLabel(
+        assignedPrinterNames().map((name) => ({ name, isListed: known.includes(name), readiness: status.get(name) })),
+      );
+    },
     submit: (request) => service.submit(request),
     createHost: (hostDeps) =>
       new MobileHost({
@@ -291,12 +368,19 @@ async function bootstrap(): Promise<void> {
     updater,
     voice,
     mobile,
-    probeHost,
+    profiles,
     getWindow: () => mainWindow,
+    choosePrinter,
+    onTemplatesChanged: () => {
+      void status.poll();
+      void warmProfiles();
+    },
     onSettingsChanged: async (next, previous) => {
       guard.setWindowMs(secondsToMs(next.dedupWindowSeconds));
-      if (next.selectedPrinter !== previous.selectedPrinter) {
-        void status.watch(next.selectedPrinter);
+      // sanitizeSettings 每次都建新对象：按内容比较。
+      if (JSON.stringify(next.paperPrinters) !== JSON.stringify(previous.paperPrinters)) {
+        void status.poll();
+        void warmProfiles();
       }
       if (next.launchAtLogin !== previous.launchAtLogin) {
         applyLaunchAtLogin(next.launchAtLogin);
@@ -331,6 +415,9 @@ async function bootstrap(): Promise<void> {
   });
   // 必须先于下面的 session-end 处理注册：关机时先保存窗口位置，再关闭数据库。
   trackWindowPlacement(mainWindow, windowStates, placement.bounds);
+  // 读打印机列表要用主窗口：窗口建好后立即检测一次状态、预读驱动资料，不等下一轮轮询。
+  void status.poll();
+  void warmProfiles();
   // Windows 关机、注销时不会触发 before-quit：放行窗口关闭并关闭数据库，不能阻塞关机。
   mainWindow.on('query-session-end', () => {
     isQuitting = true;

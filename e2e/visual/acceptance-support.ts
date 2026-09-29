@@ -115,13 +115,22 @@ export async function waitForStableBounds(window: WindowHandle): Promise<Rectang
   return last;
 }
 
-/** 用一台不存在的打印机提交打印：主进程记一条「找不到打印机」的记录，不会出纸。 */
+/**
+ * 把 60×40 暂时分配给一台不存在的打印机再提交打印：主进程记一条「找不到打印机」的记录，不会出纸。
+ * 打完恢复原来的纸张分配，不影响截图里的打印机状态。
+ */
 export async function addJobs(page: Page, count: number): Promise<void> {
   await page.evaluate(
     async ({ total, printer }) => {
       const bridge = (window as unknown as { api: LabelFlashApi }).api;
-      for (let i = 0; i < total; i += 1) {
-        await bridge.print(`CL5640-TK${i}-图片色-XL`, printer, { source: 'desktop', force: false });
+      const { paperPrinters } = await bridge.getSettings();
+      await bridge.updateSettings({ paperPrinters: { '60x40': printer } });
+      try {
+        for (let i = 0; i < total; i += 1) {
+          await bridge.print(`CL5640-TK${i}-图片色-XL`, { source: 'desktop', force: false });
+        }
+      } finally {
+        await bridge.updateSettings({ paperPrinters });
       }
     },
     { total: count, printer: MISSING_PRINTER },

@@ -90,7 +90,7 @@
 
 **目标**：有纸张预设和纸张键；模板带纸张和指定打印机；60×40 的一切结果不变。
 **成功标准**：`bun run check` 通过；60×40 排版快照不变；模板存进数据库再读出来纸张和打印机不丢。
-**状态**：Not Started
+**状态**：Complete
 
 ### Task 1.1：先给 60×40 的排版结果拍快照（防退步）
 
@@ -585,7 +585,7 @@ git commit -m "feat(templates): templates carry their paper size and an optional
 - 300dpi、600dpi 下二维码模块不小于 0.25mm；
 - Windows 和 macOS 各实打一张 60×40。
 
-**状态**：Not Started
+**状态**：Complete
 
 ### Task 2.1：二维码按打印机分辨率对齐
 
@@ -989,7 +989,7 @@ export function pageSizeMicrons(paper: PaperSize): { width: number; height: numb
 - E2E 能用假打印机验证。
 
 **成功标准**：每个提交都通过 `bun run check`；阶段结束时 `bun run test:e2e`、`bun run test:relay-browser` 通过。
-**状态**：Not Started
+**状态**：Complete
 
 提交顺序（每个都能单独通过检查）：3.1 → 3.2 → 3.3 → 3.4 → 3.5 → 3.6 → 3.7 → 3.8（切换，一个提交）。
 
@@ -2240,7 +2240,7 @@ git commit -m "feat(printing): choose the printer from the template's paper or i
 - 打印记录显示纸张。
 
 **成功标准**：E2E 新用例通过；新增的视觉验收 V35–V37 自动检查全过；原有 V01–V34 重截没有问题。
-**状态**：Not Started
+**状态**：Complete
 
 顺序：
 1. 4.1 纯逻辑；
@@ -2808,7 +2808,7 @@ describe('describeJobMeta', () => {
 ## 阶段 5：验收与文档
 
 **目标**：真机验证、文档跟上。
-**状态**：Not Started
+**状态**：In Progress（文档已更新；两台真打印机的实测、中转服务部署待做）
 
 - [ ] **Step 1：真机（Windows）**：
   - 两台打印机（至少一台真的热敏标签机）按纸张分配各打一张；

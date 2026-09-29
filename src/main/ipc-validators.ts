@@ -6,6 +6,7 @@ import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
 import { isRandomId } from '../shared/mobile-protocol';
+import { paperKey, parsePaperKey } from '../shared/paper-sizes';
 import { isRecord } from '../shared/settings';
 import { isVoiceCue, type VoiceCue } from '../shared/voice';
 
@@ -94,6 +95,15 @@ export function requireTemplateId(value: unknown): string {
     throw new TypeError('Invalid template id');
   }
   return value;
+}
+
+/** 纸张键（例如 100x180，见 src/shared/paper-sizes.ts）；返回统一写法。 */
+export function requirePaperKey(value: unknown): string {
+  const paper = typeof value === 'string' ? parsePaperKey(value) : null;
+  if (paper === null) {
+    throw new TypeError('Invalid paper key');
+  }
+  return paperKey(paper);
 }
 
 export function requireVoiceCue(value: unknown): VoiceCue {

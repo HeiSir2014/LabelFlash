@@ -159,6 +159,16 @@ describe('SqliteJobStore', () => {
   test.each([0, -1, 2.5])('rejects capacity %p', (capacity) => {
     expect(() => new SqliteJobStore(db, capacity)).toThrow(RangeError);
   });
+  test('keeps the paper and template of each job and leaves them empty for 1.0.x jobs', () => {
+    const store = new SqliteJobStore(db, 10);
+    store.append(job(1, { paper: '100x180', templateId: 'custom:waybill' }));
+    store.append(job(2));
+    const { jobs } = store.listPage({ limit: 10 });
+    expect(jobs.find((item) => item.id === 'job-1')).toMatchObject({ paper: '100x180', templateId: 'custom:waybill' });
+    const old = jobs.find((item) => item.id === 'job-2');
+    expect(old?.paper).toBeUndefined();
+    expect(old?.templateId).toBeUndefined();
+  });
 });
 
 describe('SqliteJobStore persistence', () => {

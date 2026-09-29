@@ -1,7 +1,15 @@
+import { paperKey } from '../../shared/paper-sizes';
+import type { ScanField } from '../scan/scan-result';
 import type { LabelJob, PrinterAdapter, PrinterInfo } from '../types';
 
 export class FakePrinterAdapter implements PrinterAdapter {
-  readonly printed: Array<{ printerName: string; raw: string; templateId: string }> = [];
+  readonly printed: Array<{
+    printerName: string;
+    raw: string;
+    templateId: string;
+    paper: string;
+    fields: ScanField[];
+  }> = [];
   printers: PrinterInfo[] = [{ name: '热敏标签机', displayName: '热敏标签机' }];
   private nextError: unknown = null;
   private gate: Promise<void> | null = null;
@@ -19,7 +27,13 @@ export class FakePrinterAdapter implements PrinterAdapter {
       this.nextError = null;
       throw error;
     }
-    this.printed.push({ printerName, raw: job.scan.raw, templateId: job.template.id });
+    this.printed.push({
+      printerName,
+      raw: job.scan.raw,
+      templateId: job.template.id,
+      paper: paperKey(job.template.paper),
+      fields: job.scan.fields,
+    });
   }
 
   failNext(error: unknown): void {

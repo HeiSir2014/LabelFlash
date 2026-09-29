@@ -29,28 +29,32 @@ describe('parsePrinterStatus', () => {
 });
 
 describe('PrinterStatusMonitor', () => {
-  test('caches the watched printer and forgets it when switching', async () => {
+  test('caches the watched printers and forgets one that is no longer watched', async () => {
     const answers = new Map<string, PrinterReadiness | null>([
       ['A', PAPER_OUT],
       ['B', null],
     ]);
+    let names = ['A'];
     const monitor = new PrinterStatusMonitor(async (name) => answers.get(name) ?? null);
-    await monitor.watch('A');
+    await monitor.watchPrinters(() => names);
     expect(monitor.get('A')).toEqual(PAPER_OUT);
-    await monitor.watch('B');
+    names = ['B'];
+    await monitor.poll();
     expect(monitor.get('A')).toBeNull();
     expect(monitor.get('B')).toBeNull();
   });
 
-  test('drops a stale answer when the watched printer changed during the probe', async () => {
+  test('drops a stale answer when the printer stopped being watched during the probe', async () => {
     let release: (value: PrinterReadiness) => void = () => {};
+    let names = ['A'];
     const monitor = new PrinterStatusMonitor((name) =>
       name === 'A' ? new Promise<PrinterReadiness>((resolve) => (release = resolve)) : Promise.resolve({ ready: true }),
     );
-    const pending = monitor.watch('A');
-    await monitor.watch('B');
+    const pending = monitor.watchPrinters(() => names);
+    names = ['B'];
     release(PAPER_JAM);
     await pending;
+    await monitor.poll();
     expect(monitor.get('A')).toBeNull();
     expect(monitor.get('B')).toEqual({ ready: true });
   });
@@ -69,10 +73,55 @@ describe('PrinterStatusMonitor', () => {
       async () => answers.shift() ?? null,
       (name, detail) => alerts.push(`${name}:${detail}`),
     );
-    await monitor.watch('A');
+    await monitor.watchPrinters(() => ['A']);
     for (let i = 0; i < 5; i += 1) {
       await monitor.poll();
     }
     expect(alerts).toEqual(['A:缺纸', 'A:卡纸', 'A:缺纸']);
+  });
+
+  test('checks every watched printer and reports each one that stops being ready', async () => {
+    const answers = new Map<string, PrinterReadiness | null>([
+      ['A', { ready: true }],
+      ['B', PAPER_OUT],
+    ]);
+    const notified: string[] = [];
+    const monitor = new PrinterStatusMonitor(
+      async (name) => answers.get(name) ?? null,
+      (name, detail) => notified.push(`${name}:${detail}`),
+    );
+    await monitor.watchPrinters(() => ['A', 'B']);
+    expect(monitor.get('A')).toEqual({ ready: true });
+    expect(monitor.get('B')).toEqual(PAPER_OUT);
+    expect(notified).toEqual(['B:缺纸']);
+  });
+
+  // 设置保存时会重新检测一次：还在检测的打印机不能因此再报一次同样的问题。
+  test('does not report the same problem again after the watch list changes', async () => {
+    const notified: string[] = [];
+    let names = ['B'];
+    const monitor = new PrinterStatusMonitor(
+      async () => PAPER_OUT,
+      (name) => notified.push(name),
+    );
+    await monitor.watchPrinters(() => names);
+    names = ['B', 'C'];
+    await monitor.poll();
+    expect(notified).toEqual(['B', 'C']);
+  });
+
+  // Windows 上一台最长要查 10 秒：上一轮没查完时不叠加新的一轮。
+  test('skips a poll while the previous one is still running', async () => {
+    let probes = 0;
+    let release: () => void = () => {};
+    const monitor = new PrinterStatusMonitor(() => {
+      probes += 1;
+      return new Promise((resolve) => (release = () => resolve({ ready: true })));
+    });
+    const first = monitor.watchPrinters(() => ['A']);
+    await monitor.poll();
+    release();
+    await first;
+    expect(probes).toBe(1);
   });
 });

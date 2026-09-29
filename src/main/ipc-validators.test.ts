@@ -6,6 +6,7 @@ import {
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
+  requirePaperKey,
   requirePositiveInteger,
   requirePrintOptions,
   requireRaw,
@@ -71,6 +72,13 @@ describe('ipc validators', () => {
     expect(() => requireJobQuery({ limit: 501 })).toThrow(TypeError);
     expect(() => requireJobQuery({ limit: 10, before: 1.5 })).toThrow(TypeError);
     expect(() => requireJobQuery({ limit: 10, search: 3 })).toThrow(TypeError);
+  });
+
+  test('requirePaperKey accepts width x height keys only, in their normal form', () => {
+    expect(requirePaperKey('100x180')).toBe('100x180');
+    expect(() => requirePaperKey('100×180')).toThrow(TypeError);
+    expect(() => requirePaperKey('0x40')).toThrow(TypeError);
+    expect(() => requirePaperKey(60)).toThrow(TypeError);
   });
 
   test('requireTemplateId accepts built-in and custom ids only', () => {

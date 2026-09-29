@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import { migrate, openDatabase, runInTransaction } from './database';
 import { MIGRATIONS } from './migrations';
 
@@ -73,6 +73,22 @@ describe('runInTransaction', () => {
       }),
     ).toThrow('boom');
     expect(db.prepare('SELECT COUNT(*) AS n FROM settings').get()?.['n']).toBe(0);
+    db.close();
+  });
+});
+
+describe('migration 2', () => {
+  test('adds the paper and template columns to an existing 1.0.x database', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, MIGRATIONS.slice(0, 1));
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES ('old', 1, 'A', 'P', 'desktop', 'printed', 0)",
+    ).run();
+    migrate(db);
+    expect({ ...db.prepare("SELECT paper, template_id FROM jobs WHERE id = 'old'").get() }).toEqual({
+      paper: null,
+      template_id: null,
+    });
     db.close();
   });
 });

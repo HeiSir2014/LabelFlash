@@ -10,11 +10,17 @@ import type {
 } from '../../../core/types';
 import { formatWindow } from '../../../shared/duration-text';
 import type { LabelPreview } from '../../../shared/ipc-contract';
+import { DEFAULT_PAPER } from '../../../shared/label-paper';
+import { formatPaperName, parsePaperKey } from '../../../shared/paper-sizes';
 import { PRINT_TIMEOUT_SECONDS } from '../../../shared/print-timing';
+import { VOICE_CUE_TEXT } from '../../../shared/voice';
 import type { ConfigPage } from './app-view';
 
 /** 防重复窗口的说法和手机扫码页共用一份（见 src/shared/duration-text.ts）。 */
 export { formatWindow };
+
+/** 状态条上的直达按钮：配置中心的某一页，或工作台右侧的打印机页。 */
+export type StatusLinkTarget = ConfigPage | 'printers';
 
 export type FeedbackTone = 'success' | 'warning' | 'error';
 export type StatusTone = FeedbackTone | 'idle' | 'pending';
@@ -24,7 +30,7 @@ export interface StatusView {
   title: string;
   detail: string;
   /** 要去配置中心的某一页才能解决时，状态条上给一个直达按钮。 */
-  link?: { page: ConfigPage; label: string };
+  link?: { page: StatusLinkTarget; label: string };
 }
 
 export interface FeedbackStatusView extends StatusView {
@@ -47,7 +53,6 @@ export interface ScanSnapshot {
 
 export interface ScanContext {
   autoPrint: boolean;
-  hasPrinter: boolean;
   now: number;
   /** 刚扫的内容还在识别或查询（超过一小会儿才算）；界面暂时保留上一张的预览。 */
   queryingRaw: string | null;
@@ -173,7 +178,23 @@ export function describeResult(result: PrintResult, now: number): FeedbackStatus
         title: FAILURE_TITLES[result.reason],
         detail: failureDetail(result.reason, result.detail),
       };
+    case 'no-printer':
+      return describeNoPrinter(result.paperKey, result.missingPrinter);
   }
+}
+
+/** 这种纸没有可用的打印机：说清是哪种纸，模板指定的打印机不在时一并说明。 */
+export function describeNoPrinter(paperKey: string, missingPrinter: string | null): FeedbackStatusView {
+  const paper = formatPaperName(parsePaperKey(paperKey) ?? DEFAULT_PAPER);
+  return {
+    tone: 'warning',
+    title: VOICE_CUE_TEXT.noPrinter,
+    detail:
+      missingPrinter === null
+        ? `${paper} 还没有打印机`
+        : `模板指定的 ${missingPrinter} 不在这台电脑上，${paper} 也还没有打印机`,
+    link: { page: 'printers', label: '去指定打印机' },
+  };
 }
 
 export const IPC_ERROR_VIEW: FeedbackStatusView = {
@@ -209,28 +230,32 @@ export function describeScan(scan: ScanSnapshot | null, context: ScanContext): S
   }
   if (scan.print) {
     const { print } = scan;
-    const canRetry = print.status === 'failed' && RETRYABLE_FAILURES.has(print.reason);
+    // 没有打印机时指定好打印机就能直接重打这一张（主进程每次打印都重新决定打印机），不用再扫。
+    const canRetry =
+      print.status === 'no-printer' || (print.status === 'failed' && RETRYABLE_FAILURES.has(print.reason));
     const canForce =
       (print.status === 'duplicate' && print.recent.state === 'printed') ||
       (print.status === 'failed' && print.reason === 'PRINT_TIMEOUT');
     return {
       status: describeResult(print, context.now),
       actions: {
-        print: canRetry && context.hasPrinter ? 'retry' : null,
-        forceReprint: canForce && context.hasPrinter,
+        print: canRetry ? 'retry' : null,
+        forceReprint: canForce,
       },
     };
   }
   if (previewResult.lookupFailure !== null) {
     return {
       status: { tone: 'error', title: '数据查询失败', detail: lookupFailureDetail(previewResult.lookupFailure) },
-      actions: { print: context.hasPrinter ? 'retry' : null, forceReprint: false },
+      actions: { print: 'retry', forceReprint: false },
     };
   }
-  if (!context.hasPrinter) {
+  // 预览时这种纸还没有打印机（手动模式）：说清是哪种纸；指定好之后按 F2，主进程会重新决定打印机。
+  const { printer } = previewResult;
+  if (printer.printerName === null) {
     return {
-      status: { tone: 'warning', title: '还没选打印机', detail: '在右侧「打印机」列表里点选一台，选好后按 F2 打印' },
-      actions: NO_ACTIONS,
+      status: describeNoPrinter(printer.paperKey, printer.missingPrinter),
+      actions: { print: 'retry', forceReprint: false },
     };
   }
   const { recent } = previewResult;
@@ -248,6 +273,19 @@ export function describeScan(scan: ScanSnapshot | null, context: ScanContext): S
     status: { tone: 'idle', title: '待打印', detail: '核对预览无误后，按 F2 或点「打印」' },
     actions: { print: 'print', forceReprint: false },
   };
+}
+
+/** 打印记录一行的说明：时间 · 来源 · 打印机 · 纸张。旧记录没有纸张时写「—」，识别不了的记录没有打印机。 */
+export function describeJobMeta(job: JobRecord): string {
+  const paper = job.paper === undefined ? null : parsePaperKey(job.paper);
+  return [
+    formatDateTime(job.createdAt),
+    describeSource(job.source),
+    job.printerName === '' ? null : job.printerName,
+    paper === null ? '—' : formatPaperName(paper),
+  ]
+    .filter((part) => part !== null)
+    .join(' · ');
 }
 
 export function describeJobStatus(job: JobRecord): { tone: FeedbackTone; text: string } {

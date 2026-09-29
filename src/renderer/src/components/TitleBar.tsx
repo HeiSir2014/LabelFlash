@@ -1,7 +1,7 @@
 import brandIcon from '../../../../resources/tray.svg';
 import { BRAND } from '../../../shared/brand';
+import type { PrinterSummaryView } from '../../../shared/printer-summary';
 import type { MobileButtonView } from '../lib/mobile-text';
-import type { PrinterChipView } from '../lib/printer-chip';
 import { useWindowControls } from '../view-models/use-window-controls';
 import { ConfirmButton } from './ConfirmButton';
 import { MOBILE_OVERLAY_ID } from './MobileOverlay';
@@ -23,7 +23,10 @@ export interface MobileButtonProps {
 interface TitleBarProps {
   /** 当前版本号（如 1.0.1）；读取到之前为 null，不显示。 */
   version: string | null;
-  printerChip: PrinterChipView;
+  /** 被分配到的打印机的汇总（src/shared/printer-summary.ts）。 */
+  printerChip: PrinterSummaryView;
+  /** 点打印机胶囊：回到工作台、打开右侧的打印机页。 */
+  onOpenPrinters: () => void;
   /** 新版本已下载时显示的版本号；null 表示没有待安装的更新。 */
   readyUpdateVersion: string | null;
   config: ConfigButtonProps;
@@ -35,6 +38,7 @@ interface TitleBarProps {
 export function TitleBar({
   version,
   printerChip,
+  onOpenPrinters,
   readyUpdateVersion,
   config,
   mobile,
@@ -93,10 +97,15 @@ export function TitleBar({
           <span className="mobile-button__dot" aria-hidden="true" />
           手机扫码
         </button>
-        <div className={`printer-chip printer-chip--${printerChip.tone}`} title="当前打印机">
+        <button
+          type="button"
+          className={`printer-chip printer-chip--${printerChip.tone}`}
+          title="打印机：点一下打开右侧的打印机页"
+          onClick={onOpenPrinters}
+        >
           <span className="printer-chip__dot" aria-hidden="true" />
           <span className="printer-chip__name">{printerChip.text}</span>
-        </div>
+        </button>
       </div>
       {!hasTrafficLights && (
         <WindowButtons

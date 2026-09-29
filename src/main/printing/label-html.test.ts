@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../../core/scan/scan-result';
 import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from '../../core/templates/builtin-templates';
-import type { FieldSlot, LabelTemplate } from '../../core/templates/template-model';
+import { type FieldSlot, LAYOUT_GAP_MM, type LabelTemplate, maxQrSizeMm } from '../../core/templates/template-model';
+import type { LabelJob } from '../../core/types';
+import type { PaperSize } from '../../shared/paper-sizes';
 import { escapeHtml, renderLabelHtml } from './label-html';
 
 const GARMENT: ScanResult = {
@@ -299,5 +301,54 @@ describe('print job name', () => {
 describe('escapeHtml', () => {
   test('escapes all five special characters', () => {
     expect(escapeHtml(`<a href="x">'&'</a>`)).toBe('&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;');
+  });
+});
+
+describe('paper sizes', () => {
+  const job = (paper: PaperSize): LabelJob => ({
+    scan: GARMENT,
+    template: {
+      ...STANDARD_TEMPLATE,
+      paper,
+      qr: {
+        ...STANDARD_TEMPLATE.qr,
+        sizeMm: Math.min(STANDARD_TEMPLATE.qr.sizeMm, maxQrSizeMm(paper, STANDARD_TEMPLATE.paddingMm)),
+      },
+    },
+    printedAt: PRINTED_AT,
+  });
+
+  test.each([
+    { widthMm: 50, heightMm: 30 },
+    { widthMm: 70, heightMm: 50 },
+    { widthMm: 100, heightMm: 100 },
+  ])('lays out a $widthMm x $heightMm label on that paper', (paper) => {
+    const { html, qrOmitted } = renderLabelHtml(job(paper));
+    expect(html).toContain(`@page { size: ${paper.widthMm}mm ${paper.heightMm}mm; margin: 0; }`);
+    expect(qrOmitted).toBe(false);
+  });
+
+  test('aligns the QR code to the resolution it is given', () => {
+    const label = job({ widthMm: 60, heightMm: 40 });
+    expect(renderLabelHtml(label, 300).html).not.toBe(renderLabelHtml(label, 203).html);
+  });
+});
+
+// 从 60×40 复制来的模板换到矮的纸上：二维码让出底部整行的高度，底部内容不会被挤出标签裁掉。
+describe('QR code on a short paper', () => {
+  const short: LabelJob = {
+    scan: GARMENT,
+    template: { ...GENERIC_TEMPLATE, paper: { widthMm: 50, heightMm: 30 }, qr: { ...GENERIC_TEMPLATE.qr, sizeMm: 22 } },
+    printedAt: PRINTED_AT,
+  };
+
+  test('shrinks the QR box to the height left above the bottom line', () => {
+    const { html } = renderLabelHtml(short);
+    const box = /\.qr \{[^}]*width: ([\d.]+)mm/.exec(html);
+    if (!box?.[1]) throw new Error('expected a QR box');
+    // 底部整行至少占一行字高，和上面隔一个间距。
+    const aboveBottom = 30 - 2 * GENERIC_TEMPLATE.paddingMm - LAYOUT_GAP_MM - GENERIC_TEMPLATE.bottom.fontSizeMm;
+    expect(Number(box[1])).toBeLessThanOrEqual(aboveBottom);
+    expect(html).toContain('class="bottom-line"');
   });
 });

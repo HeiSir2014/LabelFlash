@@ -35,7 +35,7 @@ const host = new MobileHost({
     clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   },
   createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
-  selectedPrinter: async () => DEMO_PRINTER,
+  printerLabel: async () => DEMO_PRINTER.displayName,
   print: async (raw, force) => {
     console.log(`${new Date().toLocaleTimeString('zh-CN')}  ${force ? '强制补打' : '打印'}：${raw}`);
     return { status: 'printed', ruleName: '演示', fields: [{ name: '内容', value: raw }] };

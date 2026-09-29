@@ -1,4 +1,5 @@
 import type { PrinterIssue } from '../shared/printer-readiness';
+import type { PrinterChoice } from './printing/resolve-printer';
 import type { ScanResult } from './scan/scan-result';
 import type { LabelTemplate } from './templates/template-model';
 
@@ -6,9 +7,9 @@ import type { LabelTemplate } from './templates/template-model';
 export const PRINT_SOURCES = ['desktop', 'history', 'mobile'] as const;
 export type PrintSource = (typeof PRINT_SOURCES)[number];
 
+/** 打印请求不带打印机：主进程按模板决定（见 printing/resolve-printer.ts）。 */
 export interface PrintRequest {
   raw: string;
-  printerName: string;
   source: PrintSource;
   /** 强制补打：跳过门限窗口（不跳过正在打印的同一个码）。 */
   force?: boolean;
@@ -37,9 +38,13 @@ export type PrintResult =
   | { status: 'printed'; jobId: string; scan: ScanResult }
   | { status: 'duplicate'; recent: RecentPrint; windowMs: number }
   | { status: 'invalid'; reason: InvalidReason }
-  | { status: 'failed'; reason: PrintFailureReason; detail?: string; issue?: PrinterIssue };
+  | { status: 'failed'; reason: PrintFailureReason; detail?: string; issue?: PrinterIssue }
+  /** 这种纸没有可用的打印机：没有打印，不写打印记录，不占防重复窗口。 */
+  | { status: 'no-printer'; paperKey: string; missingPrinter: string | null };
 
-export type PrintStatus = PrintResult['status'];
+/** 写进打印记录的结果（no-printer 不写记录）。 */
+export type RecordedResult = Exclude<PrintResult, { status: 'no-printer' }>;
+export type PrintStatus = RecordedResult['status'];
 export const PRINT_STATUSES = ['printed', 'duplicate', 'invalid', 'failed'] as const satisfies readonly PrintStatus[];
 
 export type PreviewResult =
@@ -50,6 +55,8 @@ export type PreviewResult =
       recent: RecentPrint | null;
       /** 设为「拦下不打印」的 HTTP 查询失败了：打印会被拦下，这里是原因。 */
       lookupFailure: string | null;
+      /** 这一张会打到哪台打印机（或为什么没有）。 */
+      printer: PrinterChoice;
     }
   | { status: 'invalid'; reason: InvalidReason };
 
@@ -80,6 +87,10 @@ export interface JobRecord {
   status: PrintStatus;
   forced: boolean;
   failureReason?: PrintFailureReason;
+  /** 这一张的纸张键（例如 100x180）；1.0.x 的旧记录和识别不了的记录没有。 */
+  paper?: string;
+  /** 这一张用的模板；1.0.x 的旧记录和识别不了的记录没有。 */
+  templateId?: string;
 }
 
 export interface Clock {

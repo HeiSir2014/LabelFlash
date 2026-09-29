@@ -17,9 +17,10 @@ export function usePrinters() {
     }
   }, []);
 
-  const printTest = useCallback(async (printerName: string): Promise<PrintResult | null> => {
+  /** paperKey 是这台打印机负责的纸：测试页按它的尺寸打印。 */
+  const printTest = useCallback(async (printerName: string, paperKey: string): Promise<PrintResult | null> => {
     try {
-      return await window.api.printTest(printerName);
+      return await window.api.printTest(printerName, paperKey);
     } catch (error) {
       reportError('打印测试页', error);
       return null;

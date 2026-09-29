@@ -86,9 +86,9 @@ describe('describeMobileOverlay', () => {
     expect(view.message).toContain('二维码已过期');
   });
 
-  test('warns when no printer is selected', () => {
+  test('warns when no printer is assigned', () => {
     const view = describeMobileOverlay(active(), { hasPrinter: false, now: NOW });
-    expect(view.message).toContain('还没选打印机');
+    expect(view.message).toContain('还没有分配打印机');
   });
 
   test('reports a lost relay connection before anything else', () => {

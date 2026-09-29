@@ -93,4 +93,10 @@ export const MIGRATIONS: readonly string[] = [
 
   CREATE INDEX webhook_deliveries_pending ON webhook_deliveries (endpoint_id, id) WHERE state = 'pending';
   `,
+  // 2：打印记录记下纸张和模板（多台打印机、多种纸张）；1.0.x 的旧记录为 NULL。
+  // source、failure_reason 的取值检查（CHECK）不在这里改：本机接口（第 2 个子项目）需要新取值时再重建这张表。
+  `
+  ALTER TABLE jobs ADD COLUMN paper TEXT;
+  ALTER TABLE jobs ADD COLUMN template_id TEXT;
+  `,
 ];

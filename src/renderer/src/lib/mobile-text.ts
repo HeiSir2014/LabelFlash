@@ -176,7 +176,7 @@ function activeMessage(status: Extract<MobileStatus, { state: 'active' }>, conte
     return '和中转服务的连接断了，正在重连；手机上扫到的会先存在手机上。';
   }
   if (!context.hasPrinter) {
-    return '电脑上还没选打印机：请在工作台右侧的「打印机」里选择，否则手机会提示「请先选择打印机」。';
+    return '电脑上还没有分配打印机：请在工作台右侧的「打印机」里为纸张指定打印机，否则手机会提示「没有可用的打印机」。';
   }
   if (status.expiresAt !== null && status.expiresAt <= context.now) {
     return '二维码已过期，点「换一个二维码」重新生成。';

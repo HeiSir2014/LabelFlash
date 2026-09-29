@@ -1,3 +1,5 @@
+import { DEFAULT_PAPER } from '../../shared/label-paper';
+import { sanitizePaper } from '../../shared/paper-sizes';
 import { isValidFieldName } from '../scan/rule-model';
 import {
   type BottomLine,
@@ -30,18 +32,22 @@ export function sanitizeTemplate(value: unknown, id: string, fallback: LabelTemp
   const input = asLoose(value);
   const qrInput = asLoose(input['qr']);
   const { paddingMm, qrSizeMm, nameLength } = TEMPLATE_LIMITS;
+  // 旧模板（1.0.x）没有纸张字段：按 60×40 读出。
+  const paper = sanitizePaper(input['paper'], fallback.paper ?? DEFAULT_PAPER);
   const padding = clamp(input['paddingMm'], paddingMm.min, paddingMm.max, fallback.paddingMm);
   return {
     id,
     // 名称只用于列表显示：全空白等于没填，保留原名。
     name: sanitizeText(input['name'], nameLength, fallback.name).trim() || fallback.name,
+    paper,
+    printer: sanitizePrinterName(input['printer']),
     paddingMm: padding,
     layout: pick(input['layout'], QR_LAYOUTS, fallback.layout),
     sideAlign: pick(input['sideAlign'], TEXT_ALIGNS, fallback.sideAlign),
     bottomAlign: pick(input['bottomAlign'], TEXT_ALIGNS, fallback.bottomAlign),
     qr: {
       visible: bool(qrInput['visible'], fallback.qr.visible),
-      sizeMm: clamp(qrInput['sizeMm'], qrSizeMm.min, maxQrSizeMm(padding), fallback.qr.sizeMm),
+      sizeMm: clamp(qrInput['sizeMm'], qrSizeMm.min, maxQrSizeMm(paper, padding), fallback.qr.sizeMm),
       errorCorrection: pick(qrInput['errorCorrection'], QR_ERROR_LEVELS, fallback.qr.errorCorrection),
       content: sanitizeQrContent(qrInput['content'], fallback.qr.content),
     },
@@ -160,4 +166,10 @@ function sanitizeText(value: unknown, maxLength: number, fallback: string): stri
     return fallback;
   }
   return value.replace(CONTROL_CHARACTERS, '').slice(0, maxLength);
+}
+
+/** 打印机名只保存、只比较，交给系统命令之前主进程会先核对它在系统里存在；空白或超长当作不指定。 */
+function sanitizePrinterName(value: unknown): string | null {
+  const { printerNameLength } = TEMPLATE_LIMITS;
+  return typeof value === 'string' && value.trim() !== '' && value.length <= printerNameLength ? value : null;
 }

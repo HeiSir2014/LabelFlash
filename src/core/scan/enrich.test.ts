@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { type EnrichDeps, enrich, type HttpOutcome, type HttpRequest } from './enrich';
-import type { EnrichStep, HttpStep } from './enrich-model';
+import { type EnrichContext, type EnrichDeps, enrich, type HttpOutcome, type HttpRequest } from './enrich';
+import type { EnrichStep, HttpStep, ImageTextStep } from './enrich-model';
+import { BELOW_CODE_AREA, type ImageTextRegion, type ScanImage, SHELF_NUMBER_PATTERN } from './image-text';
 import type { ScanResult } from './scan-result';
 
 const SCAN: ScanResult = {
@@ -33,8 +34,41 @@ function http(overrides: Partial<HttpStep> = {}): HttpStep {
   };
 }
 
+/** 标签图：二维码在 (100, 50)，边长 200。 */
+const IMAGE: ScanImage = { jpeg: new Uint8Array([0xff, 0xd8]), code: { x: 100, y: 50, size: 200 } };
+
+/** 中心在 (cx, cy) 的一段字。 */
+function region(text: string, cx: number, cy: number): ImageTextRegion {
+  return {
+    box: [
+      { x: cx - 60, y: cy - 15 },
+      { x: cx + 60, y: cy - 15 },
+      { x: cx + 60, y: cy + 15 },
+      { x: cx - 60, y: cy + 15 },
+    ],
+    text,
+    score: 0.99,
+  };
+}
+
+/** 样衣标签：二维码下方是货架号，右边是编码。 */
+const LABEL_TEXT = [region('编码：CL5640-TK', 420, 80), region('A-1-2-3', 200, 290)];
+
+function shelfStep(overrides: Partial<ImageTextStep> = {}): ImageTextStep {
+  return {
+    kind: 'imageText',
+    pattern: SHELF_NUMBER_PATTERN,
+    flags: '',
+    preferredArea: BELOW_CODE_AREA,
+    whenMissing: 'block',
+    output: '货架号',
+    ...overrides,
+  };
+}
+
 function createDeps(response: HttpOutcome = { ok: true, json: { data: { shelf: 'B-07' } } }) {
   const requests: HttpRequest[] = [];
+  const reads: ScanImage[] = [];
   const deps: EnrichDeps = {
     replace: (pattern, flags, input, replacement) => input.replace(new RegExp(pattern, flags), replacement),
     lookup: (_tableId, keyColumn, key, ignoreCase) =>
@@ -45,14 +79,21 @@ function createDeps(response: HttpOutcome = { ok: true, json: { data: { shelf: '
       requests.push(request);
       return response;
     },
+    match: (pattern, flags, input) => new RegExp(pattern, flags).exec(input)?.groups ?? null,
+    readImageText: async (image) => {
+      reads.push(image);
+      return LABEL_TEXT;
+    },
     now: () => 0,
   };
-  return { deps, requests };
+  return { deps, requests, reads };
 }
 
-async function run(steps: EnrichStep[], deps = createDeps().deps) {
-  return enrich(SCAN, steps, deps, PRINTED_AT);
+async function run(steps: EnrichStep[], deps = createDeps().deps, context?: EnrichContext) {
+  return enrich(SCAN, steps, deps, PRINTED_AT, context);
 }
+
+const WITH_IMAGE: EnrichContext = { image: IMAGE, manualFields: {} };
 
 describe('enrich', () => {
   test('runs steps in order so later steps can use earlier outputs', async () => {
@@ -152,12 +193,88 @@ describe('enrich', () => {
       [http({ onError: 'block' }), { kind: 'template', text: 'x', output: '之后' }],
       createDeps({ ok: true, json: { data: {} } }).deps,
     );
-    expect(result.blocked).toEqual({ stepIndex: 0, detail: '返回内容里取不到 data.shelf' });
+    expect(result.blocked).toEqual({
+      stepIndex: 0,
+      detail: '返回内容里取不到 data.shelf',
+      reason: 'LOOKUP_FAILED',
+      field: null,
+    });
     expect(result.traces).toHaveLength(1);
     expect(result.scan.fields.some((field) => field.name === '之后')).toBe(false);
   });
 
   test('does nothing without steps', async () => {
     expect(await run([])).toEqual({ scan: SCAN, traces: [], blocked: null });
+  });
+});
+
+describe('enrich: text on the label image', () => {
+  test('reads the shelf number from the phone image into a field', async () => {
+    const result = await run([shelfStep()], createDeps().deps, WITH_IMAGE);
+    expect(result.scan.fields.at(-1)).toEqual({ name: '货架号', value: 'A-1-2-3' });
+    expect(result.traces[0]).toMatchObject({ kind: 'imageText', ok: true, skipped: false, detail: null });
+    expect(result.blocked).toBeNull();
+  });
+
+  // 扫码枪、本机接口、「试一试」没有图：跳过，和没有这一步一样。
+  test('skips without an image and does not add the field', async () => {
+    const { deps, reads } = createDeps();
+    const result = await run([shelfStep()], deps);
+    expect(result.scan).toEqual(SCAN);
+    expect(result.blocked).toBeNull();
+    expect(result.traces[0]).toMatchObject({ ok: true, skipped: true });
+    expect(reads).toHaveLength(0);
+  });
+
+  test('uses a value typed on the phone without reading the image', async () => {
+    const { deps, reads } = createDeps();
+    const result = await run([shelfStep()], deps, { image: IMAGE, manualFields: { 货架号: ' B-12-3-10 ' } });
+    expect(result.scan.fields.at(-1)).toEqual({ name: '货架号', value: 'B-12-3-10' });
+    expect(reads).toHaveLength(0);
+  });
+
+  test('blocks printing when the value cannot be found and the step says so', async () => {
+    const result = await run(
+      [shelfStep({ pattern: 'Z-\\d+' }), { kind: 'template', text: 'x', output: '之后' }],
+      createDeps().deps,
+      WITH_IMAGE,
+    );
+    expect(result.blocked).toEqual({ stepIndex: 0, detail: '没认出货架号', reason: 'TEXT_NOT_FOUND', field: '货架号' });
+    expect(result.traces).toHaveLength(1);
+  });
+
+  test('prints with an empty field when the step allows it', async () => {
+    const result = await run([shelfStep({ pattern: 'Z-\\d+', whenMissing: 'empty' })], createDeps().deps, WITH_IMAGE);
+    expect(result.blocked).toBeNull();
+    expect(result.scan.fields.at(-1)).toEqual({ name: '货架号', value: '' });
+    expect(result.traces[0]).toMatchObject({ ok: false, detail: '没认出货架号' });
+  });
+
+  test('skips when this computer has no text recognition', async () => {
+    const { deps } = createDeps();
+    deps.readImageText = async () => null;
+    const result = await run([shelfStep()], deps, WITH_IMAGE);
+    expect(result.blocked).toBeNull();
+    expect(result.traces[0]).toMatchObject({ ok: true, skipped: true, detail: '这台电脑上没有文字识别，跳过' });
+  });
+
+  test('treats a recognition error as not found', async () => {
+    const { deps } = createDeps();
+    deps.readImageText = async () => {
+      throw new Error('图片解不开');
+    };
+    const result = await run([shelfStep()], deps, WITH_IMAGE);
+    expect(result.blocked).toMatchObject({ reason: 'TEXT_NOT_FOUND', detail: '识别标签上的字时出错：图片解不开' });
+  });
+
+  test('reads the image once for several steps', async () => {
+    const { deps, reads } = createDeps();
+    const code = shelfStep({ pattern: 'CL\\d+-[A-Z]+', output: '款号', whenMissing: 'empty' });
+    const result = await run([shelfStep(), code], deps, WITH_IMAGE);
+    expect(result.scan.fields.slice(-2)).toEqual([
+      { name: '货架号', value: 'A-1-2-3' },
+      { name: '款号', value: 'CL5640-TK' },
+    ]);
+    expect(reads).toHaveLength(1);
   });
 });

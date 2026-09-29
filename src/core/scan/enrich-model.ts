@@ -4,8 +4,11 @@
  * - regexReplace：对一个字段做正则替换，例如去掉前缀。
  * - lookup：拿一个字段去本机的查找表里查，取出其他列。
  * - http：拿字段去调用 HTTP 接口，从返回的 JSON 里取值。
+ * - imageText：手机扫码时，从拍下的标签上读出文字，按正则取出一个字段（例如货架号）。
  */
-export const STEP_KINDS = ['template', 'regexReplace', 'lookup', 'http'] as const;
+import type { CodeRelativeArea } from './image-text';
+
+export const STEP_KINDS = ['template', 'regexReplace', 'lookup', 'http', 'imageText'] as const;
 export type StepKind = (typeof STEP_KINDS)[number];
 
 export interface TemplateStep {
@@ -77,7 +80,23 @@ export interface HttpStep {
   onError: HttpErrorPolicy;
 }
 
-export type EnrichStep = TemplateStep | RegexReplaceStep | LookupStep | HttpStep;
+/** block = 拦下不打印（手机上提示重扫或手动输入）；empty = 照常打印，字段为空。 */
+export const IMAGE_TEXT_MISSING_POLICIES = ['block', 'empty'] as const;
+export type ImageTextMissingPolicy = (typeof IMAGE_TEXT_MISSING_POLICIES)[number];
+
+export interface ImageTextStep {
+  kind: 'imageText';
+  /** 从标签的文字里找这个正则，取匹配到的部分。 */
+  pattern: string;
+  /** 只允许 i m s u。 */
+  flags: string;
+  /** 优先查找的区域（以二维码为基准）；那里没有才找标签的其他地方。null = 不分先后。 */
+  preferredArea: CodeRelativeArea | null;
+  whenMissing: ImageTextMissingPolicy;
+  output: string;
+}
+
+export type EnrichStep = TemplateStep | RegexReplaceStep | LookupStep | HttpStep | ImageTextStep;
 
 export const STEP_LIMITS = {
   steps: 10,
@@ -94,9 +113,13 @@ export const STEP_LIMITS = {
   pathLength: 100,
   timeoutMs: { min: 200, max: 5_000, default: 1_500 },
   cacheSeconds: { min: 0, max: 3_600, default: 60 },
+  /** 优先区域的边界离二维码最多这么多个边长（手机截的整张标签也在这个范围里）。 */
+  areaExtent: 10,
 } as const;
 
 export const REPLACE_FLAGS = 'gimsu';
+/** 图中文字识别只取第一处匹配：g、y 没有意义。 */
+export const MATCH_FLAGS = 'imsu';
 export const LOOKUP_TABLE_ID_PATTERN = /^[\w-]{1,64}$/;
 /** 请求头名称：HTTP token 字符。 */
 export const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;

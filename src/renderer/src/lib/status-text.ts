@@ -91,6 +91,7 @@ const FAILURE_TITLES: Record<PrintFailureReason, string> = {
   PRINT_TIMEOUT: '打印机没有响应',
   PRINT_ERROR: '打印失败',
   LOOKUP_FAILED: '数据查询失败，没有打印',
+  TEXT_NOT_FOUND: '没认出标签上的字，没有打印',
 };
 
 const FAILURE_SHORT: Record<PrintFailureReason, string> = {
@@ -99,6 +100,7 @@ const FAILURE_SHORT: Record<PrintFailureReason, string> = {
   PRINT_TIMEOUT: '超时',
   PRINT_ERROR: '驱动报错',
   LOOKUP_FAILED: '查询失败',
+  TEXT_NOT_FOUND: '没认出',
 };
 
 /** 这些失败确定没有出纸，可以直接重试；超时结果不确定，只能强制补打。 */
@@ -107,6 +109,7 @@ const RETRYABLE_FAILURES: ReadonlySet<PrintFailureReason> = new Set([
   'PRINTER_NOT_READY',
   'PRINT_ERROR',
   'LOOKUP_FAILED',
+  'TEXT_NOT_FOUND',
 ]);
 
 const SOURCE_LABELS: Record<PrintSource, string> = {
@@ -143,6 +146,9 @@ function failureDetail(reason: PrintFailureReason, detail: string | undefined): 
       return '打印机驱动报错，检查打印机状态后重试';
     case 'LOOKUP_FAILED':
       return lookupFailureDetail(detail);
+    case 'TEXT_NOT_FOUND':
+      // 只有手机扫码会带图：处理也在手机上。
+      return `${detail ?? '没认出标签上的字'}；请在手机上对准标签重扫，或手动输入`;
   }
 }
 

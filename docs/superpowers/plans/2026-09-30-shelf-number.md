@@ -6,7 +6,7 @@
 **目标**：`imageText` 步骤（模型、校验、执行）、`PrintRequest.image / manualFields`、`EnrichDeps.readImageText`、失败原因 `TEXT_NOT_FOUND`（类型、迁移 5、界面文字、语音、本机接口映射）。
 **成功标准**：步骤在有图、没图、手动值、识别不到、OCR 不可用时的行为和设计一致；迁移 5 不丢旧记录。
 **测试**：`image-text.test.ts`、`enrich.test.ts`、`sanitize-steps.test.ts`、`print-service.test.ts`、迁移测试。
-**状态**：未开始
+**状态**：完成
 
 ## 阶段 2：协议和电脑端的手机扫码
 **目标**：`welcome.image`、`submit.image / fields`、`result.field`，大小上限；`src/main/mobile/` 把图和手动字段交给打印，按启用的步骤决定要不要图。

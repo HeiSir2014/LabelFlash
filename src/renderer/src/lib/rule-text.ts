@@ -1,6 +1,8 @@
+import type { EnrichResult, StepTrace } from '../../../core/scan/enrich';
 import type { EnrichStep, StepKind } from '../../../core/scan/enrich-model';
 import type { RuleKind, ScanRule, WholeCharset } from '../../../core/scan/rule-model';
 import type { ScanField } from '../../../core/scan/scan-result';
+import { describeArea } from './image-text-area';
 
 export const RULE_KIND_LABELS: Record<RuleKind, string> = {
   delimited: '分隔符拆分',
@@ -21,6 +23,7 @@ export const STEP_KIND_LABELS: Record<StepKind, string> = {
   regexReplace: '正则替换',
   lookup: '查找表',
   http: 'HTTP 查询',
+  imageText: '图中文字识别',
 };
 
 const CHARSET_LABELS: Record<WholeCharset, string> = {
@@ -59,7 +62,21 @@ export function stepSummary(step: EnrichStep): string {
       return `按「${step.input ?? '完整内容'}」查表 → ${step.outputs.map((output) => output.field).join('、')}`;
     case 'http':
       return `${step.method} ${hostOf(step.url)} → ${step.outputs.map((output) => output.field).join('、')}`;
+    case 'imageText':
+      return `${step.output} = 标签上 /${step.pattern}/${step.flags}（${describeArea(step.preferredArea)}）`;
   }
+}
+
+/** 「试一试」里一个步骤的执行情况：完成、跳过的原因或失败的原因。 */
+export function describeTrace(trace: StepTrace): string {
+  const outcome = trace.skipped ? (trace.detail ?? '跳过') : trace.ok ? '完成' : (trace.detail ?? '失败');
+  return `${STEP_KIND_LABELS[trace.kind]}：${outcome}（${Math.round(trace.durationMs)} 毫秒）`;
+}
+
+/** 设为「不打印」的步骤失败时，「试一试」里的提示。 */
+export function describeBlocked(blocked: NonNullable<EnrichResult['blocked']>): string {
+  const what = blocked.reason === 'TEXT_NOT_FOUND' ? '没认出' : '查询失败';
+  return `${what}且设为不打印：${blocked.detail}`;
 }
 
 /** 识别结果的字段摘要：「编码 CL5640 · 颜色 红」，多行值合成一行。 */

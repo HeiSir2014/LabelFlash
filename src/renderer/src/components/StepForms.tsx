@@ -6,14 +6,20 @@ import {
   HTTP_METHODS,
   type HttpErrorPolicy,
   type HttpStep,
+  IMAGE_TEXT_MISSING_POLICIES,
+  type ImageTextMissingPolicy,
+  type ImageTextStep,
   type LookupStep,
+  MATCH_FLAGS,
   REPLACE_FLAGS,
   type RegexReplaceStep,
   STEP_LIMITS,
   type TemplateStep,
 } from '../../../core/scan/enrich-model';
+import { type CodeRelativeArea, SHELF_NUMBER_PATTERN } from '../../../core/scan/image-text';
 import { RULE_LIMITS } from '../../../core/scan/rule-model';
 import type { ConfigPage } from '../lib/app-view';
+import { AREA_PRESET_LABELS, AREA_PRESETS, areaForPreset, presetOf } from '../lib/image-text-area';
 import { PageLink } from './config/PageLink';
 import { NumberField, Segmented, SelectField, TextAreaField, TextInput, Toggle } from './form-controls';
 
@@ -41,6 +47,8 @@ export function StepForm({ step, context, onChange }: StepFormProps<EnrichStep>)
       return <LookupStepForm step={step} context={context} onChange={onChange} />;
     case 'http':
       return <HttpStepForm step={step} context={context} onChange={onChange} />;
+    case 'imageText':
+      return <ImageTextStepForm step={step} context={context} onChange={onChange} />;
   }
 }
 
@@ -74,6 +82,15 @@ export function newStep(kind: EnrichStep['kind'], context: StepFormContext): Enr
         cacheSeconds: STEP_LIMITS.cacheSeconds.default,
         outputs: [{ path: 'data.shelf', field: '货架号' }],
         onError: 'empty',
+      };
+    case 'imageText':
+      return {
+        kind,
+        pattern: SHELF_NUMBER_PATTERN,
+        flags: '',
+        preferredArea: null,
+        whenMissing: 'block',
+        output: '货架号',
       };
   }
 }
@@ -312,6 +329,80 @@ function HttpStepForm({ step, context, onChange }: StepFormProps<HttpStep>) {
         options={HTTP_ERROR_POLICIES.map((policy) => ({ value: policy, label: ERROR_POLICY_LABELS[policy] }))}
         onChange={(onError) => onChange({ ...step, onError })}
       />
+    </>
+  );
+}
+
+const MISSING_POLICY_LABELS: Record<ImageTextMissingPolicy, string> = {
+  block: '不打印，手机上重扫或手动输入',
+  empty: '照常打印，字段留空',
+};
+
+/** 区域的四条边：单位是二维码边长，可以是负数（二维码左边、上边）。 */
+const AREA_EDGES = [
+  ['left', '左边'],
+  ['top', '上边'],
+  ['right', '右边'],
+  ['bottom', '下边'],
+] as const satisfies ReadonlyArray<readonly [keyof CodeRelativeArea, string]>;
+const AREA_STEP = 0.1;
+
+function ImageTextStepForm({ step, onChange }: StepFormProps<ImageTextStep>) {
+  const preset = presetOf(step.preferredArea);
+  const area = step.preferredArea;
+  return (
+    <>
+      <p className="form-hint">
+        手机扫码时，手机按二维码把整张标签摆正拍下，电脑读出上面的所有文字，找第一段符合正则的。
+        扫码枪、「试一试」没有图，这一步跳过。
+      </p>
+      <TextInput
+        label="正则"
+        value={step.pattern}
+        maxLength={STEP_LIMITS.patternLength}
+        onChange={(pattern) => onChange({ ...step, pattern })}
+      />
+      <p className="form-hint">
+        默认的写法匹配 1–2 个大写字母加三段 1–3 位数字，例如
+        A-1-2-3、B-12-3-10。横线读成「一」「—」、全角字符都会先规整再匹配。
+      </p>
+      <TextInput
+        label="标志"
+        value={step.flags}
+        maxLength={MATCH_FLAGS.length}
+        placeholder="i 表示忽略大小写"
+        onChange={(flags) => onChange({ ...step, flags })}
+      />
+      <SelectField
+        label="优先查找"
+        value={preset}
+        options={AREA_PRESETS.map((value) => ({ value, label: AREA_PRESET_LABELS[value] }))}
+        onChange={(next) => onChange({ ...step, preferredArea: areaForPreset(next, area) })}
+      />
+      <p className="form-hint">
+        只决定先看哪里：那里没有就接着找标签的其他地方，印的位置变了照样认得出；标签上有两处都像时，这里的优先。
+      </p>
+      {preset === 'custom' &&
+        area !== null &&
+        AREA_EDGES.map(([edge, label]) => (
+          <NumberField
+            key={edge}
+            label={label}
+            unit="个二维码边长"
+            value={area[edge]}
+            min={-STEP_LIMITS.areaExtent}
+            max={STEP_LIMITS.areaExtent}
+            step={AREA_STEP}
+            onChange={(value) => onChange({ ...step, preferredArea: { ...area, [edge]: value } })}
+          />
+        ))}
+      <Segmented
+        label="认不出时"
+        value={step.whenMissing}
+        options={IMAGE_TEXT_MISSING_POLICIES.map((policy) => ({ value: policy, label: MISSING_POLICY_LABELS[policy] }))}
+        onChange={(whenMissing) => onChange({ ...step, whenMissing })}
+      />
+      <OutputInput value={step.output} onChange={(output) => onChange({ ...step, output })} />
     </>
   );
 }

@@ -4,12 +4,15 @@ import type {
   HttpHeader,
   HttpMethod,
   HttpStep,
+  ImageTextStep,
   LookupStep,
   RegexReplacer,
   RegexReplaceStep,
   StepKind,
 } from './enrich-model';
+import { findImageText, type ImageTextRegion, type ScanImage } from './image-text';
 import { parseJsonPath, readJsonPath } from './json-path';
+import type { RegexRunner } from './recognize';
 import { fieldValue, type ScanField, type ScanResult } from './scan-result';
 
 /** HTTP 步骤交给主进程执行的请求：字段变量已展开，{密钥:名称} 还没有替换。 */
@@ -35,31 +38,54 @@ export interface EnrichDeps {
     ignoreCase: boolean,
   ) => Readonly<Record<string, string>> | null;
   http: (request: HttpRequest) => Promise<HttpOutcome>;
+  /** 执行一条正则（隔离环境、有超时），图中文字识别用。 */
+  match: RegexRunner;
+  /** 用 OCR 读出图上的所有文字（按阅读顺序）；这台电脑上没有文字识别时返回 null。 */
+  readImageText: (image: ScanImage) => Promise<ImageTextRegion[] | null>;
   now: () => number;
 }
+
+/** 这一次扫码随请求带来的东西：手机拍下的标签图、手机上手动输入的字段。 */
+export interface EnrichContext {
+  image: ScanImage | null;
+  manualFields: Readonly<Record<string, string>>;
+}
+
+export const NO_ENRICH_CONTEXT: EnrichContext = { image: null, manualFields: {} };
+
+/** 拦下不打印的原因：LOOKUP_FAILED = HTTP 查询失败；TEXT_NOT_FOUND = 图中文字没认出。 */
+export type BlockReason = 'LOOKUP_FAILED' | 'TEXT_NOT_FOUND';
 
 /** 每一步的执行情况，给「试一试」显示。 */
 export interface StepTrace {
   kind: StepKind;
   ok: boolean;
-  /** 失败或没有查到时的原因（中文）。 */
+  /** 失败或没有查到时的原因、跳过的原因（中文）。 */
   detail: string | null;
+  /** 这一步这次用不上（例如不是手机扫码、没有图），没有执行。 */
+  skipped: boolean;
   durationMs: number;
 }
 
 export interface EnrichResult {
   scan: ScanResult;
   traces: StepTrace[];
-  /** 设为「拦下不打印」的 HTTP 步骤失败了：不能打印。 */
-  blocked: { stepIndex: number; detail: string } | null;
+  /** 设为「拦下不打印」的步骤失败了：不能打印。field 是没认出的字段（图中文字识别）。 */
+  blocked: { stepIndex: number; detail: string; reason: BlockReason; field: string | null } | null;
 }
 
 interface StepOutcome {
   values: Array<[field: string, value: string]>;
   detail: string | null;
-  /** 失败时是否拦下（只有 HTTP 步骤会）。 */
+  /** 失败时是否拦下（HTTP 查询、图中文字识别设为拦下时）。 */
   blocks: boolean;
+  skipped?: boolean;
+  reason?: BlockReason;
+  field?: string;
 }
+
+/** 同一次扫码只识别一次图：几个图中文字识别步骤共用结果。 */
+type ReadImage = (image: ScanImage) => Promise<ImageTextRegion[] | null>;
 
 /**
  * 按顺序执行加工步骤：每一步产出字段，后面的步骤能用前面的结果。
@@ -70,21 +96,35 @@ export async function enrich(
   steps: readonly EnrichStep[],
   deps: EnrichDeps,
   printedAt: Date,
+  context: EnrichContext = NO_ENRICH_CONTEXT,
 ): Promise<EnrichResult> {
   let current = scan;
   const traces: StepTrace[] = [];
+  let recognized: Promise<ImageTextRegion[] | null> | undefined;
+  const readImage: ReadImage = (image) => {
+    recognized ??= deps.readImageText(image);
+    return recognized;
+  };
   for (const [stepIndex, step] of steps.entries()) {
     const startedAt = deps.now();
-    const outcome = await runStep(step, current, deps, printedAt);
+    const outcome = await runStep(step, current, deps, printedAt, context, readImage);
     current = withFields(current, outcome.values);
+    const skipped = outcome.skipped === true;
     traces.push({
       kind: step.kind,
-      ok: outcome.detail === null,
+      ok: outcome.detail === null || skipped,
       detail: outcome.detail,
+      skipped,
       durationMs: deps.now() - startedAt,
     });
     if (outcome.blocks && outcome.detail !== null) {
-      return { scan: current, traces, blocked: { stepIndex, detail: outcome.detail } };
+      const blocked = {
+        stepIndex,
+        detail: outcome.detail,
+        reason: outcome.reason ?? 'LOOKUP_FAILED',
+        field: outcome.field ?? null,
+      };
+      return { scan: current, traces, blocked };
     }
   }
   return { scan: current, traces, blocked: null };
@@ -95,6 +135,8 @@ function runStep(
   scan: ScanResult,
   deps: EnrichDeps,
   printedAt: Date,
+  context: EnrichContext,
+  readImage: ReadImage,
 ): Promise<StepOutcome> | StepOutcome {
   switch (step.kind) {
     case 'template':
@@ -105,7 +147,55 @@ function runStep(
       return lookup(step, scan, deps);
     case 'http':
       return http(step, scan, deps, printedAt);
+    case 'imageText':
+      return imageText(step, context, deps.match, readImage);
   }
+}
+
+/**
+ * 图中文字识别：手动输入的值优先；没有图（不是手机扫码）或这台电脑上没有文字识别时跳过；
+ * 否则识别整张标签，按正则取值（优先区域先看）。没认出时按设置拦下或留空。
+ */
+async function imageText(
+  step: ImageTextStep,
+  context: EnrichContext,
+  match: RegexRunner,
+  readImage: ReadImage,
+): Promise<StepOutcome> {
+  const manual = context.manualFields[step.output]?.trim();
+  if (manual !== undefined && manual !== '') {
+    return done([[step.output, manual]]);
+  }
+  const { image } = context;
+  if (image === null) {
+    return skip('这次扫码没有标签图（只有手机扫码带图），跳过');
+  }
+  let regions: ImageTextRegion[] | null;
+  try {
+    regions = await readImage(image);
+  } catch (error) {
+    return textNotFound(step, `识别标签上的字时出错：${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (regions === null) {
+    return skip('这台电脑上没有文字识别，跳过');
+  }
+  const query = { pattern: step.pattern, flags: step.flags, preferredArea: step.preferredArea };
+  const value = findImageText(regions, image.code, query, match);
+  return value === null ? textNotFound(step, `没认出${step.output}`) : done([[step.output, value]]);
+}
+
+function textNotFound(step: ImageTextStep, detail: string): StepOutcome {
+  return {
+    values: [[step.output, '']],
+    detail,
+    blocks: step.whenMissing === 'block',
+    reason: 'TEXT_NOT_FOUND',
+    field: step.output,
+  };
+}
+
+function skip(detail: string): StepOutcome {
+  return { values: [], detail, blocks: false, skipped: true };
 }
 
 function regexReplace(step: RegexReplaceStep, scan: ScanResult, replace: RegexReplacer): StepOutcome {

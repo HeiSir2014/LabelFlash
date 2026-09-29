@@ -4,7 +4,7 @@ import { type PrintFailure, toPrintFailure } from './errors';
 import type { JobStore } from './job-store';
 import type { PrintQueue } from './print-queue';
 import type { PrinterChoice } from './printing/resolve-printer';
-import type { EnrichResult } from './scan/enrich';
+import { type EnrichContext, type EnrichResult, NO_ENRICH_CONTEXT } from './scan/enrich';
 import { MAX_RAW_LENGTH, normalizeRaw } from './scan/normalize-raw';
 import type { ScanField, ScanResult } from './scan/scan-result';
 import { type LabelTemplate, withPaper } from './templates/template-model';
@@ -40,7 +40,7 @@ export interface PrintServiceDeps {
   /** 按本机当前启用的规则识别；每次调用都读取最新规则，改规则立即生效。 */
   recognize: (raw: string) => ScanResult | null;
   /** 执行命中规则的加工步骤。 */
-  enrich: (scan: ScanResult) => Promise<EnrichResult>;
+  enrich: (scan: ScanResult, context: EnrichContext) => Promise<EnrichResult>;
   /** 本次识别结果用的模板（规则绑定的模板或当前模板）；每次打印时读取，切换模板立即生效。 */
   resolveTemplate: (scan: ScanResult) => LabelTemplate;
   /**
@@ -113,7 +113,7 @@ export class PrintService {
       return recognition.result;
     }
     const template = this.deps.resolveTemplate(recognition.scan);
-    const enriched = await this.enrich(recognition.scan);
+    const enriched = await this.enrich(recognition.scan, NO_ENRICH_CONTEXT);
     const { scan } = enriched;
     return {
       status: 'ok',
@@ -183,15 +183,15 @@ export class PrintService {
       };
       return this.finish(id, request, target, raw, duplicate, recognized);
     }
-    const enriched = options.enrich ? await this.enrich(recognized) : { scan: recognized, traces: [], blocked: null };
+    const context: EnrichContext = { image: request.image ?? null, manualFields: request.manualFields ?? {} };
+    const enriched = options.enrich
+      ? await this.enrich(recognized, context)
+      : { scan: recognized, traces: [], blocked: null };
     if (enriched.blocked) {
       this.deps.guard.release(raw);
-      const lookupFailed: RecordedResult = {
-        status: 'failed',
-        reason: 'LOOKUP_FAILED',
-        detail: enriched.blocked.detail,
-      };
-      return this.finish(id, request, target, raw, lookupFailed, enriched.scan);
+      const { reason, detail, field } = enriched.blocked;
+      const blocked: RecordedResult = { status: 'failed', reason, detail, ...(field === null ? {} : { field }) };
+      return this.finish(id, request, target, raw, blocked, enriched.scan);
     }
     const { scan } = enriched;
     try {
@@ -249,9 +249,9 @@ export class PrintService {
   }
 
   /** 加工步骤里意外的异常（不是查询失败）不能拦住打印：记日志，按没有加工处理。 */
-  private async enrich(scan: ScanResult): Promise<EnrichResult> {
+  private async enrich(scan: ScanResult, context: EnrichContext): Promise<EnrichResult> {
     try {
-      return await this.deps.enrich(scan);
+      return await this.deps.enrich(scan, context);
     } catch (error) {
       console.error('[PrintService] processing steps failed', error);
       return { scan, traces: [], blocked: null };

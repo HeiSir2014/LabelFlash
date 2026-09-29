@@ -207,6 +207,9 @@ async function bootstrap(): Promise<void> {
       now: () => systemClock.now(),
       userAgent,
     }),
+    match: runRegex,
+    // 文字识别在后面接上（src/main/ocr/）；接上之前按「这台电脑上没有文字识别」处理。
+    readImageText: async () => null,
     now: () => performance.now(),
   };
   const guard = new DedupGuard(systemClock, secondsToMs(settings.current.dedupWindowSeconds));
@@ -312,7 +315,7 @@ async function bootstrap(): Promise<void> {
     queue: new PrintQueue(PRINT_TIMEOUT_MS),
     createId: randomUUID,
     recognize: (raw) => recognize(raw, activeRules(rules, settings.current), runRegex),
-    enrich: (scan) => enrich(scan, rules.get(scan.ruleId)?.steps ?? [], enrichDeps, new Date()),
+    enrich: (scan, context) => enrich(scan, rules.get(scan.ruleId)?.steps ?? [], enrichDeps, new Date(), context),
     resolveTemplate: (scan) => resolvePrintTemplate(templates, settings.current, scan).template,
     choosePrinter,
     onRecorded: (job, scan) => outbox.enqueueResult(job, scan),

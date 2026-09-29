@@ -144,3 +144,28 @@ describe('migration 3', () => {
     db.close();
   });
 });
+
+describe('migration 5', () => {
+  test('keeps every row with its fields and caller, and accepts TEXT_NOT_FOUND', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, MIGRATIONS.slice(0, 4));
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, fields, caller) VALUES ('a', 1, 'CL5640', 'P', 'api', 'printed', 0, '[]', 'key:k1')",
+    ).run();
+    migrate(db);
+    expect({ ...db.prepare("SELECT seq, raw, source, fields, caller FROM jobs WHERE id = 'a'").get() }).toEqual({
+      seq: 1,
+      raw: 'CL5640',
+      source: 'api',
+      fields: '[]',
+      caller: 'key:k1',
+    });
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason) VALUES ('b', 2, 'CL5887', 'P', 'mobile', 'failed', 0, 'TEXT_NOT_FOUND')",
+    ).run();
+    expect(db.prepare("SELECT seq FROM jobs WHERE id = 'b'").get()?.['seq']).toBe(2);
+    const hits = db.prepare('SELECT rowid FROM jobs_search WHERE jobs_search MATCH \'"5887"\'').all();
+    expect(hits.map((row) => row['rowid'])).toEqual([2]);
+    db.close();
+  });
+});

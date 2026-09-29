@@ -31,6 +31,12 @@ export interface CodeSquare {
   size: number;
 }
 
+/** 手机截下来的标签图：按二维码摆正后的 JPEG，和二维码在图里的位置。 */
+export interface ScanImage {
+  jpeg: Uint8Array;
+  code: CodeSquare;
+}
+
 /** 以二维码为基准的矩形区域：单位是二维码边长，原点是二维码左上角，向右、向下为正。 */
 export interface CodeRelativeArea {
   left: number;
@@ -100,6 +106,11 @@ export function searchOrder(
 /** 包住调用方正则的分组名：取整段匹配（调用方的正则里不需要写命名分组）。 */
 const MATCH_GROUP = 'imageTextMatch';
 
+/** 实际执行的正则：把调用方的正则包进一个命名分组（校验时也按这个写法编译一次）。 */
+export function wrapImageTextPattern(pattern: string): string {
+  return `(?<${MATCH_GROUP}>${pattern})`;
+}
+
 export interface ImageTextQuery {
   pattern: string;
   flags: string;
@@ -117,7 +128,7 @@ export function findImageText(
   query: ImageTextQuery,
   runRegex: RegexRunner,
 ): string | null {
-  const wrapped = `(?<${MATCH_GROUP}>${query.pattern})`;
+  const wrapped = wrapImageTextPattern(query.pattern);
   for (const region of searchOrder(regions, code, query.preferredArea)) {
     const match = runRegex(wrapped, query.flags, normalizeImageText(region.text))?.[MATCH_GROUP];
     if (match !== undefined && match !== '') {

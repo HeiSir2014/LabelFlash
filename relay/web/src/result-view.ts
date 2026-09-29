@@ -65,6 +65,7 @@ const FAILURE_DETAILS: Record<PrintFailureReason, (detail: string | null) => str
     `${PRINT_TIMEOUT_SECONDS} 秒内没有响应，可能已出纸或仍在排队；到打印机旁确认没有出纸，再点「强制补打」`,
   PRINT_ERROR: () => '打印机驱动报错，检查打印机后点「重试」',
   LOOKUP_FAILED: (detail) => `${detail ?? '数据查询失败'}，处理好后点「重试」`,
+  TEXT_NOT_FOUND: (detail) => `${detail ?? '没认出标签上的字'}：对准整张标签重扫，或在下面手动输入`,
 };
 
 const REFUSAL_TITLES: Record<RefusalReason, string> = {

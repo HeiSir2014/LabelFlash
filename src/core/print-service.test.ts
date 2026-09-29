@@ -6,7 +6,7 @@ import { PrintQueue } from './print-queue';
 import { PrintService, TEST_RAW } from './print-service';
 import type { PrinterChoice } from './printing/resolve-printer';
 import { BUILT_IN_RULES, DASH_THREE_RULE_ID, RAW_RULE_ID } from './scan/builtin-rules';
-import type { EnrichResult } from './scan/enrich';
+import type { EnrichContext, EnrichResult } from './scan/enrich';
 import { MAX_RAW_LENGTH } from './scan/normalize-raw';
 import { recognize } from './scan/recognize';
 import type { ScanRule } from './scan/rule-model';
@@ -42,7 +42,11 @@ function createHarness(store = new InMemoryJobStore()) {
   let rules: readonly ScanRule[] = BUILT_IN_RULES;
   const templateRequests: ScanResult[] = [];
   const recorded: Array<{ job: JobRecord; scan: ScanResult | null }> = [];
-  let enrichScan: (scan: ScanResult) => Promise<EnrichResult> = async (scan) => ({ scan, traces: [], blocked: null });
+  let enrichScan: (scan: ScanResult, context: EnrichContext) => Promise<EnrichResult> = async (scan) => ({
+    scan,
+    traces: [],
+    blocked: null,
+  });
   let nextId = 0;
   let choice: PrinterChoice = { printerName: PRINTER, reason: 'paper' };
   const service = new PrintService({
@@ -53,7 +57,7 @@ function createHarness(store = new InMemoryJobStore()) {
     queue: new PrintQueue(1_000),
     createId: () => `job-${++nextId}`,
     recognize: (raw) => recognize(raw, rules, noRegex),
-    enrich: (scan) => enrichScan(scan),
+    enrich: (scan, context) => enrichScan(scan, context),
     resolveTemplate: (scan) => {
       templateRequests.push(scan);
       return template;
@@ -67,7 +71,7 @@ function createHarness(store = new InMemoryJobStore()) {
   const useRules = (next: readonly ScanRule[]) => {
     rules = next;
   };
-  const useEnrich = (next: (scan: ScanResult) => Promise<EnrichResult>) => {
+  const useEnrich = (next: (scan: ScanResult, context: EnrichContext) => Promise<EnrichResult>) => {
     enrichScan = next;
   };
   const useChoice = (next: PrinterChoice) => {
@@ -85,7 +89,13 @@ const withShelf = async (scan: ScanResult): Promise<EnrichResult> => ({
 const lookupFails = async (scan: ScanResult): Promise<EnrichResult> => ({
   scan,
   traces: [],
-  blocked: { stepIndex: 0, detail: '查询超时' },
+  blocked: { stepIndex: 0, detail: '查询超时', reason: 'LOOKUP_FAILED', field: null },
+});
+
+const shelfNotRead = async (scan: ScanResult): Promise<EnrichResult> => ({
+  scan,
+  traces: [],
+  blocked: { stepIndex: 0, detail: '没认出货架号', reason: 'TEXT_NOT_FOUND', field: '货架号' },
 });
 
 function request(overrides: Partial<PrintRequest> = {}): PrintRequest {
@@ -279,6 +289,38 @@ describe('PrintService processing steps', () => {
     expect(store.listRecent(1)[0]).toMatchObject({ status: 'failed', failureReason: 'LOOKUP_FAILED' });
     useEnrich(withShelf);
     expect((await service.submit(request())).status).toBe('printed');
+  });
+
+  // 手机扫码没认出货架号：不打印，记下原因和字段名（手机据此显示输入框），马上可以重扫或手动补。
+  test('an unread shelf number does not print, is recorded with the field, and can be retried at once', async () => {
+    const { service, useEnrich, adapter, store } = createHarness();
+    useEnrich(shelfNotRead);
+    expect(await service.submit(request({ source: 'mobile' }))).toEqual({
+      status: 'failed',
+      reason: 'TEXT_NOT_FOUND',
+      detail: '没认出货架号',
+      field: '货架号',
+    });
+    expect(adapter.printed).toHaveLength(0);
+    expect(store.listRecent(1)[0]).toMatchObject({ status: 'failed', failureReason: 'TEXT_NOT_FOUND' });
+    useEnrich(withShelf);
+    expect((await service.submit(request({ source: 'mobile' }))).status).toBe('printed');
+  });
+
+  test('hands the phone image and typed fields to the processing steps', async () => {
+    const { service, useEnrich } = createHarness();
+    const contexts: EnrichContext[] = [];
+    useEnrich(async (scan, context) => {
+      contexts.push(context);
+      return { scan, traces: [], blocked: null };
+    });
+    const image = { jpeg: new Uint8Array([1]), code: { x: 1, y: 2, size: 3 } };
+    await service.submit(request({ source: 'mobile', image, manualFields: { 货架号: 'A-1-2-3' } }));
+    await service.submit(request({ raw: 'other', force: true }));
+    expect(contexts).toEqual([
+      { image, manualFields: { 货架号: 'A-1-2-3' } },
+      { image: null, manualFields: {} },
+    ]);
   });
 
   test('a repeat scan is blocked before any lookup runs', async () => {

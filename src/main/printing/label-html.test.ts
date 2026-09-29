@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../../core/scan/scan-result';
 import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from '../../core/templates/builtin-templates';
-import type { FieldSlot, LabelTemplate } from '../../core/templates/template-model';
+import { type FieldSlot, type LabelTemplate, maxQrSizeMm } from '../../core/templates/template-model';
+import type { LabelJob } from '../../core/types';
+import type { PaperSize } from '../../shared/paper-sizes';
 import { escapeHtml, renderLabelHtml } from './label-html';
 
 const GARMENT: ScanResult = {
@@ -299,5 +301,35 @@ describe('print job name', () => {
 describe('escapeHtml', () => {
   test('escapes all five special characters', () => {
     expect(escapeHtml(`<a href="x">'&'</a>`)).toBe('&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;');
+  });
+});
+
+describe('paper sizes', () => {
+  const job = (paper: PaperSize): LabelJob => ({
+    scan: GARMENT,
+    template: {
+      ...STANDARD_TEMPLATE,
+      paper,
+      qr: {
+        ...STANDARD_TEMPLATE.qr,
+        sizeMm: Math.min(STANDARD_TEMPLATE.qr.sizeMm, maxQrSizeMm(paper, STANDARD_TEMPLATE.paddingMm)),
+      },
+    },
+    printedAt: PRINTED_AT,
+  });
+
+  test.each([
+    { widthMm: 50, heightMm: 30 },
+    { widthMm: 70, heightMm: 50 },
+    { widthMm: 100, heightMm: 100 },
+  ])('lays out a $widthMm x $heightMm label on that paper', (paper) => {
+    const { html, qrOmitted } = renderLabelHtml(job(paper));
+    expect(html).toContain(`@page { size: ${paper.widthMm}mm ${paper.heightMm}mm; margin: 0; }`);
+    expect(qrOmitted).toBe(false);
+  });
+
+  test('aligns the QR code to the resolution it is given', () => {
+    const label = job({ widthMm: 60, heightMm: 40 });
+    expect(renderLabelHtml(label, 300).html).not.toBe(renderLabelHtml(label, 203).html);
   });
 });

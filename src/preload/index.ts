@@ -70,6 +70,7 @@ const api: LabelFlashApi = {
   createApiKey: (name) => ipcRenderer.invoke(IpcChannel.CreateApiKey, name),
   renameApiKey: (id, name) => ipcRenderer.invoke(IpcChannel.RenameApiKey, id, name),
   removeApiKey: (id) => ipcRenderer.invoke(IpcChannel.RemoveApiKey, id),
+  copyNewApiKey: (id) => ipcRenderer.invoke(IpcChannel.CopyNewApiKey, id),
   revokeApiOrigin: (origin) => ipcRenderer.invoke(IpcChannel.RevokeApiOrigin, origin),
 };
 

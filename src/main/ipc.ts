@@ -322,6 +322,15 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.CreateApiKey, (name) => deps.localApi.createKey(requireApiKeyName(name)));
   handle(IpcChannel.RenameApiKey, (id, name) => deps.localApi.renameKey(requireApiKeyId(id), requireApiKeyName(name)));
   handle(IpcChannel.RemoveApiKey, (id) => deps.localApi.removeKey(requireApiKeyId(id)));
+  // 界面不能写剪贴板：刚生成的密钥由主进程复制，原文不经过界面再传一次。
+  handle(IpcChannel.CopyNewApiKey, (id) => {
+    const secret = deps.localApi.freshSecret(requireApiKeyId(id));
+    if (secret === null) {
+      return false;
+    }
+    clipboard.writeText(secret);
+    return true;
+  });
   handle(IpcChannel.RevokeApiOrigin, (origin) => deps.localApi.revokeOrigin(requireWebOrigin(origin)));
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());

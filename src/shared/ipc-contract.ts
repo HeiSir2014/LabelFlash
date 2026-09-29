@@ -80,6 +80,7 @@ export const IpcChannel = {
   CreateApiKey: 'api:keys:create',
   RenameApiKey: 'api:keys:rename',
   RemoveApiKey: 'api:keys:remove',
+  CopyNewApiKey: 'api:keys:copy-new',
   RevokeApiOrigin: 'api:origins:remove',
 } as const;
 
@@ -219,6 +220,8 @@ export interface LabelFlashApi {
   /** 生成程序密钥：返回的 secret 是原文，只在这一次返回，之后看不到。 */
   createApiKey(name: string): Promise<CreatedApiKey>;
   renameApiKey(id: string, name: string): Promise<void>;
+  /** 把刚生成的密钥原文复制到剪贴板（生成后 10 分钟内）；过期返回 false。 */
+  copyNewApiKey(id: string): Promise<boolean>;
   /** 撤销：用这个密钥的程序立即不能再调用。 */
   removeApiKey(id: string): Promise<void>;
   /** 撤销一个网站的授权。 */

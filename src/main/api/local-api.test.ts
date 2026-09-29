@@ -9,7 +9,7 @@ import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
 import { openDatabase } from '../storage/database';
 import { SqliteApiJobStore } from '../storage/sqlite-api-job-store';
 import { DEFAULT_PORTS } from './http-server';
-import { API_PORT_ENV, apiCandidatePorts, LocalApi } from './local-api';
+import { API_PORT_ENV, apiCandidatePorts, FRESH_SECRET_MS, LocalApi } from './local-api';
 
 const SITE = 'https://erp.example.com';
 const SENT: PrintResult = {
@@ -32,9 +32,10 @@ function createLocalApi(options: { askOrigin?: (origin: string) => Promise<boole
   const printed: FieldsPrint[] = [];
   const statuses: LocalApiStatus[] = [];
   let jobsChanged = 0;
+  const clock = new FakeClock();
   const api = new LocalApi({
     db,
-    clock: new FakeClock(),
+    clock,
     appVersion: '1.1.0',
     settings: () => settings,
     updateSettings: (patch) => {
@@ -71,6 +72,7 @@ function createLocalApi(options: { askOrigin?: (origin: string) => Promise<boole
   return {
     api,
     db,
+    clock,
     printed,
     statuses,
     baseUrl,
@@ -180,6 +182,22 @@ describe('LocalApi', () => {
     await harness.api.start();
     expect(harness.api.jobs.get('old')).toMatchObject({ state: 'FAILED', failure: { reason: 'INTERRUPTED' } });
     expect(harness.printed).toEqual([]);
+  });
+
+  // 密钥原文只在生成后的一小段时间里留在内存里，给「复制」按钮用；不写库、不写日志。
+  test('keeps a new secret for copying only for a short while', () => {
+    const harness = createLocalApi();
+    const { key, secret } = harness.api.createKey('ERP');
+    expect(harness.api.freshSecret(key.id)).toBe(secret);
+    harness.clock.advance(FRESH_SECRET_MS);
+    expect(harness.api.freshSecret(key.id)).toBeNull();
+  });
+
+  test('forgets a new secret when its key is removed', () => {
+    const harness = createLocalApi();
+    const { key } = harness.api.createKey('ERP');
+    harness.api.removeKey(key.id);
+    expect(harness.api.freshSecret(key.id)).toBeNull();
   });
 
   test('stops accepting a key once it is removed', async () => {

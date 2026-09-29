@@ -399,6 +399,8 @@ textarea {
 }
 
 .scan-bar__field {
+  /* 手动编辑模式的说明挂在边框上（.scan-bar__mode）。 */
+  position: relative;
   display: flex;
   /* 基准宽度 = 输入区最小宽度 + 「扫码」标签（两个 18px 字）+ 间距 + 左右内边距 + 边框。 */
   flex: 1 1 calc(var(--scan-input-min) + 36px + var(--space-3) + 2 * var(--space-4) + 4px);
@@ -532,6 +534,26 @@ textarea {
 
 .scan-bar__box:has(> .scan-bar__input[type="text"]) .scan-bar__text {
   visibility: hidden;
+}
+
+/*
+ * 手动编辑模式（Windows，见 lib/scan-mode.ts）：虚线边框，边框上方挂一行说明，
+ * 一眼看出现在输入法是开着的、回车提交、Esc 回到扫码。说明挂在边框上，不挤占输入区，也不推动下面的布局。
+ */
+.scan-bar__field--manual {
+  border-style: dashed;
+}
+
+.scan-bar__mode {
+  position: absolute;
+  top: calc(-1 * var(--space-3));
+  right: var(--space-4);
+  padding: 0 var(--space-2);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-size: 12px;
+  line-height: var(--space-5);
+  white-space: nowrap;
 }
 
 /* 输入法截走了扫码枪的按键时的提醒（Windows 的密码框里不会出现）。 */

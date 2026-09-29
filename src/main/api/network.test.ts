@@ -30,16 +30,46 @@ describe('isLoopbackHost', () => {
 });
 
 describe('lanIPv4Addresses', () => {
-  // 局域网里的程序用这些地址访问：去掉本机回环和没拿到地址时系统自己分的 169.254.x。
-  test('lists the external IPv4 addresses of this computer', () => {
-    const info = (address: string, family: 'IPv4' | 'IPv6', internal = false) => ({ address, family, internal });
+  const nic = (address: string, mac: string, family: 'IPv4' | 'IPv6' = 'IPv4', internal = false) => [
+    { address, family, internal, mac },
+  ];
+
+  // 一台装了代理、VMware、WSL 的 Windows 电脑的真实网卡：只有 WLAN 是局域网里别的电脑连得到的。
+  test('keeps the physical LAN address and drops proxy, virtual machine and container adapters', () => {
     expect(
       lanIPv4Addresses({
-        lo: [info('127.0.0.1', 'IPv4', true)],
-        eth0: [info('192.168.1.20', 'IPv4'), info('fe80::1', 'IPv6')],
-        wifi: [info('169.254.3.4', 'IPv4'), info('10.0.0.8', 'IPv4')],
-        down: undefined,
+        Mihomo: nic('198.18.0.1', '00:00:00:00:00:00'),
+        'WLAN 3': nic('192.168.3.21', 'c4:75:ab:2d:6a:77'),
+        'VMware Network Adapter VMnet1': nic('169.254.194.187', '00:50:56:c0:00:01'),
+        'VMware Network Adapter VMnet9': nic('192.168.16.1', '00:50:56:c0:00:09'),
+        'Loopback Pseudo-Interface 1': nic('127.0.0.1', '00:00:00:00:00:00', 'IPv4', true),
+        'vEthernet (Default Switch)': nic('172.31.192.1', '00:15:5d:f6:39:f7'),
+        'vEthernet (WSL)': nic('172.21.208.1', '00:15:5d:8c:f5:c4'),
+        eth0: nic('fe80::1', 'c4:75:ab:2d:6a:77', 'IPv6'),
       }),
-    ).toEqual(['192.168.1.20', '10.0.0.8']);
+    ).toEqual(['192.168.3.21']);
+  });
+
+  test('drops VirtualBox, Docker, VPN and CGNAT addresses on macOS too', () => {
+    expect(
+      lanIPv4Addresses({
+        en0: nic('10.0.0.8', 'a4:83:e7:11:22:33'),
+        vboxnet0: nic('192.168.56.1', '0a:00:27:00:00:00'),
+        bridge100: nic('192.168.64.1', '3e:22:fb:aa:bb:cc'),
+        docker0: nic('172.17.0.1', '02:42:ac:11:00:01'),
+        utun4: nic('10.8.0.2', '00:00:00:00:00:00'),
+        tailscale0: nic('100.101.102.103', '00:00:00:00:00:00'),
+      }),
+    ).toEqual(['10.0.0.8']);
+  });
+
+  // 规则判断不了的环境（全被当成虚拟的）：宁可多列，也不能一个地址都不给。
+  test('falls back to every external address when all of them look virtual', () => {
+    expect(
+      lanIPv4Addresses({
+        'vEthernet (External)': nic('192.168.1.50', '00:15:5d:01:02:03'),
+        link: nic('169.254.1.1', '00:15:5d:01:02:04'),
+      }),
+    ).toEqual(['192.168.1.50']);
   });
 });

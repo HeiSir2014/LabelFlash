@@ -25,7 +25,7 @@ interface ConfigScanOptions {
  * 焦点在输入框（例如规则名称、密钥内容）里时按键照常输入那个框，那是用户自己在填。
  */
 export function useConfigScan({ isEnabled, lineGapMs, onScan }: ConfigScanOptions) {
-  const sinkRef = useRef<HTMLTextAreaElement>(null);
+  const sinkRef = useRef<HTMLInputElement>(null);
   const idleRef = useRef<IdleWatcher | null>(null);
   const input = useScanInput(lineGapMs, (raw) => {
     // 交出去之后离开接收框：它不在 Tab 顺序里，焦点不该停在看不见的地方。

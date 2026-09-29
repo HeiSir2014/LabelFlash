@@ -20,6 +20,7 @@ import { reportError } from './lib/notices';
 import { describePaperCheck } from './lib/paper-text';
 import { describePreviewUsage } from './lib/preview-usage';
 import { describePrinterChip } from './lib/printer-chip';
+import { scanFieldType } from './lib/scan-field';
 import { isWorkbenchActive } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
@@ -56,6 +57,7 @@ export function App() {
   const updateView = describeUpdate(updates.status);
   const isNarrow = useMediaQuery(NARROW_QUERY);
   const platform = platformForChrome(windowChrome());
+  const fieldType = scanFieldType(platform);
 
   const printerName = settings?.selectedPrinter ?? null;
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
@@ -217,6 +219,7 @@ export function App() {
           scanBar={{
             autoPrint,
             lineGapMs: settings.scanLineGapMs,
+            fieldType,
             note: { ...noteOptions, onSelect: (value) => void selectNote(value) },
             onAutoPrintChange: (next) => void update({ autoPrint: next }),
             onScan: station.scanCode,
@@ -274,6 +277,7 @@ export function App() {
           isLeaving={isWorkbench}
           breadcrumb={config.breadcrumb}
           sink={config.sink}
+          scanFieldType={fieldType}
           pillFlashes={config.pillFlashes}
           onNavigate={appView.open}
           onClose={appView.close}

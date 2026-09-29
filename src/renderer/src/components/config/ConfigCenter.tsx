@@ -1,5 +1,6 @@
 import { type KeyboardEvent, type ReactNode, type RefObject, useCallback, useId } from 'react';
 import { CONFIG_NAV, type ConfigPage, isFillPage, pageLabel } from '../../lib/app-view';
+import type { ScanFieldType } from '../../lib/scan-field';
 
 /** 二级页面（编辑视图）的面包屑：「识别规则 / 编辑：下划线查货架」，第一段回到列表。 */
 export interface Breadcrumb {
@@ -9,10 +10,10 @@ export interface Breadcrumb {
 
 /** 隐藏的扫码接收框（见 use-config-scan.ts）。 */
 export interface ScanSink {
-  sinkRef: RefObject<HTMLTextAreaElement | null>;
+  sinkRef: RefObject<HTMLInputElement | null>;
   value: string;
   onChange: (value: string) => void;
-  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
 }
 
 interface ConfigCenterProps {
@@ -20,6 +21,8 @@ interface ConfigCenterProps {
   isLeaving: boolean;
   breadcrumb: Breadcrumb | null;
   sink: ScanSink;
+  /** 接收框用密码框还是普通输入框（Windows 上用密码框关掉输入法，见 lib/scan-field.ts）。 */
+  scanFieldType: ScanFieldType;
   /** 在没有测试框的页面扫了码的次数：每变一次「配置中不打印」闪两下。 */
   pillFlashes: number;
   onNavigate: (page: ConfigPage) => void;
@@ -33,6 +36,7 @@ export function ConfigCenter({
   isLeaving,
   breadcrumb,
   sink,
+  scanFieldType,
   pillFlashes,
   onNavigate,
   onClose,
@@ -76,8 +80,9 @@ export function ConfigCenter({
         <span key={pillFlashes} className={`config-pill${pillFlashes > 0 ? ' config-pill--flash' : ''}`}>
           配置中不打印
         </span>
-        <textarea
+        <input
           ref={sink.sinkRef}
+          type={scanFieldType}
           className="visually-hidden"
           aria-label="扫码内容（配置中心里不打印）"
           tabIndex={-1}

@@ -430,31 +430,101 @@ textarea {
 }
 
 /*
- * textarea 不像 input 那样把单行文字垂直居中：行高等于框高，文字和占位文字都落在框的中线上，
- * 再由外层 flex 居中，与「扫码」标签中线对齐（Windows 150% 缩放下曾偏差约 8px）。
+ * 扫码框分两层（见 ScanBar 和 lib/scan-field.ts）：.scan-bar__text 显示内容，.scan-bar__input 接收按键。
+ * Windows 上输入框是密码框（关掉输入法），字只能显示成圆点，所以它透明地盖在文字层上；
+ * macOS 上是普通输入框，直接显示，文字层隐藏。
+ * 两层行高都等于框高，文字落在框的中线上，再由外层 flex 居中，与「扫码」标签中线对齐（Windows 150% 缩放下曾偏差约 8px）。
  */
-.scan-bar__input {
+.scan-bar__box {
+  position: relative;
   flex: 1;
   min-width: 0;
   height: 32px;
-  padding: 0;
-  border: 0;
-  outline: none;
-  overflow: hidden;
-  resize: none;
-  background: transparent;
+}
+
+.scan-bar__text,
+.scan-bar__input {
   font-family: var(--font-data);
   font-size: 22px;
   line-height: 32px;
-  white-space: pre;
-  user-select: text;
 }
 
-.scan-bar__input::placeholder {
+.scan-bar__text {
+  display: block;
+  height: 100%;
+  overflow: hidden;
+  white-space: pre;
+}
+
+.scan-bar__text--placeholder {
   color: var(--color-ink-soft);
   font-family: var(--font-body);
   font-size: 15px;
-  line-height: 32px;
+}
+
+/* 光标画在文字层末尾：透明的密码框自己的光标看不见（位置也按圆点算，和文字对不上）。 */
+.scan-bar__field:focus-within .scan-bar__text:not(.scan-bar__text--placeholder)::after,
+.scan-bar__field:focus-within .scan-bar__text--placeholder::before {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 24px;
+  margin: 0 1px;
+  vertical-align: middle;
+  background: var(--color-ink);
+  animation: scan-caret 1s steps(1) infinite;
+}
+
+@keyframes scan-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-bar__field:focus-within .scan-bar__text::after,
+  .scan-bar__field:focus-within .scan-bar__text::before {
+    animation: none;
+  }
+}
+
+.scan-bar__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  opacity: 0;
+}
+
+.scan-bar__input[type="text"] {
+  opacity: 1;
+  white-space: pre;
+}
+
+.scan-bar__input[type="text"]::placeholder {
+  color: var(--color-ink-soft);
+  font-family: var(--font-body);
+  font-size: 15px;
+}
+
+.scan-bar__box:has(> .scan-bar__input[type="text"]) .scan-bar__text {
+  visibility: hidden;
+}
+
+/* 输入法截走了扫码枪的按键时的提醒（Windows 的密码框里不会出现）。 */
+.scan-bar__ime {
+  flex-basis: 100%;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius);
+  background: var(--color-warning-wash);
+  color: var(--color-ink);
+  font-size: 14px;
 }
 
 /* ── 开关 ── */

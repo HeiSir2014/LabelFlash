@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { fromDisplay, LINE_BREAK_MARK, scanFieldType, TAB_MARK, toDisplay } from './scan-field';
+import { fromDisplay, LINE_BREAK_MARK, pasteInto, scanFieldType, TAB_MARK, toDisplay } from './scan-field';
 
 describe('toDisplay / fromDisplay', () => {
   test('shows line breaks and tabs inside a code as visible marks', () => {
@@ -14,6 +14,22 @@ describe('toDisplay / fromDisplay', () => {
   test('leaves a single-line code unchanged', () => {
     expect(toDisplay('CL5887-灰色-M')).toBe('CL5887-灰色-M');
     expect(fromDisplay('CL5887-灰色-M')).toBe('CL5887-灰色-M');
+  });
+});
+
+describe('pasteInto', () => {
+  // 单行输入框自己粘贴时会把换行删掉：多行的码粘进来就变了。
+  test('keeps the line breaks of a pasted multi-line code as marks', () => {
+    expect(pasteInto('', 0, 0, '编码：CL5887\r\n颜色：灰色')).toBe(`编码：CL5887${LINE_BREAK_MARK}颜色：灰色`);
+  });
+
+  // 从表格里复制一格，末尾总带着换行；它不是码的一部分。
+  test('drops the line break a spreadsheet adds after the copied cell', () => {
+    expect(pasteInto('', 0, 0, 'CL5887\r\n')).toBe('CL5887');
+  });
+
+  test('replaces the selected part and keeps the rest', () => {
+    expect(pasteInto('AB-XX-CD', 3, 5, 'M\tL')).toBe(`AB-M${TAB_MARK}L-CD`);
   });
 });
 

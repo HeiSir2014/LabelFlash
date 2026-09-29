@@ -1,6 +1,6 @@
 import type { PrinterIssue } from '../shared/printer-readiness';
 import type { PrinterChoice } from './printing/resolve-printer';
-import type { ScanResult } from './scan/scan-result';
+import type { ScanField, ScanResult } from './scan/scan-result';
 import type { LabelTemplate } from './templates/template-model';
 
 /** desktop = 扫码枪，history = 从打印记录重打，mobile = 手机，api = 本机接口。 */
@@ -13,6 +13,8 @@ export interface PrintRequest {
   source: PrintSource;
   /** 强制补打：跳过门限窗口（不跳过正在打印的同一个码）。 */
   force?: boolean;
+  /** 谁提交的（写进打印记录）：本机接口为 key:<密钥编号> 或 origin:<网站>；其他入口没有。 */
+  caller?: string;
 }
 
 export const PRINT_FAILURE_REASONS = [
@@ -91,6 +93,10 @@ export interface JobRecord {
   paper?: string;
   /** 这一张用的模板；1.0.x 的旧记录和识别不了的记录没有。 */
   templateId?: string;
+  /** 这一张打出来的字段（识别、加工后的，或本机接口给的）；识别不了的、1.0.x 的旧记录没有。 */
+  fields?: ScanField[];
+  /** 谁提交的：本机接口为 key:<密钥编号> 或 origin:<网站>；其他来源暂时没有。 */
+  caller?: string;
 }
 
 export interface Clock {

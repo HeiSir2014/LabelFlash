@@ -424,3 +424,25 @@ describe('PrintService printer choice', () => {
     expect(adapter.printed.at(-1)).toMatchObject({ printerName: '面单机B', paper: '100x180' });
   });
 });
+
+describe('PrintService job records', () => {
+  test('records the fields that were printed, after the processing steps', async () => {
+    const { service, useEnrich, store } = createHarness();
+    useEnrich(withShelf);
+    await service.submit(request());
+    expect(store.listRecent(1)[0]?.fields).toEqual([...RAW_SCAN.fields, { name: '货架号', value: 'A-01' }]);
+  });
+
+  test('records who submitted the label', async () => {
+    const { service, store } = createHarness();
+    await service.submit(request({ caller: 'key:k1' }));
+    expect(store.listRecent(1)[0]?.caller).toBe('key:k1');
+  });
+
+  test('records no fields and no caller when there are none', async () => {
+    const { service, store } = createHarness();
+    await service.submit(request({ raw: '   ' }));
+    expect(store.listRecent(1)[0]?.fields).toBeUndefined();
+    expect(store.listRecent(1)[0]?.caller).toBeUndefined();
+  });
+});

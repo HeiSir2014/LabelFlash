@@ -233,6 +233,12 @@ export class PrintService {
     if (target.templateId !== null) {
       job.templateId = target.templateId;
     }
+    if (scan !== null) {
+      job.fields = scan.fields;
+    }
+    if (request.caller !== undefined) {
+      job.caller = request.caller;
+    }
     try {
       this.deps.store.append(job);
     } catch (error) {

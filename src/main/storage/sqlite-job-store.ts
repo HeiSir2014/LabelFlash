@@ -1,6 +1,7 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import type { JobStore, LastPrinted } from '../../core/job-store';
+import type { ScanField } from '../../core/scan/scan-result';
 import { type JobRecord, PRINT_FAILURE_REASONS, PRINT_SOURCES, PRINT_STATUSES } from '../../core/types';
 import type { JobPage, JobQuery } from '../../shared/job-history';
 import { runInTransaction } from './database';
@@ -9,7 +10,7 @@ import { type Row, readEnum, readInteger, readString } from './row-readers';
 const JOB_COLUMNS = `
   jobs.seq, jobs.id, jobs.created_at AS createdAt, jobs.raw, jobs.printer_name AS printerName,
   jobs.source, jobs.status, jobs.forced, jobs.failure_reason AS failureReason, jobs.paper,
-  jobs.template_id AS templateId`;
+  jobs.template_id AS templateId, jobs.fields, jobs.caller`;
 /** trigram 索引至少需要 3 个字符；更短的搜索词退回 LIKE（LIMIT 保证找够一页就停）。 */
 const FTS_MIN_QUERY_LENGTH = 3;
 /** 调小容量时每批删除的行数；批与批之间让出主线程，避免卡住打印。 */
@@ -30,6 +31,7 @@ export class SqliteJobStore implements JobStore {
   private readonly searchPageLike: StatementSync;
   private readonly selectCount: StatementSync;
   private readonly selectLastPrinted: StatementSync;
+  private readonly selectById: StatementSync;
 
   constructor(
     private readonly db: DatabaseSync,
@@ -37,8 +39,8 @@ export class SqliteJobStore implements JobStore {
   ) {
     this.capacity = assertCapacity(capacity);
     this.insertJob = db.prepare(`
-      INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id)
-      VALUES (:id, :createdAt, :raw, :printerName, :source, :status, :forced, :failureReason, :paper, :templateId)`);
+      INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id, fields, caller)
+      VALUES (:id, :createdAt, :raw, :printerName, :source, :status, :forced, :failureReason, :paper, :templateId, :fields, :caller)`);
     // 插入后使用：只保留 seq 落在最新 capacity 个序号内的记录，走主键，开销与容量无关。
     this.trimBehind = db.prepare('DELETE FROM jobs WHERE seq <= :lastSeq - :capacity');
     this.trimOldestBatch = db.prepare(`
@@ -61,6 +63,7 @@ export class SqliteJobStore implements JobStore {
       FROM jobs
       WHERE status = 'printed' AND created_at >= :since
       GROUP BY raw`);
+    this.selectById = db.prepare(`SELECT ${JOB_COLUMNS} FROM jobs WHERE jobs.id = :id`);
     this.total = this.readCount();
   }
 
@@ -82,6 +85,8 @@ export class SqliteJobStore implements JobStore {
         failureReason: job.failureReason ?? null,
         paper: job.paper ?? null,
         templateId: job.templateId ?? null,
+        fields: job.fields === undefined ? null : JSON.stringify(job.fields),
+        caller: job.caller ?? null,
       });
       return Number(this.trimBehind.run({ lastSeq: lastInsertRowid, capacity: this.capacity }).changes);
     });
@@ -99,6 +104,12 @@ export class SqliteJobStore implements JobStore {
       nextCursor: hasMore && lastRow ? readInteger(lastRow, 'seq') : null,
       total: this.total,
     };
+  }
+
+  /** 按编号取一条（重打时用）；已经被环形保留删掉的返回 null。 */
+  get(id: string): JobRecord | null {
+    const row = this.selectById.get({ id });
+    return row ? toJobRecord(row) : null;
   }
 
   count(): number {
@@ -168,7 +179,36 @@ function toJobRecord(row: Row): JobRecord {
   if (row['templateId'] !== null) {
     job.templateId = readString(row, 'templateId');
   }
+  if (row['fields'] !== null) {
+    const fields = parseFields(readString(row, 'fields'));
+    if (fields !== null) {
+      job.fields = fields;
+    }
+  }
+  if (row['caller'] !== null) {
+    job.caller = readString(row, 'caller');
+  }
   return job;
+}
+
+/** 库里的字段 JSON 不可信：解析失败按没有字段处理，不合格的项丢掉，不让一条坏记录拖垮整页。 */
+function parseFields(text: string): ScanField[] | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    console.warn('[SqliteJobStore] stored fields are not JSON', error);
+    return null;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  return value
+    .filter(
+      (item): item is ScanField =>
+        typeof item === 'object' && item !== null && typeof item.name === 'string' && typeof item.value === 'string',
+    )
+    .map((item) => ({ name: item.name, value: item.value }));
 }
 
 /** FTS5 短语查询：用双引号包住，内部双引号转义，避免被当成查询语法。 */

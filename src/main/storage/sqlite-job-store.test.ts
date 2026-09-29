@@ -169,6 +169,28 @@ describe('SqliteJobStore', () => {
     expect(old?.paper).toBeUndefined();
     expect(old?.templateId).toBeUndefined();
   });
+
+  test('keeps the fields and caller of a job and finds a job by id', () => {
+    const store = new SqliteJobStore(db, 10);
+    const fields = [{ name: '订单号', value: 'A001' }];
+    store.append(job(1, { fields, caller: 'origin:https://erp.example.com' }));
+    store.append(job(2));
+    expect(store.get('job-1')).toMatchObject({ fields, caller: 'origin:https://erp.example.com' });
+    expect(store.get('job-2')?.fields).toBeUndefined();
+    expect(store.get('job-2')?.caller).toBeUndefined();
+    expect(store.get('nope')).toBeNull();
+  });
+
+  // 库里的数据不可信：字段 JSON 坏了或混进不合格的项，读出时丢掉，不让整页记录读不出来。
+  test('drops malformed stored fields instead of failing the page', () => {
+    const store = new SqliteJobStore(db, 10);
+    store.append(job(1));
+    store.append(job(2));
+    db.prepare("UPDATE jobs SET fields = 'not json' WHERE id = 'job-1'").run();
+    db.prepare(`UPDATE jobs SET fields = '[{"name":"a","value":"1"},{"name":2}]' WHERE id = 'job-2'`).run();
+    expect(store.get('job-1')?.fields).toBeUndefined();
+    expect(store.get('job-2')?.fields).toEqual([{ name: 'a', value: '1' }]);
+  });
 });
 
 describe('SqliteJobStore persistence', () => {

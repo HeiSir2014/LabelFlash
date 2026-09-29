@@ -29,7 +29,7 @@
 | 安装包与自动更新 | ✅ 自绘 NSIS 安装包、差分更新 | 未做：dmg、签名与公证、自动更新都在路线图上；目前从源码运行 |
 
 - **两个平台都要考虑**：写平台相关的代码时，Windows 和 macOS 都要给出行为，其他平台返回「不支持 / 未知」。
-- **验证**：只在一个平台上验证过的改动，在提交说明或验收记录里写明。CI 只跑 Windows。
+- **验证**：只在一个平台上验证过的改动，在提交说明或验收记录里写明。CI 在 Windows 和 macOS 上都跑 check 和 E2E；真机打印、系统缩放、扫码枪只能人工验证。
 
 ## 命令
 
@@ -55,7 +55,7 @@
 - 改了扫码页或手机扫码协议：再跑 `bun run test:relay-browser`。
 - 改了平台相关的代码（打印、窗口、托盘、快捷键、系统命令）：在 Windows 和 macOS 上各跑一次。
 
-CI（GitHub Actions，windows-latest）会在 PR 和 `master` 上跑 check、E2E 和 `dist:win`。macOS 上没有 CI，需要在 Mac 上手动跑 `bun run check` 和 `bun run test:e2e`。
+CI（GitHub Actions）会在 PR 和 `master` 上跑：windows-latest 上 check、E2E 和 `dist:win`；macos-latest 上 check 和 E2E（macOS 还没有安装包）。发布作业要求两个平台的检查都通过。
 
 ## 架构
 

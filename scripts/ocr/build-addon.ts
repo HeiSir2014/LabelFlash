@@ -21,14 +21,22 @@ function cargoArtifact(platform: NodeJS.Platform): string {
   }
 }
 
-const result = Bun.spawnSync(
-  ['cargo', 'build', '--release', '--manifest-path', join(WORKSPACE, 'Cargo.toml'), '-p', 'ocr-addon'],
-  { stdout: 'inherit', stderr: 'inherit' },
-);
-if (result.exitCode !== 0) {
-  throw new Error(`cargo build 失败，退出码 ${result.exitCode}`);
+/** 编译并放好扩展，返回它的路径。 */
+export function buildAddon(): string {
+  const result = Bun.spawnSync(
+    ['cargo', 'build', '--release', '--manifest-path', join(WORKSPACE, 'Cargo.toml'), '-p', 'ocr-addon'],
+    { stdout: 'inherit', stderr: 'inherit' },
+  );
+  if (result.exitCode !== 0) {
+    throw new Error(`cargo build 失败，退出码 ${result.exitCode}（需要 Rust 工具链：https://rustup.rs）`);
+  }
+  mkdirSync(OUTPUT_DIR, { recursive: true });
+  const target = join(OUTPUT_DIR, addonFileName(process.platform, process.arch));
+  copyFileSync(join(WORKSPACE, 'target', 'release', cargoArtifact(process.platform)), target);
+  console.log(`[ocr] ${target}`);
+  return target;
 }
-mkdirSync(OUTPUT_DIR, { recursive: true });
-const target = join(OUTPUT_DIR, addonFileName(process.platform, process.arch));
-copyFileSync(join(WORKSPACE, 'target', 'release', cargoArtifact(process.platform)), target);
-console.log(`[ocr] ${target}`);
+
+if (import.meta.main) {
+  buildAddon();
+}

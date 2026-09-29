@@ -38,6 +38,7 @@ export interface ImageTextReaderDeps {
   decodeJpeg: (jpeg: Uint8Array) => BgraImage | null;
   /** 引擎加载失败，从此不能读（手机不该再截图）。 */
   onUnavailable: () => void;
+  now: () => number;
   log: (line: string) => void;
 }
 
@@ -83,7 +84,15 @@ export class ImageTextReader implements ImageTextSource {
 
   /** 引擎只创建一次；创建失败记日志、从此不能读（换文件要重启程序）。 */
   private async loadEngine(): Promise<OcrEnginePort | null> {
-    this.engine ??= this.deps.createEngine();
+    if (this.engine === null) {
+      const startedAt = this.deps.now();
+      this.engine = this.deps.createEngine();
+      // 加载成功记一行：安装版里扩展、运行库、模型是否都找得到，看日志就知道。
+      this.engine.then(
+        () => this.deps.log(`[ocr] text recognition engine ready in ${Math.round(this.deps.now() - startedAt)} ms`),
+        () => {},
+      );
+    }
     try {
       return await this.engine;
     } catch (error) {

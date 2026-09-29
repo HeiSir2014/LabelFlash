@@ -33,6 +33,7 @@ function harness(overrides: Partial<ImageTextReaderDeps> = {}) {
     onUnavailable: () => {
       calls.unavailable += 1;
     },
+    now: () => 0,
     log: (line) => calls.logs.push(line),
     ...overrides,
   });
@@ -72,7 +73,7 @@ describe('ImageTextReader', () => {
     expect(await reader.read(IMAGE)).toBeNull();
     expect(reader.canRead()).toBe(false);
     expect(calls.unavailable).toBe(1);
-    expect(calls.logs[0]).toContain('VCRUNTIME140.dll');
+    expect(calls.logs.some((line) => line.includes('VCRUNTIME140.dll'))).toBe(true);
   });
 
   test('reports an image that cannot be decoded', async () => {

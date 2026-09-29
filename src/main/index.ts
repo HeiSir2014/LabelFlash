@@ -241,7 +241,8 @@ async function bootstrap(): Promise<void> {
         },
         // 引擎加载失败：告诉在线的手机别再截图。
         onUnavailable: () => mobile.rulesChanged(),
-        log: (line) => console.error(line),
+        now: () => performance.now(),
+        log: (line) => console.warn(line),
       });
   // 这台电脑能不能识别标签上的字：不能时不向手机要图，这一步跳过。
   const canReadImages = (): boolean => imageText.canRead();

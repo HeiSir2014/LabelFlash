@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { stageOcrResources } from '../ocr/stage-resources';
 import { buildSkins, SKIN_OUTPUT_DIR } from './build-skin';
 import { NSIS_SKIN_PLUGIN, verifyPluginDigest } from './plugin';
 
@@ -44,6 +45,8 @@ async function main(): Promise<void> {
   const publish = parsePublishMode(Bun.argv.slice(2));
   verifyPluginDigest(readFileSync(NSIS_SKIN_PLUGIN.path));
   await buildSkins();
+  // 本地 OCR 的扩展、模型和运行库（两段构建都要带上）。
+  await stageOcrResources();
 
   const startedAt = Date.now();
   runElectronBuilder(

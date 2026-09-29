@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { MAX_MODULE_DOTS, MIN_MODULE_DOTS, PRINTER_DOT_MM, planQr } from './qr-code';
+import { DEFAULT_PRINTER_DPI, dotMm, MAX_MODULE_DOTS, MIN_MODULE_DOTS, planQr } from './qr-code';
 
 const BOX_MM = 24;
 
@@ -9,7 +9,7 @@ describe('planQr', () => {
     expect(plan?.level).toBe('M');
     if (!plan) throw new Error('expected a plan');
     expect(Number.isInteger(plan.moduleDots)).toBe(true);
-    expect(plan.sizeMm).toBeCloseTo(plan.moduleCount * plan.moduleDots * PRINTER_DOT_MM);
+    expect(plan.sizeMm).toBeCloseTo(plan.moduleCount * plan.moduleDots * dotMm(DEFAULT_PRINTER_DPI));
     expect(plan.sizeMm).toBeLessThanOrEqual(BOX_MM);
   });
 
@@ -37,5 +37,31 @@ describe('planQr', () => {
     const plan = planQr('A001', 'M', BOX_MM);
     expect(plan?.svg).toContain(`viewBox="0 0 ${plan?.moduleCount} ${plan?.moduleCount}"`);
     expect(plan?.svg).toContain('shape-rendering="crispEdges"');
+  });
+});
+
+describe('planQr on other resolutions', () => {
+  test('aligns modules to the dots of a 300dpi printer', () => {
+    const plan = planQr('CL5640-TK-图片色-XL', 'M', 20, 300);
+    if (!plan) throw new Error('expected a QR plan');
+    expect(plan.sizeMm / dotMm(300)).toBeCloseTo(plan.moduleCount * plan.moduleDots, 6);
+  });
+
+  // 模块的最小、最大尺寸按毫米定：分辨率高的打印机不能把二维码打得更小，也不能小到扫不出。
+  test('keeps modules at least 0.25mm on a 600dpi printer', () => {
+    const plan = planQr('CL5640-TK-图片色-XL', 'M', 20, 600);
+    if (!plan) throw new Error('expected a QR plan');
+    expect(plan.moduleDots * dotMm(600)).toBeGreaterThanOrEqual(0.24);
+  });
+
+  test('prints short content about as large at 600dpi as at 203dpi', () => {
+    const low = planQr('1', 'L', 36);
+    const high = planQr('1', 'L', 36, 600);
+    if (!low || !high) throw new Error('expected QR plans');
+    expect(Math.abs(high.sizeMm - low.sizeMm)).toBeLessThan(1);
+  });
+
+  test('uses 203dpi when the printer does not say', () => {
+    expect(planQr('ABC', 'M', 20)).toEqual(planQr('ABC', 'M', 20, DEFAULT_PRINTER_DPI));
   });
 });

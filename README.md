@@ -10,7 +10,7 @@ CDL 出品的扫码打标签工具，支持 Windows 和 macOS。用扫码枪扫�
 | 打印到本机打印机 | ✅ | ✅（家用打印机已实测，热敏标签机待验证） |
 | 驱动纸张检测、打开打印机设置 | ✅ | ✅ |
 | 打印机离线 / 缺纸 / 卡纸检测与提醒 | ✅ | 暂不支持（不影响打印） |
-| 安装包与自动更新 | ✅ | 暂无安装包，需从源码运行（见「开发」） |
+| 安装包与自动更新 | ✅ | pkg 安装包；暂不自动更新，新版本到发布页下载 |
 
 ## 功能
 
@@ -57,8 +57,6 @@ CDL 出品的扫码打标签工具，支持 Windows 和 macOS。用扫码枪扫�
 
 ## 安装、更新与卸载（Windows）
 
-macOS 目前没有安装包，按「开发」一节从源码运行（`bun install` 后 `bun run dev`）。macOS 的打包（dmg、签名与公证）和自动更新在路线图上。
-
 - **安装**：从 [GitHub Releases](https://github.com/HeiSir2014/LabelFlash/releases) 下载 `CDL-LabelFlash-Setup-<版本>.exe`，双击运行，点「立即安装」。
   - 安装包还没有代码签名，第一次运行时 Windows SmartScreen 会拦一下，点「更多信息 → 仍要运行」。
   - 按当前用户安装，不需要管理员权限，默认装到 `%LOCALAPPDATA%\Programs\CDL-LabelFlash`，也可以点「更改」换位置。
@@ -67,6 +65,13 @@ macOS 目前没有安装包，按「开发」一节从源码运行（`bun instal
   - 下载完成后，标题栏出现「新版本 x 已就绪 · 重启更新」，点两次确认，程序重启并装好新版本。
   - 一直不点也没关系：下次退出程序时会在后台静默安装，下次打开就是新版本。
 - **卸载**：在 Windows「设置 → 应用」里卸载。安装目录、快捷方式和开机自启项都会删掉，`%LOCALAPPDATA%\CDL-LabelFlash` 里的数据保留，重装后接着用。
+
+## 安装、更新与卸载（macOS）
+
+- **安装**：从 [GitHub Releases](https://github.com/HeiSir2014/LabelFlash/releases) 下载 `CDL-LabelFlash-<版本>.pkg`，双击运行，按提示输入管理员密码，装进「应用程序」。Apple 芯片和 Intel 的 Mac 用同一个安装包。
+  - 安装包还没有 Apple 开发者签名和公证，第一次双击时 macOS 会提示「无法验证开发者」：点「完成」，到「系统设置 → 隐私与安全性」底部点「仍要打开」，再运行一次。装好的程序可以直接打开。
+- **更新**：macOS 版暂不自动更新（「关于」里会提示）。新版本发布后，下载新的 pkg 覆盖安装即可，数据保留；安装前先退出正在运行的程序。
+- **卸载**：退出程序，把「应用程序」里的「CDL-云签速印」拖到废纸篓。`~/Library/Application Support/CDL-LabelFlash/` 里的数据保留，重装后接着用。
 
 ## 数据与日志
 
@@ -94,7 +99,7 @@ Windows 上另外还有两个目录：
 
 ## 开发
 
-需要 [Bun](https://bun.sh) 1.4 或更高版本。Windows 和 macOS 都可以开发和运行；`dist:win` 只能在 Windows 上跑。
+需要 [Bun](https://bun.sh) 1.4 或更高版本。Windows 和 macOS 都可以开发和运行；`dist:win` 只能在 Windows 上跑，`dist:mac` 只能在 macOS 上跑。
 
 ```bash
 bun install
@@ -108,6 +113,7 @@ bun run relay:dev  # 本机启动手机扫码的中转服务（http://localhost:
 bun run test:relay-browser  # 用 Edge 的假摄像头跑一遍手机扫码页
 bun run installer:skin  # 只生成安装界面的皮肤（调界面时用），输出到 dist/.installer/
 bun run dist:win   # 在 Windows 上打安装包，输出到 dist/
+bun run dist:mac   # 在 macOS 上打 pkg 安装包，输出到 dist/
 ```
 
 开发和测试时，设置环境变量 `CDL_LABELFLASH_USER_DATA` 可以让程序使用单独的数据目录，不动本机真实数据。这个变量只对开发版生效，安装版忽略它。
@@ -117,8 +123,8 @@ bun run dist:win   # 在 Windows 上打安装包，输出到 dist/
 
 GitHub Actions：
 
-- 推送到 `master` 或提交 PR：在 Windows 和 macOS 上执行检查和 E2E 测试，并在 Windows 上打包、上传安装包产物。
-- 推送 `v*` 标签：两个平台的检查都通过后，electron-builder 把 Windows 安装包和 `latest.yml` 发布到 GitHub Release，已安装的客户端会自动更新（macOS 暂无安装包）。
+- 推送到 `master` 或提交 PR：在 Windows 和 macOS 上执行检查和 E2E 测试，并在两个平台上打包、上传安装包产物。
+- 推送 `v*` 标签：两个平台的检查都通过后，把 Windows 安装包、`latest.yml`、blockmap 和 macOS 的 pkg 发布到 GitHub Release；已安装的 Windows 客户端会自动更新。
 - 安装包的默认中转地址来自仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL`（代码里不写域名）；自己构建时可以用环境变量 `CDL_LABELFLASH_DEFAULT_RELAY_URL` 指定，不设就没有默认值。
 
 发布新版本：

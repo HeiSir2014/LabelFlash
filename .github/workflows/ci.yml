@@ -23,8 +23,7 @@ jobs:
       - name: End-to-end tests (Playwright + Electron)
         run: bun run test:e2e
 
-  # macOS 上同样跑检查和 E2E：程序支持 macOS（从源码运行），平台相关的代码（窗口按钮、打印、钥匙串、快捷键）
-  # 两边都要验证。macOS 还没有安装包（dmg、签名与公证在路线图上），所以这里不打包。
+  # macOS 上同样跑检查和 E2E：平台相关的代码（窗口按钮、打印、钥匙串、快捷键）两边都要验证。
   check-macos:
     runs-on: macos-latest
     steps:
@@ -58,14 +57,40 @@ jobs:
           path: dist/*.exe
           if-no-files-found: error
 
-  # 打 v* 标签时发布：electron-builder 上传安装包、latest.yml 和 blockmap，electron-updater 据此自动更新。
+  # macOS 的 pkg 安装包（universal，ad-hoc 签名，见 electron-builder.yml）。pkgbuild 只在 macOS 上有。
+  package-macos:
+    needs: check-macos
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run dist:mac
+        env:
+          CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
+          # 不去钥匙串里找证书：没有开发者证书，签名固定用 ad-hoc。
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # electron-builder 在 PR 里默认不签名（防止把证书交给别人的 PR）。这里只有 ad-hoc 签名、不涉及任何证书，
+          # 不签的话 PR 打出的包和发布的包不一样，Apple 芯片上也打不开，verify-package 会拦下。
+          CSC_FOR_PULL_REQUEST: 'true'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CDL-LabelFlash-macos
+          path: dist/*.pkg
+          if-no-files-found: error
+
+  # 打 v* 标签时发布，分四步：检查并建草稿 → Windows、macOS 各自上传 → 核对齐全后公开。
+  # Windows：electron-builder 上传安装包、latest.yml 和 blockmap，electron-updater 据此自动更新；macOS：只上传 pkg。
   # 先建草稿、上传、核对齐全后再公开：electron-builder 并行上传时，几个上传各自去「建 Release」会互相抢，
   # 1.0.1 就这样丢了 blockmap（下一版的差分更新要用它）；草稿期间客户端也看不到只传了一半的版本。
-  release:
+  release-draft:
     # 两个平台的检查都通过才发布。
     needs: [check, check-macos]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
@@ -94,26 +119,63 @@ jobs:
             echo "::error::仓库的 Actions 变量 LABELFLASH_DEFAULT_RELAY_URL 没有设置，官方安装包会没有默认中转地址。"
             exit 1
           fi
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
-      - run: bun install --frozen-lockfile
       - name: Create the release as a draft
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "${GITHUB_REF_NAME#v}" --notes "CDL-云签速印 ${GITHUB_REF_NAME#v}"
+
+  release-windows:
+    needs: release-draft
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
       - run: bun run release:win
         env:
+          CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish the draft once every file is there
-        shell: bash
+
+  release-macos:
+    needs: release-draft
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run dist:mac
+        env:
+          CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # 没有自动更新（见 electron-builder.yml），只传 pkg，由 gh 直接上传到草稿。
+      - name: Upload the package to the draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" "dist/CDL-LabelFlash-${GITHUB_REF_NAME#v}.pkg"
+
+  release-publish:
+    needs: [release-windows, release-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the draft once every file is there
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           version="${GITHUB_REF_NAME#v}"
           assets="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')"
-          for file in "CDL-LabelFlash-Setup-$version.exe" "CDL-LabelFlash-Setup-$version.exe.blockmap" latest.yml; do
+          for file in "CDL-LabelFlash-Setup-$version.exe" "CDL-LabelFlash-Setup-$version.exe.blockmap" latest.yml "CDL-LabelFlash-$version.pkg"; do
             if ! grep -qx "$file" <<< "$assets"; then
               echo "::error::Release 草稿缺少 $file，不公开。"
               exit 1

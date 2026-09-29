@@ -26,7 +26,7 @@
 | 打印机状态检测与异常通知 | ✅ | 未做：状态按「未知」处理，不阻止打印；计划改用 CUPS 的 `printer-state-reasons` |
 | 窗口按钮 | 自绘最小化 / 最大化 / 关闭 | 系统红绿灯；快捷键显示 ⌘ |
 | 密钥加密 | DPAPI | 钥匙串 |
-| 安装包与自动更新 | ✅ 自绘 NSIS 安装包、差分更新 | 未做：dmg、签名与公证、自动更新都在路线图上；目前从源码运行 |
+| 安装包与自动更新 | ✅ 自绘 NSIS 安装包、差分更新 | pkg 安装包（universal，ad-hoc 签名，未公证）；不自动更新，新版本到发布页下载 |
 
 - **两个平台都要考虑**：写平台相关的代码时，Windows 和 macOS 都要给出行为，其他平台返回「不支持 / 未知」。
 - **验证**：只在一个平台上验证过的改动，在提交说明或验收记录里写明。CI 在 Windows 和 macOS 上都跑 check 和 E2E；真机打印、系统缩放、扫码枪只能人工验证。
@@ -41,6 +41,7 @@
 | `bun test <路径>` | 只跑某个单元测试文件 |
 | `bun run test:e2e` | 构建 → 检查 bundle → Playwright 驱动构建版 Electron |
 | `bun run dist:win` | Windows 安装包（两段构建，见 `resources/installer/CLAUDE.md`），输出到 `dist/` |
+| `bun run dist:mac` | macOS 的 pkg 安装包（只能在 macOS 上打），输出到 `dist/` |
 | `bun run installer:skin` | 只生成安装界面的皮肤，调界面时用 |
 | `bun run icons` | 改了 `resources/*.svg` 后重新生成 PNG 图标 |
 | `bun run relay:dev` | 本机构建并启动手机扫码的中转服务（http://localhost:3180） |
@@ -51,11 +52,11 @@
 
 - 任何改动：`bun run check`。Biome 零问题，类型检查零错误，单元测试全过。
 - 改了界面或主进程：再跑 `bun run test:e2e`。
-- 改了打包或安装界面：`bun run dist:win`，并在 Windows 上实际装一次、更新一次、卸载一次。
+- 改了打包或安装界面：`bun run dist:win`，并在 Windows 上实际装一次、更新一次、卸载一次；改了 macOS 打包：`bun run dist:mac`，在 Mac 上实际装一次、覆盖装一次。
 - 改了扫码页或手机扫码协议：再跑 `bun run test:relay-browser`。
 - 改了平台相关的代码（打印、窗口、托盘、快捷键、系统命令）：在 Windows 和 macOS 上各跑一次。
 
-CI（GitHub Actions）会在 PR 和 `master` 上跑：windows-latest 上 check、E2E 和 `dist:win`；macos-latest 上 check 和 E2E（macOS 还没有安装包）。发布作业要求两个平台的检查都通过。
+CI（GitHub Actions）会在 PR 和 `master` 上跑：windows-latest 上 check、E2E 和 `dist:win`；macos-latest 上 check、E2E 和 `dist:mac`。发布作业要求两个平台的检查都通过。
 
 ## 架构
 
@@ -97,7 +98,7 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
 | 位置 | 内容 |
 |---|---|
 | Windows：`%LOCALAPPDATA%\CDL-LabelFlash\`<br>macOS：`~/Library/Application Support/CDL-LabelFlash/` | 数据库 `labelflash.db`、日志 `logs/`、语音缓存 `voice-cache/` |
-| Windows：`%LOCALAPPDATA%\Programs\CDL-LabelFlash\` | 安装目录（按当前用户安装，不需要管理员权限） |
+| Windows：`%LOCALAPPDATA%\Programs\CDL-LabelFlash\`<br>macOS：`/Applications/CDL-云签速印.app` | 安装目录（Windows 按当前用户安装，不需要管理员权限；macOS 的 pkg 装进「应用程序」，要输入管理员密码） |
 | Windows：`%LOCALAPPDATA%\cdl-labelflash-updater\` | 自动更新缓存：本机安装包的副本（差分下载的底）和待安装的更新 |
 
 数据目录的位置由 `src/main/index.ts` 决定：Windows 放 `LOCALAPPDATA`（本机目录，不进漫游配置），其他平台放系统的 `appData`。
@@ -119,14 +120,16 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
 
 ## 打包、更新与发布
 
-- **安装包**：目前只有 Windows 版。自绘的圆形安装界面（nsNiuniuSkin 插件），由 `bun run dist:win` 分两段构建。不要直接运行 `electron-builder`，那样得到的是默认界面，也没有卸载程序。
-- **macOS 打包**：还没有做。要做时需要解决 dmg、代码签名与公证：没有签名，macOS 上的自动更新无法校验和安装。
-- **自动更新**：electron-updater 从 GitHub Releases 下载，支持 blockmap 差分下载。所有更新行为都在 `src/main/update-settings.ts` 里显式设置。
+- **Windows 安装包**：自绘的圆形安装界面（nsNiuniuSkin 插件），由 `bun run dist:win` 分两段构建。不要直接运行 `electron-builder` 打 Windows 包，那样得到的是默认界面，也没有卸载程序。
+- **macOS 安装包**：`bun run dist:mac` 打 pkg，装进「应用程序」，Apple 芯片和 Intel 共用（universal）。配置和取舍写在 `electron-builder.yml` 的 `mac`、`pkg` 两段。打完由 `scripts/mac/verify-package.ts` 核对签名完好且是 ad-hoc、程序同时有 x86_64 和 arm64、pkg 装进 `/Applications`，不通过就算打包失败。
+  - 还没有 Apple 开发者证书：程序是 ad-hoc 签名，安装包没有签名、没有公证，下载后第一次打开要在「系统设置 → 隐私与安全性」里点「仍要打开」。
+  - 不能自动更新（Squirrel.Mac 要校验签名），程序里不检查更新，「关于」提示到发布页下载。有了证书之后再做签名、公证和自动更新。
+- **自动更新**：只有 Windows 版。electron-updater 从 GitHub Releases 下载，支持 blockmap 差分下载。启动时是否检查、所有更新行为都在 `src/main/update-settings.ts` 里显式设置。
 - **发版步骤**：
   1. 改 `package.json` 的 `version`，经 PR 合进 `master`。
   2. 在 `master` 的提交上打同名标签（例如 `v1.0.1`）并推送，CI 的 release 作业负责发布。
   3. release 作业先检查三件事，不符合就不发布：标签所在的提交在 `master` 上；标签和 `version` 一致（客户端按版本号比较，并按文件名里的版本号去找旧版的 blockmap）；设置了仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL`（官方安装包的默认中转地址，构建时注入，代码里不写域名）。
-  4. Release 先建成草稿，上传完再核对安装包、blockmap、`latest.yml` 三个文件都在，才公开。
+  4. Release 先建成草稿，Windows 和 macOS 各自上传，核对 Windows 安装包、blockmap、`latest.yml` 和 macOS 的 pkg 四个文件都在，才公开。
 - **标签要等确认**：打版本标签前先得到用户确认。
 
 ## Windows 上开发的坑
@@ -139,7 +142,7 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
 
 ## macOS 上开发
 
-- **命令**：和 Windows 相同：`bun install`、`bun run dev`、`bun run check`、`bun run test:e2e`。`dist:win` 只能在 Windows 上跑。
+- **命令**：和 Windows 相同：`bun install`、`bun run dev`、`bun run check`、`bun run test:e2e`。`dist:win` 只能在 Windows 上跑，`dist:mac` 只能在 macOS 上跑。
 - **程序坞图标**：开发版里用 `app.dock.setIcon` 显示应用图标；安装版的图标由打包配置决定。
 - **窗口按钮**：标题栏左侧留给系统红绿灯（`--traffic-light-inset`）。改标题栏时，macOS 上要核对红绿灯区域和全屏状态。
 - **打印验证**：打印功能可以先用家用打印机验证出纸。接上热敏标签机后，要查看 CUPS 任务的纸张是不是 60×40。

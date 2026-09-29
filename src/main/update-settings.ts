@@ -1,4 +1,17 @@
 import type { AppUpdater } from 'electron-updater';
+import type { UpdateStatus } from '../shared/update-status';
+
+/**
+ * 启动时的更新状态：只有打包好的 Windows 版自动更新。
+ * macOS 的安装包（pkg）没有 Apple 开发者签名，Squirrel.Mac 装更新前要校验签名，校验不过，下载了也装不上；
+ * 所以不检查，由「关于」提示去发布页下载。有了签名和公证之后再打开。
+ */
+export function initialUpdateStatus(platform: NodeJS.Platform, isPackaged: boolean): UpdateStatus {
+  if (!isPackaged) {
+    return { state: 'disabled', reason: 'development' };
+  }
+  return platform === 'win32' ? { state: 'idle' } : { state: 'disabled', reason: 'unsupported-platform' };
+}
 
 /** 更新客户端里我们依赖的那些行为。 */
 export type UpdateClientSettings = Pick<

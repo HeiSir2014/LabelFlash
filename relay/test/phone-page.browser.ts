@@ -16,6 +16,7 @@ import type { PhonePrintResult } from '../../src/shared/mobile-protocol';
 import type { MobileStatus } from '../../src/shared/mobile-status';
 import type { SocketLike } from '../../src/shared/relay-socket';
 import { type RunningRelay, startRelay } from '../src/server';
+import { SCANNED_FREQUENCY_HZ } from '../web/src/scan-sound';
 import { writeQrVideo } from './fake-camera';
 
 const LABEL = 'CL5640-TK-图片色-XL';
@@ -102,6 +103,30 @@ test(
     }
     const status = host.status() as Extract<MobileStatus, { state: 'active' }>;
     const page = await browser.newPage();
+    // 记下页面合成的每一声（振荡器的频率）：扫到码要真的调用 Web Audio 响一声「嘀」。
+    await page.addInitScript(() => {
+      // 这段在页面里运行；中转服务的 tsconfig 不带 DOM 类型，只声明用到的几项。
+      interface Oscillator {
+        frequency: { value: number };
+        start(when?: number): void;
+      }
+      const scope = globalThis as unknown as {
+        e2eTones: number[];
+        AudioContext: { prototype: { createOscillator(this: unknown): Oscillator } };
+      };
+      const tones: number[] = [];
+      scope.e2eTones = tones;
+      const original = scope.AudioContext.prototype.createOscillator;
+      scope.AudioContext.prototype.createOscillator = function createOscillator(this: unknown) {
+        const oscillator = original.call(this);
+        const start = oscillator.start.bind(oscillator);
+        oscillator.start = (when?: number) => {
+          tones.push(oscillator.frequency.value);
+          start(when);
+        };
+        return oscillator;
+      };
+    });
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(String(error)));
     await page.goto(status.url);
@@ -116,6 +141,10 @@ test(
 
     await Bun.sleep(HOLD_STILL_MS);
     expect(prints).toEqual([LABEL]);
+    // 同一张标签停在镜头里：只打一次，也只「嘀」一声。
+    expect(await page.evaluate(() => (globalThis as unknown as { e2eTones: number[] }).e2eTones)).toEqual([
+      SCANNED_FREQUENCY_HZ,
+    ]);
     expect(await page.locator('.job').count()).toBe(1);
     expect(host.status()).toMatchObject({ phones: [{ online: true, printed: 1 }], printed: 1 });
     expect(errors).toEqual([]);

@@ -10,7 +10,9 @@ import { deviceLabel } from './device-label';
 import { PhoneController } from './phone-controller';
 import { PhoneSession } from './phone-session';
 import { initialPhoneState } from './phone-state';
+import { readSoundSetting, writeSoundSetting } from './scan-sound';
 import { type KeyValueStorage, openSessionStore } from './session-store';
+import { SoundPlayer } from './sound-player';
 import { PhoneView } from './view';
 
 /** 相对页面地址，由 scripts/relay/build.ts 注入（带内容哈希）。 */
@@ -38,9 +40,14 @@ async function start(): Promise<void> {
     onPhoto: (file) => void controller?.photo(file),
     onManual: (raw) => controller?.manual(raw) ?? false,
     onTorch: (on) => controller?.torch(on),
+    onToggleSound: () => controller?.toggleSound(),
     onViewfinderTap: (tap) => controller?.focusAt(tap),
     onReload: () => controller?.reload(),
   });
+  const storage = safeLocalStorage();
+  const sound = new SoundPlayer(readSoundSetting(storage), (isOn) => writeSoundSetting(storage, isOn));
+  // 页面上的任何一次点按都顺带解锁 / 恢复声音：iPhone 切到后台再回来会把声音挂起，要等下一次点按才能恢复。
+  document.addEventListener('pointerdown', () => sound.unlock(), { capture: true, passive: true });
   const pageController = new PhoneController(
     {
       camera,
@@ -49,6 +56,7 @@ async function start(): Promise<void> {
       readPhoto: imageFromFile,
       // 没有振动的浏览器（iPhone）上什么都不做；还没点按过页面时浏览器会忽略振动。
       vibrate: (pattern) => void navigator.vibrate?.(pattern),
+      sound,
       isVisible: () => document.visibilityState === 'visible',
       watchVisibility: (listener) => {
         document.addEventListener('visibilitychange', listener);
@@ -79,7 +87,7 @@ async function start(): Promise<void> {
     session: fragment.session,
     key: await importSessionKey(fragment.key),
     device: deviceLabel(navigator.userAgent),
-    store: openSessionStore(safeLocalStorage(), fragment.session, () => Date.now()),
+    store: openSessionStore(storage, fragment.session, () => Date.now()),
     createSocket: (url) => new WebSocket(url),
     timers: {
       setTimeout: (callback, ms) => window.setTimeout(callback, ms),

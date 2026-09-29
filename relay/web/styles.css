@@ -273,9 +273,10 @@ h1 {
   margin: 0;
 }
 
-.torch {
+/* 取景框下沿的两个胶囊按钮：左边声音开关，右边手电筒 */
+.torch,
+.sound-toggle {
   position: absolute;
-  right: var(--space-3);
   bottom: var(--space-3);
   min-height: var(--touch);
   padding: 0 var(--space-4);
@@ -285,6 +286,14 @@ h1 {
   color: #fff;
   font: inherit;
   font-size: 14px;
+}
+
+.torch {
+  right: var(--space-3);
+}
+
+.sound-toggle {
+  left: var(--space-3);
 }
 
 .hint {

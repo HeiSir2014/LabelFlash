@@ -35,4 +35,4 @@
 **目标**：`ocr-addon`（napi-rs `AsyncTask`）；`native/ocr/node`：`OcrEngine.create / recognize / close`、参数校验、类型；`bun run ocr:build` 编译并把 `.node` 放好；示例和 benchmark 在 Bun 和 Node 上都能跑。
 **成功标准**：Bun、Node 各跑一次示例得到同样的文字；推理期间事件循环里的定时器照常触发；benchmark 输出三种模型组合的各阶段耗时。
 **测试**：TS 包装的参数校验单元测试（不需要 `.node`）；有 `.node` 和模型时的端到端测试。
-**状态**：未开始
+**状态**：完成

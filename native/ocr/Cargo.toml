@@ -2,7 +2,7 @@
 # ocr-core：纯 Rust 的识别流水线；ocr-addon：给 Bun / Node.js 用的 Node-API 扩展。
 [workspace]
 resolver = "2"
-members = ["crates/ocr-core"]
+members = ["crates/ocr-core", "crates/ocr-addon"]
 
 [workspace.package]
 version = "0.1.0"

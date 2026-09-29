@@ -147,6 +147,18 @@ test(
     ]);
     expect(await page.locator('.job').count()).toBe(1);
     expect(host.status()).toMatchObject({ phones: [{ online: true, printed: 1 }], printed: 1 });
+
+    // 页面不能被双指或双击放大：双击取景画面只切换焦段（假摄像头不能变焦，焦段按钮不出现，也不报错）。
+    const touchAction = await page.evaluate(() => {
+      const scope = globalThis as unknown as {
+        document: { documentElement: unknown };
+        getComputedStyle(element: unknown): { touchAction: string };
+      };
+      return scope.getComputedStyle(scope.document.documentElement).touchAction;
+    });
+    expect(touchAction).toBe('pan-x pan-y');
+    await page.locator('#viewfinder').dblclick({ position: { x: 40, y: 40 } });
+    expect(await page.locator('#lens').isHidden()).toBe(true);
     expect(errors).toEqual([]);
   },
   SCAN_TIMEOUT_MS * 2,

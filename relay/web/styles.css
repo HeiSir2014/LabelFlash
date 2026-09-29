@@ -55,6 +55,11 @@
   box-sizing: border-box;
 }
 
+/* 只允许上下左右滚动：禁掉双指放大和双击放大（双击取景画面留给切换焦段）。iPhone 另见 main.ts 的 gesturestart。 */
+html {
+  touch-action: pan-x pan-y;
+}
+
 html,
 body {
   margin: 0;
@@ -273,9 +278,10 @@ h1 {
   margin: 0;
 }
 
-/* 取景框下沿的两个胶囊按钮：左边声音开关，右边手电筒 */
+/* 取景框下沿的胶囊按钮：左边声音开关，中间焦段，右边手电筒 */
 .torch,
-.sound-toggle {
+.sound-toggle,
+.lens {
   position: absolute;
   bottom: var(--space-3);
   min-height: var(--touch);
@@ -294,6 +300,11 @@ h1 {
 
 .sound-toggle {
   left: var(--space-3);
+}
+
+.lens {
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .hint {

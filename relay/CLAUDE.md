@@ -26,7 +26,9 @@
 ## 摄像头与解码（都在 `web/src/`）
 
 - **能力判断是纯函数**：对焦、变焦、手电筒按 `getCapabilities()` 报告的能力决定，逻辑在 `camera-features.ts`，有单元测试；`camera.ts` 只调用浏览器 API。
-- **iPhone**：不报告这些能力，由系统持续自动对焦，不要为它写特殊分支。
+- **iPhone**：Safari 17 起只报告变焦，由系统持续自动对焦；按报告的能力走同一套逻辑，不要为它写特殊分支。
+- **焦段**：近焦、远焦都是 `zoom` 的一档（`lensZooms`），多镜头手机由系统按倍数换镜头；不要按 `enumerateDevices` 的镜头名字选摄像头，名字随系统语言变。双击识别是纯函数（`isDoubleTap`）。
+- **页面不能放大**：`touch-action: pan-x pan-y`、viewport 的 `user-scalable=no` 和 iPhone 的 `gesturestart` 三处缺一不可；新增输入框字号不小于 16px，否则 iPhone 聚焦时自动放大。
 - **字符集**：没有 ECI 的码按原始字节判断 UTF-8 还是 GBK（`barcode-text.ts`），不用 ZXing 的猜测。短的 GBK 中文可能恰好是合法 UTF-8，例如「图片色」。
 - **防抖**：同一张标签停在镜头里只打一次（`scan-gate.ts`，按码分开记）。拍照识别、手动输入、重试、补打不经过防抖，但会被记住。
 - **只解码看得见的区域**：画面按 `object-fit: cover` 裁切显示，取帧时按 `visibleVideoRect` 裁掉看不见的边。

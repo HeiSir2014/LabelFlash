@@ -4,11 +4,21 @@
  */
 import { isRequestRaw } from '../../../src/shared/mobile-protocol';
 import type { CameraPort } from './camera';
-import { type Point, type Size, tapToVideoPoint, visibleVideoRect } from './camera-features';
+import {
+  isDoubleTap,
+  type Lens,
+  type Point,
+  type Size,
+  type Tap,
+  tapToVideoPoint,
+  visibleVideoRect,
+} from './camera-features';
 import type { DecoderPort } from './decoder';
 import { canSubmit, isFinished, type JobEntry, type PhoneEvent, type PhoneState, reducePhone } from './phone-state';
 import {
+  FAR_LENS_HINT,
   type JobAction,
+  NEAR_LENS_HINT,
   PHOTO_EMPTY_HINT,
   PHOTO_FAILED_HINT,
   resultLevel,
@@ -44,6 +54,8 @@ export interface ViewExtras {
   hasTorch: boolean;
   isTorchOn: boolean;
   isSoundOn: boolean;
+  /** 当前焦段；不能切换时为 null（不显示焦段按钮）。 */
+  lens: Lens | null;
   /** 取景下方的一次性提示；没有时为 null。 */
   hint: string | null;
 }
@@ -83,6 +95,8 @@ export class PhoneController {
   private readonly gate = new ScanGate();
   private isTorchOn = false;
   private isOpeningCamera = false;
+  /** 上一次点按取景画面，用来认出双击；双击认出后清空，连点三下只算一次。 */
+  private lastTap: Tap | null = null;
   private hint: string | null = null;
   private hintTimer: unknown = null;
   private scanTimer: unknown = null;
@@ -176,8 +190,36 @@ export class PhoneController {
     );
   }
 
-  /** 点按取景画面对焦。iPhone 等不支持点按对焦的由系统自动对焦，点了也不画对焦圈，免得让人以为对焦了。 */
-  focusAt(tap: Point): void {
+  /** 点按取景画面：单击对焦，双击在近焦和远焦之间切换。 */
+  tapViewfinder(tap: Point): void {
+    const now = this.deps.now();
+    if (isDoubleTap(this.lastTap, tap, now)) {
+      this.lastTap = null;
+      this.switchLens();
+      return;
+    }
+    this.lastTap = { point: tap, at: now };
+    this.focusAt(tap);
+  }
+
+  /** 切换焦段（双击画面或点焦段按钮）。设备拒绝时焦段不变，按钮照实显示。 */
+  switchLens(): void {
+    const current = this.deps.camera.currentLens;
+    if (this.state.camera !== 'live' || current === null) {
+      return;
+    }
+    const next: Lens = current === 'near' ? 'far' : 'near';
+    this.deps.camera.setLens(next).then(
+      () => {
+        this.showHint(next === 'far' ? FAR_LENS_HINT : NEAR_LENS_HINT);
+        this.render();
+      },
+      (error: unknown) => console.warn('[PhoneController] lens switch failed', error),
+    );
+  }
+
+  /** 点按对焦。iPhone 等不支持点按对焦的由系统自动对焦，点了也不画对焦圈，免得让人以为对焦了。 */
+  private focusAt(tap: Point): void {
     const frame = this.deps.camera.frameSize;
     const element = this.deps.view.viewfinderSize();
     if (this.state.camera !== 'live' || !frame || !element || !this.deps.camera.canFocusAt) {
@@ -342,6 +384,7 @@ export class PhoneController {
       hasTorch: this.state.camera === 'live' && this.deps.camera.hasTorch,
       isTorchOn: this.isTorchOn,
       isSoundOn: this.deps.sound.isEnabled,
+      lens: this.state.camera === 'live' ? this.deps.camera.currentLens : null,
       hint: this.hint,
     });
   }

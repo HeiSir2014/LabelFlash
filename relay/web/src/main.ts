@@ -41,13 +41,17 @@ async function start(): Promise<void> {
     onManual: (raw) => controller?.manual(raw) ?? false,
     onTorch: (on) => controller?.torch(on),
     onToggleSound: () => controller?.toggleSound(),
-    onViewfinderTap: (tap) => controller?.focusAt(tap),
+    onViewfinderTap: (tap) => controller?.tapViewfinder(tap),
+    onSwitchLens: () => controller?.switchLens(),
     onReload: () => controller?.reload(),
   });
   const storage = safeLocalStorage();
   const sound = new SoundPlayer(readSoundSetting(storage), (isOn) => writeSoundSetting(storage, isOn));
   // 页面上的任何一次点按都顺带解锁 / 恢复声音：iPhone 切到后台再回来会把声音挂起，要等下一次点按才能恢复。
   document.addEventListener('pointerdown', () => sound.unlock(), { capture: true, passive: true });
+  // 不让页面被双指放大：放大后取景框和按钮跑出屏幕，很难缩回来。Chrome 按 viewport 和 CSS 的 touch-action 处理；
+  // iPhone 的 WebKit 为了无障碍不理会 user-scalable=no，要取消它自己的 gesturestart 事件。
+  document.addEventListener('gesturestart', (event) => event.preventDefault());
   const pageController = new PhoneController(
     {
       camera,

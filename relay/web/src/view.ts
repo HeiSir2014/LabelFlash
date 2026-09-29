@@ -24,8 +24,9 @@ export interface ViewHandlers {
   onManual(raw: string): boolean;
   onTorch(on: boolean): void;
   onToggleSound(): void;
-  /** 点了取景画面：tap 是点在元素上的位置（像素）。 */
+  /** 点了取景画面：tap 是点在元素上的位置（像素）。单击对焦，双击切换焦段。 */
   onViewfinderTap(tap: Point): void;
+  onSwitchLens(): void;
   onReload(): void;
 }
 
@@ -62,7 +63,7 @@ export class PhoneView implements ViewPort {
       }
     });
     this.byId('viewfinder').addEventListener('click', (event) => {
-      // 手电筒、声音开关、开始扫码按钮也在取景框里，点它们不算点按对焦。
+      // 手电筒、声音开关、焦段、开始扫码按钮也在取景框里，点它们不算点按取景画面。
       if ((event.target as HTMLElement).closest('button')) {
         return;
       }
@@ -72,6 +73,7 @@ export class PhoneView implements ViewPort {
     this.byId('cover-button').addEventListener('click', () => handlers.onOpenCamera());
     this.byId('torch').addEventListener('click', () => handlers.onTorch(!this.isTorchOn));
     this.byId('sound-toggle').addEventListener('click', () => handlers.onToggleSound());
+    this.byId('lens').addEventListener('click', () => handlers.onSwitchLens());
     this.byId('message-action').addEventListener('click', () => handlers.onReload());
     this.byId<HTMLFormElement>('manual').addEventListener('submit', (event) => {
       event.preventDefault();
@@ -145,6 +147,10 @@ export class PhoneView implements ViewPort {
     const soundToggle = this.byId('sound-toggle');
     soundToggle.textContent = extras.isSoundOn ? '声音：开' : '声音：关';
     soundToggle.setAttribute('aria-pressed', String(extras.isSoundOn));
+    const lens = this.byId('lens');
+    lens.hidden = extras.lens === null;
+    lens.textContent = extras.lens === 'far' ? '焦段：远' : '焦段：近';
+    lens.setAttribute('aria-pressed', String(extras.lens === 'far'));
     // 识别组件坏了时拍照识别也用不了，只留手动输入。
     this.byId('photo-control').hidden = state.decoder === 'failed';
     this.renderJobs(state);

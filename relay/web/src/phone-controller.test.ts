@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { MAX_PENDING_JOBS, MAX_REQUEST_RAW_LENGTH, type PhonePrintResult } from '../../../src/shared/mobile-protocol';
 import { FakeTimers } from '../../../src/shared/testing/fake-socket';
 import type { CameraPort } from './camera';
-import type { Point, Rect, Size } from './camera-features';
+import { DOUBLE_TAP_MS, type Lens, type Point, type Rect, type Size } from './camera-features';
 import type { DecoderPort } from './decoder';
 import {
   ALERT_VIBRATE_PATTERN_MS,
@@ -16,7 +16,7 @@ import {
   type ViewPort,
 } from './phone-controller';
 import { initialPhoneState, type PhoneState } from './phone-state';
-import { TOO_LONG_HINT, TOO_MANY_PENDING_HINT } from './result-view';
+import { FAR_LENS_HINT, NEAR_LENS_HINT, TOO_LONG_HINT, TOO_MANY_PENDING_HINT } from './result-view';
 import { SAME_CODE_REARM_MS } from './scan-gate';
 import type { SoundCue } from './scan-sound';
 
@@ -103,6 +103,24 @@ class FakeCamera implements CameraPort {
   grab(area: Rect): ImageData | null {
     this.grabbed.push(area);
     return {} as ImageData;
+  }
+
+  /** 摄像头开着时报告当前焦段；null 表示这台设备不能切换。 */
+  lens: Lens | null = 'near';
+  lensFails = false;
+  readonly lensSwitches: Lens[] = [];
+
+  get currentLens(): Lens | null {
+    return this.isRunning ? this.lens : null;
+  }
+
+  setLens(lens: Lens): Promise<void> {
+    if (this.lensFails) {
+      return Promise.reject(new Error('OverconstrainedError'));
+    }
+    this.lensSwitches.push(lens);
+    this.lens = lens;
+    return Promise.resolve();
   }
 }
 
@@ -318,9 +336,77 @@ describe('PhoneController: the camera', () => {
 
   test('focuses where the viewfinder was tapped', async () => {
     await scanning();
-    controller.focusAt({ x: 180, y: 180 });
+    controller.tapViewfinder({ x: 180, y: 180 });
     expect(view.rings).toEqual([{ x: 180, y: 180 }]);
     expect(camera.focused).toEqual([{ x: 0.5, y: 0.5 }]);
+  });
+});
+
+describe('PhoneController: switching lenses', () => {
+  const TAP: Point = { x: 180, y: 180 };
+
+  async function doubleTap(): Promise<void> {
+    controller.tapViewfinder(TAP);
+    timers.advance(DOUBLE_TAP_MS / 2);
+    controller.tapViewfinder(TAP);
+    await settle();
+  }
+
+  test('shows the near lens once the camera is live', async () => {
+    await scanning();
+    expect(view.extras?.lens).toBe('near');
+  });
+
+  test('switches to the far lens on a double tap and back on the next one', async () => {
+    await scanning();
+    await doubleTap();
+    expect(camera.lensSwitches).toEqual(['far']);
+    expect(view.extras?.lens).toBe('far');
+    expect(view.extras?.hint).toBe(FAR_LENS_HINT);
+    timers.advance(DOUBLE_TAP_MS * 2);
+    await doubleTap();
+    expect(camera.lensSwitches).toEqual(['far', 'near']);
+    expect(view.extras?.hint).toBe(NEAR_LENS_HINT);
+  });
+
+  test('does not take two slow taps as a double tap', async () => {
+    await scanning();
+    controller.tapViewfinder(TAP);
+    timers.advance(DOUBLE_TAP_MS * 2);
+    controller.tapViewfinder(TAP);
+    await settle();
+    expect(camera.lensSwitches).toEqual([]);
+    expect(camera.focused).toHaveLength(2);
+  });
+
+  test('switches once for three quick taps', async () => {
+    await scanning();
+    await doubleTap();
+    controller.tapViewfinder(TAP);
+    await settle();
+    expect(camera.lensSwitches).toEqual(['far']);
+  });
+
+  test('switches with the lens button too', async () => {
+    await scanning();
+    controller.switchLens();
+    await settle();
+    expect(camera.lensSwitches).toEqual(['far']);
+  });
+
+  test('hides the switch when the camera has a single zoom', async () => {
+    camera.lens = null;
+    await scanning();
+    await doubleTap();
+    expect(camera.lensSwitches).toEqual([]);
+    expect(view.extras?.lens).toBeNull();
+  });
+
+  test('keeps the lens when the camera refuses to switch', async () => {
+    camera.lensFails = true;
+    await scanning();
+    await doubleTap();
+    expect(view.extras?.lens).toBe('near');
   });
 });
 

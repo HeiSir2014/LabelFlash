@@ -4,6 +4,7 @@
  * 一启动就开始加载 wasm，加载好了（或失败了）告诉页面，页面据此决定能不能扫码。
  */
 import { prepareZXingModule, readBarcodes } from 'zxing-wasm/reader';
+import type { CodeCorners } from './label-crop';
 import { barcodeText, READER_OPTIONS } from './reader-options';
 
 /** 相对 worker 自己的地址，由 scripts/relay/build.ts 注入（带内容哈希）。 */
@@ -17,7 +18,8 @@ export interface DecodeRequest {
 export type WorkerReply =
   | { type: 'ready' }
   | { type: 'failed'; message: string }
-  | { type: 'decoded'; id: number; text: string | null };
+  /** corners：码的四个角（按码自己的方向），截标签图用；读不出时为 null。 */
+  | { type: 'decoded'; id: number; text: string | null; corners: CodeCorners | null };
 
 interface WorkerScope {
   location: Location;
@@ -42,9 +44,19 @@ scope.onmessage = async (event) => {
   const { id, image } = event.data;
   try {
     const [result] = await readBarcodes(image, READER_OPTIONS);
-    scope.postMessage({ type: 'decoded', id, text: result ? barcodeText(result) : null });
+    const text = result ? barcodeText(result) : null;
+    const corners: CodeCorners | null =
+      result && text !== null
+        ? {
+            topLeft: { x: result.position.topLeft.x, y: result.position.topLeft.y },
+            topRight: { x: result.position.topRight.x, y: result.position.topRight.y },
+            bottomRight: { x: result.position.bottomRight.x, y: result.position.bottomRight.y },
+            bottomLeft: { x: result.position.bottomLeft.x, y: result.position.bottomLeft.y },
+          }
+        : null;
+    scope.postMessage({ type: 'decoded', id, text, corners });
   } catch (error) {
     console.error('[decode-worker] decoding failed', error);
-    scope.postMessage({ type: 'decoded', id, text: null });
+    scope.postMessage({ type: 'decoded', id, text: null, corners: null });
   }
 };

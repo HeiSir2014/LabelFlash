@@ -2,6 +2,7 @@
  * 把状态画到页面上。页面结构在 index.html 里，这里只切换区块、填文字（一律 textContent，不拼 HTML）。
  * 用到的文字都来自 result-view.ts 的纯函数。
  */
+import { MAX_MANUAL_VALUE_LENGTH } from '../../../src/shared/mobile-protocol';
 import type { Point, Size } from './camera-features';
 import type { ViewExtras, ViewPort } from './phone-controller';
 import type { JobEntry, PhoneState } from './phone-state';
@@ -19,6 +20,8 @@ import {
 export interface ViewHandlers {
   onOpenCamera(): void;
   onJobAction(job: JobEntry, action: JobAction): void;
+  /** 在没认出的任务卡片上手动补了一个字段；返回是否已提交，没提交时输入框里的内容留着。 */
+  onJobField(job: JobEntry, field: string, value: string): boolean;
   onPhoto(file: File): void;
   /** 返回是否已提交；没提交时输入框里的内容留着。 */
   onManual(raw: string): boolean;
@@ -222,6 +225,36 @@ export class PhoneView implements ViewPort {
       );
       item.append(actions);
     }
+    if (view.input !== undefined) {
+      item.append(this.fieldForm(job, view.input));
+    }
+  }
+
+  /** 手动补一个字段：输入框（字号 16px，iPhone 不会放大页面）和「打印」。 */
+  private fieldForm(job: JobEntry, field: string): HTMLFormElement {
+    const form = this.doc.createElement('form');
+    form.className = 'manual job-field';
+    form.autocomplete = 'off';
+    const input = this.doc.createElement('input');
+    input.type = 'text';
+    input.enterKeyHint = 'go';
+    input.maxLength = MAX_MANUAL_VALUE_LENGTH;
+    input.autocapitalize = 'characters';
+    input.spellcheck = false;
+    input.placeholder = `输入${field}`;
+    input.setAttribute('aria-label', `手动输入${field}`);
+    const button = this.doc.createElement('button');
+    button.type = 'submit';
+    button.className = 'button';
+    button.textContent = '打印';
+    form.append(input, button);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (this.handlers.onJobField(job, field, input.value)) {
+        input.value = '';
+      }
+    });
+    return form;
   }
 
   private announce(view: JobView | null): void {

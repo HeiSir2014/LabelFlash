@@ -6,7 +6,15 @@
  * 存在 localStorage，每个会话一条记录；打开时顺手清掉早已结束的会话留下的记录。
  * 无痕模式或禁用存储时 localStorage 可能抛错，这时退回内存：本页有效，刷新后需要在电脑上重新开始。
  */
-import { isRandomId, isRequestRaw, MAX_PENDING_JOBS } from '../../../src/shared/mobile-protocol';
+import {
+  isRandomId,
+  isRequestRaw,
+  MAX_PENDING_JOBS,
+  type PhoneField,
+  type PhoneImage,
+  parseManualFields,
+  parsePhoneImage,
+} from '../../../src/shared/mobile-protocol';
 
 export interface KeyValueStorage {
   readonly length: number;
@@ -16,11 +24,13 @@ export interface KeyValueStorage {
   removeItem(key: string): void;
 }
 
-/** 发件箱里的一个任务：任务号就是幂等键，重发时原样带上。 */
+/** 发件箱里的一个任务：任务号就是幂等键，重发时原样带上（连同标签图和手动输入的字段）。 */
 export interface StoredJob {
   id: string;
   raw: string;
   force: boolean;
+  image?: PhoneImage;
+  fields?: PhoneField[];
 }
 
 export interface SessionStore {
@@ -106,8 +116,18 @@ function parseJob(value: unknown): StoredJob | null {
   if (typeof value !== 'object' || value === null) {
     return null;
   }
-  const { id, raw, force } = value as Record<string, unknown>;
-  return isRandomId(id) && isRequestRaw(raw) && typeof force === 'boolean' ? { id, raw, force } : null;
+  const record = value as Record<string, unknown>;
+  const { id, raw, force } = record;
+  if (!isRandomId(id) || !isRequestRaw(raw) || typeof force !== 'boolean') {
+    return null;
+  }
+  // 图和字段按协议同样的规则检查：存储被改坏了就当这个任务没有，不发出去让电脑拒收。
+  const image = record['image'] === undefined ? undefined : parsePhoneImage(record['image']);
+  const fields = record['fields'] === undefined ? undefined : parseManualFields(record['fields']);
+  if (image === null || fields === null) {
+    return null;
+  }
+  return { id, raw, force, ...(image === undefined ? {} : { image }), ...(fields === undefined ? {} : { fields }) };
 }
 
 /** 删掉别的会话留下的过期记录。存储不可用时什么都不做。 */

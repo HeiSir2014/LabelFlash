@@ -391,8 +391,8 @@ export function parsePhoneMessage(value: unknown): PhoneMessage | null {
       ) {
         return null;
       }
-      const image = value['image'] === undefined ? undefined : readPhoneImage(value['image']);
-      const fields = value['fields'] === undefined ? undefined : readManualFields(value['fields']);
+      const image = value['image'] === undefined ? undefined : parsePhoneImage(value['image']);
+      const fields = value['fields'] === undefined ? undefined : parseManualFields(value['fields']);
       if (image === null || fields === null) {
         return null;
       }
@@ -572,7 +572,7 @@ function parseRecord(text: string): Record<string, unknown> | null {
 const JPEG_BASE64 = /^\/9j\/[A-Za-z0-9+/]*={0,2}$/;
 const MAX_IMAGE_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
 
-function readPhoneImage(value: unknown): PhoneImage | null {
+export function parsePhoneImage(value: unknown): PhoneImage | null {
   if (!isRecord(value) || !isRecord(value['code'])) {
     return null;
   }
@@ -596,7 +596,7 @@ function readPhoneImage(value: unknown): PhoneImage | null {
 }
 
 /** 手动输入的字段：名称按规则的字段名要求，值去掉首尾空白后 1–100 个字、不含控制字符，名称不重复。 */
-function readManualFields(value: unknown): PhoneField[] | null {
+export function parseManualFields(value: unknown): PhoneField[] | null {
   if (!Array.isArray(value) || value.length > MAX_MANUAL_FIELDS) {
     return null;
   }

@@ -2,7 +2,13 @@
  * 扫码页的控制器：把状态机、会话、摄像头、解码和页面接起来。
  * 浏览器能力（摄像头、解码、振动、计时器、页面可见性）都经参数注入，用 bun test 测试；main.ts 只负责创建它们。
  */
-import { isRequestRaw } from '../../../src/shared/mobile-protocol';
+import {
+  type ImageRequest,
+  isRequestRaw,
+  MAX_IMAGE_BYTES,
+  MAX_MANUAL_VALUE_LENGTH,
+  type PhoneImage,
+} from '../../../src/shared/mobile-protocol';
 import type { CameraPort } from './camera';
 import {
   isDoubleTap,
@@ -13,8 +19,18 @@ import {
   tapToVideoPoint,
   visibleVideoRect,
 } from './camera-features';
-import type { DecoderPort } from './decoder';
-import { canSubmit, isFinished, type JobEntry, type PhoneEvent, type PhoneState, reducePhone } from './phone-state';
+import type { Decoded, DecoderPort } from './decoder';
+import { type CodeCorners, cropLabel, cropLayout, type PixelImage } from './label-crop';
+import { type JobExtras, NO_EXTRAS } from './phone-session';
+import {
+  canSubmit,
+  isFinished,
+  JOB_HISTORY,
+  type JobEntry,
+  type PhoneEvent,
+  type PhoneState,
+  reducePhone,
+} from './phone-state';
 import {
   FAR_LENS_HINT,
   type JobAction,
@@ -28,6 +44,14 @@ import {
 import { ScanGate } from './scan-gate';
 import type { SoundCue } from './scan-sound';
 
+/** 记住多少个任务带的图：和页面上保留的任务一样多就够了。 */
+const JOB_EXTRAS_KEPT = JOB_HISTORY;
+
+/** 复制一份像素（解码会把原来的转交给 worker）。 */
+function copyPixels(image: ImageData): PixelImage {
+  return { data: new Uint8ClampedArray(image.data), width: image.width, height: image.height };
+}
+
 /** 每秒解码约 6 帧：够快，又不让手机发烫。 */
 export const SCAN_FRAME_INTERVAL_MS = 160;
 /** 一次性提示显示多久：够看完一句话。 */
@@ -38,7 +62,7 @@ export const SCANNED_VIBRATE_MS = 40;
 export const ALERT_VIBRATE_PATTERN_MS = [80, 60, 80];
 
 export interface SessionPort {
-  submit(raw: string, force: boolean): string;
+  submit(raw: string, force: boolean, extras: JobExtras): string;
 }
 
 /** 提示音（sound-player.ts）；测试里换成假的。 */
@@ -79,6 +103,8 @@ export interface PhoneControllerDeps {
   decoder: DecoderPort;
   view: ViewPort;
   readPhoto: (file: File) => Promise<ImageData>;
+  /** 截下来的标签图压成 JPEG（标准 base64）；压不到上限以下时为 null。 */
+  encodeJpeg: (image: PixelImage, maxBytes: number) => Promise<string | null>;
   vibrate: (pattern: number | number[]) => void;
   sound: SoundPort;
   isVisible: () => boolean;
@@ -101,6 +127,10 @@ export class PhoneController {
   private hintTimer: unknown = null;
   private scanTimer: unknown = null;
   private unwatchVisibility: (() => void) | null = null;
+  /** 电脑要的标签图（welcome、printer 里说的）；不需要时为 null，就不截图。 */
+  private imageRequest: ImageRequest | null = null;
+  /** 最近的任务带的图和手动字段：点「重试」「强制补打」「再打一张」时原样带上，不能丢了货架号。 */
+  private readonly jobExtras = new Map<string, JobExtras>();
 
   constructor(
     private readonly deps: PhoneControllerDeps,
@@ -129,6 +159,9 @@ export class PhoneController {
   }
 
   dispatch(event: PhoneEvent): void {
+    if (event.type === 'welcomed' || event.type === 'printer') {
+      this.imageRequest = event.image;
+    }
     const previous = this.state;
     this.state = reducePhone(previous, event);
     if (this.state === previous) {
@@ -157,19 +190,38 @@ export class PhoneController {
   }
 
   jobAction(job: JobEntry, action: JobAction): void {
-    this.submit(job.raw, { explicit: true, force: action !== 'retry' });
+    this.submit(job.raw, { explicit: true, force: action !== 'retry' }, this.jobExtras.get(job.id) ?? NO_EXTRAS);
+  }
+
+  /**
+   * 在没认出的任务卡片上手动补了一个字段（例如货架号）：同一内容带着这个字段作为新任务提交，不再带图。
+   * 返回是否已提交；没提交时输入框里的内容留着。
+   */
+  fillField(job: JobEntry, field: string, value: string): boolean {
+    const text = value.trim();
+    if (text === '' || text.length > MAX_MANUAL_VALUE_LENGTH) {
+      return false;
+    }
+    return this.submit(
+      job.raw,
+      { explicit: true, force: false },
+      { image: null, fields: [{ name: field, value: text }] },
+    );
   }
 
   /** 手动输入：返回是否已提交，没提交时输入框里的内容留着。 */
   manual(raw: string): boolean {
-    return this.submit(raw, { explicit: true, force: false });
+    return this.submit(raw, { explicit: true, force: false }, NO_EXTRAS);
   }
 
   async photo(file: File): Promise<void> {
     try {
-      const text = await this.deps.decoder.decode(await this.deps.readPhoto(file));
-      if (text) {
-        this.submit(text, { explicit: true, force: false });
+      const image = await this.deps.readPhoto(file);
+      // 解码会把像素转交给 worker：要截标签图时先留一份。
+      const copy = this.imageRequest === null ? null : copyPixels(image);
+      const decoded = await this.deps.decoder.decode(image);
+      if (decoded) {
+        this.scanned(decoded, () => copy, true);
       } else {
         this.showHint(PHOTO_EMPTY_HINT);
       }
@@ -244,7 +296,51 @@ export class PhoneController {
    * 提交一个打印任务。explicit = 拍照识别、手动输入、点重试或补打：用户明确要打这一张，不经过取景防抖，但会被记住。
    * 取景里扫到的码要经过防抖：同一张标签停在镜头里只打一次。
    */
-  private submit(raw: string, options: { explicit: boolean; force: boolean }): boolean {
+  private submit(raw: string, options: { explicit: boolean; force: boolean }, extras: JobExtras): boolean {
+    if (!this.accept(raw, options)) {
+      return false;
+    }
+    this.send(raw, options.force, extras);
+    return true;
+  }
+
+  /**
+   * 扫到一个码：能提交时先给「嘀」的反馈，再按电脑的要求截标签图，截好（或截不了）就提交。
+   * 截图在同一帧的画面上做：frame 要在任何 await 之前取，下一次取景才会覆盖画面。
+   */
+  private scanned(decoded: Decoded, frame: () => PixelImage | null, explicit: boolean): void {
+    if (!this.accept(decoded.text, { explicit, force: false })) {
+      return;
+    }
+    const request = this.imageRequest;
+    const source = request !== null && decoded.corners !== null ? frame() : null;
+    if (request === null || decoded.corners === null || source === null) {
+      this.send(decoded.text, false, NO_EXTRAS);
+      return;
+    }
+    void this.labelImage(source, decoded.corners, request).then((image) =>
+      this.send(decoded.text, false, { image, fields: [] }),
+    );
+  }
+
+  /** 截标签图、压 JPEG；出任何问题都返回 null，这一张照样打（电脑那一步按「没有图」处理）。 */
+  private async labelImage(
+    source: PixelImage,
+    corners: CodeCorners,
+    request: ImageRequest,
+  ): Promise<PhoneImage | null> {
+    try {
+      const crop = cropLabel(source, corners, request);
+      const jpeg = crop === null ? null : await this.deps.encodeJpeg(crop, MAX_IMAGE_BYTES);
+      return jpeg === null ? null : { jpeg, code: cropLayout(request).code };
+    } catch (error) {
+      console.warn('[PhoneController] cannot crop the label', error);
+      return null;
+    }
+  }
+
+  /** 能不能提交这一张（防抖、排队上限、长度）；能的话给「嘀」的反馈。 */
+  private accept(raw: string, options: { explicit: boolean; force: boolean }): boolean {
     const now = this.deps.now();
     if (!this.session || !canSubmit(this.state)) {
       this.gate.observe(raw, now);
@@ -266,8 +362,21 @@ export class PhoneController {
     // 和扫码枪的「嘀」一样：振动给安卓，声音给所有手机（iPhone 的浏览器不能振动）。
     this.deps.vibrate(SCANNED_VIBRATE_MS);
     this.deps.sound.play('scanned');
-    this.session.submit(raw, options.force);
     return true;
+  }
+
+  private send(raw: string, force: boolean, extras: JobExtras): void {
+    if (!this.session) {
+      return;
+    }
+    const job = this.session.submit(raw, force, extras);
+    if (extras.image !== null || extras.fields.length > 0) {
+      this.jobExtras.set(job, extras);
+      // 页面上只留最近的任务：更早的图用不到了，不占内存。
+      for (const id of [...this.jobExtras.keys()].slice(0, -JOB_EXTRAS_KEPT)) {
+        this.jobExtras.delete(id);
+      }
+    }
   }
 
   private scanFrame(): void {
@@ -285,9 +394,9 @@ export class PhoneController {
       return;
     }
     decoder.decode(image).then(
-      (text) => {
-        if (text) {
-          this.submit(text, { explicit: false, force: false });
+      (decoded) => {
+        if (decoded) {
+          this.scanned(decoded, () => camera.snapshot(), false);
         }
       },
       // 识别组件坏了由 Decoder 报告（decoder 事件），这里只记下这一帧。

@@ -13,11 +13,14 @@ import {
   type DenialReason,
   type DesktopMessage,
   type EndReason,
+  type ImageRequest,
   isRequestRaw,
   JOB_ACK_TIMEOUT_MS,
   JOB_STATUS_POLL_MS,
   MOBILE_PROTOCOL_VERSION,
+  type PhoneField,
   type PhoneFrame,
+  type PhoneImage,
   type PhoneMessage,
   type PhonePrintResult,
   parseDesktopMessage,
@@ -33,8 +36,9 @@ import type { SessionStore } from './session-store';
 export type SessionEvent =
   /** reconnecting = 正在连中转服务；desktop-offline = 中转服务在，电脑暂时不在。 */
   | { type: 'link'; link: 'reconnecting' | 'desktop-offline' }
-  | { type: 'welcomed'; printer: string | null }
-  | { type: 'printer'; printer: string | null }
+  /** image：电脑要手机随扫码截的标签图；不需要（或老电脑）时为 null。 */
+  | { type: 'welcomed'; printer: string | null; image: ImageRequest | null }
+  | { type: 'printer'; printer: string | null; image: ImageRequest | null }
   /** 新提交的任务，以及页面打开时从发件箱恢复的任务。 */
   | { type: 'submitted'; job: string; raw: string; force: boolean }
   /** 任务在电脑上排队，或者队伍往前走了。 */
@@ -60,7 +64,15 @@ export interface PhoneSessionOptions {
   onEvent: (event: SessionEvent) => void;
 }
 
-interface OutgoingJob {
+/** 任务随带的东西：摆正的标签图（电脑要时才有）、手机上手动输入的字段。 */
+export interface JobExtras {
+  image: PhoneImage | null;
+  fields: PhoneField[];
+}
+
+export const NO_EXTRAS: JobExtras = { image: null, fields: [] };
+
+interface OutgoingJob extends JobExtras {
   raw: string;
   force: boolean;
   isAccepted: boolean;
@@ -87,7 +99,14 @@ export class PhoneSession {
 
   constructor(private readonly options: PhoneSessionOptions) {
     for (const job of options.store.jobs) {
-      this.outbox.set(job.id, { raw: job.raw, force: job.force, isAccepted: false, retryTimer: null });
+      this.outbox.set(job.id, {
+        raw: job.raw,
+        force: job.force,
+        image: job.image ?? null,
+        fields: job.fields ?? [],
+        isAccepted: false,
+        retryTimer: null,
+      });
     }
     this.wasWelcomed = options.store.token !== null;
     this.socket = new RelaySocket<PhoneFrame>({
@@ -122,12 +141,12 @@ export class PhoneSession {
   }
 
   /** 提交一个打印任务，返回任务号。没连上时先留在发件箱里，被接纳后自动发出。 */
-  submit(raw: string, force: boolean): string {
+  submit(raw: string, force: boolean, extras: JobExtras = NO_EXTRAS): string {
     if (!isRequestRaw(raw)) {
       throw new Error('内容超过请求的长度上限，调用方应先检查');
     }
     const job = randomId();
-    this.outbox.set(job, { raw, force, isAccepted: false, retryTimer: null });
+    this.outbox.set(job, { raw, force, ...extras, isAccepted: false, retryTimer: null });
     this.saveOutbox();
     this.emit({ type: 'submitted', job, raw, force });
     this.send(job);
@@ -193,7 +212,7 @@ export class PhoneSession {
         this.seq = 0;
         this.wasWelcomed = true;
         this.missingSince = null;
-        this.emit({ type: 'welcomed', printer: message.printer });
+        this.emit({ type: 'welcomed', printer: message.printer, image: message.image ?? null });
         // 新的连接：发件箱里的任务全部重发，已经收过的电脑会按任务号认出来。
         for (const job of this.outbox.keys()) {
           this.send(job);
@@ -203,7 +222,7 @@ export class PhoneSession {
         this.finish({ type: 'denied', reason: message.reason });
         return;
       case 'printer':
-        this.emit({ type: 'printer', printer: message.printer });
+        this.emit({ type: 'printer', printer: message.printer, image: message.image ?? null });
         return;
       case 'accepted':
         this.progress([{ job: message.job, ahead: message.ahead }]);
@@ -251,6 +270,8 @@ export class PhoneSession {
       job: jobId,
       raw: job.raw,
       force: job.force,
+      ...(job.image === null ? {} : { image: job.image }),
+      ...(job.fields.length === 0 ? {} : { fields: job.fields }),
     });
     this.scheduleRetry(jobId, job);
   }
@@ -291,7 +312,15 @@ export class PhoneSession {
   }
 
   private saveOutbox(): void {
-    this.options.store.saveJobs([...this.outbox].map(([id, job]) => ({ id, raw: job.raw, force: job.force })));
+    this.options.store.saveJobs(
+      [...this.outbox].map(([id, job]) => ({
+        id,
+        raw: job.raw,
+        force: job.force,
+        ...(job.image === null ? {} : { image: job.image }),
+        ...(job.fields.length === 0 ? {} : { fields: job.fields }),
+      })),
+    );
   }
 
   /** 离开当前连接：nonce 作废，等下一次 welcome；发件箱保留。 */

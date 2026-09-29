@@ -192,4 +192,14 @@ describe('linkBanner', () => {
     expect(linkBanner('reconnecting')).toContain('重新连接');
     expect(linkBanner('desktop-offline')).toContain('电脑');
   });
+
+  // 没认出货架号：同一张图重试也一样，不给「重试」；卡片上手动补。
+  test('asks for the unread field on the card instead of offering a retry', () => {
+    const view = jobView(
+      done({ status: 'failed', reason: 'TEXT_NOT_FOUND', detail: '没认出货架号', issue: null, field: '货架号' }),
+      'online',
+    );
+    expect(view).toMatchObject({ tone: 'error', title: '没认出标签上的字，没有打印', actions: [], input: '货架号' });
+    expect(view.detail).toBe('没认出货架号：对准整张标签重扫，或在下面手动输入');
+  });
 });

@@ -9,10 +9,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
+import sharp from 'sharp';
 import { buildRelay } from '../../scripts/relay/build';
 import { systemClock } from '../../src/core/types';
 import { MobileHost } from '../../src/main/mobile/mobile-host';
-import type { PhonePrintResult } from '../../src/shared/mobile-protocol';
+import type { PhoneJob } from '../../src/main/mobile/mobile-session';
+import type { ImageRequest, PhonePrintResult } from '../../src/shared/mobile-protocol';
 import type { MobileStatus } from '../../src/shared/mobile-status';
 import type { SocketLike } from '../../src/shared/relay-socket';
 import { type RunningRelay, startRelay } from '../src/server';
@@ -39,6 +41,9 @@ let relay: RunningRelay;
 let host: MobileHost;
 let browser: Browser;
 const prints: string[] = [];
+const jobs: PhoneJob[] = [];
+/** 电脑要不要标签图：货架号识别的那个测试里才要。 */
+let imageRequest: ImageRequest | null = null;
 
 /** 先占一个空闲端口：扫码页的 origin 要在启动中转服务前确定。 */
 function freePort(): number {
@@ -69,9 +74,10 @@ beforeAll(async () => {
     },
     createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
     printerLabel: async () => '热敏标签机',
-    imageRequest: () => null,
-    print: async ({ raw }) => {
-      prints.push(raw);
+    imageRequest: () => imageRequest,
+    print: async (job) => {
+      prints.push(job.raw);
+      jobs.push(job);
       return PRINTED;
     },
     log: () => {},
@@ -171,6 +177,65 @@ test(
     await page.locator('#viewfinder').dblclick({ position: { x: 40, y: 40 } });
     expect(await page.locator('#lens').isHidden()).toBe(true);
     expect(errors).toEqual([]);
+  },
+  SCAN_TIMEOUT_MS * 2,
+);
+
+/** 截图里 (x, y) 处的亮度（0 黑、255 白）。 */
+function brightness(pixels: Buffer, width: number, x: number, y: number): number {
+  return pixels[Math.round(y) * width + Math.round(x)] ?? -1;
+}
+
+// 货架号识别：电脑要图时，手机按二维码的四个角把整张标签摆正截下来，随扫码发给电脑。
+// 假摄像头里标签横着放（顺时针转了 90°），二维码下方有一条黑条（货架号那一行）：截图里它应当在二维码正下方。
+test(
+  'crops the label upright from a sideways photo and sends it with the scan',
+  async () => {
+    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    const video = join(workDir, 'sideways.y4m');
+    await writeQrVideo(video, 'SHELF-TEST-001', { shelfBar: true, rotated: true });
+    const sideways = await chromium.launch({
+      channel: 'msedge',
+      headless: true,
+      args: [
+        '--use-fake-ui-for-media-stream',
+        '--use-fake-device-for-media-stream',
+        `--use-file-for-fake-video-capture=${video}`,
+      ],
+    });
+    try {
+      const status = host.status() as Extract<MobileStatus, { state: 'active' }>;
+      const page = await sideways.newPage();
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(String(error)));
+      await page.goto(status.url);
+      await page.getByRole('button', { name: '开始扫码' }).click({ timeout: SCAN_TIMEOUT_MS });
+      const deadline = Date.now() + SCAN_TIMEOUT_MS;
+      while (!jobs.some((job) => job.raw === 'SHELF-TEST-001') && Date.now() < deadline) {
+        await Bun.sleep(50);
+      }
+      const job = jobs.find((entry) => entry.raw === 'SHELF-TEST-001');
+      expect(job?.image).not.toBeNull();
+      const image = job?.image;
+      if (!image) throw new Error('expected a label image');
+      const { data, info } = await sharp(Buffer.from(image.jpeg, 'base64'))
+        .grayscale()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      expect({ width: info.width, height: info.height }).toEqual({ width: 780, height: 520 });
+      const { x, y, size } = image.code;
+      expect({ x, y, size }).toEqual({ x: 325, y: 195, size: 130 });
+      // 二维码左上角定位角的外圈（一个模块宽，约 1/21 个边长）是黑的：截图是正的，不是转着的。
+      expect(brightness(data, info.width, x + size * 0.02, y + size * 0.02)).toBeLessThan(100);
+      // 黑条在二维码正下方（假摄像头里在二维码下 42 像素、高 20 像素，二维码 168 像素：1.25–1.37 个边长），
+      // 二维码上方同样的位置是白的。
+      expect(brightness(data, info.width, x + size * 0.5, y + size * 1.31)).toBeLessThan(100);
+      expect(brightness(data, info.width, x + size * 0.5, y - size * 0.31)).toBeGreaterThan(160);
+      expect(errors).toEqual([]);
+    } finally {
+      await sideways.close();
+      imageRequest = null;
+    }
   },
   SCAN_TIMEOUT_MS * 2,
 );

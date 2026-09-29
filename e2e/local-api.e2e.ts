@@ -1,4 +1,5 @@
 import { request as httpRequest } from 'node:http';
+import { createServer, type Socket } from 'node:net';
 import type { ElectronApplication, Page } from '@playwright/test';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
 import { callApi, fakePrints, openConfig, recordClipboard } from './support/app-helpers';
@@ -224,4 +225,28 @@ test('manages program keys and the LAN switch on the local api page', async ({ e
       lanEnabled: false,
     });
   await expect(page.locator('.api-address')).toHaveCount(1);
+});
+
+// Windows 上别的程序占着 127.0.0.1 的端口时，Electron 里监听所有网卡照样成功，本机的请求却到了那个程序：
+// 程序要发现这一点，报端口被占用，而不是显示正在运行。
+test('reports a port that another program answers on locally, even with the LAN open', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await apiBase(page);
+  // 占端口的程序收下连接但从不回应；关掉它之前先断开这些连接，不然 close 会一直等。
+  const sockets = new Set<Socket>();
+  const blocker = createServer((socket) => sockets.add(socket));
+  await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = blocker.address();
+    const taken = typeof address === 'object' && address !== null ? address.port : 0;
+    await callApi(page, 'updateSettings', { apiPort: taken, apiLanEnabled: true });
+    await expect
+      .poll(async () => (await callApi(page, 'getLocalApiStatus')).server)
+      .toEqual({ state: 'failed', reason: 'PORT_IN_USE', ports: [taken] });
+  } finally {
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+    await new Promise((resolve) => blocker.close(resolve));
+  }
 });

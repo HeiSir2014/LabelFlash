@@ -1,4 +1,11 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
 import { type ApiServerStatus, isWebOrigin } from '../../shared/local-api';
 import { ApiError, errorBody } from './api-error';
 import type { Authenticator, Caller } from './authenticator';
@@ -15,6 +22,11 @@ export const DEFAULT_PORTS: readonly number[] = [17631, 17632, 17633];
 const REQUEST_TIMEOUT_MS = 30_000;
 /** 这些错误按「端口不能用」处理，换下一个端口：EACCES 是 Windows 上 Hyper-V 等保留的端口段。 */
 const PORT_UNAVAILABLE_CODES: ReadonlySet<string> = new Set(['EADDRINUSE', 'EACCES']);
+/** 自检请求带的请求头：值是这个服务自己的随机口令，只有自己认得。 */
+const PROBE_HEADER = 'x-labelflash-probe';
+/** 自检最多等这么久：本机回环地址上的请求通常几毫秒就回来。 */
+const PROBE_TIMEOUT_MS = 2_000;
+const NO_CONTENT = 204;
 /** 授权相关的错误：没授权的网站也要能读到它们，才知道该去电脑上点「允许」。 */
 const AUTHORIZATION_REASONS: ReadonlySet<string> = new Set(['ORIGIN_NOT_AUTHORIZED', 'ORIGIN_UNSUPPORTED']);
 
@@ -48,6 +60,8 @@ class PortUnavailableError extends Error {}
 export class ApiHttpServer {
   private servers: Server[] = [];
   private current: ApiServerStatus = { state: 'off' };
+  /** 自检口令：每个服务一个，别的程序不可能回应它。 */
+  private readonly probeToken = randomUUID();
 
   constructor(private readonly deps: ApiHttpServerDeps) {}
 
@@ -66,7 +80,14 @@ export class ApiHttpServer {
     for (const port of ports) {
       try {
         this.servers = await this.listen(port, options.lanEnabled);
-        this.current = { state: 'listening', port: this.boundPort(), lanEnabled: options.lanEnabled };
+        const bound = this.boundPort();
+        // Windows 上别的程序占着 127.0.0.1 的这个端口时，监听 :: 照样成功，本机的请求却会到那个程序：
+        // 自己从回环地址探测一次，回应不是自己的就当作端口不能用。
+        if (!(await this.answersOnLoopback(bound))) {
+          await this.closeServers();
+          throw new PortUnavailableError(`127.0.0.1:${bound} is answered by another program`);
+        }
+        this.current = { state: 'listening', port: bound, lanEnabled: options.lanEnabled };
         return this.current;
       } catch (error) {
         if (!(error instanceof PortUnavailableError)) {
@@ -80,9 +101,13 @@ export class ApiHttpServer {
   }
 
   async stop(): Promise<void> {
+    this.current = { state: 'off' };
+    await this.closeServers();
+  }
+
+  private async closeServers(): Promise<void> {
     const servers = this.servers;
     this.servers = [];
-    this.current = { state: 'off' };
     await Promise.all(
       servers.map(
         (server) =>
@@ -140,6 +165,25 @@ export class ApiHttpServer {
     });
   }
 
+  /** 从 127.0.0.1 请求自己一次，看回应的是不是这个服务。 */
+  private answersOnLoopback(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const probe = httpRequest(
+        { host: '127.0.0.1', port, path: '/', headers: { [PROBE_HEADER]: this.probeToken }, timeout: PROBE_TIMEOUT_MS },
+        (response) => {
+          response.resume();
+          resolve(response.statusCode === NO_CONTENT && response.headers[PROBE_HEADER] === this.probeToken);
+        },
+      );
+      probe.on('timeout', () => probe.destroy(new Error('probe timed out')));
+      probe.on('error', (error) => {
+        console.warn(`[api] loopback self-check on port ${port} failed: ${error.message}`);
+        resolve(false);
+      });
+      probe.end();
+    });
+  }
+
   private boundPort(): number {
     const [first] = this.servers;
     if (!first) {
@@ -150,6 +194,11 @@ export class ApiHttpServer {
 
   private async serve(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const headers = flattenHeaders(request);
+    if (headers[PROBE_HEADER] === this.probeToken) {
+      response.writeHead(NO_CONTENT, { [PROBE_HEADER]: this.probeToken });
+      response.end();
+      return;
+    }
     const method = request.method ?? 'GET';
     const url = request.url ?? '/';
     const localPort = request.socket.localPort ?? 0;

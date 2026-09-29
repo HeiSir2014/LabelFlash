@@ -161,6 +161,25 @@ describe('ApiHttpServer', () => {
     });
   });
 
+  // Windows 上别的程序占着 127.0.0.1 的这个端口时，监听所有网卡照样成功，本机的请求却会到那个程序：
+  // 启动后自己探测一次，回应不是自己的就换端口。
+  test('moves on when another program answers on the loopback address of the port', async () => {
+    const taken = await occupyPort();
+    const { server } = createTestServer();
+    const port = portOf(await server.start({ lanEnabled: true, port: null, candidatePorts: [taken, ANY_PORT] }));
+    expect(port).not.toBe(taken);
+    expect((await fetch(`http://127.0.0.1:${port}/v1/service`)).status).toBe(200);
+  });
+
+  test('reports a port the user chose that another program answers on locally', async () => {
+    const taken = await occupyPort();
+    const { server } = createTestServer();
+    expect(await server.start({ lanEnabled: true, port: taken, candidatePorts: [ANY_PORT] })).toMatchObject({
+      state: 'failed',
+      ports: [taken],
+    });
+  });
+
   test('listens on every interface when the LAN is enabled', async () => {
     const { server } = createTestServer();
     const status = await server.start({ lanEnabled: true, port: null, candidatePorts: [ANY_PORT] });

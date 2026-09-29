@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { checkDriverPaper, formatPaperSize } from './driver-paper';
+import { DEFAULT_PAPER } from './label-paper';
 
 describe('checkDriverPaper', () => {
   test('is unknown when the driver paper could not be read', () => {
@@ -16,6 +17,12 @@ describe('checkDriverPaper', () => {
     expect(checkDriverPaper(factoryDefault)).toEqual({ status: 'mismatch', paper: factoryDefault });
     expect(checkDriverPaper({ widthMm: 40, heightMm: 60, dpi: 203 }).status).toBe('mismatch');
     expect(checkDriverPaper({ widthMm: 62, heightMm: 40, dpi: 203 }).status).toBe('mismatch');
+  });
+
+  test('checks the driver paper against the paper it is expected to hold', () => {
+    const waybill = { widthMm: 100, heightMm: 180, dpi: 203 };
+    expect(checkDriverPaper(waybill, { widthMm: 100, heightMm: 180 }).status).toBe('ok');
+    expect(checkDriverPaper(waybill, DEFAULT_PAPER).status).toBe('mismatch');
   });
 });
 

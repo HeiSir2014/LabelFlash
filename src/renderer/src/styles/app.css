@@ -2961,13 +2961,19 @@ textarea {
 }
 
 /* ── 本机接口页 ── */
+/* 状态色画成圆点，文字用正文色：状态色做文字对比度不够 */
 .api-status {
-  color: var(--tone);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-/* idle 的 --tone 是分隔线色，做文字太淡：没有运行时用正文色 */
-.api-status.tone--idle {
-  color: var(--color-ink);
+.api-status::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone);
+  content: "";
 }
 
 .api-addresses {

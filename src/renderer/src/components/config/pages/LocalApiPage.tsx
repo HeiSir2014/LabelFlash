@@ -99,10 +99,11 @@ function StatusCard({ api, port, lanEnabled, onChangePort, onChangeLanEnabled }:
         hint="开着时，局域网里别的电脑上的程序带着程序密钥就能调用；关掉后只接受这台电脑上的网页和程序。"
       >
         <Switch
+          isBare
           ariaLabel="局域网访问"
           checked={lanEnabled}
+          text={lanEnabled ? '开启' : '关闭'}
           onChange={onChangeLanEnabled}
-          text={lanEnabled ? '开' : '关'}
         />
       </SettingRow>
       <SettingRow

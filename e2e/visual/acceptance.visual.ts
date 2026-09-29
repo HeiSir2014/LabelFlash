@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { createServer, type Server, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ElectronApplication, Page } from '@playwright/test';
@@ -41,7 +42,7 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的 V01–V37）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 视觉验收（设计文档 §8.2 的 V01–V38）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
  * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
@@ -171,6 +172,29 @@ async function saveCopyOnPaper(
   await callApi(page, 'saveTemplate', { ...copy, name, paper, printer });
   return copy.id;
 }
+
+/** V38：在测试进程里占住一个端口，让本机接口「端口被占用」。 */
+async function occupyPort(ctx: Context): Promise<number> {
+  // 收下连接但从不回应（程序的自检会连过来）；关掉之前先断开这些连接，不然 close 会一直等。
+  const sockets = new Set<Socket>();
+  const blocker: Server = createServer((socket) => sockets.add(socket));
+  await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
+  ctx.cleanups.push(async () => {
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+    await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    takenPort = null;
+  });
+  const address = blocker.address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('the blocker has no port');
+  }
+  return address.port;
+}
+
+/** V38：占住的端口（每种尺寸共用，只占一次）。 */
+let takenPort: number | null = null;
 
 /** V28 每次扫一个新码：旧的查询还没返回也不影响，界面只认最新的一次扫码。 */
 let slowScanCount = 0;
@@ -1098,6 +1122,50 @@ const ITEMS: Item[] = [
           await scan(page, '订单 A20260929001 箱唛');
           await expect(page.locator('.preview-toolbar__usage')).toContainText('规则：原样打印 · 模板：箱唛');
           await expect(page.locator('.ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 100 /);
+        },
+      },
+    ],
+  },
+  {
+    id: 'V38',
+    title: '配置中心 · 本机接口',
+    points:
+      '状态（正在运行 / 端口被占用和占用的程序）、地址列表（等宽字体，可以选中）、局域网访问开关、端口输入框和「恢复默认」；程序密钥列表（名称、最后使用、改名、撤销）；刚生成的密钥单独一块，原文完整显示，旁边「复制」「完成」；已授权的网站和「撤销」；最后一段隐私说明',
+    launch: { fakePrinters: PAPER_PRINTERS },
+    setup: async ({ page }) => {
+      await callApi(page, 'createApiKey', 'ERP 服务器');
+      await callApi(page, 'createApiKey', '仓库面单机');
+      await callApi(page, 'updateSettings', { apiAuthorizedOrigins: ['https://erp.example.com'] });
+    },
+    shots: [
+      {
+        label: '正在运行 · 刚生成的密钥',
+        prepare: async ({ page }) => {
+          // 每种尺寸都从默认端口、没有新密钥开始：上一张截图占了端口，上一轮生成过密钥。
+          await callApi(page, 'updateSettings', { apiPort: null });
+          for (const key of await callApi(page, 'listApiKeys')) {
+            if (key.name === '门店收银') {
+              await callApi(page, 'removeApiKey', key.id);
+            }
+          }
+          await page.reload();
+          await expect(page.locator('.scan-bar__input')).toBeFocused();
+          await openConfig(page, '本机接口');
+          await expect(page.locator('.api-status')).toHaveText('正在运行');
+          await page.getByLabel('名称', { exact: true }).fill('门店收银');
+          await page.getByRole('button', { name: '生成密钥' }).click();
+          await expect(page.getByLabel('新密钥')).toHaveValue(/^lf_/);
+          await blurActiveElement(page);
+        },
+      },
+      {
+        label: '端口被占用',
+        prepare: async (ctx) => {
+          takenPort ??= await occupyPort(ctx);
+          // 在页面上填：经 IPC 改的设置不会推给界面，输入框会和实际不一致。
+          await ctx.page.getByLabel('端口', { exact: true }).fill(String(takenPort));
+          await blurActiveElement(ctx.page);
+          await expect(ctx.page.locator('.api-status')).toHaveText('端口被占用');
         },
       },
     ],

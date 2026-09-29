@@ -44,6 +44,17 @@ describe('jobView', () => {
     expect(jobView(done(PRINTED, true), 'online').title).toBe('已补打');
   });
 
+  test('offers another copy of the latest printed label only', () => {
+    expect(jobView(done(PRINTED), 'online', true).actions).toEqual(['again']);
+    expect(jobView(done(PRINTED, true), 'online', true).actions).toEqual(['again']);
+    expect(jobView(done(PRINTED), 'online', false).actions).toEqual([]);
+  });
+
+  test('offers no extra copy for a label that did not print', () => {
+    const view = jobView(done({ status: 'failed', reason: 'PRINT_ERROR', detail: null, issue: null }), 'online', true);
+    expect(view.actions).toEqual(['retry']);
+  });
+
   test('falls back to the scanned text when a printed label has no fields', () => {
     expect(jobView(done({ ...PRINTED, fields: [] }), 'online').detail).toBe(RAW);
   });

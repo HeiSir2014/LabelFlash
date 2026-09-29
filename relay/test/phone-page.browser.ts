@@ -148,6 +148,16 @@ test(
     expect(await page.locator('.job').count()).toBe(1);
     expect(host.status()).toMatchObject({ phones: [{ online: true, printed: 1 }], printed: 1 });
 
+    // 一卷内容相同的标签：码一直在画面里，防抖不放行，点最新一张上的「再打一张」再打（电脑的防重复窗口也不挡）。
+    await page.getByRole('button', { name: '再打一张' }).click();
+    const againDeadline = Date.now() + SCAN_TIMEOUT_MS;
+    while (prints.length < 2 && Date.now() < againDeadline) {
+      await Bun.sleep(50);
+    }
+    expect(prints).toEqual([LABEL, LABEL]);
+    await page.locator('.job-title', { hasText: '已补打' }).waitFor({ timeout: SCAN_TIMEOUT_MS });
+    expect(await page.locator('.job').count()).toBe(2);
+
     // 页面不能被双指或双击放大：双击取景画面只切换焦段（假摄像头不能变焦，焦段按钮不出现，也不报错）。
     const touchAction = await page.evaluate(() => {
       const scope = globalThis as unknown as {

@@ -33,6 +33,14 @@ export interface ViewHandlers {
 const ACTION_LABELS: Record<JobAction, string> = {
   retry: '重试',
   force: '强制补打',
+  again: '再打一张',
+};
+
+/** 「再打一张」是连续打同一卷标签时每张都要点的，做成整行的主按钮，好点。 */
+const ACTION_CLASSES: Record<JobAction, string> = {
+  retry: 'button',
+  force: 'button warning',
+  again: 'button primary block',
 };
 
 /** 对焦圈的动画时长：够看清点到了哪里，又不挡住画面。 */
@@ -162,8 +170,8 @@ export class PhoneView implements ViewPort {
    * 最新一条的变化由单独的 #announcer 读出来，屏幕阅读器不会把整个列表重读一遍。
    */
   private renderJobs(state: PhoneState): void {
-    const items = state.jobs.map((job) => {
-      const view = jobView(job, state.link);
+    const items = state.jobs.map((job, index) => {
+      const view = jobView(job, state.link, index === 0);
       const signature = JSON.stringify(view);
       const rendered = this.renderedJobs.get(job.id);
       if (rendered?.signature === signature) {
@@ -206,7 +214,7 @@ export class PhoneView implements ViewPort {
         ...view.actions.map((action) => {
           const button = this.doc.createElement('button');
           button.type = 'button';
-          button.className = action === 'force' ? 'button warning' : 'button';
+          button.className = ACTION_CLASSES[action];
           button.textContent = ACTION_LABELS[action];
           button.addEventListener('click', () => this.handlers.onJobAction(job, action));
           return button;

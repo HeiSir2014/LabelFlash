@@ -486,6 +486,23 @@ describe('PhoneController: scanning', () => {
     expect(submitted.at(-1)).toEqual({ raw: RAW, force: true });
   });
 
+  // 一卷内容相同的标签：镜头一直看得到同一个码，防抖不会放行；「再打一张」明确要打，电脑的防重复窗口也不挡。
+  test('prints the label again from its button while the same code stays in view', async () => {
+    await scanning();
+    await frame(RAW);
+    const job = controller.current.jobs[0];
+    if (!job) {
+      throw new Error('no job');
+    }
+    controller.jobAction(job, 'again');
+    await frame(RAW);
+    expect(submitted).toEqual([
+      { raw: RAW, force: false },
+      { raw: RAW, force: true },
+    ]);
+    expect(sound.played).toEqual(['scanned', 'scanned']);
+  });
+
   test('buzzes for a printer fault but not for content the desktop cannot read', async () => {
     await scanning();
     controller.manual('A');

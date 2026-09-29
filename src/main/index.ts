@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { hostname } from 'node:os';
+import { hostname, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { app, type BrowserWindow, dialog, Menu, net } from 'electron';
@@ -21,6 +21,11 @@ import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
 import { phonePrinterLabel } from '../shared/printer-summary';
 import type { SocketLike } from '../shared/relay-socket';
 import { secondsToMs } from '../shared/settings';
+import { apiPrinters } from './api/api-printers';
+import { apiCandidatePorts, LocalApi } from './api/local-api';
+import { lanIPv4Addresses } from './api/network';
+import { renderLabelPdf } from './api/pdf-render';
+import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BUILD_NUMBER } from './build-info';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
@@ -111,6 +116,29 @@ function showMainWindow(): void {
 function quit(): void {
   isQuitting = true;
   app.quit();
+}
+
+/** 网站授权框的两个按钮：默认选「拒绝」，误按回车不会放行。 */
+const ORIGIN_DIALOG_BUTTONS = ['允许', '拒绝'];
+const ORIGIN_ALLOW_BUTTON = 0;
+const ORIGIN_DENY_BUTTON = 1;
+
+/** 网页第一次调用本机接口时，在电脑上问操作员是否允许这个网站。 */
+async function askOriginPermission(origin: string): Promise<boolean> {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+  showMainWindow();
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    buttons: ORIGIN_DIALOG_BUTTONS,
+    defaultId: ORIGIN_DENY_BUTTON,
+    cancelId: ORIGIN_DENY_BUTTON,
+    title: BRAND.productName,
+    message: '网站想使用打印服务',
+    detail: `${origin}\n\n允许后，这个网站可以在这台电脑上提交打印、读取模板和打印机列表。可以在配置中心「本机接口」页撤销。`,
+  });
+  return response === ORIGIN_ALLOW_BUTTON;
 }
 
 function closeDatabase(): void {
@@ -344,6 +372,32 @@ async function bootstrap(): Promise<void> {
     log: (line) => console.info(line),
   });
   const mobileTicker = setInterval(() => mobile.tick(), MOBILE_TICK_INTERVAL_MS);
+  const localApi = new LocalApi({
+    db: database,
+    clock: systemClock,
+    appVersion: app.getVersion(),
+    settings: () => settings.current,
+    // 只改授权网站：不影响别的设置，不需要走 onSettingsChanged。
+    updateSettings: (patch) => settings.update(patch),
+    askOrigin: askOriginPermission,
+    findTemplate: (id) => templates.get(id),
+    listTemplates: () => templates.list(),
+    installedPrinters: () => adapter.knownPrinterNames(),
+    listPrinters: async () =>
+      apiPrinters({
+        installed: await adapter.listPrinters(),
+        paperPrinters: settings.current.paperPrinters,
+        templates: templates.list(),
+        readinessOf: (name) => status.get(name),
+      }),
+    printFields: (input) => service.printFields(input),
+    renderPdf: renderLabelPdf,
+    candidatePorts: apiCandidatePorts(process.env, app.isPackaged),
+    findPortOwner,
+    lanAddresses: () => lanIPv4Addresses(networkInterfaces()),
+    onStatus: (apiStatus) => sendToMainWindow(IpcChannel.LocalApiStatusChanged, apiStatus),
+    onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
+  });
   // 在 before-quit 就告诉手机「程序已退出」：到 will-quit 时进程马上结束，消息可能来不及发出。
   app.on('before-quit', () => mobile.quit());
 
@@ -376,6 +430,7 @@ async function bootstrap(): Promise<void> {
     updater,
     voice,
     mobile,
+    localApi,
     profiles,
     getWindow: () => mainWindow,
     choosePrinter,
@@ -405,6 +460,7 @@ async function bootstrap(): Promise<void> {
         outbox.endpointsChanged();
       }
       mobile.settingsChanged(next, previous);
+      await localApi.settingsChanged(next, previous);
     },
   });
   outbox.start();
@@ -428,6 +484,8 @@ async function bootstrap(): Promise<void> {
   // 读打印机列表要用主窗口：窗口建好后立即检测一次状态、预读驱动资料，不等下一轮轮询。
   void status.poll();
   void warmProfiles();
+  // 打印机列表要用主窗口：窗口建好之后才开始接收接口请求。
+  localApi.start().catch((error: unknown) => console.error('[api] local api failed to start', error));
   // Windows 关机、注销时不会触发 before-quit：放行窗口关闭并关闭数据库，不能阻塞关机。
   mainWindow.on('query-session-end', () => {
     isQuitting = true;
@@ -446,6 +504,7 @@ async function bootstrap(): Promise<void> {
   warmVoice();
   app.on('will-quit', () => {
     clearInterval(mobileTicker);
+    void localApi.stop();
     outbox.stop();
     status.stop();
     probeHost?.dispose();

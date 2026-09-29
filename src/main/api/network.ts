@@ -30,3 +30,22 @@ export function isLoopbackHost(host: string | undefined, port: number): boolean 
   }
   return LOOPBACK_HOSTNAMES.has(host.slice(0, separator).toLowerCase()) && host.slice(separator + 1) === String(port);
 }
+
+/** 系统没拿到地址时自己分的链路本地地址（169.254.x.x），别的电脑一般连不上。 */
+const LINK_LOCAL_PREFIX = '169.254.';
+
+/** 这台电脑在局域网里的 IPv4 地址（os.networkInterfaces() 的结果），给配置中心显示。 */
+/** os.networkInterfaces() 里用到的部分。 */
+interface InterfaceAddress {
+  address: string;
+  family: string;
+  internal: boolean;
+}
+
+export function lanIPv4Addresses(interfaces: NodeJS.Dict<readonly InterfaceAddress[]>): string[] {
+  return Object.values(interfaces).flatMap((items) =>
+    (items ?? [])
+      .filter((item) => item.family === 'IPv4' && !item.internal && !item.address.startsWith(LINK_LOCAL_PREFIX))
+      .map((item) => item.address),
+  );
+}

@@ -28,8 +28,11 @@ import {
 import { DEFAULT_PAPER } from '../shared/label-paper';
 import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
 import type { AppSettings } from '../shared/settings';
+import type { LocalApi } from './api/local-api';
 import { logFailures } from './ipc-errors';
 import {
+  requireApiKeyId,
+  requireApiKeyName,
   requireBoolean,
   requireJobQuery,
   requireLookupTableId,
@@ -44,6 +47,7 @@ import {
   requireTemplateId,
   requireVoiceCue,
   requireWebhookId,
+  requireWebOrigin,
 } from './ipc-validators';
 import type { LookupTables } from './lookup/lookup-tables';
 import type { MobileStation } from './mobile/mobile-station';
@@ -87,6 +91,7 @@ export interface IpcDeps {
   updater: AppUpdater;
   voice: VoiceClips;
   mobile: MobileStation;
+  localApi: LocalApi;
   /** 每台打印机的驱动纸张和分辨率（短时缓存）。 */
   profiles: PrinterProfiles;
   getWindow: () => BrowserWindow | null;
@@ -311,6 +316,13 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.MobileStatus, () => deps.mobile.status());
   handle(IpcChannel.MobileRemovePhone, (id) => deps.mobile.removePhone(requireMobilePhoneId(id)));
   handle(IpcChannel.MobileSetJoinLocked, (locked) => deps.mobile.setJoinLocked(requireBoolean(locked, 'locked')));
+  handle(IpcChannel.LocalApiStatus, () => deps.localApi.status());
+  handle(IpcChannel.ListApiKeys, () => deps.localApi.listKeys());
+  // 密钥原文只在这次返回值里出现：不写日志（logFailures 只记错误，不记返回值）。
+  handle(IpcChannel.CreateApiKey, (name) => deps.localApi.createKey(requireApiKeyName(name)));
+  handle(IpcChannel.RenameApiKey, (id, name) => deps.localApi.renameKey(requireApiKeyId(id), requireApiKeyName(name)));
+  handle(IpcChannel.RemoveApiKey, (id) => deps.localApi.removeKey(requireApiKeyId(id)));
+  handle(IpcChannel.RevokeApiOrigin, (origin) => deps.localApi.revokeOrigin(requireWebOrigin(origin)));
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());
   on(IpcChannel.WindowToggleMaximize, () => {

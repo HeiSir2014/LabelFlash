@@ -34,6 +34,9 @@ export function useJobLog() {
 
   const refresh = useCallback(() => loadFirstPage(searchRef.current), [loadFirstPage]);
 
+  // 本机接口打的标签不经过界面：主进程写了打印记录后推送，这里跟着刷新（不播报）。
+  useEffect(() => window.api.onJobsChanged(() => void refresh()), [refresh]);
+
   const loadMore = useCallback(async () => {
     if (page.nextCursor === null || isLoadingMore) {
       return;

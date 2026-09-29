@@ -10,7 +10,7 @@ import type { AppSettings } from '../../shared/settings';
 import { SqliteApiJobStore } from '../storage/sqlite-api-job-store';
 import { SqliteApiKeyStore } from '../storage/sqlite-api-key-store';
 import { Authenticator } from './authenticator';
-import { ApiHttpServer } from './http-server';
+import { ApiHttpServer, DEFAULT_PORTS } from './http-server';
 import { OriginPrompts } from './origin-prompts';
 import { RateLimiter } from './rate-limiter';
 import type { ApiPrinter } from './resources';
@@ -24,6 +24,17 @@ const API_RATE_LIMITS = { perSecond: 20, burst: 40 };
 const API_PURGE_INTERVAL_MS = 60 * 60_000;
 /** 接口打印后通知界面刷新打印记录，最多这么久一次：一批几百张时不让界面每张都刷新。 */
 const JOBS_CHANGED_COALESCE_MS = 500;
+
+/** 仅开发 / E2E：本机接口用这个端口（0 = 系统随便给一个），不和本机上跑着的安装版抢端口。安装版忽略它。 */
+export const API_PORT_ENV = 'CDL_LABELFLASH_API_PORT';
+const MAX_PORT = 65_535;
+
+/** 没指定端口时依次尝试的端口。 */
+export function apiCandidatePorts(env: NodeJS.ProcessEnv, isPackaged: boolean): readonly number[] {
+  const override = isPackaged ? undefined : env[API_PORT_ENV];
+  const port = override === undefined || override === '' ? Number.NaN : Number(override);
+  return Number.isInteger(port) && port >= 0 && port <= MAX_PORT ? [port] : DEFAULT_PORTS;
+}
 
 export interface LocalApiDeps {
   db: DatabaseSync;

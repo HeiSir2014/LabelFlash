@@ -6,6 +6,7 @@ import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
 import type { JobPage, JobQuery } from './job-history';
+import type { ApiKeyInfo, CreatedApiKey, LocalApiStatus } from './local-api';
 import type { MobileStatus } from './mobile-status';
 import type { PaperSize } from './paper-sizes';
 import type { PrinterReadiness } from './printer-readiness';
@@ -72,6 +73,14 @@ export const IpcChannel = {
   MobileRemovePhone: 'mobile:remove-phone',
   MobileSetJoinLocked: 'mobile:set-join-locked',
   MobileStatusChanged: 'mobile:status-changed',
+  JobsChanged: 'jobs:changed',
+  LocalApiStatus: 'api:status',
+  LocalApiStatusChanged: 'api:status-changed',
+  ListApiKeys: 'api:keys:list',
+  CreateApiKey: 'api:keys:create',
+  RenameApiKey: 'api:keys:rename',
+  RemoveApiKey: 'api:keys:remove',
+  RevokeApiOrigin: 'api:origins:remove',
 } as const;
 
 /** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
@@ -202,6 +211,18 @@ export interface LabelFlashApi {
   /** 暂停或重新允许新手机加入。 */
   setMobileJoinLocked(locked: boolean): Promise<void>;
   onMobileStatus(listener: (status: MobileStatus) => void): () => void;
+  /** 界面以外的入口（本机接口）写了打印记录：刷新打印记录（合并推送，一批几百张不会每张都推）。 */
+  onJobsChanged(listener: () => void): () => void;
+  getLocalApiStatus(): Promise<LocalApiStatus>;
+  onLocalApiStatus(listener: (status: LocalApiStatus) => void): () => void;
+  listApiKeys(): Promise<ApiKeyInfo[]>;
+  /** 生成程序密钥：返回的 secret 是原文，只在这一次返回，之后看不到。 */
+  createApiKey(name: string): Promise<CreatedApiKey>;
+  renameApiKey(id: string, name: string): Promise<void>;
+  /** 撤销：用这个密钥的程序立即不能再调用。 */
+  removeApiKey(id: string): Promise<void>;
+  /** 撤销一个网站的授权。 */
+  revokeApiOrigin(origin: string): Promise<void>;
 }
 
 export interface WindowControlsApi {

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ElectronApplication, _electron as electron, expect, type Page } from '@playwright/test';
+import { API_PORT_ENV } from '../../src/main/api/local-api';
 import { FAKE_PRINTERS_ENV, type FakePrinterSpec } from '../../src/main/printing/fake-printers';
 
 /**
@@ -54,6 +55,8 @@ export async function launchApp(userData?: string, options: LaunchOptions = {}):
   if (options.fakePrinters) {
     env[FAKE_PRINTERS_ENV] = JSON.stringify(options.fakePrinters);
   }
+  // 本机接口用系统随便给的端口：并行的用例之间、和本机上跑着的安装版之间都不抢 17631。
+  env[API_PORT_ENV] = '0';
   const platformArgs = process.platform === 'darwin' ? MAC_TEST_ARGS : [];
   const app = await electron.launch({ args: [APP_ROOT, ...platformArgs], env });
   let page: Page;

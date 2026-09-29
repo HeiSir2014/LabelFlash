@@ -8,7 +8,8 @@ import type { LocalApiStatus } from '../../shared/local-api';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
 import { openDatabase } from '../storage/database';
 import { SqliteApiJobStore } from '../storage/sqlite-api-job-store';
-import { LocalApi } from './local-api';
+import { DEFAULT_PORTS } from './http-server';
+import { API_PORT_ENV, apiCandidatePorts, LocalApi } from './local-api';
 
 const SITE = 'https://erp.example.com';
 const SENT: PrintResult = {
@@ -189,5 +190,19 @@ describe('LocalApi', () => {
     expect((await fetch(`${harness.baseUrl()}/v1/templates`, { headers })).status).toBe(200);
     harness.api.removeKey(key.id);
     expect((await fetch(`${harness.baseUrl()}/v1/templates`, { headers })).status).toBe(401);
+  });
+});
+
+describe('apiCandidatePorts', () => {
+  test('uses the default ports in the installed app', () => {
+    expect(apiCandidatePorts({ [API_PORT_ENV]: '0' }, true)).toEqual(DEFAULT_PORTS);
+    expect(apiCandidatePorts({}, false)).toEqual(DEFAULT_PORTS);
+  });
+
+  // E2E、开发版用单独的端口（0 = 系统随便给一个），不和本机上跑着的安装版抢端口。
+  test('lets unpackaged runs pick their own port', () => {
+    expect(apiCandidatePorts({ [API_PORT_ENV]: '0' }, false)).toEqual([0]);
+    expect(apiCandidatePorts({ [API_PORT_ENV]: '18080' }, false)).toEqual([18080]);
+    expect(apiCandidatePorts({ [API_PORT_ENV]: 'x' }, false)).toEqual(DEFAULT_PORTS);
   });
 });

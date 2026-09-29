@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   MAX_IPC_STRING_LENGTH,
   MAX_RAW_INPUT_LENGTH,
+  requireApiKeyId,
+  requireApiKeyName,
   requireBoolean,
   requireJobQuery,
   requireLookupTableId,
@@ -18,6 +20,7 @@ import {
   requireTemplateId,
   requireVoiceCue,
   requireWebhookId,
+  requireWebOrigin,
 } from './ipc-validators';
 
 describe('ipc validators', () => {
@@ -112,5 +115,23 @@ describe('ipc validators', () => {
     expect(() => requireSecretName('')).toThrow(TypeError);
     expect(() => requireSecretName('a}b')).toThrow(TypeError);
     expect(() => requireSecretName(1)).toThrow(TypeError);
+  });
+
+  test('requireApiKeyId accepts the UUIDs keys are created with only', () => {
+    expect(requireApiKeyId('7c9e6679-7425-40de-944b-e07fc1f90ae7')).toBe('7c9e6679-7425-40de-944b-e07fc1f90ae7');
+    expect(() => requireApiKeyId('k1')).toThrow(TypeError);
+    expect(() => requireApiKeyId(1)).toThrow(TypeError);
+  });
+
+  test('requireApiKeyName trims a name and rejects empty or control-character names', () => {
+    expect(requireApiKeyName(' ERP ')).toBe('ERP');
+    expect(() => requireApiKeyName('  ')).toThrow(TypeError);
+    expect(() => requireApiKeyName('a\nb')).toThrow(TypeError);
+  });
+
+  test('requireWebOrigin accepts http and https origins only', () => {
+    expect(requireWebOrigin('https://erp.example.com')).toBe('https://erp.example.com');
+    expect(() => requireWebOrigin('null')).toThrow(TypeError);
+    expect(() => requireWebOrigin(7)).toThrow(TypeError);
   });
 });

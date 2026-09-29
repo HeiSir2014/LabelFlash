@@ -45,10 +45,10 @@ import type { LookupTables } from './lookup/lookup-tables';
 import type { MobileStation } from './mobile/mobile-station';
 import type { WebhookOutbox } from './notify/webhook-outbox';
 import { type PrintTemplate, resolvePrintTemplate } from './print-template';
-import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
+import { openPrinterPreferences } from './printing/driver-paper';
 import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { renderLabelHtml } from './printing/label-html';
-import type { PrinterProbeHost } from './printing/printer-probe-host';
+import type { PrinterProfiles } from './printing/printer-profiles';
 import type { PrinterStatusMonitor } from './printing/printer-status';
 import { registerRuleIpc } from './scan/rule-ipc';
 import type { RuleService } from './scan/rule-service';
@@ -75,8 +75,8 @@ export interface IpcDeps {
   updater: AppUpdater;
   voice: VoiceClips;
   mobile: MobileStation;
-  /** Windows 上的常驻打印机探测进程；其他平台为 null。 */
-  probeHost: PrinterProbeHost | null;
+  /** 每台打印机的驱动纸张和分辨率（短时缓存）。 */
+  profiles: PrinterProfiles;
   getWindow: () => BrowserWindow | null;
   onSettingsChanged: (next: AppSettings, previous: AppSettings) => Promise<void>;
 }
@@ -149,11 +149,14 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.ListPrinters, () => deps.adapter.listPrinters());
   handle(IpcChannel.PrinterStatus, (printerName) => deps.status.get(requireString(printerName, 'printerName')));
   handle(IpcChannel.CheckDriverPaper, async (printerName) =>
-    checkDriverPaper(await queryDriverPaper(await requireKnownPrinter(printerName), deps.probeHost)),
+    checkDriverPaper(await deps.profiles.get(await requireKnownPrinter(printerName))),
   );
-  handle(IpcChannel.OpenPrinterPreferences, async (printerName) =>
-    openPrinterPreferences(await requireKnownPrinter(printerName)),
-  );
+  handle(IpcChannel.OpenPrinterPreferences, async (printerName) => {
+    const name = await requireKnownPrinter(printerName);
+    await openPrinterPreferences(name);
+    // 操作员可能刚改了纸张：界面随后重新检查时要读到新的设置。
+    deps.profiles.forget(name);
+  });
   handle(IpcChannel.ListJobs, (query) => deps.jobs.listPage(requireJobQuery(query)));
   handle(IpcChannel.GetSettings, () => deps.settings.current);
   handle(IpcChannel.UpdateSettings, (patch) => updateSettings(requireRecord(patch, 'settings patch')));

@@ -32,9 +32,11 @@ import { WebhookOutbox } from './notify/webhook-outbox';
 import { createWebhookSender } from './notify/webhook-sender';
 import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
+import { queryDriverPaper } from './printing/driver-paper';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
+import { PrinterProfiles } from './printing/printer-profiles';
 import { createReadinessProbe, PrinterStatusMonitor } from './printing/printer-status';
 import { createHttpStepRunner } from './scan/http-step';
 import { RuleService } from './scan/rule-service';
@@ -192,7 +194,8 @@ async function bootstrap(): Promise<void> {
   );
   status.start();
   void status.watch(settings.current.selectedPrinter);
-  const adapter = new ElectronDriverAdapter(requireWebContents, status, systemClock);
+  const profiles = new PrinterProfiles((name) => queryDriverPaper(name, probeHost), systemClock);
+  const adapter = new ElectronDriverAdapter(requireWebContents, status, systemClock, profiles);
   const outbox = new WebhookOutbox({
     store: new SqliteWebhookStore(database),
     send: createWebhookSender({
@@ -291,7 +294,7 @@ async function bootstrap(): Promise<void> {
     updater,
     voice,
     mobile,
-    probeHost,
+    profiles,
     getWindow: () => mainWindow,
     onSettingsChanged: async (next, previous) => {
       guard.setWindowMs(secondsToMs(next.dedupWindowSeconds));

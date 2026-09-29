@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
   type CameraCapabilities,
+  DOUBLE_TAP_MS,
+  DOUBLE_TAP_SLOP_PX,
+  FAR_ZOOM,
   focusAtConstraints,
   hasTorch,
+  isDoubleTap,
+  lensZooms,
   PREFERRED_ZOOM,
   startupConstraints,
   tapToVideoPoint,
@@ -35,6 +40,53 @@ describe('startupConstraints', () => {
 
   test('does not force a focus mode the camera lacks', () => {
     expect(startupConstraints({ focusMode: ['manual'] })).toEqual([]);
+  });
+
+  test('reopens the camera on the far lens the user chose', () => {
+    expect(startupConstraints(ANDROID, 'far')).toEqual([{ focusMode: 'continuous' }, { zoom: FAR_ZOOM }]);
+  });
+
+  test('stays on the near zoom when the camera has no far lens', () => {
+    expect(startupConstraints({ zoom: { min: 1, max: 1.5, step: 0.1 } }, 'far')).toEqual([{ zoom: PREFERRED_ZOOM }]);
+  });
+});
+
+describe('lensZooms', () => {
+  test('offers the moderate zoom as near and the telephoto zoom as far', () => {
+    expect(lensZooms(ANDROID)).toEqual({ near: PREFERRED_ZOOM, far: FAR_ZOOM });
+  });
+
+  test('stops the far lens at the largest zoom the camera has', () => {
+    expect(lensZooms({ zoom: { min: 1, max: 2, step: 0.1 } })).toEqual({ near: PREFERRED_ZOOM, far: 2 });
+  });
+
+  test('offers no switch when far would be no closer than near', () => {
+    expect(lensZooms({ zoom: { min: 1, max: 1.5, step: 0.1 } })).toBeNull();
+    expect(lensZooms({ zoom: { min: 1, max: 1, step: 0.1 } })).toBeNull();
+  });
+
+  test('offers no switch when the browser cannot zoom', () => {
+    expect(lensZooms({})).toBeNull();
+  });
+});
+
+describe('isDoubleTap', () => {
+  const first = { point: { x: 100, y: 100 }, at: 1_000 };
+
+  test('takes a second tap in the same place soon after as a double tap', () => {
+    expect(isDoubleTap(first, { x: 110, y: 95 }, first.at + DOUBLE_TAP_MS)).toBe(true);
+  });
+
+  test('takes a slow second tap as a new single tap', () => {
+    expect(isDoubleTap(first, { x: 100, y: 100 }, first.at + DOUBLE_TAP_MS + 1)).toBe(false);
+  });
+
+  test('takes a quick tap somewhere else as a new single tap', () => {
+    expect(isDoubleTap(first, { x: 100 + DOUBLE_TAP_SLOP_PX + 1, y: 100 }, first.at + 100)).toBe(false);
+  });
+
+  test('needs a first tap', () => {
+    expect(isDoubleTap(null, { x: 100, y: 100 }, first.at)).toBe(false);
   });
 });
 

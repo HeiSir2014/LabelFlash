@@ -8,6 +8,8 @@ import {
   type CameraConstraintSet,
   focusAtConstraints,
   hasTorch,
+  type Lens,
+  lensZooms,
   type Point,
   type Rect,
   type Size,
@@ -35,6 +37,10 @@ export interface CameraPort {
   setTorch(on: boolean): Promise<void>;
   /** 画面里 area 这一块（视频像素坐标）；还没有画面时返回 null。 */
   grab(area: Rect): ImageData | null;
+  /** 当前焦段；摄像头没开，或这台设备只有一种变焦（不能切换）时为 null。 */
+  readonly currentLens: Lens | null;
+  /** 切换焦段；设备拒绝时抛错，焦段不变。重新打开摄像头时沿用选好的焦段。 */
+  setLens(lens: Lens): Promise<void>;
 }
 
 export class Camera implements CameraPort {
@@ -43,6 +49,8 @@ export class Camera implements CameraPort {
   private capabilities: CameraCapabilities = {};
   private readonly canvas = document.createElement('canvas');
   private wakeLock: WakeLockSentinel | null = null;
+  /** 选好的焦段：切到后台再回来、重新打开摄像头时沿用。 */
+  private lens: Lens = 'near';
   /** 每次 start / stop 加一：等待授权、等画面的时候被 stop 了，拿到的东西要立即放掉。 */
   private generation = 0;
 
@@ -59,6 +67,10 @@ export class Camera implements CameraPort {
   /** 这台设备能不能点按对焦（安卓 Chrome 多数可以；iPhone 由系统自动对焦，不能也不需要）。 */
   get canFocusAt(): boolean {
     return focusAtConstraints(this.capabilities, supportsPointsOfInterest(), { x: 0.5, y: 0.5 }) !== null;
+  }
+
+  get currentLens(): Lens | null {
+    return this.stream && lensZooms(this.capabilities) ? this.lens : null;
   }
 
   /** 视频画面本身的尺寸；还没有画面时为 null。 */
@@ -113,7 +125,7 @@ export class Camera implements CameraPort {
       }
     });
     this.capabilities = readCapabilities(track);
-    for (const set of startupConstraints(this.capabilities)) {
+    for (const set of startupConstraints(this.capabilities, this.lens)) {
       await this.apply(set);
     }
     await this.keepScreenOn(generation);
@@ -131,6 +143,17 @@ export class Camera implements CameraPort {
     if (set) {
       await this.apply(set);
     }
+  }
+
+  async setLens(lens: Lens): Promise<void> {
+    const zooms = lensZooms(this.capabilities);
+    const track = this.track();
+    if (!track || !zooms) {
+      throw new Error('这台设备不能切换焦段');
+    }
+    // 不经 apply()：切换失败要让调用方知道，按钮和提示才不会说错。
+    await track.applyConstraints({ advanced: [{ zoom: zooms[lens] } as MediaTrackConstraintSet] });
+    this.lens = lens;
   }
 
   async setTorch(on: boolean): Promise<void> {

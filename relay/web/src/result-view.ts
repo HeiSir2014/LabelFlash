@@ -240,6 +240,9 @@ export const TOO_MANY_PENDING_HINT = `还有 ${MAX_PENDING_JOBS} 张在等结果
 export const TOO_LONG_HINT = `内容超过 ${MAX_REQUEST_RAW_LENGTH} 个字，不能打印`;
 export const PHOTO_EMPTY_HINT = '照片里没有找到条码或二维码。靠近一点、对准后再拍。';
 export const PHOTO_FAILED_HINT = '这张照片读不出来，换一张再试。';
+/** 切换焦段后的提示：告诉拿手机的人现在该离标签多远。 */
+export const FAR_LENS_HINT = '已切到远焦：离标签远一点扫。双击画面切回近焦';
+export const NEAR_LENS_HINT = '已切回近焦';
 
 /** 所有手机的任务共用一个队列：告诉拿手机的人还要等几张。 */
 function queueTitle(ahead: number): string {

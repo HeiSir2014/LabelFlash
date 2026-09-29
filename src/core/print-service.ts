@@ -6,7 +6,7 @@ import type { PrintQueue } from './print-queue';
 import type { PrinterChoice } from './printing/resolve-printer';
 import type { EnrichResult } from './scan/enrich';
 import { MAX_RAW_LENGTH, normalizeRaw } from './scan/normalize-raw';
-import type { ScanResult } from './scan/scan-result';
+import type { ScanField, ScanResult } from './scan/scan-result';
 import { type LabelTemplate, withPaper } from './templates/template-model';
 import type {
   Clock,
@@ -16,6 +16,7 @@ import type {
   PrinterAdapter,
   PrintRequest,
   PrintResult,
+  PrintSource,
   RecordedResult,
 } from './types';
 
@@ -60,9 +61,35 @@ interface JobTarget {
 
 const NO_TARGET: JobTarget = { printerName: '', paper: null, templateId: null };
 
+/** 按模板打印的几种入口在这几处不同。 */
+interface LabelOptions {
+  /** 扫码内容的防重复窗口：扫码枪、手机要；本机接口靠调用方的 requestId，不用它。 */
+  dedup: boolean;
+  /** 执行识别规则的加工步骤：扫码要；本机接口的字段由调用方给出，不执行。 */
+  enrich: boolean;
+  /** 调用方指定的打印机（接口已核对过在系统里）；null = 按模板决定。 */
+  printerName: string | null;
+}
+
+const SCAN_OPTIONS: LabelOptions = { dedup: true, enrich: true, printerName: null };
+
+/** 本机接口的识别结果里的「规则」：备注变量 {规则} 和打印结果通知里显示为「本机接口」。 */
+export const API_RULE = { id: 'api', name: '本机接口' } as const;
+
+/** 不经过识别规则的一张：本机接口提交的，或从打印记录按当时的模板和字段重打的。 */
+export interface FieldsPrint {
+  template: LabelTemplate;
+  fields: ScanField[];
+  /** 完整内容：二维码的「完整内容」、底部整行、{完整内容}；也是打印记录的 raw。 */
+  content: string;
+  source: PrintSource;
+  caller: string | null;
+  printerName: string | null;
+}
+
 type Recognition = { ok: true; scan: ScanResult } | { ok: false; result: Extract<PrintResult, { status: 'invalid' }> };
 
-/** 所有入口（扫码枪、记录重打、手机扫码，以后的本机接口）的唯一业务入口。 */
+/** 所有入口（扫码枪、记录重打、手机扫码、本机接口）的唯一业务入口。 */
 export class PrintService {
   constructor(private readonly deps: PrintServiceDeps) {}
 
@@ -100,20 +127,35 @@ export class PrintService {
       return this.finish(id, request, NO_TARGET, truncated, recognition.result, null);
     }
     // 模板只看命中的规则，和加工步骤补的字段无关：在加工之前就能决定打印机。
-    return this.printLabel(id, request, recognition.scan, this.deps.resolveTemplate(recognition.scan));
+    return this.printLabel(id, request, recognition.scan, this.deps.resolveTemplate(recognition.scan), SCAN_OPTIONS);
   }
 
-  /**
-   * 按模板决定打印机 → 防重复 → 加工 → 排队打印 → 写记录。
-   * 本机接口（第 2 个子项目）传来的是字段 + 模板，从这里进来，不经过识别规则。
-   */
+  /** 按给定的模板和字段打印一张：不识别、不加工、不用扫码的防重复窗口。 */
+  async printFields(input: FieldsPrint): Promise<PrintResult> {
+    const scan: ScanResult = { raw: input.content, ruleId: API_RULE.id, ruleName: API_RULE.name, fields: input.fields };
+    const request: PrintRequest = { raw: input.content, source: input.source };
+    if (input.caller !== null) {
+      request.caller = input.caller;
+    }
+    return this.printLabel(this.deps.createId(), request, scan, input.template, {
+      dedup: false,
+      enrich: false,
+      printerName: input.printerName,
+    });
+  }
+
+  /** 按模板决定打印机 → 防重复 → 加工 → 排队打印 → 写记录（后两步之外的由 options 决定）。 */
   private async printLabel(
     id: string,
     request: PrintRequest,
     recognized: ScanResult,
     template: LabelTemplate,
+    options: LabelOptions,
   ): Promise<PrintResult> {
-    const choice = await this.deps.choosePrinter(template);
+    const choice: PrinterChoice =
+      options.printerName === null
+        ? await this.deps.choosePrinter(template)
+        : { printerName: options.printerName, reason: 'template' };
     // 没有打印机时和 1.0.x 没选打印机一样：不打印、不写记录、不占防重复窗口，指定好打印机后可以直接重打。
     if (choice.printerName === null) {
       return { status: 'no-printer', paperKey: choice.paperKey, missingPrinter: choice.missingPrinter };
@@ -125,7 +167,9 @@ export class PrintService {
     };
     const { raw } = recognized;
     // 先占住防重复窗口再加工：HTTP 查询要花时间，扫码枪连按的第二下必须在这里就被拦下。
-    const reservation = this.deps.guard.tryReserve(raw, request.force === true);
+    const reservation = options.dedup
+      ? this.deps.guard.tryReserve(raw, request.force === true)
+      : ({ ok: true } as const);
     if (!reservation.ok) {
       const duplicate: RecordedResult = {
         status: 'duplicate',
@@ -134,7 +178,7 @@ export class PrintService {
       };
       return this.finish(id, request, target, raw, duplicate, recognized);
     }
-    const enriched = await this.enrich(recognized);
+    const enriched = options.enrich ? await this.enrich(recognized) : { scan: recognized, traces: [], blocked: null };
     if (enriched.blocked) {
       this.deps.guard.release(raw);
       const lookupFailed: RecordedResult = {
@@ -152,15 +196,14 @@ export class PrintService {
     } catch (error) {
       console.error('[PrintService] print failed', error);
       const failure = toPrintFailure(error);
-      if (failure.reason === 'PRINT_TIMEOUT') {
-        // 超时说明结果不确定（可能已出纸或仍在排队）：按已打印处理，避免重扫出第二张；确认没出纸再强制补打。
-        this.deps.guard.commit(scan.raw);
-      } else {
-        this.deps.guard.release(scan.raw);
+      if (options.dedup) {
+        this.settleFailedReservation(scan.raw, failure);
       }
       return this.finish(id, request, target, scan.raw, failed(failure), scan);
     }
-    this.deps.guard.commit(scan.raw);
+    if (options.dedup) {
+      this.deps.guard.commit(scan.raw);
+    }
     return this.finish(id, request, target, scan.raw, { status: 'printed', jobId: id, scan }, scan);
   }
 
@@ -180,6 +223,15 @@ export class PrintService {
     } catch (error) {
       console.error('[PrintService] test print failed', error);
       return failed(toPrintFailure(error));
+    }
+  }
+
+  /** 超时说明结果不确定（可能已出纸或仍在排队）：按已打印处理，避免重扫出第二张；确认没出纸再强制补打。 */
+  private settleFailedReservation(raw: string, failure: PrintFailure): void {
+    if (failure.reason === 'PRINT_TIMEOUT') {
+      this.deps.guard.commit(raw);
+    } else {
+      this.deps.guard.release(raw);
     }
   }
 

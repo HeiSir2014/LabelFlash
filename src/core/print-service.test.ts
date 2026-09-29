@@ -446,3 +446,73 @@ describe('PrintService job records', () => {
     expect(store.listRecent(1)[0]?.caller).toBeUndefined();
   });
 });
+
+describe('PrintService.printFields', () => {
+  const fields = [
+    { name: '订单号', value: 'A001' },
+    { name: '收件人', value: '张三' },
+  ];
+  const input = {
+    template: STANDARD_TEMPLATE,
+    fields,
+    content: 'A001',
+    source: 'api',
+    caller: 'key:k1',
+    printerName: null,
+  } as const;
+
+  test('prints the given fields with the given template, without rules or processing steps', async () => {
+    const { service, adapter, store, useEnrich, useRules, templateRequests } = createHarness();
+    let lookups = 0;
+    useEnrich(async (scan) => {
+      lookups += 1;
+      return { scan, traces: [], blocked: null };
+    });
+    useRules([]);
+    const result = await service.printFields(input);
+    expect(result.status).toBe('printed');
+    expect(lookups).toBe(0);
+    expect(templateRequests).toEqual([]);
+    expect(adapter.printed.at(-1)).toMatchObject({ raw: 'A001', templateId: STANDARD_TEMPLATE.id, fields });
+    expect(store.listRecent(1)[0]).toMatchObject({ source: 'api', caller: 'key:k1', fields, raw: 'A001' });
+  });
+
+  test('names the local api as the rule, for the {规则} note variable and notifications', async () => {
+    const { service, recorded } = createHarness();
+    await service.printFields(input);
+    expect(recorded.at(-1)?.scan).toMatchObject({ ruleId: 'api', ruleName: '本机接口' });
+  });
+
+  // 本机接口靠调用方的 requestId 防重复；同样的内容打两次是调用方要的。
+  test('does not use the scan dedup window', async () => {
+    const { service } = createHarness();
+    expect((await service.printFields(input)).status).toBe('printed');
+    expect((await service.printFields(input)).status).toBe('printed');
+  });
+
+  test('does not block scans of the same content', async () => {
+    const { service } = createHarness();
+    await service.printFields({ ...input, content: RAW });
+    expect((await service.submit(request())).status).toBe('printed');
+  });
+
+  test('prints on the printer the caller names', async () => {
+    const { service, adapter } = createHarness();
+    await service.printFields({ ...input, printerName: '面单机B' });
+    expect(adapter.printed.at(-1)?.printerName).toBe('面单机B');
+  });
+
+  test('reports no-printer like a scan and records nothing', async () => {
+    const { service, store, useChoice } = createHarness();
+    useChoice({ printerName: null, reason: 'unassigned', paperKey: '60x40', missingPrinter: null });
+    expect(await service.printFields(input)).toEqual({ status: 'no-printer', paperKey: '60x40', missingPrinter: null });
+    expect(store.listRecent(1)).toEqual([]);
+  });
+
+  test('records a failed print with its reason', async () => {
+    const { service, adapter, store } = createHarness();
+    adapter.failNext(new PrintError('PRINTER_NOT_READY'));
+    expect(await service.printFields(input)).toMatchObject({ status: 'failed', reason: 'PRINTER_NOT_READY' });
+    expect(store.listRecent(1)[0]).toMatchObject({ status: 'failed', source: 'api' });
+  });
+});

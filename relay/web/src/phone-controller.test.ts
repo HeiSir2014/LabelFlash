@@ -11,11 +11,14 @@ import {
   PhoneController,
   SCAN_FRAME_INTERVAL_MS,
   SCANNED_VIBRATE_MS,
+  type SoundPort,
   type ViewExtras,
   type ViewPort,
 } from './phone-controller';
 import { initialPhoneState, type PhoneState } from './phone-state';
 import { TOO_LONG_HINT, TOO_MANY_PENDING_HINT } from './result-view';
+import { SAME_CODE_REARM_MS } from './scan-gate';
+import type { SoundCue } from './scan-sound';
 
 const RAW = 'CL5640-TK-图片色-XL';
 const FRAME: Size = { width: 1280, height: 720 };
@@ -136,10 +139,29 @@ class FakeView implements ViewPort {
   }
 }
 
+class FakeSound implements SoundPort {
+  isEnabled = true;
+  unlocks = 0;
+  readonly played: SoundCue[] = [];
+
+  setEnabled(on: boolean): void {
+    this.isEnabled = on;
+  }
+
+  unlock(): void {
+    this.unlocks += 1;
+  }
+
+  play(cue: SoundCue): void {
+    this.played.push(cue);
+  }
+}
+
 let timers: FakePageTimers;
 let camera: FakeCamera;
 let decoder: FakeDecoder;
 let view: FakeView;
+let sound: FakeSound;
 let vibrations: (number | number[])[];
 let visible: boolean;
 let visibilityListener: (() => void) | null;
@@ -165,6 +187,7 @@ function createController(hasLink = true): PhoneController {
       view,
       readPhoto: async () => ({}) as ImageData,
       vibrate: (pattern) => vibrations.push(pattern),
+      sound,
       isVisible: () => visible,
       watchVisibility: (listener) => {
         visibilityListener = listener;
@@ -207,6 +230,7 @@ beforeEach(() => {
   camera = new FakeCamera();
   decoder = new FakeDecoder();
   view = new FakeView();
+  sound = new FakeSound();
   vibrations = [];
   visible = true;
   visibilityListener = null;
@@ -314,6 +338,22 @@ describe('PhoneController: scanning', () => {
     }
     expect(submitted).toEqual([{ raw: RAW, force: false }]);
     expect(vibrations).toEqual([SCANNED_VIBRATE_MS]);
+    // iPhone 不能振动：声音是它唯一的「扫到了」，同一张标签停在镜头里也只响一次。
+    expect(sound.played).toEqual(['scanned']);
+  });
+
+  test('beeps again when the same label comes back after leaving the view', async () => {
+    await scanning();
+    await frame(RAW);
+    timers.advance(SAME_CODE_REARM_MS);
+    await frame(RAW);
+    expect(sound.played).toEqual(['scanned', 'scanned']);
+  });
+
+  test('stays quiet when nothing was sent', async () => {
+    await scanning();
+    controller.manual('x'.repeat(MAX_REQUEST_RAW_LENGTH + 1));
+    expect(sound.played).toEqual([]);
   });
 
   test('does not print the label in view again after something is typed by hand', async () => {
@@ -369,6 +409,36 @@ describe('PhoneController: scanning', () => {
     controller.dispatch({ type: 'result', job: 'job1', result: { status: 'invalid', reason: 'INVALID_CONTENT' } });
     controller.dispatch({ type: 'result', job: 'job2', result: fault });
     expect(vibrations).toEqual([ALERT_VIBRATE_PATTERN_MS]);
+  });
+
+  test('sounds the alert for a printer fault but not for content the desktop cannot read', async () => {
+    await scanning();
+    controller.manual('A');
+    controller.manual('B');
+    sound.played.length = 0;
+    const fault: PhonePrintResult = { status: 'failed', reason: 'PRINTER_NOT_READY', detail: null, issue: 'paperOut' };
+    controller.dispatch({ type: 'result', job: 'job1', result: { status: 'invalid', reason: 'INVALID_CONTENT' } });
+    controller.dispatch({ type: 'result', job: 'job2', result: fault });
+    expect(sound.played).toEqual(['alert']);
+  });
+});
+
+describe('PhoneController: sound', () => {
+  test('unlocks sound with the tap that opens the camera, as iPhone requires', async () => {
+    await scanning();
+    expect(sound.unlocks).toBe(1);
+  });
+
+  test('turns sound off and on from its switch and shows the state', async () => {
+    await scanning();
+    expect(view.extras?.isSoundOn).toBe(true);
+    controller.toggleSound();
+    expect(sound.isEnabled).toBe(false);
+    expect(view.extras?.isSoundOn).toBe(false);
+    controller.toggleSound();
+    expect(sound.isEnabled).toBe(true);
+    // 「开始扫码」解锁一次；每点一下开关也是一次点按，同样用来解锁声音。
+    expect(sound.unlocks).toBe(3);
   });
 });
 

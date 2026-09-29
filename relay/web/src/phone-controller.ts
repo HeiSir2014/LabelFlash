@@ -16,6 +16,7 @@ import {
   TOO_MANY_PENDING_HINT,
 } from './result-view';
 import { ScanGate } from './scan-gate';
+import type { SoundCue } from './scan-sound';
 
 /** 每秒解码约 6 帧：够快，又不让手机发烫。 */
 export const SCAN_FRAME_INTERVAL_MS = 160;
@@ -30,9 +31,19 @@ export interface SessionPort {
   submit(raw: string, force: boolean): string;
 }
 
+/** 提示音（sound-player.ts）；测试里换成假的。 */
+export interface SoundPort {
+  readonly isEnabled: boolean;
+  setEnabled(on: boolean): void;
+  /** 在用户点按里调用：iPhone 只允许在点按时打开或恢复声音。 */
+  unlock(): void;
+  play(cue: SoundCue): void;
+}
+
 export interface ViewExtras {
   hasTorch: boolean;
   isTorchOn: boolean;
+  isSoundOn: boolean;
   /** 取景下方的一次性提示；没有时为 null。 */
   hint: string | null;
 }
@@ -57,6 +68,7 @@ export interface PhoneControllerDeps {
   view: ViewPort;
   readPhoto: (file: File) => Promise<ImageData>;
   vibrate: (pattern: number | number[]) => void;
+  sound: SoundPort;
   isVisible: () => boolean;
   /** 订阅页面可见性变化，返回取消订阅的函数。 */
   watchVisibility: (listener: () => void) => () => void;
@@ -110,6 +122,7 @@ export class PhoneController {
     }
     if (event.type === 'result' && resultLevel(event.result) === 'alert') {
       this.deps.vibrate(ALERT_VIBRATE_PATTERN_MS);
+      this.deps.sound.play('alert');
     }
     if (this.hint === TOO_MANY_PENDING_HINT && canSubmit(this.state)) {
       this.clearHint();
@@ -121,8 +134,9 @@ export class PhoneController {
     this.syncCamera();
   }
 
-  /** 点了「开始扫码」或「重新打开摄像头」：振动和摄像头授权都要在这样的点按之后。 */
+  /** 点了「开始扫码」或「重新打开摄像头」：振动、声音和摄像头授权都要在这样的点按之后。 */
   openCamera(): void {
+    this.deps.sound.unlock();
     if (this.state.camera === 'idle' || this.state.camera === 'unavailable') {
       this.dispatch({ type: 'camera', camera: 'starting' });
     }
@@ -177,6 +191,13 @@ export class PhoneController {
     this.deps.reload();
   }
 
+  /** 声音开关：点它本身就是一次点按，顺带解锁声音。 */
+  toggleSound(): void {
+    this.deps.sound.setEnabled(!this.deps.sound.isEnabled);
+    this.deps.sound.unlock();
+    this.render();
+  }
+
   /**
    * 提交一个打印任务。explicit = 拍照识别、手动输入、点重试或补打：用户明确要打这一张，不经过取景防抖，但会被记住。
    * 取景里扫到的码要经过防抖：同一张标签停在镜头里只打一次。
@@ -200,7 +221,9 @@ export class PhoneController {
       return false;
     }
     this.clearHint();
+    // 和扫码枪的「嘀」一样：振动给安卓，声音给所有手机（iPhone 的浏览器不能振动）。
     this.deps.vibrate(SCANNED_VIBRATE_MS);
+    this.deps.sound.play('scanned');
     this.session.submit(raw, options.force);
     return true;
   }
@@ -318,6 +341,7 @@ export class PhoneController {
     this.deps.view.render(this.state, {
       hasTorch: this.state.camera === 'live' && this.deps.camera.hasTorch,
       isTorchOn: this.isTorchOn,
+      isSoundOn: this.deps.sound.isEnabled,
       hint: this.hint,
     });
   }

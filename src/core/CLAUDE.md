@@ -18,9 +18,10 @@
 
 | 模块 | 作用 |
 |---|---|
-| `print-service.ts` | 打印的完整流程：识别 → 加工 → 选模板 → 门限 → 排队打印 → 记录。界面和主进程都只调它 |
+| `print-service.ts` | 打印的完整流程：识别 → 选模板 → 决定打印机 → 门限 → 加工 → 排队打印 → 记录。界面和主进程都只调它；后一半（`printLabel`，从决定打印机开始）是以后本机接口的入口 |
+| `printing/resolve-printer.ts` | 决定打印机：模板指定的（本机有）→ 纸张分配的 → 没有；没有时不打印、不写记录 |
 | `dedup-guard.ts` | 防重门限。「检查并占位」是同步的：成功和超时记为已打印（超时说明结果不确定），确定没出纸的失败释放占位；`force` 能跳过已打印，但不能跳过正在打印的同一个码 |
-| `print-queue.ts`、`serial-queue.ts` | 串行打印，单张超时后通过 `AbortSignal` 通知适配器放弃 |
+| `print-queue.ts`、`serial-queue.ts` | 每台打印机一个串行队列（同一台先扫先打，不同打印机并行），单张超时后通过 `AbortSignal` 通知适配器放弃 |
 | `errors.ts` | `PrintError`：失败原因和给用户看的补充说明（打印机问题分类） |
 | `scan/` | 识别规则（`RULE_KINDS`：delimited / keyValue / whole / regex）、加工步骤（`STEP_KINDS`：template / regexReplace / lookup / http）、内置规则、每台电脑的规则设置、规则文件导入导出 |
 | `templates/` | 模板模型、内置模板、标签内容组装、按宽度缩小字号、备注变量 |

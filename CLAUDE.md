@@ -10,7 +10,7 @@
 
 ## 项目
 
-样衣间「扫一张打一张」的桌面程序（Electron），支持 Windows 和 macOS。流程是：扫码枪扫二维码或条码 → 按识别规则拆出字段 → 加工步骤补字段 → 按模板生成 60×40mm 标签预览 → 静默打印到本机热敏标签机。
+样衣间「扫一张打一张」的桌面程序（Electron），支持 Windows 和 macOS。流程是：扫码枪扫二维码或条码 → 按识别规则拆出字段 → 加工步骤补字段 → 按模板生成标签预览（按模板的纸张，默认 60×40mm）→ 静默打印到装着这种纸的本机热敏标签机（按纸张分配打印机，模板也可以指定）。
 
 - **名称**：产品名「CDL-云签速印」，ASCII 名 `CDL-LabelFlash`，appId `com.cdl.labelflash`。品牌、出品方、店铺信息只从 `src/shared/brand.ts` 的 `BRAND` 取，不在别处硬编码。
 - **版本**：第一个正式版本是 1.0.1。
@@ -104,6 +104,7 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
 数据目录的位置由 `src/main/index.ts` 决定：Windows 放 `LOCALAPPDATA`（本机目录，不进漫游配置），其他平台放系统的 `appData`。
 
 - **隔离数据**：开发版和 E2E 用环境变量 `CDL_LABELFLASH_USER_DATA` 指向单独的数据目录。这个变量只对未打包的程序生效。
+- **假打印机**：E2E 和视觉验收用环境变量 `CDL_LABELFLASH_FAKE_PRINTERS`（打印机名、驱动纸张、状态的 JSON）代替系统打印机，打印只记下来。同样只对未打包的程序生效，见 `src/main/printing/fake-printers.ts`。
 - **数据库迁移**：1.0.1 发布之前，表结构直接改在 `src/main/storage/migrations.ts` 的初始 schema 里，开发机删掉旧库即可。发布之后，已发布的迁移不能改，只能在末尾追加。
 - **删除确认**：删除用户数据、安装目录或更新缓存之前，先征得用户同意。
 
@@ -147,13 +148,13 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
 - **命令**：和 Windows 相同：`bun install`、`bun run dev`、`bun run check`、`bun run test:e2e`。`dist:win` 只能在 Windows 上跑，`dist:mac` 只能在 macOS 上跑。
 - **程序坞图标**：开发版里用 `app.dock.setIcon` 显示应用图标；安装版的图标由打包配置决定。
 - **窗口按钮**：标题栏左侧留给系统红绿灯（`--traffic-light-inset`）。改标题栏时，macOS 上要核对红绿灯区域和全屏状态。
-- **打印验证**：打印功能可以先用家用打印机验证出纸。接上热敏标签机后，要查看 CUPS 任务的纸张是不是 60×40。
+- **打印验证**：打印功能可以先用家用打印机验证出纸。接上热敏标签机后，要查看 CUPS 任务的纸张是不是模板的纸张。
 
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
-| `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心、手机扫码打印 |
+| `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心、手机扫码打印、多台打印机与多种纸张 |
 | `docs/superpowers/plans/` | 实施计划 |
 | `docs/roadmap.md` | 路线图 |
 | `docs/windows-acceptance.md` | Windows 验收记录 |

@@ -130,6 +130,7 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
   2. 在 `master` 的提交上打同名标签（例如 `v1.0.1`）并推送，CI 的 release 作业负责发布。
   3. release 作业先检查三件事，不符合就不发布：标签所在的提交在 `master` 上；标签和 `version` 一致（客户端按版本号比较，并按文件名里的版本号去找旧版的 blockmap）；设置了仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL`（官方安装包的默认中转地址，构建时注入，代码里不写域名）。
   4. Release 先建成草稿，Windows 和 macOS 各自上传，核对 Windows 安装包、blockmap、`latest.yml` 和 macOS 的 pkg 四个文件都在，才公开。
+- **latest 分支**：始终指向最新发布版本的提交。发布作业公开 Release 之后把它快进到这个标签，快进不了就报错，不往回拨。分支有保护，不能删除、不能强推，管理员也一样；不要手工往上面提交。
 - **构建号**：CI 把工作流的 `run_number` 设成环境变量 `BUILD_NUMBER`。electron-builder 写进 Windows 文件版本（`1.0.2.123`）和 macOS 的 CFBundleVersion，程序在「关于」和启动日志里显示（`src/main/build-info.ts`）。`version` 本身保持 `x.y.z`，不带构建号：标签检查、自动更新的版本比较、按文件名找旧版 blockmap 都依赖它。
 - **标签要等确认**：打版本标签前先得到用户确认。
 

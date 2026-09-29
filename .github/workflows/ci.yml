@@ -187,3 +187,17 @@ jobs:
             fi
           done
           gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+      # latest 分支始终指向最新发布的版本：要看、要从源码构建「现在发布的是哪一版」，切到 latest 就行。
+      # 只快进（force=false）：标签只打在 master 上、版本只增不减，快进不了说明发错了版本，宁可报错也不把 latest 往回拨。
+      # 分支本身有保护（不能删除、不能强推），见 CLAUDE.md「打包、更新与发布」。
+      - name: Move the latest branch to this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh api "repos/$GH_REPO/git/ref/heads/latest" --silent 2>/dev/null; then
+            gh api -X PATCH "repos/$GH_REPO/git/refs/heads/latest" -f sha="$GITHUB_SHA" -F force=false --silent
+          else
+            gh api -X POST "repos/$GH_REPO/git/refs" -f ref=refs/heads/latest -f sha="$GITHUB_SHA" --silent
+          fi
+          echo "latest → $GITHUB_REF_NAME ($GITHUB_SHA)"

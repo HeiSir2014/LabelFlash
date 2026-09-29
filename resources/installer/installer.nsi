@@ -124,3 +124,13 @@ FunctionEnd
 Function skinRunApp
   Exec '"$INSTDIR\${APP_EXECUTABLE_FILENAME}"'
 FunctionEnd
+
+; 装完、启动程序之前：弹管理员确认，加一条只放行本程序、只在专用和域网络生效的防火墙入站规则
+; （脚本和配置中心「本机接口」页的按钮是同一份，见 src/shared/firewall-rule.ts）。
+; 先加规则再启动：程序一启动就在局域网上监听，没有规则时 Windows 会自己弹防火墙提示。
+; 操作员点「否」时照常装完、启动，之后可以在「本机接口」页再加。更新时不走这里：规则按程序路径，路径不变。
+Function skinAddFirewallRule
+  File "/oname=$PLUGINSDIR\firewall.ps1" "${LABELFLASH_SKIN_DIR}\firewall.ps1"
+  ; Windows 路径里不会有双引号，参数直接用双引号括起来。
+  ExecShellWait "runas" "powershell.exe" '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "$PLUGINSDIR\firewall.ps1" -Program "$INSTDIR\${APP_EXECUTABLE_FILENAME}"' SW_HIDE
+FunctionEnd

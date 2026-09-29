@@ -6,6 +6,7 @@
 ;   - 提供两个函数：
 ;       skinStartInstall  启动安装（通常调用 skinSpawn）；$0 返回 "" 表示已启动，否则是给用户看的错误
 ;       skinRunApp        启动安装好的程序
+;       skinAddFirewallRule  装完、启动程序之前加防火墙规则（弹管理员确认；更新时不调用）
 ; 调用 skinShow 前设置 $skinIsUpdate（1 = 自动更新拉起的安装：跳过配置页）。
 
 !include "LogicLib.nsh"
@@ -35,6 +36,8 @@ Var skinTicks
 Var skinHoldTicks
 Var skinInstalled
 Var skinIsUpdate
+; 1 = 装完了、提示已显示，下一帧弹管理员确认加防火墙规则
+Var skinFirewallPending
 
 !define /ifndef SEE_MASK_NOCLOSEPROCESS 0x00000040
 !define /ifndef WAIT_OBJECT_0 0
@@ -180,6 +183,7 @@ Function skinBeginInstall
   StrCpy $skinTicks 0
   StrCpy $skinHoldTicks 0
   StrCpy $skinInstalled 0
+  StrCpy $skinFirewallPending 0
   nsNiuniuSkin::SetControlAttribute $skinWindow "btnClose" "enabled" "false"
   ${If} $skinIsUpdate == 1
     nsNiuniuSkin::SetControlAttribute $skinWindow "percentCaption" "text" "${SKIN_TEXT_updating}"
@@ -241,8 +245,10 @@ Function skinOnTick
   IntFmt $1 "%02d" $1
   nsNiuniuSkin::SetControlAttribute $skinWindow "orbit" "bkimage" "images\orbit\o$1.png"
 
+  ; 装完之后不再轮换：提示行要一直显示「请在弹出的窗口里点『是』」，直到确认框出来。
   IntOp $1 $skinTicks % ${SKIN_TIP_TICKS}
   ${If} $1 == 0
+  ${AndIf} $skinInstalled == 0
     IntOp $1 $skinTicks / ${SKIN_TIP_TICKS}
     IntOp $1 $1 % ${SKIN_TIP_COUNT}
     !insertmacro skinTipText $1 $0
@@ -255,11 +261,22 @@ Function skinOnTick
       Call skinAdvanceProgress
     ${ElseIf} $0 == 0
       StrCpy $skinInstalled 1
+      ; 新装时加防火墙规则：先把提示显示出来，下一帧再弹确认框（等确认框时界面不刷新）。
+      ${If} $skinIsUpdate != 1
+        nsNiuniuSkin::SetControlAttribute $skinWindow "tip" "text" "${SKIN_TEXT_firewallPrompt}"
+        StrCpy $skinFirewallPending 1
+        Return
+      ${EndIf}
     ${Else}
       StrCpy $0 "${SKIN_TEXT_installFailed} $0"
       Call skinFail
       Return
     ${EndIf}
+  ${EndIf}
+
+  ${If} $skinFirewallPending == 1
+    StrCpy $skinFirewallPending 0
+    Call skinAddFirewallRule
   ${EndIf}
 
   ${If} $skinInstalled == 1

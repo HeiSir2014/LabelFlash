@@ -2,7 +2,7 @@ import type { FieldsPrint } from '../print-service';
 import { SerialQueue } from '../serial-queue';
 import type { LabelTemplate } from '../templates/template-model';
 import type { Clock, PrintResult } from '../types';
-import type { ApiJobStore } from './api-job-store';
+import type { ApiJobPage, ApiJobStore } from './api-job-store';
 import { contentOf, type PrintJob, type PrintJobFailure, type PrintJobInput } from './api-model';
 
 /** AIP-155：同一调用方的同一 requestId 在这段时间内只处理一次（调用方超时重试一般在几分钟内，留足余量）。 */
@@ -114,6 +114,11 @@ export class PrintJobService {
 
   get(id: string): PrintJob | null {
     return this.deps.store.get(id);
+  }
+
+  /** 这个调用方的任务，新的在前；cursor 取上一页的 nextCursor。 */
+  list(caller: string, limit: number, cursor: number | null): ApiJobPage {
+    return this.deps.store.list(caller, limit, cursor);
   }
 
   /** 等队列里的任务都结束（测试和退出时用）。 */

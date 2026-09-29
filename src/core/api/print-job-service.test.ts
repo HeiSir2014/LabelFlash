@@ -186,6 +186,16 @@ describe('PrintJobService', () => {
     await expect(service.create('key:k1', INPUT)).rejects.toMatchObject({ code: 'QUEUE_FULL' });
   });
 
+  test('lists only the caller’s own jobs, newest first, a page at a time', async () => {
+    const { service } = createHarness();
+    const [first, second, third] = await service.createBatch('key:k1', [INPUT, INPUT, INPUT]);
+    await service.create('key:k2', INPUT);
+    const page = service.list('key:k1', 2, null);
+    expect(page.jobs.map((job) => job.id)).toEqual([third?.id ?? '', second?.id ?? '']);
+    const next = service.list('key:k1', 2, page.nextCursor);
+    expect(next).toEqual({ jobs: [expect.objectContaining({ id: first?.id })], nextCursor: null });
+  });
+
   test('forgets finished jobs after the retention period', async () => {
     const { service, clock } = createHarness();
     const job = await service.create('key:k1', INPUT);

@@ -23,6 +23,13 @@ describe('ScanGate', () => {
     expect(gate.accept('A', 2 * SAME_CODE_REARM_MS)).toBe(true);
   });
 
+  // 同款的几件衣服一件件扫：移到下一件的一两秒里码离开了画面，就该算新的一次。
+  test('takes the same code again after it left the view for a second', () => {
+    const gate = new ScanGate();
+    gate.accept('A', 0);
+    expect(gate.accept('A', 1_000)).toBe(true);
+  });
+
   test('takes a different code at once', () => {
     const gate = new ScanGate();
     gate.accept('A', 0);

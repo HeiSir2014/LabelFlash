@@ -21,8 +21,11 @@ import { VOICE_CUE_LEVEL, VOICE_CUE_TEXT, type VoiceCue, type VoiceLevel } from 
 import type { CameraState, JobEntry, LinkState, PhoneState } from './phone-state';
 
 export type Tone = 'pending' | 'success' | 'warning' | 'error';
-/** retry = 同一内容再提交一次；force = 强制补打。两者都是新的任务。 */
-export type JobAction = 'retry' | 'force';
+/**
+ * retry = 同一内容再提交一次；force = 强制补打；again = 刚打好的这张再打一张（明确要打，和补打一样不受电脑的防重复窗口限制）。
+ * 都是新的任务。
+ */
+export type JobAction = 'retry' | 'force' | 'again';
 
 export interface JobView {
   tone: Tone;
@@ -104,7 +107,11 @@ const CAMERA_HINTS: Record<CameraState, string> = {
   unavailable: '摄像头没有打开。可以重新打开，或者拍照识别、手动输入。',
 };
 
-export function jobView(job: JobEntry, link: LinkState): JobView {
+/**
+ * isLatest：列表最上面那一张。打好了的话给它「再打一张」：镜头一直对着内容相同的一卷标签时防抖不会放行，
+ * 点它一下打一张；旧的几张不给，免得点错。
+ */
+export function jobView(job: JobEntry, link: LinkState, isLatest = false): JobView {
   switch (job.status) {
     case 'sending':
       return {
@@ -119,8 +126,10 @@ export function jobView(job: JobEntry, link: LinkState): JobView {
       return { tone: 'pending', title: '正在打印…', detail: job.raw, actions: [] };
     case 'refused':
       return { tone: 'warning', title: REFUSAL_TITLES[job.reason], detail: job.raw, actions: ['retry'] };
-    case 'done':
-      return resultView(job.result, job.force, job.raw);
+    case 'done': {
+      const view = resultView(job.result, job.force, job.raw);
+      return isLatest && job.result.status === 'printed' ? { ...view, actions: ['again'] } : view;
+    }
   }
 }
 

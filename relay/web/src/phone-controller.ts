@@ -157,7 +157,7 @@ export class PhoneController {
   }
 
   jobAction(job: JobEntry, action: JobAction): void {
-    this.submit(job.raw, { explicit: true, force: action === 'force' });
+    this.submit(job.raw, { explicit: true, force: action !== 'retry' });
   }
 
   /** 手动输入：返回是否已提交，没提交时输入框里的内容留着。 */

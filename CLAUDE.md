@@ -126,6 +126,7 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
   1. 改 `package.json` 的 `version`，经 PR 合进 `master`。
   2. 在 `master` 的提交上打同名标签（例如 `v1.0.1`）并推送，CI 的 release 作业负责发布。
   3. release 作业先检查三件事，不符合就不发布：标签所在的提交在 `master` 上；标签和 `version` 一致（客户端按版本号比较，并按文件名里的版本号去找旧版的 blockmap）；设置了仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL`（官方安装包的默认中转地址，构建时注入，代码里不写域名）。
+  4. Release 先建成草稿，上传完再核对安装包、blockmap、`latest.yml` 三个文件都在，才公开。
 - **标签要等确认**：打版本标签前先得到用户确认。
 
 ## Windows 上开发的坑

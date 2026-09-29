@@ -1,7 +1,6 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
-import { DEFAULT_PAPER } from '../../shared/label-paper';
-import { paperKey } from '../../shared/paper-sizes';
+import { describePrintersSummary } from '../../shared/printer-summary';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
 import { ConfigCenter } from './components/config/ConfigCenter';
@@ -19,23 +18,21 @@ import { configShortcutLabel, platformForChrome } from './lib/app-view';
 import { describeMobileButton, describeMobileOverlay, describeMobileState } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
-import { describePaperCheck } from './lib/paper-text';
 import { describePreviewUsage } from './lib/preview-usage';
-import { describePrinterChip } from './lib/printer-chip';
+import { expectedPaperKey, paperRows, responsibilitiesOf, withAssignment } from './lib/printer-assignment';
 import { scanFieldType } from './lib/scan-field';
 import { isWorkbenchActive } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
 import { useConfigCenter } from './view-models/use-config-center';
-import { useDriverPaper } from './view-models/use-driver-paper';
 import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
 import { useMediaQuery } from './view-models/use-media-query';
 import { useMobileStation } from './view-models/use-mobile-station';
 import { useNotices } from './view-models/use-notices';
-import { usePrinterStatus } from './view-models/use-printer-status';
+import { usePrinterProfiles } from './view-models/use-printer-profiles';
 import { usePrinters } from './view-models/use-printers';
 import { useQrImage } from './view-models/use-qr-image';
 import { useRules } from './view-models/use-rules';
@@ -45,9 +42,6 @@ import { useTemplatePreview } from './view-models/use-template-preview';
 import { useTemplates } from './view-models/use-templates';
 import { useUpdateStatus } from './view-models/use-update-status';
 import { windowChrome } from './view-models/use-window-controls';
-
-/** 1.0.x 的标签纸（60×40）：打印机页按纸张分配改写之前，列表里点选的打印机就分配给它。 */
-const LABEL_PAPER_KEY = paperKey(DEFAULT_PAPER);
 
 /** 与 app.css 里编辑视图改成上下排列的断点一致。 */
 const NARROW_QUERY = '(max-width: 1099px)';
@@ -64,19 +58,8 @@ export function App() {
   const platform = platformForChrome(windowChrome());
   const fieldType = scanFieldType(platform);
 
-  // 暂时把「60×40 分配到的打印机」当作标题栏和打印机列表里的那一台；打印机页按纸张分配改写后换成汇总。
-  const printerName = settings?.paperPrinters[LABEL_PAPER_KEY] ?? null;
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
   const historyLimit = settings?.historyLimit ?? DEFAULT_SETTINGS.historyLimit;
-  const readiness = usePrinterStatus(printerName);
-  const isPrinterListed = printers.printers.some((printer) => printer.name === printerName);
-  const printerChip = describePrinterChip({
-    printerName,
-    isLoading: printers.isLoading,
-    isListed: isPrinterListed,
-    readiness,
-  });
-  const driverPaper = useDriverPaper(printerName, isPrinterListed);
 
   // 打到哪台、能不能打由主进程按模板决定（没有打印机时返回 no-printer，找不到打印机返回 PRINTER_NOT_FOUND）。
   const feedback = useFeedback(settings?.voice ?? DEFAULT_SETTINGS.voice);
@@ -91,6 +74,54 @@ export function App() {
     replaceSettings: replace,
     onActiveTemplateChanged: () => void station.refreshPreview(),
   });
+  // 打印机：按纸张分配，模板也可以自己指定（规则见 src/core/printing/resolve-printer.ts）。
+  const paperPrinters = settings?.paperPrinters ?? DEFAULT_SETTINGS.paperPrinters;
+  const installedNames = useMemo(() => printers.printers.map((printer) => printer.name), [printers.printers]);
+  /** 被分配到的打印机（纸张分配和模板指定里出现的）：标题栏汇总它们，主进程检测它们的状态。 */
+  const assignedNames = useMemo(
+    () => [
+      ...new Set([
+        ...Object.values(paperPrinters),
+        ...templates.templates.flatMap((template) => (template.printer ? [template.printer] : [])),
+      ]),
+    ],
+    [paperPrinters, templates.templates],
+  );
+  const responsibilitiesByName = useCallback(
+    (name: string) => responsibilitiesOf(name, templates.templates, paperPrinters),
+    [templates.templates, paperPrinters],
+  );
+  const expectedPapers = useMemo(
+    () =>
+      Object.fromEntries(
+        installedNames.flatMap((name) => {
+          const key = expectedPaperKey(responsibilitiesByName(name));
+          return key === null ? [] : [[name, key]];
+        }),
+      ),
+    [installedNames, responsibilitiesByName],
+  );
+  const printerProfiles = usePrinterProfiles(installedNames, assignedNames, expectedPapers);
+  const paperRowsView = paperRows(
+    templates.templates,
+    paperPrinters,
+    installedNames,
+    Object.fromEntries(
+      installedNames.map((name) => {
+        const check = printerProfiles.profileOf(name).paper;
+        return [name, check && check.status !== 'unknown' ? check.paper : null];
+      }),
+    ),
+  );
+  const printerChip = describePrintersSummary(
+    assignedNames.map((name) => ({
+      name,
+      // 列表还在读取时不急着说「系统里找不到」。
+      isListed: printers.isLoading || installedNames.includes(name),
+      readiness: printerProfiles.profileOf(name).readiness,
+    })),
+  );
+
   // 规则、顺序、模板绑定变了：当前扫码的识别结果和用的模板都可能变，重新预览。
   const rules = useRules({ onRulesChanged: () => void station.refreshPreview() });
   const config = useConfigCenter({
@@ -176,8 +207,8 @@ export function App() {
   };
 
   /** 测试页的结果也要播报：操作员通常站在打印机旁边，不看屏幕。 */
-  const printTest = async (name: string) => {
-    const result = await printers.printTest(name, LABEL_PAPER_KEY);
+  const printTest = async (name: string, key: string) => {
+    const result = await printers.printTest(name, key);
     feedback.announce(result ? { kind: 'result', result, mode: 'test' } : { kind: 'internal-error' });
     return result;
   };
@@ -257,16 +288,13 @@ export function App() {
           printers={
             <PrinterList
               printers={printers.printers}
-              selected={printerName}
               isLoading={printers.isLoading}
-              paper={{
-                view: describePaperCheck(driverPaper.check, DEFAULT_PAPER),
-                isOpening: driverPaper.isOpening,
-                onOpenPreferences: () => void driverPaper.openPreferences(),
-              }}
-              onSelect={(name) =>
-                void update({ paperPrinters: { ...settings?.paperPrinters, [LABEL_PAPER_KEY]: name } })
-              }
+              rows={paperRowsView}
+              profileOf={printerProfiles.profileOf}
+              responsibilitiesOf={responsibilitiesByName}
+              openingName={printerProfiles.openingName}
+              onAssign={(key, name) => void update({ paperPrinters: withAssignment(paperPrinters, key, name) })}
+              onOpenPreferences={(name) => void printerProfiles.openPreferences(name)}
               onRefresh={() => void printers.refresh()}
               onTestPrint={printTest}
             />

@@ -1068,20 +1068,88 @@ textarea {
   border-bottom: 1px solid var(--color-housing);
 }
 
-.printer-row--selected {
-  background: linear-gradient(90deg, var(--color-tape) 0 4px, var(--color-tape-wash) 4px);
-}
-
-.printer-row__select {
+.printer-row__title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
   padding: var(--space-2) 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
+}
+
+/* 状态点：只给被分配到的打印机（主进程只检测它们） */
+.printer-row__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.printer-row__dot--ready {
+  background: var(--color-success);
+}
+
+.printer-row__dot--error {
+  background: var(--color-error);
+}
+
+/* 纸张 → 打印机：打印机页顶部，每种纸一行 */
+.paper-assignments {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.paper-assignments__title {
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.paper-assignments__empty {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+.paper-assignments__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.paper-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.paper-row__name {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paper-row__select {
+  min-width: 0;
+}
+
+.paper-row__suggestion {
+  grid-column: 2;
+  justify-self: start;
+}
+
+/* 用这种纸的模板没有可用的打印机：标红 */
+.paper-row--missing .paper-row__name {
+  color: var(--color-error);
+  font-weight: 700;
+}
+
+.paper-row--missing .paper-row__select {
+  border-color: var(--color-error);
 }
 
 .printer-row__name {
@@ -1097,7 +1165,7 @@ textarea {
   font-size: 12px;
 }
 
-/* 驱动默认纸张不是 60×40：贴在选中的打印机下面，附处理按钮 */
+/* 驱动默认纸张和这台负责的纸对不上：贴在那一台下面，附处理按钮 */
 .paper-warning {
   display: flex;
   grid-column: 1 / -1;
@@ -1116,6 +1184,11 @@ textarea {
   color: var(--color-ink);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.badge--error {
+  background: var(--color-error-wash);
+  color: var(--color-error);
 }
 
 .badge--quiet {

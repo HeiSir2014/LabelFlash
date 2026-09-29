@@ -1,43 +1,50 @@
 import { useMemo, useState } from 'react';
 import type { PrinterInfo, PrintResult } from '../../../core/types';
+import { DEFAULT_PAPER } from '../../../shared/label-paper';
+import { paperKey, parsePaperKey } from '../../../shared/paper-sizes';
 import { filterPrinters } from '../lib/list-filters';
-import type { PaperCheckView } from '../lib/paper-text';
+import { describePaperCheck } from '../lib/paper-text';
+import { expectedPaperKey, type PaperRow, type Responsibilities } from '../lib/printer-assignment';
 import { describeResult } from '../lib/status-text';
+import type { PrinterProfile } from '../view-models/use-printer-profiles';
 
-/** 当前打印机的驱动纸张检测结果（只显示在选中的那一行）。 */
-export interface DriverPaperProps {
-  view: PaperCheckView | null;
-  isOpening: boolean;
-  onOpenPreferences: () => void;
-}
+const LABEL_PAPER_KEY = paperKey(DEFAULT_PAPER);
 
 interface PrinterListProps {
   printers: PrinterInfo[];
-  selected: string | null;
   isLoading: boolean;
-  paper: DriverPaperProps;
-  onSelect: (printerName: string) => void;
+  /** 「纸张 → 打印机」表的每一行。 */
+  rows: PaperRow[];
+  profileOf: (printerName: string) => PrinterProfile;
+  responsibilitiesOf: (printerName: string) => Responsibilities;
+  /** 正在打开「打印首选项」的打印机。 */
+  openingName: string | null;
+  onAssign: (paperKey: string, printerName: string | null) => void;
+  onOpenPreferences: (printerName: string) => void;
   onRefresh: () => void;
-  onTestPrint: (printerName: string) => Promise<PrintResult | null>;
+  onTestPrint: (printerName: string, paperKey: string) => Promise<PrintResult | null>;
 }
 
+/** 工作台右侧的打印机页：上面按纸张分配打印机，下面列出本机所有打印机和各自负责什么。 */
 export function PrinterList({
   printers,
-  selected,
   isLoading,
-  paper,
-  onSelect,
+  rows,
+  profileOf,
+  responsibilitiesOf,
+  openingName,
+  onAssign,
+  onOpenPreferences,
   onRefresh,
   onTestPrint,
 }: PrinterListProps) {
   const [query, setQuery] = useState('');
   const [testMessages, setTestMessages] = useState<Record<string, string>>({});
   const visible = useMemo(() => filterPrinters(printers, query), [printers, query]);
-  const isSelectedMissing = selected !== null && !isLoading && !printers.some((printer) => printer.name === selected);
 
-  const runTest = async (printerName: string) => {
+  const runTest = async (printerName: string, key: string) => {
     setTestMessages((messages) => ({ ...messages, [printerName]: '正在发送测试页…' }));
-    const result = await onTestPrint(printerName);
+    const result = await onTestPrint(printerName, key);
     const message =
       result === null
         ? '发送失败：程序内部错误'
@@ -49,6 +56,49 @@ export function PrinterList({
 
   return (
     <div className="panel-body">
+      <section className="paper-assignments" aria-label="纸张和打印机">
+        <h3 className="paper-assignments__title">纸张 → 打印机</h3>
+        {rows.length === 0 ? (
+          <p className="paper-assignments__empty">模板还没有用到任何纸张</p>
+        ) : (
+          <ul className="paper-assignments__list">
+            {rows.map((row) => (
+              <li key={row.key} className={`paper-row${row.isCovered ? '' : ' paper-row--missing'}`}>
+                <span className="paper-row__name">{row.name}</span>
+                <select
+                  className="select-field paper-row__select"
+                  aria-label={`${row.name} 用哪台打印机`}
+                  value={row.printer ?? ''}
+                  onChange={(event) => {
+                    onAssign(row.key, event.target.value || null);
+                    // 选完就离开下拉框：焦点留在下拉框里时，扫码框的回焦规则不会把焦点拉回去。
+                    event.currentTarget.blur();
+                  }}
+                >
+                  <option value="">还没有打印机</option>
+                  {row.printer !== null && row.isMissing && (
+                    <option value={row.printer}>{`${row.printer}（这台电脑上没有）`}</option>
+                  )}
+                  {printers.map((printer) => (
+                    <option key={printer.name} value={printer.name}>
+                      {printer.displayName}
+                    </option>
+                  ))}
+                </select>
+                {row.suggestion && (
+                  <button
+                    type="button"
+                    className="button button--small paper-row__suggestion"
+                    onClick={() => row.suggestion && onAssign(row.key, row.suggestion)}
+                  >
+                    建议：{row.suggestion}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <div className="panel-toolbar">
         <input
           type="search"
@@ -61,43 +111,52 @@ export function PrinterList({
           {isLoading ? '刷新中…' : '刷新'}
         </button>
       </div>
-      {isSelectedMissing && <p className="notice-inline">已保存的打印机「{selected}」现在不在系统里，请重新选择</p>}
       <ul className="scroll-list">
         {visible.map((printer) => {
-          const isSelected = printer.name === selected;
+          const responsibilities = responsibilitiesOf(printer.name);
+          const expectedKey = expectedPaperKey(responsibilities);
+          const expected = expectedKey === null ? null : parsePaperKey(expectedKey);
+          const { paper, readiness } = profileOf(printer.name);
+          const paperView = describePaperCheck(paper, expected);
+          const duties = [
+            ...responsibilities.papers.map((item) => item.name),
+            ...responsibilities.templates.map((item) => item.name),
+          ];
           return (
-            <li key={printer.name} className={`printer-row${isSelected ? ' printer-row--selected' : ''}`}>
-              <button
-                type="button"
-                className="printer-row__select"
-                aria-pressed={isSelected}
-                onClick={() => onSelect(printer.name)}
-              >
+            <li key={printer.name} className="printer-row">
+              <span className="printer-row__title">
+                {readiness && (
+                  <span
+                    className={`printer-row__dot printer-row__dot--${readiness.ready ? 'ready' : 'error'}`}
+                    aria-hidden="true"
+                  />
+                )}
                 <span className="printer-row__name">{printer.displayName}</span>
-                {isSelected && <span className="badge">当前</span>}
-              </button>
+                {readiness && !readiness.ready && <span className="badge badge--error">{readiness.detail}</span>}
+              </span>
               <button
                 type="button"
                 className="button button--small button--quiet"
-                onClick={() => void runTest(printer.name)}
+                onClick={() => void runTest(printer.name, expectedKey ?? LABEL_PAPER_KEY)}
               >
                 测试页
               </button>
-              {testMessages[printer.name] && <p className="printer-row__message">{testMessages[printer.name]}</p>}
-              {isSelected && paper.view?.tone === 'ok' && <p className="printer-row__message">{paper.view.text}</p>}
-              {isSelected && paper.view?.tone === 'warning' && (
+              {duties.length > 0 && <p className="printer-row__message">负责：{duties.join('；')}</p>}
+              {paperView?.tone === 'ok' && <p className="printer-row__message">{paperView.text}</p>}
+              {paperView?.tone === 'warning' && (
                 <div className="paper-warning" role="alert">
-                  <p className="paper-warning__text">{paper.view.text}</p>
+                  <p className="paper-warning__text">{paperView.text}</p>
                   <button
                     type="button"
                     className="button button--small"
-                    onClick={paper.onOpenPreferences}
-                    disabled={paper.isOpening}
+                    onClick={() => onOpenPreferences(printer.name)}
+                    disabled={openingName !== null}
                   >
-                    {paper.isOpening ? '打印首选项已打开…' : '打开打印首选项'}
+                    {openingName === printer.name ? '打印首选项已打开…' : '打开打印首选项'}
                   </button>
                 </div>
               )}
+              {testMessages[printer.name] && <p className="printer-row__message">{testMessages[printer.name]}</p>}
             </li>
           );
         })}

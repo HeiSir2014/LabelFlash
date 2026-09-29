@@ -104,3 +104,43 @@ test('moves the printer selected in 1.0.x to the 60x40 paper', async ({ electron
   const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   expect((await callApi(page, 'getSettings')).paperPrinters).toEqual({ '60x40': '标签机A' });
 });
+
+test('assigns a paper from the printers panel, following the suggestion from the driver paper', async ({
+  electronApp,
+}) => {
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await useWaybillTemplate(page);
+  await assign(page, { '60x40': '标签机A' });
+
+  const panel = page.getByRole('region', { name: '纸张和打印机' });
+  const waybillRow = panel.locator('.paper-row', { hasText: '100×180 二联面单' });
+  await expect(panel.locator('.paper-row')).toHaveCount(2);
+  await expect(waybillRow).toHaveClass(/paper-row--missing/);
+  // 面单机B、面单机C 的驱动纸张都是 100×180：建议列表里第一台还没分配的。
+  await waybillRow.getByRole('button', { name: '建议：面单机B' }).click();
+  await expect(page.getByLabel('100×180 二联面单 用哪台打印机')).toHaveValue('面单机B');
+  await expect(waybillRow).not.toHaveClass(/paper-row--missing/);
+  expect((await callApi(page, 'getSettings')).paperPrinters).toEqual({ '60x40': '标签机A', '100x180': '面单机B' });
+
+  const printerRow = page.locator('.printer-row', { hasText: '面单机B' });
+  await expect(printerRow).toContainText('负责：100×180 二联面单');
+  await expect(printerRow).toContainText('驱动纸张 100×180mm');
+});
+
+test('keeps showing an assigned printer that is not on this computer', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await assign(page, { '60x40': '旧打印机' });
+  const select = page.getByLabel('60×40 标签 用哪台打印机');
+  await expect(select).toHaveValue('旧打印机');
+  await expect(select.locator('option:checked')).toHaveText('旧打印机（这台电脑上没有）');
+});
+
+// 驱动纸张和它负责的纸对不上：在那一台下面提醒；没负责纸张的打印机不提醒。
+test('warns only on a printer whose driver paper differs from the paper it holds', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await assign(page, { '60x40': '面单机C' });
+  await expect(page.locator('.printer-row', { hasText: '面单机C' }).locator('.paper-warning')).toContainText(
+    '驱动默认纸张是 100×180mm，不是 60×40mm',
+  );
+  await expect(page.locator('.printer-row', { hasText: '面单机B' }).locator('.paper-warning')).toHaveCount(0);
+});

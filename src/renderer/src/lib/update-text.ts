@@ -12,7 +12,12 @@ export interface UpdateView {
 export function describeUpdate(status: UpdateStatus): UpdateView {
   switch (status.state) {
     case 'disabled':
-      return { text: '开发版不检查更新', canCheck: false, isReady: false };
+      return {
+        text:
+          status.reason === 'development' ? '开发版不检查更新' : '这个平台暂不支持自动更新，新版本请到发布页下载安装',
+        canCheck: false,
+        isReady: false,
+      };
     case 'idle':
       return { text: '尚未检查更新', canCheck: true, isReady: false };
     case 'checking':

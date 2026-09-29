@@ -62,3 +62,26 @@ nsis:
   installerLanguages:
     - zh_CN
   include: resources/installer.nsh
+# macOS：pkg 安装包，装进「应用程序」，Apple 芯片和 Intel 共用一个（universal）。用 bun run dist:mac，只能在 macOS 上打。
+# 还没有 Apple 开发者证书：
+# - 程序用 ad-hoc 签名（identity "-"）。Apple 芯片上不签名的程序根本打不开；ad-hoc 签名不配 hardened runtime，
+#   否则加载 Electron 自己的框架时库校验不过；
+# - 安装包本身不签名，下载后第一次打开要在「系统设置 → 隐私与安全性」里点「仍要打开」。装好的程序不带下载隔离标记，可以直接打开；
+# - 不能自动更新（Squirrel.Mac 要校验签名），所以不打 zip、不出 latest-mac.yml，程序里也不检查更新（见 update-settings.ts）。
+mac:
+  target:
+    - target: pkg
+      arch:
+        - universal
+  icon: resources/icon.png
+  category: public.app-category.business
+  identity: "-"
+  hardenedRuntime: false
+pkg:
+  artifactName: CDL-LabelFlash-${version}.pkg
+  installLocation: /Applications
+  # 默认会按 bundle id 找到机器上已有的一份（例如开发机上 dist 里打出来的）并装到那里；固定装进「应用程序」，结果可预期。
+  isRelocatable: false
+  # 升级时要求先退出正在运行的旧版，否则替换中的程序可能崩溃。
+  mustClose:
+    - com.cdl.labelflash

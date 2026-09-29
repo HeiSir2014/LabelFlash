@@ -2,7 +2,7 @@ import { app } from 'electron';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateStatus } from '../shared/update-status';
-import { applyUpdateClientSettings } from './update-settings';
+import { applyUpdateClientSettings, initialUpdateStatus } from './update-settings';
 
 /** 启动后稍等再检查，不拖慢启动；之后定期检查（车间电脑常常整天不关）。 */
 const FIRST_CHECK_DELAY_MS = 15_000;
@@ -16,10 +16,10 @@ export interface AppUpdaterOptions {
 
 /**
  * 自动更新（GitHub Releases + electron-updater）：后台下载，下载完成后由操作员决定何时重启安装；
- * 不重启的话，退出程序时自动安装。开发模式下禁用。
+ * 不重启的话，退出程序时自动安装。开发版和 macOS 版不更新（见 initialUpdateStatus）。
  */
 export class AppUpdater {
-  private status: UpdateStatus = app.isPackaged ? { state: 'idle' } : { state: 'disabled' };
+  private status: UpdateStatus = initialUpdateStatus(process.platform, app.isPackaged);
   private pendingVersion = '';
 
   constructor(private readonly options: AppUpdaterOptions) {}
@@ -29,7 +29,7 @@ export class AppUpdater {
   }
 
   start(): void {
-    if (!app.isPackaged) {
+    if (this.status.state === 'disabled') {
       return;
     }
     autoUpdater.logger = log;

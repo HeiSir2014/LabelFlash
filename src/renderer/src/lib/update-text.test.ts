@@ -3,7 +3,19 @@ import { describeUpdate } from './update-text';
 
 describe('describeUpdate', () => {
   test('development builds never check', () => {
-    expect(describeUpdate({ state: 'disabled' })).toMatchObject({ canCheck: false, isReady: false });
+    expect(describeUpdate({ state: 'disabled', reason: 'development' })).toEqual({
+      text: '开发版不检查更新',
+      canCheck: false,
+      isReady: false,
+    });
+  });
+
+  test('tells macOS users to download new versions themselves', () => {
+    expect(describeUpdate({ state: 'disabled', reason: 'unsupported-platform' })).toEqual({
+      text: '这个平台暂不支持自动更新，新版本请到发布页下载安装',
+      canCheck: false,
+      isReady: false,
+    });
   });
 
   test('only idle, up-to-date and error states allow a manual check', () => {

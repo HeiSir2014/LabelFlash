@@ -50,7 +50,7 @@
 | `notify/` | 打印结果通知：先写进本机队列（`webhook-outbox.ts`），后台发送并按退避策略重试，签名用 HMAC-SHA256 |
 | `voice/` | 语音用 msedge-tts 合成，mp3 按「文本 + 音色 + 语速」缓存；断网时退回提示音 |
 | `logging.ts` | 日志在数据目录的 `logs/labelflash-YYYY-MM-DD.log`，纯文本，时间带时区，保留 14 天；`console.*` 和界面的 console 都会写进去 |
-| `updater.ts` + `update-settings.ts` | 自动更新。所有更新行为都在 `update-settings.ts` 里显式设置，不依赖库的默认值 |
+| `updater.ts` + `update-settings.ts` | 自动更新，只有打包好的 Windows 版（macOS 的 pkg 没有开发者签名，装不了更新）。是否检查（`initialUpdateStatus`）和所有更新行为都在 `update-settings.ts` 里显式设置，不依赖库的默认值 |
 | `window-placement.ts` | 按显示器记忆窗口位置。保存时扣掉 Windows 小数缩放下创建窗口的尺寸误差，否则窗口每次启动都会变大一点 |
 | `security.ts`、`app-protocol.ts` | 拒绝导航、新窗口、重定向和 webview；只经 `app://bundle/` 提供界面文件 |
 | `mobile/` | 手机扫码的电脑端，见下一节 |

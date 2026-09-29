@@ -170,6 +170,14 @@ describe('SqliteJobStore', () => {
     expect(old?.templateId).toBeUndefined();
   });
 
+  // 扫码的防重复窗口只管扫码：本机接口打的（带调用方的）不算，重启前后一致。
+  test('leaves jobs printed through the local api out of the recent prints', () => {
+    const store = new SqliteJobStore(db, 10);
+    store.append(job(1, { raw: 'A001', caller: 'key:k1', source: 'api' }));
+    store.append(job(2, { raw: 'B002' }));
+    expect(store.listLastPrinted(0).map((item) => item.raw)).toEqual(['B002']);
+  });
+
   test('keeps the fields and caller of a job and finds a job by id', () => {
     const store = new SqliteJobStore(db, 10);
     const fields = [{ name: '订单号', value: 'A001' }];

@@ -27,6 +27,8 @@ const API_ADDRESS_LIMITS = { perSecond: 40, burst: 80 };
 /** 只排版（PDF）同时最多 2 个、再排 8 个：每个都开一个隐藏窗口（渲染进程），不能和打印抢资源。 */
 const PDF_MAX_RUNNING = 2;
 const PDF_MAX_QUEUED = 8;
+/** 读打印机列表最多等这么久：打印服务卡住时，接口要能回「稍后再试」，而不是一直挂着。 */
+const PRINTER_LIST_TIMEOUT_MS = 5_000;
 /** 过期任务每小时清理一次：保留期是 7 天，不需要更勤。 */
 const API_PURGE_INTERVAL_MS = 60 * 60_000;
 /** 接口打印后通知界面刷新打印记录，最多这么久一次：一批几百张时不让界面每张都刷新。 */
@@ -59,6 +61,23 @@ export function apiPortOrder(
 ): number[] {
   const ports = [settings.apiPort, settings.apiLastPort, ...candidatePorts, ANY_FREE_PORT];
   return [...new Set(ports.filter((port): port is number => port !== null))];
+}
+
+/** 到时间还没结果就按失败处理（原来的 Promise 照样会结束，只是没人再等它）。 */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs} ms`)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 export interface LocalApiDeps {
@@ -112,7 +131,7 @@ export class LocalApi {
       clock: deps.clock,
       createId: randomUUID,
       findTemplate: deps.findTemplate,
-      installedPrinters: deps.installedPrinters,
+      installedPrinters: () => withTimeout(deps.installedPrinters(), PRINTER_LIST_TIMEOUT_MS),
       printFields: async (input) => {
         const result = await deps.printFields(input);
         this.jobsChanged();

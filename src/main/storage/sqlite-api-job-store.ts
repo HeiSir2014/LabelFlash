@@ -2,6 +2,7 @@ import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { ApiJobPage, ApiJobStore } from '../../core/api/api-job-store';
 import { PRINT_JOB_FAILURES, PRINT_JOB_STATES, type PrintJob } from '../../core/api/api-model';
 import type { ScanField } from '../../core/scan/scan-result';
+import { runInTransaction } from './database';
 import { type Row, readEnum, readInteger, readString } from './row-readers';
 
 const COLUMNS = `
@@ -20,7 +21,7 @@ export class SqliteApiJobStore implements ApiJobStore {
   private readonly selectUnfinished: StatementSync;
   private readonly deleteFinished: StatementSync;
 
-  constructor(db: DatabaseSync) {
+  constructor(private readonly db: DatabaseSync) {
     this.insertJob = db.prepare(`
       INSERT INTO api_jobs (id, caller, request_id, template_id, fields, content, copies, sent_copies, printer,
         state, failure_reason, failure_message, created_at, updated_at)
@@ -49,6 +50,18 @@ export class SqliteApiJobStore implements ApiJobStore {
   }
 
   insert(job: PrintJob): void {
+    this.insertMany([job]);
+  }
+
+  insertMany(jobs: readonly PrintJob[]): void {
+    runInTransaction(this.db, () => {
+      for (const job of jobs) {
+        this.insertOne(job);
+      }
+    });
+  }
+
+  private insertOne(job: PrintJob): void {
     this.insertJob.run({
       id: job.id,
       caller: job.caller,

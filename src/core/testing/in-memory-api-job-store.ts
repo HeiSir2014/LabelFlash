@@ -8,8 +8,32 @@ export class InMemoryApiJobStore implements ApiJobStore {
   private readonly rows: Array<{ seq: number; job: PrintJob }> = [];
   private nextSeq = 1;
 
+  private shouldFailNextInsert = false;
+
   insert(job: PrintJob): void {
-    this.rows.push({ seq: this.nextSeq++, job });
+    this.insertMany([job]);
+  }
+
+  insertMany(jobs: readonly PrintJob[]): void {
+    if (this.shouldFailNextInsert) {
+      this.shouldFailNextInsert = false;
+      throw new Error('store failed');
+    }
+    const ids = new Set(this.rows.map((row) => row.job.id));
+    for (const job of jobs) {
+      if (ids.has(job.id)) {
+        throw new Error(`Duplicate api job: ${job.id}`);
+      }
+      ids.add(job.id);
+    }
+    for (const job of jobs) {
+      this.rows.push({ seq: this.nextSeq++, job });
+    }
+  }
+
+  /** 让下一次存储失败（测试「整批不收」用）。 */
+  failNextInsert(): void {
+    this.shouldFailNextInsert = true;
   }
 
   update(job: PrintJob): void {

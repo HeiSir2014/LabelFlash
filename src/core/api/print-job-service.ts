@@ -10,7 +10,7 @@ export const REQUEST_ID_WINDOW_MS = 24 * 60 * 60_000;
 /** 任务状态保留 7 天，给调用方查询；标签内容长期留在打印记录里。 */
 export const JOB_RETENTION_MS = 7 * 24 * 60 * 60_000;
 
-export type PrintJobErrorCode = 'TEMPLATE_NOT_FOUND' | 'PRINTER_NOT_FOUND' | 'QUEUE_FULL';
+export type PrintJobErrorCode = 'TEMPLATE_NOT_FOUND' | 'PRINTER_NOT_FOUND' | 'QUEUE_FULL' | 'PRINTERS_UNAVAILABLE';
 
 /** 提交时就能判断的错误：整批一张都不收。index 是批量请求里的第几个（和整批有关的错误为 null）。 */
 export class PrintJobError extends Error {
@@ -36,8 +36,8 @@ export interface PrintJobServiceDeps {
   queueLimit: number;
 }
 
-/** 批量里的一项：已有的任务（重复的 requestId），或要新收下的请求。 */
-type BatchItem = { existing: PrintJob } | { input: PrintJobInput };
+/** 批量里的一项：已有的任务（以前提交过的 requestId）、同一批里前面那个（index）、或新收下的任务。 */
+type BatchItem = { existing: PrintJob } | { sameAs: number } | { job: PrintJob };
 
 const FAILURE_MESSAGES: Record<PrintJobFailure['reason'], string> = {
   NO_PRINTER: '这种纸还没有打印机：请在电脑上为这种纸指定打印机',
@@ -67,17 +67,28 @@ export class PrintJobService {
     return job;
   }
 
-  /** 整批先核对模板、打印机、排队上限，有一个不行就一张都不收；重复的 requestId 返回已有的任务。 */
+  /**
+   * 整批先核对模板、打印机、排队上限，有一个不行就一张都不收；重复的 requestId 返回已有的任务。
+   * 整批一起存进库，存好了才开始打印：存到一半出错时，前面的也不会已经在打。
+   */
   async createBatch(caller: string, inputs: readonly PrintJobInput[]): Promise<PrintJob[]> {
-    const installed = await this.deps.installedPrinters();
+    const installed = await this.installedPrinters(inputs);
     // 核对和收下之间不能有 await：否则两个并发的请求可能都通过了排队上限。
     const now = this.deps.clock.now();
-    const known = new Map<string, PrintJob>();
+    // 同一批里重复的 requestId 是同一个任务：只核对、只计数第一次出现的。
+    const firstOfRequest = new Map<string, number>();
     let newLabels = 0;
     const plans = inputs.map((input, index): BatchItem => {
       const existing = this.findExisting(caller, input, now);
       if (existing !== null) {
         return { existing };
+      }
+      if (input.requestId !== null) {
+        const first = firstOfRequest.get(input.requestId);
+        if (first !== undefined) {
+          return { sameAs: first };
+        }
+        firstOfRequest.set(input.requestId, index);
       }
       if (this.deps.findTemplate(input.templateId) === null) {
         throw new PrintJobError('TEMPLATE_NOT_FOUND', `找不到模板 ${input.templateId}`, index);
@@ -86,7 +97,7 @@ export class PrintJobService {
         throw new PrintJobError('PRINTER_NOT_FOUND', `这台电脑上没有打印机「${input.printer}」`, index);
       }
       newLabels += input.copies;
-      return { input };
+      return { job: this.newJob(caller, input, now) };
     });
     if (this.deps.store.pendingLabels() + newLabels > this.deps.queueLimit) {
       throw new PrintJobError(
@@ -94,22 +105,33 @@ export class PrintJobService {
         `排队中的标签太多（上限 ${this.deps.queueLimit} 张）：请等前面的打完再提交`,
       );
     }
-    return plans.map((plan) => {
-      if ('existing' in plan) {
-        return plan.existing;
-      }
-      const { input } = plan;
-      // 同一批里重复的 requestId：第一个收下，后面的返回同一个任务。
-      const repeated = input.requestId === null ? undefined : known.get(input.requestId);
-      if (repeated) {
-        return repeated;
-      }
-      const job = this.enqueue(caller, input, now);
-      if (input.requestId !== null) {
-        known.set(input.requestId, job);
-      }
-      return job;
-    });
+    const created = plans.flatMap((plan) => ('job' in plan ? [plan.job] : []));
+    this.deps.store.insertMany(created);
+    for (const job of created) {
+      this.tail = this.queue
+        .run(() => this.run(job))
+        .catch((error: unknown) => {
+          console.error(`[PrintJobService] job ${job.id} could not be finished`, error);
+        });
+    }
+    const jobs: PrintJob[] = [];
+    for (const plan of plans) {
+      jobs.push('existing' in plan ? plan.existing : 'job' in plan ? plan.job : (jobs[plan.sameAs] as PrintJob));
+    }
+    return jobs;
+  }
+
+  /** 请求里指定了打印机才读打印机列表：打印服务卡住时读列表会一直等，没必要让所有提交都跟着等。 */
+  private async installedPrinters(inputs: readonly PrintJobInput[]): Promise<string[]> {
+    if (inputs.every((input) => input.printer === null)) {
+      return [];
+    }
+    try {
+      return await this.deps.installedPrinters();
+    } catch (error) {
+      console.warn('[PrintJobService] cannot list printers', error);
+      throw new PrintJobError('PRINTERS_UNAVAILABLE', '读不到这台电脑的打印机列表：请稍后再试');
+    }
   }
 
   get(id: string): PrintJob | null {
@@ -149,8 +171,8 @@ export class PrintJobService {
     return this.deps.store.findByRequestId(caller, input.requestId, now - REQUEST_ID_WINDOW_MS + 1);
   }
 
-  private enqueue(caller: string, input: PrintJobInput, now: number): PrintJob {
-    const job: PrintJob = {
+  private newJob(caller: string, input: PrintJobInput, now: number): PrintJob {
+    return {
       ...input,
       id: this.deps.createId(),
       caller,
@@ -160,15 +182,13 @@ export class PrintJobService {
       createdAt: now,
       updatedAt: now,
     };
-    this.deps.store.insert(job);
-    this.tail = this.queue.run(() => this.run(job));
-    return job;
   }
 
   /** 逐份打印：某一份失败就停，后面的份数不再打。任何意外都落到 FAILED，不让任务卡在打印中。 */
   private async run(queued: PrintJob): Promise<void> {
-    let job = this.save(queued, { state: 'PRINTING' });
+    let job = queued;
     try {
+      job = this.save(queued, { state: 'PRINTING' });
       const template = this.deps.findTemplate(job.templateId);
       if (template === null) {
         this.save(job, { state: 'FAILED', failure: { reason: 'PRINT_ERROR', message: '模板在打印前被删除了' } });
@@ -194,7 +214,12 @@ export class PrintJobService {
       this.save(job, { state: 'SENT' });
     } catch (error) {
       console.error(`[PrintJobService] job ${job.id} failed unexpectedly`, error);
-      this.save(job, { state: 'FAILED', failure: { reason: 'PRINT_ERROR', message: FAILURE_MESSAGES.PRINT_ERROR } });
+      try {
+        this.save(job, { state: 'FAILED', failure: { reason: 'PRINT_ERROR', message: FAILURE_MESSAGES.PRINT_ERROR } });
+      } catch (saveError) {
+        // 数据库也出错了（例如程序正在退出）：下次启动时 recoverInterrupted 会把它标成 INTERRUPTED。
+        console.error(`[PrintJobService] cannot record the failure of job ${job.id}`, saveError);
+      }
     }
   }
 

@@ -9,6 +9,8 @@ export interface ApiJobPage {
 /** 本机接口的任务存储：主进程用 SQLite 实现，测试用 testing/in-memory-api-job-store.ts。 */
 export interface ApiJobStore {
   insert(job: PrintJob): void;
+  /** 一批任务一起存：有一条存不进去，整批都不留下（一批要么全收、要么全不收）。 */
+  insertMany(jobs: readonly PrintJob[]): void;
   update(job: PrintJob): void;
   get(id: string): PrintJob | null;
   /** 同一调用方在 since 之后提交的、带这个 requestId 的任务（最新的一个）。 */

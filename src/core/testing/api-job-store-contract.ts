@@ -46,6 +46,21 @@ export function describeApiJobStore(name: string, create: () => ApiJobStore): vo
       expect(store.get('nope')).toBeNull();
     });
 
+    test('stores a batch of jobs together', () => {
+      const store = create();
+      store.insertMany([job(1), job(2)]);
+      expect(store.get('pj-1')).not.toBeNull();
+      expect(store.get('pj-2')).not.toBeNull();
+    });
+
+    // 同一批里有一条存不进去（编号重复）：整批都不留下。
+    test('stores none of a batch when one job cannot be stored', () => {
+      const store = create();
+      store.insert(job(2));
+      expect(() => store.insertMany([job(1), job(2)])).toThrow();
+      expect(store.get('pj-1')).toBeNull();
+    });
+
     test('finds the latest job with a request id from a caller since a time', () => {
       const store = create();
       const requestId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';

@@ -29,6 +29,8 @@ function createHarness(results: PrintResult[] = []) {
   const clock = new FakeClock();
   const store = new InMemoryApiJobStore();
   const printed: FieldsPrint[] = [];
+  let printerLists = 0;
+  let listPrinters: () => Promise<string[]> = async () => ['标签机A'];
   let printer: Printer = async () => results.shift() ?? SENT;
   let nextId = 0;
   const service = new PrintJobService({
@@ -36,7 +38,10 @@ function createHarness(results: PrintResult[] = []) {
     clock,
     createId: () => `pj-${++nextId}`,
     findTemplate: (id) => (id === STANDARD_TEMPLATE.id ? STANDARD_TEMPLATE : null),
-    installedPrinters: async () => ['标签机A'],
+    installedPrinters: () => {
+      printerLists += 1;
+      return listPrinters();
+    },
     printFields: (input) => {
       printed.push(input);
       return printer(input);
@@ -46,7 +51,10 @@ function createHarness(results: PrintResult[] = []) {
   const usePrinter = (next: Printer) => {
     printer = next;
   };
-  return { clock, store, printed, service, usePrinter };
+  const usePrinterList = (next: () => Promise<string[]>) => {
+    listPrinters = next;
+  };
+  return { clock, store, printed, service, usePrinter, usePrinterList, printerLists: () => printerLists };
 }
 
 describe('PrintJobService', () => {
@@ -194,6 +202,42 @@ describe('PrintJobService', () => {
     expect(page.jobs.map((job) => job.id)).toEqual([third?.id ?? '', second?.id ?? '']);
     const next = service.list('key:k1', 2, page.nextCursor);
     expect(next).toEqual({ jobs: [expect.objectContaining({ id: first?.id })], nextCursor: null });
+  });
+
+  // 打印服务卡住时读打印机列表会一直等：请求里没指定打印机就不用读。
+  test('reads the printer list only when a request names a printer', async () => {
+    const { service, printerLists } = createHarness();
+    await service.createBatch('key:k1', [INPUT, INPUT]);
+    expect(printerLists()).toBe(0);
+    await service.create('key:k1', { ...INPUT, printer: '标签机A' });
+    expect(printerLists()).toBe(1);
+  });
+
+  test('says the printers cannot be read instead of accepting a job it cannot check', async () => {
+    const { service, store, usePrinterList } = createHarness();
+    usePrinterList(() => Promise.reject(new Error('spooler is not responding')));
+    await expect(service.create('key:k1', { ...INPUT, printer: '标签机A' })).rejects.toMatchObject({
+      code: 'PRINTERS_UNAVAILABLE',
+    });
+    expect(store.all()).toEqual([]);
+  });
+
+  // 同一批里重复的 requestId 只是同一个任务：不重复计入排队上限，也不重复核对。
+  test('counts a requestId repeated inside a batch once against the queue limit', async () => {
+    const { service } = createHarness();
+    const repeated = { ...INPUT, copies: QUEUE_LIMIT, requestId: REQUEST_ID };
+    const jobs = await service.createBatch('key:k1', [repeated, repeated]);
+    expect(jobs[1]?.id).toBe(jobs[0]?.id ?? '');
+  });
+
+  // 一批要么全收、要么全不收：存储出错时一张也没有开始打印。
+  test('queues nothing when storing the batch fails', async () => {
+    const { service, store, printed } = createHarness();
+    store.failNextInsert();
+    await expect(service.createBatch('key:k1', [INPUT, INPUT])).rejects.toThrow();
+    await service.idle();
+    expect(store.all()).toEqual([]);
+    expect(printed).toEqual([]);
   });
 
   test('forgets finished jobs after the retention period', async () => {

@@ -61,7 +61,7 @@ export class SqliteJobStore implements JobStore {
     this.selectLastPrinted = db.prepare(`
       SELECT raw, MAX(created_at) AS printedAt
       FROM jobs
-      WHERE status = 'printed' AND created_at >= :since
+      WHERE status = 'printed' AND created_at >= :since AND caller IS NULL
       GROUP BY raw`);
     this.selectById = db.prepare(`SELECT ${JOB_COLUMNS} FROM jobs WHERE jobs.id = :id`);
     this.total = this.readCount();
@@ -116,6 +116,7 @@ export class SqliteJobStore implements JobStore {
     return this.total;
   }
 
+  /** 扫码防重复窗口的恢复：只算扫码打的，本机接口（和按字段重打，都带调用方）不用这个窗口。 */
   listLastPrinted(since: number): LastPrinted[] {
     return this.selectLastPrinted.all({ since }).map((row) => ({
       raw: readString(row, 'raw'),

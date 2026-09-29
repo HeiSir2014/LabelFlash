@@ -281,6 +281,8 @@ function fromPrintJobError(error: unknown, pathOf: (index: number) => string): u
       );
     case 'QUEUE_FULL':
       return new ApiError('RESOURCE_EXHAUSTED', 'QUEUE_FULL', error.message);
+    case 'PRINTERS_UNAVAILABLE':
+      return new ApiError('UNAVAILABLE', 'PRINTERS_UNAVAILABLE', error.message);
   }
 }
 

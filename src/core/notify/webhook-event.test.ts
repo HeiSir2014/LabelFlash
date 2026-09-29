@@ -35,6 +35,7 @@ describe('payloadOf', () => {
       rule: { id: 'builtin:dash-three', name: '横杠三段（编码-颜色-尺码）' },
       fields: { 编码: 'CL5640-TK', 货架号: 'A-01' },
       printer: '热敏标签机',
+      paper: null,
       source: 'desktop',
       forced: false,
       failureReason: null,
@@ -52,6 +53,13 @@ describe('payloadOf', () => {
       rule: null,
       fields: null,
     });
+  });
+});
+
+describe('payload paper', () => {
+  test('carries the paper of the job, or null for jobs without one', () => {
+    expect(payloadOf({ ...JOB, paper: '100x180' }, SCAN, STATION).paper).toBe('100x180');
+    expect(payloadOf(JOB, SCAN, STATION).paper).toBeNull();
   });
 });
 

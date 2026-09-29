@@ -255,7 +255,7 @@ export function App() {
               selected={printerName}
               isLoading={printers.isLoading}
               paper={{
-                view: describePaperCheck(driverPaper.check),
+                view: describePaperCheck(driverPaper.check, DEFAULT_PAPER),
                 isOpening: driverPaper.isOpening,
                 onOpenPreferences: () => void driverPaper.openPreferences(),
               }}

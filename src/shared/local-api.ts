@@ -11,7 +11,9 @@ export type ApiServerStatus =
   | { state: 'off' }
   /** skippedPorts：想用却被占用、自动跳过的端口（按尝试的顺序）；为空表示用上了首选的端口。 */
   | { state: 'listening'; port: number; lanEnabled: boolean; skippedPorts: number[] }
-  | { state: 'failed'; reason: 'PORT_IN_USE'; ports: number[] };
+  | { state: 'failed'; reason: 'PORT_IN_USE'; ports: number[] }
+  /** 不是端口的问题（例如网络组件出错）：详情在日志里。 */
+  | { state: 'failed'; reason: 'START_ERROR' };
 
 /** 配置中心「本机接口」页要显示的全部状态（主进程在变化时推送）。 */
 export interface LocalApiStatus {

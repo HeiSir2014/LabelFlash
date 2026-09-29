@@ -31,18 +31,34 @@ export function describeApiStatus(status: LocalApiStatus): ApiStatusView {
       };
     }
     case 'failed': {
+      if (server.reason === 'START_ERROR') {
+        return {
+          tone: 'error',
+          title: '没有运行',
+          addresses: [],
+          detail: '本机接口启动出错，详情已写入日志（配置中心「通用」页可以打开日志文件夹）。',
+        };
+      }
+      // 0 是「由系统分配」，不是一个被占用的端口：不写进给人看的话里，而是说系统也没分配出来。
+      const taken = server.ports.filter((port) => port !== ANY_FREE_PORT);
+      const triedAnyFree = taken.length < server.ports.length;
+      const ports = taken.join('、');
+      const subject = taken.length > 1 ? `端口 ${ports} 都` : `端口 ${ports} `;
       const owner = ownerText(status.portOwner);
-      const ports = server.ports.join('、');
-      const subject = server.ports.length > 1 ? `端口 ${ports} 都` : `端口 ${ports} `;
       return {
         tone: 'error',
         title: '端口被占用',
         addresses: [],
-        detail: `${subject}被别的程序${owner}占用了：可以在下面换一个端口。`,
+        detail: triedAnyFree
+          ? `${subject}被别的程序${owner}占用了，系统也没能分配空闲端口：请重启电脑后再试，或查看日志。`
+          : `${subject}被别的程序${owner}占用了：可以在下面换一个端口。`,
       };
     }
   }
 }
+
+/** 端口列表里的 0：由系统分配一个空闲端口（和主进程的 apiPortOrder 一致）。 */
+const ANY_FREE_PORT = 0;
 
 function ownerText(owner: string | null): string {
   return owner === null ? '' : `（${owner}）`;

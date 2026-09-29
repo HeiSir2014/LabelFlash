@@ -207,7 +207,15 @@ export class ApiHttpServer {
   private answersOn(host: string, port: number): Promise<boolean> {
     return new Promise((resolve) => {
       const probe = httpRequest(
-        { host, port, path: '/', headers: { [PROBE_HEADER]: this.probeToken }, timeout: PROBE_TIMEOUT_MS },
+        {
+          host,
+          port,
+          path: '/',
+          headers: { [PROBE_HEADER]: this.probeToken },
+          timeout: PROBE_TIMEOUT_MS,
+          // 每次都开新连接：默认的连接池会复用上一次自检的连接，重启后那条连接已经被关掉了。
+          agent: false,
+        },
         (response) => {
           response.resume();
           resolve(response.statusCode === NO_CONTENT && response.headers[PROBE_HEADER] === this.probeToken);

@@ -188,6 +188,11 @@ const SCHEMAS = {
       apiVersion: { type: 'string', const: 'v1' },
       appVersion: { type: 'string' },
       port: { type: 'integer' },
+      instanceId: {
+        type: 'string',
+        format: 'uuid',
+        description: '这台电脑上本程序的固定编号：换了端口后用它确认找到的还是原来那台电脑',
+      },
     },
   },
   Template: {

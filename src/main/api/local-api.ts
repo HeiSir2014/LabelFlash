@@ -3,9 +3,10 @@ import type { DatabaseSync } from 'node:sqlite';
 import { PrintJobService } from '../../core/api/print-job-service';
 import type { FieldsPrint } from '../../core/print-service';
 import type { ScanField } from '../../core/scan/scan-result';
+import { SerialQueue } from '../../core/serial-queue';
 import type { LabelTemplate } from '../../core/templates/template-model';
 import type { Clock, PrintResult } from '../../core/types';
-import type { ApiKeyInfo, CreatedApiKey, LocalApiStatus } from '../../shared/local-api';
+import type { ApiKeyInfo, ApiServerStatus, CreatedApiKey, LocalApiStatus } from '../../shared/local-api';
 import type { AppSettings } from '../../shared/settings';
 import { SqliteApiJobStore } from '../storage/sqlite-api-job-store';
 import { SqliteApiKeyStore } from '../storage/sqlite-api-key-store';
@@ -74,7 +75,7 @@ export interface LocalApiDeps {
   listPrinters: () => Promise<ApiPrinter[]>;
   printFields: (input: FieldsPrint) => Promise<PrintResult>;
   renderPdf: (template: LabelTemplate, fields: ScanField[], content: string) => Promise<Uint8Array>;
-  /** 没指定端口时依次尝试的端口（默认 17631–17633；E2E 用随机端口）。 */
+  /** 没指定端口时依次尝试的端口（默认 17631–17640；E2E 用随机端口）。 */
   candidatePorts: readonly number[];
   findPortOwner: (port: number) => Promise<string | null>;
   lanAddresses: () => string[];
@@ -93,7 +94,13 @@ export class LocalApi {
   private readonly server: ApiHttpServer;
   private readonly prompts: OriginPrompts;
   private readonly pdfLimit = new ConcurrencyLimit(PDF_MAX_RUNNING, PDF_MAX_QUEUED);
+  /** 启停一次只做一件：每次都按那时最新的设置来，端口、占用程序、记住的端口不会互相覆盖。 */
+  private readonly restarts = new SerialQueue();
+  /** 每次启动加一：查占用程序是后台做的，查到时如果已经又重启过，结果就作废。 */
+  private generation = 0;
   private portOwner: string | null = null;
+  /** 上次启动不是因为端口失败（详情在日志里）。 */
+  private startError = false;
   private purgeTimer: ReturnType<typeof setInterval> | null = null;
   private jobsChangedTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly freshSecrets = new Map<string, { secret: string; expiresAt: number }>();
@@ -140,7 +147,11 @@ export class LocalApi {
             listPrinters: deps.listPrinters,
             renderPdf: (template, fields, content) =>
               this.pdfLimit.run(() => deps.renderPdf(template, fields, content)),
-            service: { version: deps.appVersion, port: () => this.server.port() ?? 0 },
+            service: {
+              version: deps.appVersion,
+              port: () => this.server.port() ?? 0,
+              instanceId: () => this.deps.settings().apiInstanceId ?? '',
+            },
           },
           request,
         ),
@@ -152,6 +163,9 @@ export class LocalApi {
     this.jobs.recoverInterrupted();
     this.jobs.purge();
     this.purgeTimer = setInterval(() => this.jobs.purge(), API_PURGE_INTERVAL_MS);
+    if (this.deps.settings().apiInstanceId === null) {
+      this.deps.updateSettings({ apiInstanceId: randomUUID() });
+    }
     await this.listen();
   }
 
@@ -181,7 +195,7 @@ export class LocalApi {
 
   status(): LocalApiStatus {
     return {
-      server: this.server.status,
+      server: this.startError ? { state: 'failed', reason: 'START_ERROR' } : this.server.status,
       lanAddresses: this.deps.lanAddresses(),
       portOwner: this.portOwner,
       authorizedOrigins: this.deps.settings().apiAuthorizedOrigins,
@@ -234,15 +248,31 @@ export class LocalApi {
     this.publish();
   }
 
-  private async listen(): Promise<void> {
+  private listen(): Promise<void> {
+    return this.restarts.run(() => this.listenNow());
+  }
+
+  /** 按现在的设置（重新）监听。出错也只发布状态、写日志，不抛给保存设置的调用方：设置已经存下了。 */
+  private async listenNow(): Promise<void> {
     const settings = this.deps.settings();
-    const status = await this.server.start({
-      lanEnabled: settings.apiLanEnabled,
-      ports: apiPortOrder(settings, this.deps.candidatePorts),
-    });
+    this.generation += 1;
     this.portOwner = null;
+    let status: ApiServerStatus;
+    try {
+      status = await this.server.start({
+        lanEnabled: settings.apiLanEnabled,
+        ports: apiPortOrder(settings, this.deps.candidatePorts),
+      });
+    } catch (error) {
+      console.error('[api] local api failed to start', error);
+      this.startError = true;
+      this.publish();
+      return;
+    }
+    this.startError = false;
+    const portsInUse = status.state === 'failed' && status.reason === 'PORT_IN_USE' ? status.ports : [];
     if (status.state === 'failed') {
-      console.warn(`[api] not started: ports ${status.ports.join(', ')} are unavailable`);
+      console.warn(`[api] not started: ports ${portsInUse.join(', ')} are unavailable`);
     } else if (status.state === 'listening') {
       const where = status.lanEnabled ? ' (LAN)' : ' (this computer only)';
       const skipped = status.skippedPorts.length > 0 ? `, skipped taken ports ${status.skippedPorts.join(', ')}` : '';
@@ -251,13 +281,24 @@ export class LocalApi {
         this.deps.updateSettings({ apiLastPort: status.port });
       }
     }
-    // 首选的端口被占用时查一下是谁：界面上说清楚「被某某占用，已改用某端口」。
-    const [preferred] =
-      status.state === 'failed' ? status.ports : status.state === 'listening' ? status.skippedPorts : [];
-    if (preferred !== undefined && preferred !== ANY_FREE_PORT) {
-      this.portOwner = await this.deps.findPortOwner(preferred);
-    }
     this.publish();
+    // 首选的端口被占用时查一下是谁：界面上说清楚「被某某占用，已改用某端口」。
+    const [preferred] = status.state === 'listening' ? status.skippedPorts : portsInUse;
+    if (preferred !== undefined && preferred !== ANY_FREE_PORT) {
+      void this.lookUpPortOwner(preferred, this.generation);
+    }
+  }
+
+  /** 后台查占用端口的程序，查到了补发状态；这期间又重启过就不用了。 */
+  private async lookUpPortOwner(port: number, generation: number): Promise<void> {
+    const owner = await this.deps.findPortOwner(port).catch((error: unknown) => {
+      console.warn('[api] cannot find the owner of the port', error);
+      return null;
+    });
+    if (generation === this.generation && owner !== null) {
+      this.portOwner = owner;
+      this.publish();
+    }
   }
 
   private publish(): void {

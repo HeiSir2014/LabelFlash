@@ -39,13 +39,21 @@ export interface AppSettings {
    * 规则见 src/shared/relay-url.ts。
    */
   mobileRelayUrl: string | null;
-  /** 本机接口的端口；null = 用默认的 17631，被占用时依次试 17632、17633。指定了就只用它。 */
+  /**
+   * 操作员指定的本机接口端口；null = 不指定。指定了就优先用它，被别的程序占用时照样自动换（见 apiPortOrder），
+   * 界面上提示换成了哪个。
+   */
   apiPort: number | null;
   /**
    * 本机接口上次用成功的端口（程序自己记，不在界面上改）：下次启动先用它，端口不会因为重启而变来变去，
    * 已经配好这个端口的程序也就不会忽然连不上。
    */
   apiLastPort: number | null;
+  /**
+   * 本机接口的实例编号（程序第一次启动接口时生成，之后不变），由 /v1/service 返回：
+   * 局域网里的程序据此确认找到的还是原来那台电脑，不是另一台也装了本程序的电脑。
+   */
+  apiInstanceId: string | null;
   /** 本机接口是否对局域网开放（局域网里的程序要带程序密钥）；关掉时只监听本机。 */
   apiLanEnabled: boolean;
   /** 允许调用本机接口的网站（http/https 的 origin），由电脑上的授权框加入，配置中心可以撤销。 */
@@ -84,6 +92,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mobileRelayUrl: null,
   apiPort: null,
   apiLastPort: null,
+  apiInstanceId: null,
   // 局域网里的客户端软件是主要用法之一；没有程序密钥时局域网请求一律拒绝，默认开着也不会被随便调用。
   apiLanEnabled: true,
   apiAuthorizedOrigins: [],
@@ -123,6 +132,7 @@ export function sanitizeSettings(value: unknown): AppSettings {
     mobileRelayUrl: sanitizeRelayUrl(input['mobileRelayUrl']),
     apiPort: sanitizeApiPort(input['apiPort']),
     apiLastPort: sanitizeApiPort(input['apiLastPort']),
+    apiInstanceId: sanitizeInstanceId(input['apiInstanceId']),
     apiLanEnabled: sanitizeBoolean(input['apiLanEnabled'], DEFAULT_SETTINGS.apiLanEnabled),
     apiAuthorizedOrigins: sanitizeOrigins(input['apiAuthorizedOrigins']),
   };
@@ -136,6 +146,13 @@ function sanitizeApiPort(value: unknown): number | null {
     value <= API_PORT_RANGE.max
     ? value
     : null;
+}
+
+/** 实例编号是 UUID；不合格的丢掉，接口启动时重新生成。 */
+const INSTANCE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function sanitizeInstanceId(value: unknown): string | null {
+  return typeof value === 'string' && INSTANCE_ID_PATTERN.test(value) ? value : null;
 }
 
 function sanitizeOrigins(value: unknown): string[] {

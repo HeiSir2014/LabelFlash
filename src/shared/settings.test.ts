@@ -50,6 +50,7 @@ describe('sanitizeSettings', () => {
       mobileRelayUrl: 'https://relay.example.com/labelflash/',
       apiPort: 18000,
       apiLastPort: 17632,
+      apiInstanceId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
       apiLanEnabled: false,
       apiAuthorizedOrigins: ['https://erp.example.com', 'http://localhost:8080'],
     };
@@ -173,6 +174,8 @@ describe('local api settings', () => {
   test('uses the default ports and opens the LAN by default', () => {
     expect(DEFAULT_SETTINGS.apiPort).toBeNull();
     expect(DEFAULT_SETTINGS.apiLastPort).toBeNull();
+    expect(DEFAULT_SETTINGS.apiInstanceId).toBeNull();
+    expect(sanitizeSettings({ apiInstanceId: 'not-a-uuid' }).apiInstanceId).toBeNull();
     expect(DEFAULT_SETTINGS.apiLanEnabled).toBe(true);
     expect(DEFAULT_SETTINGS.apiAuthorizedOrigins).toEqual([]);
   });

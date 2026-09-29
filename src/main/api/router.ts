@@ -31,7 +31,7 @@ export interface ApiContext {
   listPrinters: () => Promise<ApiPrinter[]>;
   /** 按模板的纸张排版出 PDF（Electron 的 printToPDF，见 pdf-render.ts）。 */
   renderPdf: (template: LabelTemplate, fields: ScanField[], content: string) => Promise<Uint8Array>;
-  service: { version: string; port: () => number };
+  service: { version: string; port: () => number; instanceId: () => string };
 }
 
 export interface ApiRequest {
@@ -83,6 +83,7 @@ export const ROUTES: readonly Route[] = [
         apiVersion: API_VERSION,
         appVersion: context.service.version,
         port: context.service.port(),
+        instanceId: context.service.instanceId(),
       }),
   },
   {

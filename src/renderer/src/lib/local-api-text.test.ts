@@ -65,6 +65,26 @@ describe('describeApiStatus', () => {
     expect(view.detail).toBe('端口 18000 被别的程序占用了：可以在下面换一个端口。');
   });
 
+  // 0 是「系统分配」，不是一个被占用的端口：不写进给人看的话里。
+  test('leaves the system-assigned fallback out of the failure message', () => {
+    const view = describeApiStatus({
+      ...BASE,
+      server: { state: 'failed', reason: 'PORT_IN_USE', ports: [17631, 17632, 0] },
+    });
+    expect(view.detail).toBe(
+      '端口 17631、17632 都被别的程序占用了，系统也没能分配空闲端口：请重启电脑后再试，或查看日志。',
+    );
+  });
+
+  test('points to the log when it failed for another reason', () => {
+    expect(describeApiStatus({ ...BASE, server: { state: 'failed', reason: 'START_ERROR' } })).toEqual({
+      tone: 'error',
+      title: '没有运行',
+      addresses: [],
+      detail: '本机接口启动出错，详情已写入日志（配置中心「通用」页可以打开日志文件夹）。',
+    });
+  });
+
   test('says it has not started yet', () => {
     expect(describeApiStatus({ ...BASE, server: { state: 'off' } })).toMatchObject({ tone: 'idle', title: '没有运行' });
   });

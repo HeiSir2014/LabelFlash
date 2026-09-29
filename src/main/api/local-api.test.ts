@@ -28,6 +28,7 @@ afterEach(async () => {
 });
 
 interface HarnessOptions {
+  findPortOwner?: (port: number) => Promise<string | null>;
   askOrigin?: (origin: string) => Promise<boolean>;
   settings?: Partial<AppSettings>;
   candidatePorts?: readonly number[];
@@ -60,7 +61,7 @@ function createLocalApi(options: HarnessOptions = {}) {
     },
     renderPdf: async () => new TextEncoder().encode('%PDF-1.7'),
     candidatePorts: options.candidatePorts ?? [0],
-    findPortOwner: async () => 'nginx',
+    findPortOwner: options.findPortOwner ?? (async () => 'nginx'),
     lanAddresses: () => ['192.168.1.20'],
     onStatus: (status) => statuses.push(status),
     onJobsChanged: () => {
@@ -250,6 +251,51 @@ describe('LocalApi ports', () => {
     const harness = createLocalApi({ settings: { apiPort: 18_123, apiLastPort: 18_123 } });
     await harness.setSettings({ ...harness.settings(), apiPort: null });
     expect(harness.settings().apiLastPort).not.toBe(18_123);
+  });
+});
+
+describe('LocalApi service identity', () => {
+  // 局域网里的程序靠它确认找到的还是原来那台电脑：生成一次，之后不变。
+  test('creates an instance id once and reports it in /v1/service', async () => {
+    const harness = createLocalApi();
+    await harness.api.start();
+    const id = harness.settings().apiInstanceId;
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    const service = (await (await fetch(`${harness.baseUrl()}/v1/service`)).json()) as { instanceId: string };
+    expect(service.instanceId).toBe(id ?? '');
+    await harness.setSettings({ ...harness.settings(), apiLanEnabled: true });
+    expect(harness.settings().apiInstanceId).toBe(id);
+  });
+});
+
+describe('LocalApi restarts', () => {
+  // 查占用端口的程序要启动 PowerShell，最多几秒：先把状态发出去，查到了再补上，不拖慢保存设置。
+  test('publishes the new port before the owner of the skipped port is known', async () => {
+    const taken = await occupyPort();
+    let answer: (owner: string) => void = () => {};
+    const harness = createLocalApi({
+      candidatePorts: [taken],
+      findPortOwner: () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    });
+    await harness.api.start();
+    expect(harness.statuses.at(-1)).toMatchObject({ server: { state: 'listening' }, portOwner: null });
+    answer('nginx');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(harness.statuses.at(-1)?.portOwner).toBe('nginx');
+  });
+
+  test('applies the latest settings when changes arrive together', async () => {
+    const harness = createLocalApi();
+    await harness.api.start();
+    const base = harness.settings();
+    await Promise.all([
+      harness.setSettings({ ...base, apiLanEnabled: true }),
+      harness.setSettings({ ...base, apiLanEnabled: true, apiPort: 18_431 }),
+    ]);
+    expect(harness.api.status().server).toMatchObject({ state: 'listening', lanEnabled: true, port: 18_431 });
   });
 });
 

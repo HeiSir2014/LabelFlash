@@ -11,6 +11,7 @@ import { type ApiContext, type ApiResponse, route } from './router';
 const CALLER: Caller = { id: 'key:k1', label: 'ERP' };
 const OTHER: Caller = { id: 'key:k2', label: '仓库' };
 const PORT = 17631;
+const INSTANCE_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 const VALID_REQUEST = { template: 'templates/builtin-standard', fields: [{ name: '订单号', value: 'A001' }] };
 
 function createContext() {
@@ -43,7 +44,7 @@ function createContext() {
       rendered.push({ template, fields, content });
       return new TextEncoder().encode('%PDF-1.7');
     },
-    service: { version: '1.1.0', port: () => PORT },
+    service: { version: '1.1.0', port: () => PORT, instanceId: () => INSTANCE_ID },
   };
   return { context, rendered };
 }
@@ -63,7 +64,7 @@ describe('route', () => {
     expect(await get(context, '/v1/service', null)).toEqual({
       status: 200,
       contentType: 'application/json',
-      body: { product: 'CDL-LabelFlash', apiVersion: 'v1', appVersion: '1.1.0', port: PORT },
+      body: { product: 'CDL-LabelFlash', apiVersion: 'v1', appVersion: '1.1.0', port: PORT, instanceId: INSTANCE_ID },
     });
   });
 

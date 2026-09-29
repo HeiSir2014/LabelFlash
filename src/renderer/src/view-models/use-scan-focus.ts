@@ -39,8 +39,8 @@ export function activeFocusTarget(): FocusTarget | null {
  * isActive 为 false（配置中心打开）时以上规则全部停用：管理员在填表，焦点留在他放的位置。
  * 重新变为 true（回到工作台）时焦点立即回到扫码框。
  */
-export function useScanFocus(isActive: boolean): RefObject<HTMLTextAreaElement | null> {
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+export function useScanFocus(isActive: boolean): RefObject<HTMLInputElement | null> {
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isActive) {

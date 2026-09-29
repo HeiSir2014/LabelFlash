@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { hostname, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { app, type BrowserWindow, dialog, Menu, Notification, net } from 'electron';
+import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net } from 'electron';
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
@@ -40,6 +40,10 @@ import { MobileHost } from './mobile/mobile-host';
 import { MOBILE_TICK_INTERVAL_MS, MobileStation } from './mobile/mobile-station';
 import { WebhookOutbox } from './notify/webhook-outbox';
 import { createWebhookSender } from './notify/webhook-sender';
+import { fakeImageTextSource, parseFakeOcr } from './ocr/fake-ocr';
+import { ImageTextReader, type ImageTextSource } from './ocr/image-text-reader';
+import { createOcrEngine } from './ocr/ocr-engine';
+import { missingOcrFiles, ocrFiles } from './ocr/ocr-files';
 import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
 import { queryDriverPaper } from './printing/driver-paper';
@@ -71,6 +75,9 @@ import { VoiceClips } from './voice/voice-clips';
 import { createMainWindow } from './window';
 import { planInitialPlacement, trackWindowPlacement } from './window-placement';
 
+/** 本地 OCR 的线程数和识别批大小（OCR 引擎设计第 8 节的默认值）。 */
+const OCR_INTRA_THREADS = 4;
+const OCR_RECOGNITION_BATCH_SIZE = 8;
 const DATABASE_FILE_NAME = 'labelflash.db';
 const VOICE_CACHE_DIR_NAME = 'voice-cache';
 
@@ -199,8 +206,45 @@ async function bootstrap(): Promise<void> {
   const lookupTables = new LookupTables(new SqliteLookupStore(database, systemClock), randomUUID);
   const secrets = new SqliteSecretStore(database, safeStorageCipher, systemClock);
   const userAgent = `CDL-LabelFlash/${app.getVersion()}`;
-  // 这台电脑能不能识别标签上的字（src/main/ocr/ 接上之前都不能）：不能时不向手机要图。
-  const canReadImages = (): boolean => false;
+  // 标签图上的字（加工步骤「图中文字识别」）：本地 OCR 引擎，第一次用到时加载；E2E 用假的。
+  const fakeOcr = parseFakeOcr(process.env, app.isPackaged);
+  const files = ocrFiles({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appRoot: app.getAppPath(),
+    platform: process.platform,
+    arch: process.arch,
+  });
+  const missingOcr = missingOcrFiles(files);
+  if (fakeOcr === null && missingOcr.length > 0) {
+    console.info(`[ocr] text recognition is not available here, missing: ${missingOcr.join(', ')}`);
+  }
+  const imageText: ImageTextSource = fakeOcr
+    ? fakeImageTextSource(fakeOcr)
+    : new ImageTextReader({
+        hasFiles: missingOcr.length === 0,
+        createEngine: () =>
+          createOcrEngine(files.addon, {
+            detModelPath: files.detectionModel,
+            recModelPath: files.recognitionModel,
+            dictionaryPath: files.dictionary,
+            intraThreads: OCR_INTRA_THREADS,
+            recognitionBatchSize: OCR_RECOGNITION_BATCH_SIZE,
+          }),
+        decodeJpeg: (jpeg) => {
+          const image = nativeImage.createFromBuffer(Buffer.from(jpeg));
+          if (image.isEmpty()) {
+            return null;
+          }
+          const { width, height } = image.getSize();
+          return { data: image.toBitmap(), width, height };
+        },
+        // 引擎加载失败：告诉在线的手机别再截图。
+        onUnavailable: () => mobile.rulesChanged(),
+        log: (line) => console.error(line),
+      });
+  // 这台电脑能不能识别标签上的字：不能时不向手机要图，这一步跳过。
+  const canReadImages = (): boolean => imageText.canRead();
   const enrichDeps: EnrichDeps = {
     replace: createSandboxedRegexReplacer(),
     lookup: (tableId, keyColumn, key, ignoreCase) => lookupTables.find(tableId, keyColumn, key, ignoreCase),
@@ -211,8 +255,7 @@ async function bootstrap(): Promise<void> {
       userAgent,
     }),
     match: runRegex,
-    // 文字识别在后面接上（src/main/ocr/）；接上之前按「这台电脑上没有文字识别」处理。
-    readImageText: async () => null,
+    readImageText: (image) => imageText.read(image),
     now: () => performance.now(),
   };
   const guard = new DedupGuard(systemClock, secondsToMs(settings.current.dedupWindowSeconds));
@@ -338,6 +381,18 @@ async function bootstrap(): Promise<void> {
       isQuitting = true;
     },
   });
+  // 有启用的「图中文字识别」步骤时，后台先把模型加载好：手机扫的第一张不用等。
+  const warmImageText = (): void => {
+    if (
+      phoneImageRequest(
+        activeRules(rules, settings.current).map((rule) => rule.steps),
+        canReadImages(),
+      ) !== null
+    ) {
+      imageText.warm();
+    }
+  };
+  warmImageText();
   const mobile = new MobileStation({
     settings: () => settings.current,
     buildDefaultRelayUrl: BUILD_DEFAULT_RELAY_URL,
@@ -427,7 +482,10 @@ async function bootstrap(): Promise<void> {
       enrich: (scan, steps) => enrich(scan, steps, enrichDeps, new Date()),
       clock: systemClock,
       // 规则的加工步骤决定要不要手机截标签图。
-      onChanged: () => mobile.rulesChanged(),
+      onChanged: () => {
+        mobile.rulesChanged();
+        warmImageText();
+      },
     }),
     status,
     appInfo: {
@@ -438,6 +496,7 @@ async function bootstrap(): Promise<void> {
       dataPath,
       logsDir,
       defaultRelayUrl: BUILD_DEFAULT_RELAY_URL,
+      canReadImageText: canReadImages(),
     },
     updater,
     voice,

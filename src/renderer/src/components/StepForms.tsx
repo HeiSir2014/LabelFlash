@@ -28,6 +28,8 @@ export interface StepFormContext {
   secretNames: readonly string[];
   /** 跳到查找表、密钥等配置页（经过未保存修改的确认）。 */
   openPage: (page: ConfigPage) => void;
+  /** 这台电脑能识别标签图上的字：不能时「图中文字识别」会跳过，表单上写明。 */
+  canReadImageText: boolean;
 }
 
 interface StepFormProps<S extends EnrichStep> {
@@ -347,11 +349,16 @@ const AREA_EDGES = [
 ] as const satisfies ReadonlyArray<readonly [keyof CodeRelativeArea, string]>;
 const AREA_STEP = 0.1;
 
-function ImageTextStepForm({ step, onChange }: StepFormProps<ImageTextStep>) {
+function ImageTextStepForm({ step, context, onChange }: StepFormProps<ImageTextStep>) {
   const preset = presetOf(step.preferredArea);
   const area = step.preferredArea;
   return (
     <>
+      {!context.canReadImageText && (
+        <p className="form-hint form-hint--error">
+          这台电脑上没有文字识别（macOS 这一版还不支持，或者安装不完整）：手机扫码时这一步会跳过，照常打印。
+        </p>
+      )}
       <p className="form-hint">
         手机扫码时，手机按二维码把整张标签摆正拍下，电脑读出上面的所有文字，找第一段符合正则的。
         扫码枪、「试一试」没有图，这一步跳过。

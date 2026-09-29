@@ -1,7 +1,13 @@
+import { join } from 'node:path';
 import type { Page } from '@playwright/test';
+import sharp from 'sharp';
 import type { SessionEvent } from '../relay/web/src/phone-session';
+import { SHELF_NUMBER_PATTERN } from '../src/core/scan/image-text';
+import { missingOcrFiles, ocrFiles } from '../src/main/ocr/ocr-files';
+import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
 import type { MobileStatus } from '../src/shared/mobile-status';
 import { callApi, openConfig } from './support/app-helpers';
+import { APP_ROOT } from './support/electron-app';
 import { expect, test } from './support/fixtures';
 import { connectTestPhone, type LocalRelay, startLocalRelay } from './support/relay-server';
 
@@ -122,4 +128,171 @@ test('opens the mobile scan page from the config navigation', async ({ electronA
   const { page } = await electronApp.launch();
   await openConfig(page, '手机扫码');
   await expect(page.getByLabel('中转地址')).toBeVisible();
+});
+
+// ---------- 货架号识别：手机随扫码带标签图，电脑读出货架号补进这一张 ----------
+
+const LABEL_PRINTER: FakePrinterSpec = {
+  name: '标签机A',
+  paper: { widthMm: 60, heightMm: 40, dpi: 203 },
+  readiness: { ready: true },
+};
+/** 这条测试规则认的内容：「标签:编码」，内置规则都不认它。 */
+const SHELF_RAW = '标签:CL5640-TK';
+/** 协议要求是 JPEG（/9j/ 开头）；假的文字识别不看图的内容。 */
+const LABEL_IMAGE = { jpeg: '/9j/4AAQSkZJRgABAQ==', code: { x: 325, y: 195, size: 130 } };
+
+/** 加一条带「图中文字识别」步骤的规则，打印机指给假的标签机，重新加载界面。 */
+async function useShelfRule(page: Page): Promise<void> {
+  const created = await callApi(page, 'createRule', 'delimited');
+  if (!created.ok || created.rule.kind !== 'delimited') {
+    throw new Error(created.ok ? `新规则的类型不对：${created.rule.kind}` : created.issue);
+  }
+  const saved = await callApi(page, 'saveRule', {
+    ...created.rule,
+    name: '样衣标签',
+    delimiter: ':',
+    fields: ['类型', '编码'],
+    steps: [
+      {
+        kind: 'imageText',
+        pattern: SHELF_NUMBER_PATTERN,
+        flags: '',
+        preferredArea: { left: -0.1, top: 1, right: 1.1, bottom: 1.6 },
+        whenMissing: 'block',
+        output: '货架号',
+      },
+    ],
+  });
+  if (!saved.ok) {
+    throw new Error(saved.issue);
+  }
+  await callApi(page, 'updateSettings', {
+    mobileRelayUrl: relay.baseUrl,
+    paperPrinters: { '60x40': LABEL_PRINTER.name },
+  });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+}
+
+async function startMobile(page: Page): Promise<void> {
+  await page.getByRole('button', { name: '手机扫码' }).click();
+  await expect(
+    page.getByRole('dialog', { name: '手机扫码' }).getByRole('img', { name: '手机扫码的二维码' }),
+  ).toBeVisible();
+}
+
+function resultOf(events: SessionEvent[], job: string) {
+  const event = events.find((item) => item.type === 'result' && item.job === job);
+  return event?.type === 'result' ? event.result : null;
+}
+
+test('reads the shelf number from the label image a phone sends', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({
+    fakePrinters: [LABEL_PRINTER],
+    fakeOcr: ['编码：CL5640-TK', 'A-12-3-10'],
+  });
+  await useShelfRule(page);
+  await startMobile(page);
+  const phone = await connectTestPhone(relay, await activeUrl(page));
+  try {
+    await expect.poll(() => hasEvent(phone.events, 'welcomed')).toBe(true);
+    // 有这种步骤、电脑能识别：welcome 里要整张标签的图。
+    expect(phone.events.find((event) => event.type === 'welcomed')).toMatchObject({
+      image: { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 },
+    });
+    const job = phone.session.submit(SHELF_RAW, false, { image: LABEL_IMAGE, fields: [] });
+    await expect.poll(() => resultOf(phone.events, job)?.status).toBe('printed');
+    expect(resultOf(phone.events, job)).toMatchObject({
+      fields: expect.arrayContaining([{ name: '货架号', value: 'A-12-3-10' }]),
+    });
+    const [record] = (await callApi(page, 'listJobs', { limit: 1 })).jobs;
+    expect(record).toMatchObject({ source: 'mobile', status: 'printed' });
+    expect(record?.fields).toContainEqual({ name: '货架号', value: 'A-12-3-10' });
+  } finally {
+    phone.session.stop();
+  }
+});
+
+test('asks the phone for the shelf number it could not read and prints it once typed', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: [LABEL_PRINTER], fakeOcr: ['尺码：36'] });
+  await useShelfRule(page);
+  await startMobile(page);
+  const phone = await connectTestPhone(relay, await activeUrl(page));
+  try {
+    await expect.poll(() => hasEvent(phone.events, 'welcomed')).toBe(true);
+    const unread = phone.session.submit(SHELF_RAW, false, { image: LABEL_IMAGE, fields: [] });
+    await expect.poll(() => resultOf(phone.events, unread)?.status).toBe('failed');
+    expect(resultOf(phone.events, unread)).toEqual({
+      status: 'failed',
+      reason: 'TEXT_NOT_FOUND',
+      detail: '没认出货架号',
+      issue: null,
+      field: '货架号',
+    });
+    // 电脑上的打印记录写明没认出，没有打印。
+    await expect(page.locator('.job-row').first()).toContainText('没认出');
+
+    const typed = phone.session.submit(SHELF_RAW, false, {
+      image: null,
+      fields: [{ name: '货架号', value: 'B-1-2-3' }],
+    });
+    await expect.poll(() => resultOf(phone.events, typed)?.status).toBe('printed');
+    const [record] = (await callApi(page, 'listJobs', { limit: 1 })).jobs;
+    expect(record?.fields).toContainEqual({ name: '货架号', value: 'B-1-2-3' });
+  } finally {
+    phone.session.stop();
+  }
+});
+
+// 扫码枪没有图：这一步跳过，和没有这一步时一样照常打印，不拦下。
+test('prints scanner scans without the image text step getting in the way', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: [LABEL_PRINTER], fakeOcr: ['A-1-2-3'] });
+  await useShelfRule(page);
+  await callApi(page, 'updateSettings', { autoPrint: true });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await page.locator('.scan-bar__input').fill(SHELF_RAW);
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await callApi(page, 'listJobs', { limit: 1 })).jobs[0]?.status).toBe('printed');
+  const [record] = (await callApi(page, 'listJobs', { limit: 1 })).jobs;
+  expect(record?.fields?.some((field) => field.name === '货架号')).toBe(false);
+});
+
+/** 仓库里编译好的扩展和下载好的模型（bun run ocr:build、ocr:models）；CI 上没有，这个用例跳过。 */
+const HAS_REAL_OCR =
+  missingOcrFiles(
+    ocrFiles({
+      isPackaged: false,
+      resourcesPath: '',
+      appRoot: APP_ROOT,
+      platform: process.platform,
+      arch: process.arch,
+    }),
+  ).length === 0;
+
+// 真实的文字识别：主进程加载扩展和模型，读一张真实的标签照片（横着拍的，货架号在二维码左边，不在优先区域里）。
+test('reads the shelf number from a real label photo with the local OCR engine', async ({ electronApp }) => {
+  test.skip(!HAS_REAL_OCR, '没有编译好的 OCR 扩展或模型（bun run ocr:build、bun run ocr:models）');
+  // 像手机那样只截标签那一块、压成 JPEG（不超过 64 KB）。
+  const jpeg = await sharp(join(APP_ROOT, 'native', 'ocr', 'fixtures', 'shelf-label.jpg'))
+    .extract({ left: 200, top: 270, width: 640, height: 880 })
+    .grayscale()
+    .jpeg({ quality: 80 })
+    .toBuffer();
+  const { page } = await electronApp.launch({ fakePrinters: [LABEL_PRINTER] });
+  await useShelfRule(page);
+  expect((await callApi(page, 'getAppInfo')).canReadImageText).toBe(true);
+  await startMobile(page);
+  const phone = await connectTestPhone(relay, await activeUrl(page));
+  try {
+    await expect.poll(() => hasEvent(phone.events, 'welcomed')).toBe(true);
+    const image = { jpeg: jpeg.toString('base64'), code: { x: 237, y: 17, size: 340 } };
+    const job = phone.session.submit(SHELF_RAW, false, { image, fields: [] });
+    await expect.poll(() => resultOf(phone.events, job)?.status, { timeout: 30_000 }).toBe('printed');
+    const [record] = (await callApi(page, 'listJobs', { limit: 1 })).jobs;
+    expect(record?.fields).toContainEqual({ name: '货架号', value: 'A-1-2-3' });
+  } finally {
+    phone.session.stop();
+  }
 });

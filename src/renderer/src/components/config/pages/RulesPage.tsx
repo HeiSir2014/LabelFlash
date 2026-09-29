@@ -31,6 +31,8 @@ export interface RulesPageProps {
   isNarrow: boolean;
   /** 加工步骤里「去查找表」「去密钥」的跳转。 */
   onOpenPage: (page: ConfigPage) => void;
+  /** 这台电脑能识别标签图上的字（见 AppInfo）。 */
+  canReadImageText: boolean;
 }
 
 /** 识别规则：列表（右侧固定「试一试」）；编辑时表单和只用草稿的「试一试」并排。 */
@@ -204,8 +206,20 @@ function RuleCard({ rule, setting, templates, isFirst, isLast, rules }: RuleCard
   );
 }
 
-function EditView({ rules, tester, isNarrow, onOpenPage, draft }: RulesPageProps & { draft: ScanRule }) {
-  const context = { lookupTables: rules.lookupTables, secretNames: rules.secretNames, openPage: onOpenPage };
+function EditView({
+  rules,
+  tester,
+  isNarrow,
+  onOpenPage,
+  canReadImageText,
+  draft,
+}: RulesPageProps & { draft: ScanRule }) {
+  const context = {
+    lookupTables: rules.lookupTables,
+    secretNames: rules.secretNames,
+    openPage: onOpenPage,
+    canReadImageText,
+  };
   return (
     <div className="rule-editing">
       <div className="rule-editing__form">

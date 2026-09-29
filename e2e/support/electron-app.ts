@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ElectronApplication, _electron as electron, expect, type Page } from '@playwright/test';
 import { API_PORT_ENV } from '../../src/main/api/local-api';
+import { FAKE_OCR_ENV } from '../../src/main/ocr/fake-ocr';
 import { FAKE_PRINTERS_ENV, type FakePrinterSpec } from '../../src/main/printing/fake-printers';
 
 /**
@@ -40,6 +41,8 @@ export async function removeUserDataDir(dir: string): Promise<void> {
 export interface LaunchOptions {
   /** 用假打印机代替系统打印机（见 src/main/printing/fake-printers.ts）：打印只记下来，不碰真打印机。 */
   fakePrinters?: FakePrinterSpec[];
+  /** 用假的文字识别：每张标签图都读出这几段字（见 src/main/ocr/fake-ocr.ts）。 */
+  fakeOcr?: string[];
 }
 
 /** 用指定的数据目录（不传则新建一个）启动构建好的程序，等到扫码框出现。 */
@@ -54,6 +57,9 @@ export async function launchApp(userData?: string, options: LaunchOptions = {}):
   }
   if (options.fakePrinters) {
     env[FAKE_PRINTERS_ENV] = JSON.stringify(options.fakePrinters);
+  }
+  if (options.fakeOcr) {
+    env[FAKE_OCR_ENV] = JSON.stringify(options.fakeOcr);
   }
   // 本机接口用系统随便给的端口：并行的用例之间、和本机上跑着的安装版之间都不抢 17631。
   env[API_PORT_ENV] = '0';

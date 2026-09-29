@@ -162,7 +162,9 @@
 **防护**
 
 - **Host 核对**（防 DNS 重绑定，只对网页来的请求）：Host 必须是 `127.0.0.1`、`localhost` 或 `[::1]` 加端口，否则拒绝。带有效密钥的程序请求不核对 Host，局域网程序可以用机器名访问。
-- **跨域**：只对已授权的网站返回允许跨域的响应头。预检请求按规范回复，并回复 `Access-Control-Allow-Private-Network: true`，兼容旧版 Chrome。
+- **跨域**：
+  - 预检（OPTIONS）放行本机来的 http/https 网站（Host 也是本机）：网页用 JSON 提交会先预检，预检不放行，真正的请求发不出来，授权框也就弹不出来。能不能拿到数据由授权决定，不靠跨域。预检同时回复 `Access-Control-Allow-Private-Network: true`，兼容旧版 Chrome。
+  - 正式请求：已授权的网站带允许跨域的响应头；没授权的网站只有授权错误（`ORIGIN_NOT_AUTHORIZED`、`ORIGIN_UNSUPPORTED`）带，网页能读到原因、提示用户去电脑上点「允许」。不需要授权的 `/v1/service` 也不对没授权的网站开放，网页不能借此探测本机装了这个程序。
 - **局域网来源只认密钥**：局域网来的请求即使带着 `Origin` 也不算网页授权。
 - **局域网已开启但还没有密钥**：局域网请求一律拒绝（`UNAUTHENTICATED`），回复里说明先在配置中心生成密钥。
 - **不需要授权的只有两个**：`/v1/service` 和 `/v1/openapi.json`。

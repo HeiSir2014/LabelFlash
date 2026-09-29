@@ -1,5 +1,6 @@
 import { BRAND } from '../../../../../shared/brand';
 import type { AppInfo } from '../../../../../shared/ipc-contract';
+import { formatAppVersion } from '../../../lib/app-version';
 import { QR_IMAGE_SIZE_PX } from '../../../view-models/use-qr-image';
 
 export interface AboutPageProps {
@@ -20,7 +21,7 @@ export function AboutPage({ appInfo, shopQr, onOpenShop }: AboutPageProps) {
         <dl className="about-card__list">
           <dt>软件</dt>
           <dd>
-            {appInfo.productName} v{appInfo.version}
+            {appInfo.productName} {formatAppVersion(appInfo.version, appInfo.buildNumber)}
           </dd>
           <dt>出品</dt>
           <dd>

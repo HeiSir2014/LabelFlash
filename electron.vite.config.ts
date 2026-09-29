@@ -17,11 +17,17 @@ import { OPTIONAL_NATIVE_MODULES } from './scripts/bundle-policy';
  * 自己构建时不设就没有默认值，要在配置中心里填写。见 src/main/mobile/build-defaults.ts。
  */
 const DEFAULT_RELAY_URL_ENV = 'CDL_LABELFLASH_DEFAULT_RELAY_URL';
+/**
+ * CI 的构建号：electron-builder 从同一个环境变量 BUILD_NUMBER 读取，写进文件版本；这里注入给「关于」和日志。
+ * 见 src/main/build-info.ts。
+ */
+const BUILD_NUMBER_ENV = 'BUILD_NUMBER';
 
 export default defineConfig({
   main: {
     define: {
       [DEFAULT_RELAY_URL_ENV]: JSON.stringify(process.env[DEFAULT_RELAY_URL_ENV] ?? ''),
+      CDL_LABELFLASH_BUILD_NUMBER: JSON.stringify(process.env[BUILD_NUMBER_ENV] ?? ''),
     },
     build: {
       externalizeDeps: false,

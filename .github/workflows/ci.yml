@@ -10,6 +10,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# 构建号：这个工作流每跑一次自增（重跑不变）。electron-builder 写进 Windows 的文件版本（1.0.2.123）和
+# macOS 的 CFBundleVersion，程序在「关于」和日志里显示。版本号本身（标签、自动更新比较、文件名）不带它。
+env:
+  BUILD_NUMBER: ${{ github.run_number }}
+
 jobs:
   check:
     runs-on: windows-latest

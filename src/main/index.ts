@@ -19,6 +19,7 @@ import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
 import type { SocketLike } from '../shared/relay-socket';
 import { secondsToMs } from '../shared/settings';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
+import { BUILD_NUMBER } from './build-info';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
 import { LOGS_DIR_NAME } from './log-files';
@@ -134,7 +135,7 @@ function requireWebContents() {
 
 async function bootstrap(): Promise<void> {
   const logsDir = setupLogging();
-  console.info(`[app] ${BRAND.productName} ${app.getVersion()} starting`);
+  console.info(`[app] ${BRAND.productName} ${app.getVersion()} (build ${BUILD_NUMBER ?? 'local'}) starting`);
   console.info(`[gpu] rendering mode: ${isSoftwareRendering ? 'software' : 'hardware'}`);
   const onGpuGone = createGpuCrashHandler({
     isSoftwareRendering,
@@ -282,6 +283,7 @@ async function bootstrap(): Promise<void> {
       productName: BRAND.productName,
       brandOwner: BRAND.owner,
       version: app.getVersion(),
+      buildNumber: BUILD_NUMBER,
       dataPath,
       logsDir,
       defaultRelayUrl: BUILD_DEFAULT_RELAY_URL,

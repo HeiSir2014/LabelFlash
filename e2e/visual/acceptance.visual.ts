@@ -40,7 +40,7 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的 V01–V31）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 视觉验收（设计文档 §8.2 的 V01–V34）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
  * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
@@ -163,15 +163,17 @@ const ITEMS: Item[] = [
         await resize(ctx.window, SIZE_1280, zoom);
         await ctx.page.waitForTimeout(SETTLE_MS);
         for (const text of ['', 'CL5640-TK-图片色-XL']) {
-          await ctx.page.locator('.scan-bar__input').evaluate((el, value) => {
-            (el as HTMLTextAreaElement).value = value;
-          }, text);
+          // 经界面填写（不直接改 DOM 的 value）：Windows 上看得见的文字画在 .scan-bar__text，要由界面状态更新。
+          await ctx.page.locator('.scan-bar__input').fill(text);
           const mids = await ctx.page.evaluate(() => {
             const mid = (selector: string) => {
               const rect = document.querySelector(selector)?.getBoundingClientRect();
               return rect ? rect.top + rect.height / 2 : Number.NaN;
             };
-            return { label: mid('.scan-bar__label'), input: mid('.scan-bar__input') };
+            // 量看得见的那一层：Windows 上输入框是透明的密码框，文字在 .scan-bar__text；macOS 上是输入框本身。
+            const input = document.querySelector<HTMLInputElement>('.scan-bar__input');
+            const visible = input?.type === 'password' ? '.scan-bar__text' : '.scan-bar__input';
+            return { label: mid('.scan-bar__label'), input: mid(visible) };
           });
           const offset = Math.abs(mids.label - mids.input);
           const percent = `${zoom * 100}%`;
@@ -888,6 +890,56 @@ const ITEMS: Item[] = [
           await page.getByLabel('中转地址').fill('http://relay.example.com/');
           await page.getByLabel('中转地址').press('Enter');
           await expect(page.getByRole('alert')).toBeVisible();
+        },
+      },
+    ],
+  },
+  {
+    id: 'V34',
+    title: '工作台 · 扫码框内容与输入法提醒',
+    points:
+      'Windows 上扫码框是透明密码框盖在文字层上（关掉输入法）：多行码的换行显示为 ⏎；光标和选区画在真实位置（方向键移动光标、双击全选看得见）；内容比框长时光标留在看得见的范围里；输入法在扫码框里开始组字时，扫码条下方出现「按 Shift 切到英文」的提醒，不遮挡预览',
+    shots: [
+      {
+        label: '多行码（⏎）',
+        prepare: async ({ page }) => {
+          await page.locator('.scan-bar__input').fill('编码：CL5887⏎颜色：灰色⏎尺码：M');
+        },
+      },
+      {
+        label: '超长内容显示末尾',
+        prepare: async ({ page }) => {
+          await page
+            .locator('.scan-bar__input')
+            .fill('https://example.com/order/2026092900012345678?sku=CL5887-灰色-M&batch=A-2-10-1');
+        },
+      },
+      {
+        label: '方向键把光标移到中间',
+        prepare: async ({ page }) => {
+          const input = page.locator('.scan-bar__input');
+          await input.fill('CL5887-灰色-M');
+          await input.press('Home');
+          await input.press('ArrowRight');
+          await input.press('ArrowRight');
+          await expect(page.locator('.scan-bar__text')).toHaveText('CL5887-灰色-M');
+        },
+      },
+      {
+        label: '双击全选',
+        prepare: async ({ page }) => {
+          await page.locator('.scan-bar__input').dblclick();
+          await expect(page.locator('.scan-bar__selection')).toHaveText('CL5887-灰色-M');
+        },
+      },
+      {
+        label: '输入法提醒',
+        prepare: async ({ page }) => {
+          const input = page.locator('.scan-bar__input');
+          await input.fill('');
+          // 模拟输入法在扫码框里开始组字（Windows 的密码框里不会发生，macOS 或别的情况下会）。
+          await input.dispatchEvent('compositionstart', { data: '' });
+          await expect(page.locator('.scan-bar__ime')).toBeVisible();
         },
       },
     ],

@@ -585,7 +585,7 @@ git commit -m "feat(templates): templates carry their paper size and an optional
 - 300dpi、600dpi 下二维码模块不小于 0.25mm；
 - Windows 和 macOS 各实打一张 60×40。
 
-**状态**：Complete
+**状态**：Complete（真机出纸没做：本机没有真打印机，见执行记录）
 
 ### Task 2.1：二维码按打印机分辨率对齐
 
@@ -2840,6 +2840,21 @@ describe('describeJobMeta', () => {
 - [ ] **Step 6**：PR 合进 master。发版前按项目规定先问用户（版本号建议 1.1.0）。
 
 ---
+
+## 执行记录（和计划的差异）
+
+- **阶段 2 的真机出纸**没有做：这台 Windows 电脑没有真打印机。用两台指向文件的「Microsoft Print to PDF」核对了按纸张分配和驱动打印路径（`docs/windows-acceptance.md` #45），但这个驱动只按 A4 出纸，页面尺寸要在热敏标签机上核对（#46）。
+- **视觉验收的 `useFakePrinter`** 仍然用 `stubPrinting`（原有各项不需要假打印机），只有 V35–V37 用假打印机启动。
+- **驱动纸张提醒**写「不是 100×180mm」（毫米），不写预设名：和「驱动默认纸张是 60×40mm」同一种写法，读起来对得上。
+- **测试页的 IPC** 用 `requireString` 而不是 `requireKnownPrinter`：打印机找不到时由适配器返回 PRINTER_NOT_FOUND，界面照常显示，和正式打印一致；交给系统命令之前适配器仍会核对。
+- **`ScanContext.hasPrinter`** 去掉了，改为按这一张预览里的打印机判断；`LabelPreview.paper` 识别不了时为 null。
+- **代码审核（合并后）**改了几处设计，已写进设计文档：
+  - 二维码不再在排版时按剩下的高度缩小，改为模板换到更小的纸时按比例缩小；
+  - 界面核对驱动纸张总是现读，窗口回到前台时重查；
+  - 驱动资料缓存过期后打印仍用上次读到的分辨率；
+  - 手机顶部只说名字或台数；
+  - 被模板指定的打印机不再被建议；
+  - 纸张分配按最接近的尺寸匹配。
 
 ## 自查记录
 

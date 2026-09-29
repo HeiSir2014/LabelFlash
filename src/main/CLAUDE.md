@@ -7,7 +7,7 @@
 - **逻辑和接线分开**：能不依赖 Electron 的逻辑，单独放进不 import `electron` 的文件，用 `bun test` 测试。现成的例子：
   - `window-state.ts`、`window-bounds.ts`、`gpu-fallback.ts`、`context-menu.ts`
   - `log-files.ts`、`ipc-errors.ts`、`ipc-validators.ts`、`update-settings.ts`
-  - `printing/printer-status.ts`
+  - `printing/printer-status.ts`、`printing/printer-profiles.ts`、`printing/page-size.ts`、`printing/fake-printers.ts`
   - `mobile/` 整个目录
 - **接线文件保持薄**：`window.ts`、`window-placement.ts`、`updater.ts`、`index.ts` 这类只负责接线，不写业务判断。
 - **依赖注入**：外部依赖由构造参数传入，测试时换成假的，例如 `PrinterProbeHost` 的进程工厂。

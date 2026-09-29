@@ -59,6 +59,8 @@ jobs:
           if-no-files-found: error
 
   # 打 v* 标签时发布：electron-builder 上传安装包、latest.yml 和 blockmap，electron-updater 据此自动更新。
+  # 先建草稿、上传、核对齐全后再公开：electron-builder 并行上传时，几个上传各自去「建 Release」会互相抢，
+  # 1.0.1 就这样丢了 blockmap（下一版的差分更新要用它）；草稿期间客户端也看不到只传了一半的版本。
   release:
     # 两个平台的检查都通过才发布。
     needs: [check, check-macos]
@@ -96,6 +98,25 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      - name: Create the release as a draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "${GITHUB_REF_NAME#v}" --notes "CDL-云签速印 ${GITHUB_REF_NAME#v}"
       - run: bun run release:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the draft once every file is there
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          assets="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')"
+          for file in "CDL-LabelFlash-Setup-$version.exe" "CDL-LabelFlash-Setup-$version.exe.blockmap" latest.yml; do
+            if ! grep -qx "$file" <<< "$assets"; then
+              echo "::error::Release 草稿缺少 $file，不公开。"
+              exit 1
+            fi
+          done
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest

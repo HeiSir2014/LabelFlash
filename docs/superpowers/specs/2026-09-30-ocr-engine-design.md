@@ -118,7 +118,7 @@ pub trait RegionDetector: Send + Sync { fn detect(&self, image: &ImageView<'_>) 
 
 - 会话只建一次；识别按批推理；像素直接从调用方的内存取样。
 - 每次调用复用的缓冲放在引擎里（检测张量、概率图、识别批张量），检测、识别各一把互斥锁，避免每次分配。
-- ORT：`intraThreads` 默认 4，`interThreads` 1，图优化级别 3。
+- ORT：`intraThreads` 默认 4，`interThreads` 1（模型是一条链，算子间不并行），图优化全开。
 - benchmark（`native/ocr/node/bench`）：同一张图预热 3 次后跑 20 次，报告各阶段中位数和 p95；tiny/tiny、tiny det + small rec、small/small 三种组合。
 
 ## 9. 测试与验收
@@ -132,7 +132,19 @@ pub trait RegionDetector: Send + Sync { fn detect(&self, image: &ImageView<'_>) 
 - **Bun 和 Node 各跑一次** TS 示例：创建引擎、识别、关闭，事件循环在推理期间照常运转（定时器按时触发）。
 - **提交前**：`cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check`，以及仓库原有的 `bun run check`。
 
-## 10. 以后
+## 10. 实测（2026-09-30，Windows 11，样张 1000×1328 的标签照片，标签横放）
+
+| 检测 + 识别 | 货架号 | 编码 | 总耗时 |
+|---|---|---|---|
+| tiny + tiny | `4-1-2-3`（A 读成 4） | `（L.5640-TK` | 约 0.38 秒 |
+| tiny + small | `A-1-2-3`（识别分 1.00） | `C1.5640-TK` | 约 0.51 秒 |
+| small + small | `A-1-2-3`（识别分 1.00） | `CL5640-TK` | 约 0.67 秒 |
+
+- 货架号用 small 识别模型；检测用 tiny 即可。tiny 识别在这张热敏打印的标签上把 A 读成 4，集成测试把它记为已知局限。
+- 耗时大头是检测（整张照片）。第二部分只识别二维码附近截下来的一小块，检测会快得多。
+- 四种像素格式结果完全一致；同一个引擎被 4 个线程同时调用，结果一致。
+
+## 11. 以后
 
 - 第二部分：手机截图（按二维码角点摆正后截一块）、协议和中转服务、「图中文字识别」加工步骤（区域、正则、字段名、识别不到时的处理）、模板里用货架号、配置中心。
 - 打包：Windows 把 `.node` 和模型放进安装包的 resources；macOS 的 ONNX Runtime 方案；CI 编译 `.node`。

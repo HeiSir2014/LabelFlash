@@ -3,11 +3,17 @@
 
 pub mod ctc;
 pub mod detection;
+pub mod engine;
 pub mod error;
 pub mod geometry;
 pub mod image;
+pub mod inference;
+pub mod layout;
 pub mod postprocess;
 pub mod reading_order;
 pub mod recognition;
 
+pub use detection::{DetectionOptions, LimitType};
+pub use engine::{EngineOptions, OcrEngine, OcrResult, TextRegion, Timing};
 pub use error::OcrError;
+pub use image::{ImageView, PixelFormat};

@@ -28,7 +28,7 @@
 **目标**：`InferenceBackend` + `OrtBackend`；`OcrEngine`：检测 → 后处理 → 裁剪 → 批量识别 → CTC → 阅读顺序；缓冲复用；耗时统计。
 **成功标准**：Rust 集成测试用真实模型识别 `native/ocr/fixtures/shelf-label.png`，结果里有 `A-1-2-3` 和 `CL5640-TK`；输出类别数和字典不符时报错。
 **测试**：集成测试（没有模型时跳过并说明）；四种像素格式结果一致。
-**状态**：未开始
+**状态**：完成
 
 ## 阶段 5：Node-API 扩展、TS 包装、benchmark
 

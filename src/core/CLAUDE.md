@@ -27,6 +27,7 @@
 | `templates/` | 模板模型、内置模板、标签内容组装、按宽度缩小字号、备注变量 |
 | `lookup/` | CSV 解析（含 GBK 编码的中文 Excel）和查找索引 |
 | `notify/` | 打印结果通知的事件、投递状态和重试时间表 |
+| `api/` | 本机接口的任务：`PrintJobService`（整批核对、`requestId` 防重复、排队上限、按提交顺序逐个打印、重启后把没打完的标成 `INTERRUPTED`）、模板名换算、模板用到的字段。存储接口 `ApiJobStore` 的内存版和 SQLite 版共用 `testing/api-job-store-contract.ts` 这套测试 |
 
 ## 扩展时
 

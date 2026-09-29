@@ -23,6 +23,7 @@
 | 扫码、识别、预览、模板、打印记录、语音、通知、密钥 | ✅ | ✅ |
 | 打印到本机打印机 | ✅ | ✅（家用打印机已实测出纸；热敏标签机待真机验证） |
 | 驱动纸张检测、打开打印机设置 | ✅ 常驻 PowerShell 查询 CIM；驱动「打印首选项」 | ✅ `ipptool`；系统设置「打印机与扫描仪」 |
+| 本机接口（HTTP） | ✅ 防火墙规则：安装时和配置页按钮（PowerShell NetSecurity，弹 UAC）；占用端口的程序用 `Get-NetTCPConnection` 查 | ✅（未在 Mac 上验证）pkg 装完把程序加进系统防火墙允许列表；占用端口的程序用 `lsof` 查 |
 | 打印机状态检测与异常通知 | ✅ | 未做：状态按「未知」处理，不阻止打印；计划改用 CUPS 的 `printer-state-reasons` |
 | 窗口按钮 | 自绘最小化 / 最大化 / 关闭 | 系统红绿灯；快捷键显示 ⌘ |
 | 密钥加密 | DPAPI | 钥匙串 |
@@ -63,7 +64,7 @@ CI（GitHub Actions）会在 PR 和 `master` 上跑：windows-latest 上 check�
 ```
 src/core      业务层：纯 TypeScript，不依赖 Electron / Node / SQLite
 src/shared    主进程和界面共用：IPC 契约、设置的校验、品牌、常量
-src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新
+src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）
 src/preload   contextBridge，只暴露类型化 API
 src/renderer  界面：React 19，MVVM（lib → view-models → components）
 scripts       构建脚本（bundle 检查、图标、安装包、中转服务的构建与发布）
@@ -98,12 +99,13 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
 | 位置 | 内容 |
 |---|---|
 | Windows：`%LOCALAPPDATA%\CDL-LabelFlash\`<br>macOS：`~/Library/Application Support/CDL-LabelFlash/` | 数据库 `labelflash.db`、日志 `logs/`、语音缓存 `voice-cache/` |
-| Windows：`%LOCALAPPDATA%\Programs\CDL-LabelFlash\`<br>macOS：`/Applications/CDL-云签速印.app` | 安装目录（Windows 按当前用户安装，不需要管理员权限；macOS 的 pkg 装进「应用程序」，要输入管理员密码） |
+| Windows：`%LOCALAPPDATA%\Programs\CDL-LabelFlash\`<br>macOS：`/Applications/CDL-云签速印.app` | 安装目录（Windows 按当前用户安装，安装本身不需要管理员；装完加防火墙规则时问一次管理员，可以拒绝。macOS 的 pkg 装进「应用程序」，要输入管理员密码） |
 | Windows：`%LOCALAPPDATA%\cdl-labelflash-updater\` | 自动更新缓存：本机安装包的副本（差分下载的底）和待安装的更新 |
 
 数据目录的位置由 `src/main/index.ts` 决定：Windows 放 `LOCALAPPDATA`（本机目录，不进漫游配置），其他平台放系统的 `appData`。
 
 - **隔离数据**：开发版和 E2E 用环境变量 `CDL_LABELFLASH_USER_DATA` 指向单独的数据目录。这个变量只对未打包的程序生效。
+- **本机接口的端口**：E2E 用 `CDL_LABELFLASH_API_PORT=0`（系统分配），和本机上跑着的安装版、并行的用例互不抢端口。同样只对未打包的程序生效。
 - **假打印机**：E2E 和视觉验收用环境变量 `CDL_LABELFLASH_FAKE_PRINTERS`（打印机名、驱动纸张、状态的 JSON）代替系统打印机，打印只记下来。同样只对未打包的程序生效，见 `src/main/printing/fake-printers.ts`。
 - **数据库迁移**：1.0.1 发布之前，表结构直接改在 `src/main/storage/migrations.ts` 的初始 schema 里，开发机删掉旧库即可。发布之后，已发布的迁移不能改，只能在末尾追加。
 - **删除确认**：删除用户数据、安装目录或更新缓存之前，先征得用户同意。
@@ -154,8 +156,9 @@ relay         手机扫码：云端中转服务（Bun）和手机扫码页，单
 
 | 文档 | 内容 |
 |---|---|
-| `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心、手机扫码打印、多台打印机与多种纸张 |
+| `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心、手机扫码打印、多台打印机与多种纸张、本机接口 |
 | `docs/superpowers/plans/` | 实施计划 |
+| `docs/local-api.md` | 给第三方的本机接口接入说明（含 JavaScript、Python、C#、Java 示例） |
 | `docs/roadmap.md` | 路线图 |
 | `docs/windows-acceptance.md` | Windows 验收记录 |
 

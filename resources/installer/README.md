@@ -17,7 +17,8 @@ Windows 安装包由 electron-builder 的 NSIS 目标生成，界面是自绘的
 | `skin-ui.nsh` | 界面流程：配置页 → 安装中 → 完成，以及启动、轮询安装进程 |
 | `plugins/x86-unicode/nsNiuniuSkin.dll` | 界面插件 |
 | `plugins/NOTICE.md` | 插件的来源、版本、许可和 SHA-256 |
-| `../installer.nsh` | 两段构建都会包含的片段：卸载时删除开机自启项（覆盖安装和更新时不删） |
+| `../installer.nsh` | 两段构建都会包含的片段：卸载时删除开机自启项和防火墙规则（覆盖安装和更新时不删） |
+| `../pkg-scripts/postinstall` | macOS 的 pkg 装完后运行：把程序加进系统防火墙的允许列表 |
 | `../../scripts/installer/skin-design.ts` | 界面的图片（SVG）、页面（XML）和全部文案 |
 | `../../scripts/installer/build-skin.ts` | 按 100%–300% 七种缩放生成皮肤包，输出到 `dist/.installer/` |
 | `../../scripts/installer/build-installer.ts` | 两段构建 |
@@ -47,7 +48,8 @@ bun run installer:skin  # 只生成皮肤包，调界面时用
 | 退出程序时安装更新 | `--updated /S` | 不显示任何窗口，装完不启动程序 |
 | 静默安装 | `/S`，可加 `/D=目录`（必须放在最后） | 不显示任何窗口 |
 
-- 只按当前用户安装，不需要管理员权限，默认目录是 `%LOCALAPPDATA%\Programs\CDL-LabelFlash`。
+- 只按当前用户安装，安装本身不需要管理员权限，默认目录是 `%LOCALAPPDATA%\Programs\CDL-LabelFlash`。
+- 交互安装装完、启动程序之前，弹一次管理员确认加防火墙规则（`dist/.installer/firewall.ps1`，由 `src/shared/firewall-rule.ts` 生成，带 UTF-8 BOM）；点「否」照常装完。更新和静默安装不加。
 - 用户选的目录最后一级如果不是程序目录名，会自动补上：卸载会删除整个安装目录，不能直接装进用户自己的文件夹。
 - 卸载会删除安装目录、快捷方式和开机自启项，保留 `%LOCALAPPDATA%\CDL-LabelFlash` 里的用户数据。
 

@@ -1,7 +1,8 @@
-import { BrowserWindow, type WebContents } from 'electron';
+import type { WebContents } from 'electron';
 import { PrintError } from '../../core/errors';
 import type { Clock, LabelJob, PrinterInfo } from '../../core/types';
 import { renderLabelHtml } from './label-html';
+import { withLabelWindow } from './label-window';
 import { pageSizeMicrons } from './page-size';
 import type { PrinterDriver } from './printer-driver';
 import type { PrinterProfiles } from './printer-profiles';
@@ -50,25 +51,10 @@ export class ElectronDriverAdapter implements PrinterDriver {
     }
     // 二维码按这台打印机的分辨率对齐打印点；读不到（或 1 秒内没读到）按 203dpi。
     const { html } = renderLabelHtml(job, await this.profiles.dpiOf(printerName));
-    signal.throwIfAborted();
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false },
-    });
-    const destroy = () => {
-      if (!printWindow.isDestroyed()) {
-        printWindow.destroy();
-      }
-    };
     // 超时（PrintQueue 触发 abort）时立刻销毁打印窗口，避免隐藏窗口堆积。
-    signal.addEventListener('abort', destroy, { once: true });
-    try {
-      await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-      await printSilently(printWindow.webContents, printerName, pageSizeMicrons(job.template.paper), signal);
-    } finally {
-      signal.removeEventListener('abort', destroy);
-      destroy();
-    }
+    await withLabelWindow(html, signal, (contents) =>
+      printSilently(contents, printerName, pageSizeMicrons(job.template.paper)),
+    );
   }
 
   /** 渲染进程传来的打印机名在交给系统命令之前，必须是系统里真实存在的打印机。 */
@@ -91,16 +77,13 @@ export class ElectronDriverAdapter implements PrinterDriver {
   }
 }
 
-/** 窗口被中止销毁后 print 回调可能永远不来，所以 abort 时也要结束这个 Promise，不留悬挂的任务。 */
+/** 中止（超时）时由 withLabelWindow 销毁窗口并结束等待：窗口销毁后 print 的回调可能永远不来。 */
 function printSilently(
   webContents: WebContents,
   deviceName: string,
   pageSize: { width: number; height: number },
-  signal: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
     webContents.print(
       {
         silent: true,
@@ -111,7 +94,6 @@ function printSilently(
         pageSize,
       },
       (success, failureReason) => {
-        signal.removeEventListener('abort', onAbort);
         if (success) {
           resolve();
         } else {

@@ -56,7 +56,13 @@ describe('printResultCue', () => {
   });
 
   test('accepts the trimmed result a phone receives', () => {
-    const result: PhonePrintResult = { status: 'failed', reason: 'PRINTER_NOT_READY', detail: null, issue: null };
+    const result: PhonePrintResult = {
+      status: 'failed',
+      reason: 'PRINTER_NOT_READY',
+      detail: null,
+      issue: null,
+      field: null,
+    };
     expect(printResultCue(result, 'scan')).toBe('printerNotReady');
   });
 

@@ -51,7 +51,11 @@ describe('jobView', () => {
   });
 
   test('offers no extra copy for a label that did not print', () => {
-    const view = jobView(done({ status: 'failed', reason: 'PRINT_ERROR', detail: null, issue: null }), 'online', true);
+    const view = jobView(
+      done({ status: 'failed', reason: 'PRINT_ERROR', detail: null, issue: null, field: null }),
+      'online',
+      true,
+    );
     expect(view.actions).toEqual(['retry']);
   });
 
@@ -75,14 +79,17 @@ describe('jobView', () => {
 
   test('names the printer problem and offers a retry', () => {
     const view = jobView(
-      done({ status: 'failed', reason: 'PRINTER_NOT_READY', detail: '打印机缺纸', issue: 'paperOut' }),
+      done({ status: 'failed', reason: 'PRINTER_NOT_READY', detail: '打印机缺纸', issue: 'paperOut', field: null }),
       'online',
     );
     expect(view).toMatchObject({ tone: 'error', title: '打印机缺纸', actions: ['retry'] });
   });
 
   test('offers only a forced reprint after a timeout, since the label may be out', () => {
-    const view = jobView(done({ status: 'failed', reason: 'PRINT_TIMEOUT', detail: null, issue: null }), 'online');
+    const view = jobView(
+      done({ status: 'failed', reason: 'PRINT_TIMEOUT', detail: null, issue: null, field: null }),
+      'online',
+    );
     expect(view.actions).toEqual(['force']);
   });
 
@@ -107,9 +114,9 @@ describe('jobView', () => {
 
 describe('resultLevel', () => {
   test('rates printer faults as alerts and everything the operator can fix as notices', () => {
-    expect(resultLevel({ status: 'failed', reason: 'PRINTER_NOT_READY', detail: null, issue: 'paperOut' })).toBe(
-      'alert',
-    );
+    expect(
+      resultLevel({ status: 'failed', reason: 'PRINTER_NOT_READY', detail: null, issue: 'paperOut', field: null }),
+    ).toBe('alert');
     expect(resultLevel({ status: 'invalid', reason: 'INVALID_CONTENT' })).toBe('notice');
     expect(resultLevel({ status: 'no-printer' })).toBe('notice');
     expect(resultLevel(PRINTED)).toBe('confirm');

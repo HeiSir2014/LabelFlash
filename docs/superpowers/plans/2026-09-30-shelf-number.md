@@ -12,7 +12,7 @@
 **目标**：`welcome.image`、`submit.image / fields`、`result.field`，大小上限；`src/main/mobile/` 把图和手动字段交给打印，按启用的步骤决定要不要图。
 **成功标准**：老消息照常解析；新字段校验严格；电脑只在需要时要图。
 **测试**：`mobile-protocol.test.ts`、`mobile-session` / `mobile-host` / `mobile-station` 的测试。
-**状态**：未开始
+**状态**：完成
 
 ## 阶段 3：手机扫码页
 **目标**：worker 送回角点；按角点截图、压 JPEG；结果卡片的「没认出」和手动输入。

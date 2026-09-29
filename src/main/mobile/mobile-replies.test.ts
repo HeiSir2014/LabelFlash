@@ -81,9 +81,16 @@ describe('toPhonePrintResult', () => {
       reason: 'PRINT_TIMEOUT',
       detail: null,
       issue: null,
+      field: null,
     });
     expect(
       toPhonePrintResult({ status: 'failed', reason: 'PRINTER_NOT_READY', detail: '打印机缺纸', issue: 'paperOut' }),
-    ).toEqual({ status: 'failed', reason: 'PRINTER_NOT_READY', detail: '打印机缺纸', issue: 'paperOut' });
+    ).toEqual({ status: 'failed', reason: 'PRINTER_NOT_READY', detail: '打印机缺纸', issue: 'paperOut', field: null });
+  });
+
+  test('names the field that could not be read so the phone can ask for it', () => {
+    expect(
+      toPhonePrintResult({ status: 'failed', reason: 'TEXT_NOT_FOUND', detail: '没认出货架号', field: '货架号' }),
+    ).toEqual({ status: 'failed', reason: 'TEXT_NOT_FOUND', detail: '没认出货架号', issue: null, field: '货架号' });
   });
 });

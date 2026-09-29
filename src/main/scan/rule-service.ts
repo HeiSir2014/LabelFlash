@@ -24,6 +24,8 @@ export interface RuleServiceDeps {
   runRegex: RegexRunner;
   enrich: (scan: ScanResult, steps: readonly EnrichStep[]) => Promise<EnrichResult>;
   clock: Clock;
+  /** 规则、它们的加工步骤或启用状态变了（手机要不要截图可能跟着变）。 */
+  onChanged?: () => void;
 }
 
 /** 试一试时正在编辑的草稿规则用这个 id（不会保存）。 */
@@ -60,6 +62,8 @@ export class RuleService {
   saveSettings(settings: readonly RuleSetting[]): RuleListing {
     const ids = this.deps.catalog.list().map((rule) => rule.id);
     this.deps.settings.update({ ruleSettings: mergeRuleSettings(settings, ids) });
+    // 增删改、导入都经过这里：一处通知就够了。
+    this.deps.onChanged?.();
     return this.list();
   }
 

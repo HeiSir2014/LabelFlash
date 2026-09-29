@@ -75,7 +75,8 @@ function createHost(base: URL): MobileHost {
     timers,
     createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
     printerLabel: async () => printerLabel,
-    print: async (raw, force) => {
+    imageRequest: () => null,
+    print: async ({ raw, force }) => {
       running += 1;
       maxRunning = Math.max(maxRunning, running);
       prints.push({ raw, force });

@@ -15,6 +15,8 @@ import {
   IDLE_END_MS,
   MAX_PENDING_JOBS,
   MAX_PHONES_PER_SESSION,
+  type PhoneField,
+  type PhoneImage,
   type PhoneMessage,
   type PhonePrintResult,
   type QueuePosition,
@@ -36,11 +38,19 @@ export interface Delivery {
   message: DesktopMessage;
 }
 
+/** 一个手机任务要打印的内容：扫到的内容、是否补打、随扫码截的标签图、手机上手动输入的字段。 */
+export interface PhoneJob {
+  raw: string;
+  force: boolean;
+  image: PhoneImage | null;
+  fields: PhoneField[];
+}
+
 export type SubmitDecision =
   | { kind: 'ignore' }
   | { kind: 'reply'; message: DesktopMessage }
   /** 新任务：先回复 accepted，再按队列顺序执行（started → complete）。 */
-  | { kind: 'run'; reply: DesktopMessage; job: string; raw: string; force: boolean };
+  | { kind: 'run'; reply: DesktopMessage; job: string; request: PhoneJob };
 
 interface Phone {
   id: string;
@@ -184,8 +194,12 @@ export class MobileSession {
       kind: 'run',
       reply: { type: 'accepted', job: message.job, ahead },
       job: message.job,
-      raw: message.raw,
-      force: message.force,
+      request: {
+        raw: message.raw,
+        force: message.force,
+        image: message.image ?? null,
+        fields: message.fields ?? [],
+      },
     };
   }
 

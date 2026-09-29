@@ -7,6 +7,9 @@ import {
   type DesktopMessage,
   isRequestRaw,
   MAX_DEVICE_LENGTH,
+  MAX_IMAGE_BYTES,
+  MAX_MANUAL_FIELDS,
+  MAX_MANUAL_VALUE_LENGTH,
   MAX_PENDING_JOBS,
   MAX_REQUEST_RAW_LENGTH,
   MOBILE_PROTOCOL_VERSION,
@@ -192,6 +195,42 @@ describe('parsePhoneMessage', () => {
     expect(parsePhoneMessage({ ...submit, raw: 'x'.repeat(MAX_RAW_LENGTH * 4 + 1) })).toBeNull();
   });
 
+  const image = { jpeg: '/9j/4AAQSkZJRgABAQ==', code: { x: 325, y: 195, size: 130 } };
+
+  test('accepts a submission with the label image and typed fields', () => {
+    const message = { ...submit, image, fields: [{ name: '货架号', value: ' A-1-2-3 ' }] };
+    expect(parsePhoneMessage(message)).toEqual({ ...message, fields: [{ name: '货架号', value: 'A-1-2-3' }] });
+  });
+
+  test('rejects an image that is not a JPEG, too large or placed nowhere', () => {
+    const tooLarge = `/9j/${'A'.repeat(Math.ceil(MAX_IMAGE_BYTES / 3) * 4)}`;
+    for (const bad of [
+      { ...image, jpeg: 'iVBORw0KGgo=' },
+      { ...image, jpeg: '/9j/<script>' },
+      { ...image, jpeg: tooLarge },
+      { ...image, code: { x: 1, y: 1, size: 0 } },
+      { ...image, code: { x: Number.NaN, y: 1, size: 10 } },
+      { jpeg: image.jpeg },
+    ]) {
+      expect(parsePhoneMessage({ ...submit, image: bad })).toBeNull();
+    }
+  });
+
+  test('rejects typed fields with bad names, empty or long values, control characters or duplicates', () => {
+    const field = { name: '货架号', value: 'A-1-2-3' };
+    for (const fields of [
+      [{ ...field, name: '{货架号}' }],
+      [{ ...field, value: '  ' }],
+      [{ ...field, value: 'x'.repeat(MAX_MANUAL_VALUE_LENGTH + 1) }],
+      [{ ...field, value: 'A\n1' }],
+      [field, field],
+      Array.from({ length: MAX_MANUAL_FIELDS + 1 }, (_, i) => ({ name: `字段${i}`, value: 'x' })),
+      'A-1-2-3',
+    ]) {
+      expect(parsePhoneMessage({ ...submit, fields })).toBeNull();
+    }
+  });
+
   test('rejects a submission without a boolean force flag', () => {
     expect(parsePhoneMessage({ ...submit, force: 'yes' })).toBeNull();
     const { force: _force, ...withoutForce } = submit;
@@ -265,8 +304,9 @@ describe('parseDesktopMessage', () => {
       { status: 'printed', ruleName: '横杠三段', fields: [{ name: '编码', value: 'CL5640' }] },
       { status: 'duplicate', recent, windowMs: 3_000 },
       { status: 'invalid', reason: 'INVALID_CONTENT' },
-      { status: 'failed', reason: 'PRINTER_NOT_READY', detail: '缺纸', issue: 'paperOut' },
-      { status: 'failed', reason: 'PRINT_TIMEOUT', detail: null, issue: null },
+      { status: 'failed', reason: 'PRINTER_NOT_READY', detail: '缺纸', issue: 'paperOut', field: null },
+      { status: 'failed', reason: 'PRINT_TIMEOUT', detail: null, issue: null, field: null },
+      { status: 'failed', reason: 'TEXT_NOT_FOUND', detail: '没认出货架号', issue: null, field: '货架号' },
       { status: 'no-printer' },
     ];
     for (const result of results) {
@@ -278,6 +318,41 @@ describe('parseDesktopMessage', () => {
     expect(parseDesktopMessage({ type: 'result', job: JOB, result: { status: 'printed' } })).toBeNull();
     const badField = { status: 'printed', ruleName: '横杠三段', fields: [{ name: '编码' }] };
     expect(parseDesktopMessage({ type: 'result', job: JOB, result: badField })).toBeNull();
+  });
+
+  // 老电脑的失败结果没有 field：按 null。
+  test('reads a failure from an older desktop without the field name', () => {
+    const result = { status: 'failed', reason: 'PRINT_ERROR', detail: null, issue: null } as const;
+    expect(parseDesktopMessage({ type: 'result', job: JOB, result })).toEqual({
+      type: 'result',
+      job: JOB,
+      result: { ...result, field: null },
+    });
+    expect(parseDesktopMessage({ type: 'result', job: JOB, result: { ...result, field: 3 } })).toBeNull();
+  });
+
+  test('carries the image request in welcome and printer updates', () => {
+    const image = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    const messages: DesktopMessage[] = [
+      { type: 'welcome', token: SECRET, nonce: SESSION, printer: null, image },
+      { type: 'printer', printer: '热敏标签机', image },
+    ];
+    for (const message of messages) {
+      expect(parseDesktopMessage(message)).toEqual(message);
+    }
+  });
+
+  test('rejects an image request that is empty, too far out or too fine', () => {
+    const area = { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 };
+    for (const image of [
+      { area: { ...area, right: -2.5 }, pixelsPerCode: 130 },
+      { area: { ...area, left: -11 }, pixelsPerCode: 130 },
+      { area, pixelsPerCode: 1_000 },
+      { area, pixelsPerCode: 130.5 },
+      { area: null, pixelsPerCode: 130 },
+    ]) {
+      expect(parseDesktopMessage({ type: 'printer', printer: null, image })).toBeNull();
+    }
   });
 
   test('rejects a failure with an unknown reason', () => {

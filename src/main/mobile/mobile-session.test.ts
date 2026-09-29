@@ -171,9 +171,16 @@ describe('the queue', () => {
       kind: 'run',
       reply: { type: 'accepted', job: message.job, ahead: 0 },
       job: message.job,
-      raw: RAW,
-      force: false,
+      request: { raw: RAW, force: false, image: null, fields: [] },
     });
+  });
+
+  test('carries the label image and typed fields of a job', () => {
+    const phone = join('c1');
+    const image = { jpeg: '/9j/AAAA', code: { x: 10, y: 20, size: 130 } };
+    const fields = [{ name: '货架号', value: 'A-1-2-3' }];
+    const decision = session.submit('c1', { ...submission(phone), image, fields });
+    expect(decision).toMatchObject({ kind: 'run', request: { raw: RAW, force: false, image, fields } });
   });
 
   test('queues jobs from every phone in the order they came', () => {

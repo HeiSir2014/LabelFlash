@@ -508,7 +508,13 @@ describe('PhoneController: scanning', () => {
     controller.manual('A');
     controller.manual('B');
     vibrations = [];
-    const fault: PhonePrintResult = { status: 'failed', reason: 'PRINTER_NOT_READY', detail: null, issue: 'paperOut' };
+    const fault: PhonePrintResult = {
+      status: 'failed',
+      reason: 'PRINTER_NOT_READY',
+      detail: null,
+      issue: 'paperOut',
+      field: null,
+    };
     controller.dispatch({ type: 'result', job: 'job1', result: { status: 'invalid', reason: 'INVALID_CONTENT' } });
     controller.dispatch({ type: 'result', job: 'job2', result: fault });
     expect(vibrations).toEqual([ALERT_VIBRATE_PATTERN_MS]);
@@ -519,7 +525,13 @@ describe('PhoneController: scanning', () => {
     controller.manual('A');
     controller.manual('B');
     sound.played.length = 0;
-    const fault: PhonePrintResult = { status: 'failed', reason: 'PRINTER_NOT_READY', detail: null, issue: 'paperOut' };
+    const fault: PhonePrintResult = {
+      status: 'failed',
+      reason: 'PRINTER_NOT_READY',
+      detail: null,
+      issue: 'paperOut',
+      field: null,
+    };
     controller.dispatch({ type: 'result', job: 'job1', result: { status: 'invalid', reason: 'INVALID_CONTENT' } });
     controller.dispatch({ type: 'result', job: 'job2', result: fault });
     expect(sound.played).toEqual(['alert']);

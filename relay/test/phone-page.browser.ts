@@ -69,7 +69,8 @@ beforeAll(async () => {
     },
     createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
     printerLabel: async () => '热敏标签机',
-    print: async (raw) => {
+    imageRequest: () => null,
+    print: async ({ raw }) => {
       prints.push(raw);
       return PRINTED;
     },

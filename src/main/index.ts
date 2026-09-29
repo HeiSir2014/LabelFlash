@@ -35,6 +35,7 @@ import { LOGS_DIR_NAME } from './log-files';
 import { setupLogging } from './logging';
 import { LookupTables } from './lookup/lookup-tables';
 import { BUILD_DEFAULT_RELAY_URL } from './mobile/build-defaults';
+import { phoneImageRequest } from './mobile/image-request';
 import { MobileHost } from './mobile/mobile-host';
 import { MOBILE_TICK_INTERVAL_MS, MobileStation } from './mobile/mobile-station';
 import { WebhookOutbox } from './notify/webhook-outbox';
@@ -198,6 +199,8 @@ async function bootstrap(): Promise<void> {
   const lookupTables = new LookupTables(new SqliteLookupStore(database, systemClock), randomUUID);
   const secrets = new SqliteSecretStore(database, safeStorageCipher, systemClock);
   const userAgent = `CDL-LabelFlash/${app.getVersion()}`;
+  // 这台电脑能不能识别标签上的字（src/main/ocr/ 接上之前都不能）：不能时不向手机要图。
+  const canReadImages = (): boolean => false;
   const enrichDeps: EnrichDeps = {
     replace: createSandboxedRegexReplacer(),
     lookup: (tableId, keyColumn, key, ignoreCase) => lookupTables.find(tableId, keyColumn, key, ignoreCase),
@@ -352,6 +355,11 @@ async function bootstrap(): Promise<void> {
       );
     },
     submit: (request) => service.submit(request),
+    imageRequest: () =>
+      phoneImageRequest(
+        activeRules(rules, settings.current).map((rule) => rule.steps),
+        canReadImages(),
+      ),
     createHost: (hostDeps) =>
       new MobileHost({
         ...hostDeps,
@@ -418,6 +426,8 @@ async function bootstrap(): Promise<void> {
       runRegex,
       enrich: (scan, steps) => enrich(scan, steps, enrichDeps, new Date()),
       clock: systemClock,
+      // 规则的加工步骤决定要不要手机截标签图。
+      onChanged: () => mobile.rulesChanged(),
     }),
     status,
     appInfo: {

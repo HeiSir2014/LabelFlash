@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { PrintRequest, PrintResult } from '../../core/types';
+import type { ImageRequest } from '../../shared/mobile-protocol';
 import type { MobileStatus } from '../../shared/mobile-status';
 import type { MobileHostDeps } from './mobile-host';
 import { type MobileHostPort, MobileStation } from './mobile-station';
@@ -7,7 +8,7 @@ import { type MobileHostPort, MobileStation } from './mobile-station';
 const OFFICIAL = 'https://official.example.com/labelflash/';
 const MINE = 'https://mine.example.com/relay/';
 
-type HostDeps = Pick<MobileHostDeps, 'relayBase' | 'print' | 'printerLabel'>;
+type HostDeps = Pick<MobileHostDeps, 'relayBase' | 'print' | 'printerLabel' | 'imageRequest'>;
 
 class FakeHost implements MobileHostPort {
   readonly calls: string[] = [];
@@ -63,6 +64,7 @@ let hosts: FakeHost[];
 let statuses: MobileStatus[];
 let submitted: PrintRequest[];
 let printResult: PrintResult;
+let imageRequest: ImageRequest | null;
 
 function createStation(buildDefaultRelayUrl: string | null = OFFICIAL): MobileStation {
   return new MobileStation({
@@ -73,6 +75,7 @@ function createStation(buildDefaultRelayUrl: string | null = OFFICIAL): MobileSt
       submitted.push(request);
       return printResult;
     },
+    imageRequest: () => imageRequest,
     createHost: (deps) => {
       const host = new FakeHost(deps);
       hosts.push(host);
@@ -93,6 +96,7 @@ function onlyHost(): FakeHost {
 
 beforeEach(() => {
   settings = { mobileRelayUrl: null, paperPrinters: { '60x40': 'LABEL_PRINTER_01' } };
+  imageRequest = null;
   printerLabel = '热敏标签机';
   hosts = [];
   statuses = [];
@@ -180,7 +184,7 @@ describe('MobileStation', () => {
 
   test('prints a phone job as a mobile print and trims the result for the phone', async () => {
     createStation().start();
-    const result = await onlyHost().deps.print('CL5640', true);
+    const result = await onlyHost().deps.print({ raw: 'CL5640', force: true, image: null, fields: [] });
     expect(submitted).toEqual([{ raw: 'CL5640', source: 'mobile', force: true }]);
     expect(result).toEqual({ status: 'printed', ruleName: '原样打印', fields: [{ name: '内容', value: 'CL5640' }] });
   });
@@ -204,5 +208,42 @@ describe('MobileStation', () => {
   test('forwards status changes to the window', () => {
     createStation().start();
     expect(statuses.at(-1)).toEqual({ state: 'connecting' });
+  });
+
+  test('hands the label image as bytes and typed fields to the print service', async () => {
+    createStation().start();
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0]).toString('base64');
+    await onlyHost().deps.print({
+      raw: 'CL5640',
+      force: false,
+      image: { jpeg, code: { x: 1, y: 2, size: 3 } },
+      fields: [{ name: '货架号', value: 'A-1-2-3' }],
+    });
+    expect(submitted).toEqual([
+      {
+        raw: 'CL5640',
+        source: 'mobile',
+        force: false,
+        image: { jpeg: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), code: { x: 1, y: 2, size: 3 } },
+        manualFields: { 货架号: 'A-1-2-3' },
+      },
+    ]);
+  });
+
+  test('tells the phones only when the image request actually changed', () => {
+    const station = createStation();
+    station.start();
+    station.rulesChanged();
+    expect(onlyHost().calls).not.toContain('printerChanged');
+    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    station.rulesChanged();
+    station.rulesChanged();
+    expect(onlyHost().calls.filter((call) => call === 'printerChanged')).toHaveLength(1);
+  });
+
+  test('passes the image request to the host for welcomes', () => {
+    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    createStation().start();
+    expect(onlyHost().deps.imageRequest()).toEqual(imageRequest);
   });
 });

@@ -1,4 +1,5 @@
 import { type ElectronApplication, expect, type Page } from '@playwright/test';
+import type { FakePrint } from '../../src/main/printing/fake-printers';
 import { IpcChannel, type LabelFlashApi } from '../../src/shared/ipc-contract';
 
 /** 工作台扫码框：填入内容再按回车。 */
@@ -51,6 +52,13 @@ export async function callApi<K extends keyof LabelFlashApi>(
     },
     { name: method, params: args as unknown[] },
   ) as Promise<Awaited<ReturnType<LabelFlashApi[K]>>>;
+}
+
+/** 假打印机收到的打印（启动时带 fakePrinters，见 src/main/printing/fake-printers.ts）。 */
+export function fakePrints(app: ElectronApplication): Promise<FakePrint[]> {
+  return app.evaluate(
+    () => (globalThis as { e2eFakePrinters?: { printed: FakePrint[] } }).e2eFakePrinters?.printed ?? [],
+  );
 }
 
 /** 换掉主进程的打印处理：只计数，不碰真实打印机。返回读取打印次数的函数。 */

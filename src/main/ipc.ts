@@ -46,8 +46,8 @@ import type { MobileStation } from './mobile/mobile-station';
 import type { WebhookOutbox } from './notify/webhook-outbox';
 import { type PrintTemplate, resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences } from './printing/driver-paper';
-import type { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { renderLabelHtml } from './printing/label-html';
+import type { PrinterDriver } from './printing/printer-driver';
 import type { PrinterProfiles } from './printing/printer-profiles';
 import type { PrinterStatusMonitor } from './printing/printer-status';
 import { registerRuleIpc } from './scan/rule-ipc';
@@ -62,7 +62,7 @@ const DRAFT_TEMPLATE_ID = `${CUSTOM_TEMPLATE_PREFIX}draft`;
 
 export interface IpcDeps {
   service: PrintService;
-  adapter: ElectronDriverAdapter;
+  adapter: PrinterDriver;
   jobs: SqliteJobStore;
   settings: SqliteSettingsStore;
   templates: TemplateCatalog;

@@ -1,10 +1,10 @@
 import { test as base, type ElectronApplication } from '@playwright/test';
-import { createUserDataDir, type LaunchedApp, launchApp, removeUserDataDir } from './electron-app';
+import { createUserDataDir, type LaunchedApp, type LaunchOptions, launchApp, removeUserDataDir } from './electron-app';
 
 /** 一个用例的程序：同一个数据目录可以多次启动（例如验证重启后设置还在）。 */
 export interface AppLauncher {
   userData: string;
-  launch: () => Promise<LaunchedApp>;
+  launch: (options?: LaunchOptions) => Promise<LaunchedApp>;
 }
 
 /**
@@ -19,8 +19,8 @@ export const test = base.extend<{ electronApp: AppLauncher }>({
     try {
       await use({
         userData,
-        launch: async () => {
-          const launched = await launchApp(userData);
+        launch: async (options) => {
+          const launched = await launchApp(userData, options);
           started.push(launched.app);
           return launched;
         },

@@ -34,7 +34,9 @@ import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
 import { queryDriverPaper } from './printing/driver-paper';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
+import { FakeDriverAdapter, FakePrinters, parseFakePrinters } from './printing/fake-printers';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
+import type { PrinterDriver } from './printing/printer-driver';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { PrinterProfiles } from './printing/printer-profiles';
 import { createReadinessProbe, type PrinterReadiness, PrinterStatusMonitor } from './printing/printer-status';
@@ -183,19 +185,33 @@ async function bootstrap(): Promise<void> {
     now: () => performance.now(),
   };
   const guard = new DedupGuard(systemClock, secondsToMs(settings.current.dedupWindowSeconds));
+  // 仅开发 / E2E：用假打印机代替系统打印机（见 printing/fake-printers.ts），安装版不读这个变量。
+  const fakeSpecs = parseFakePrinters(process.env, app.isPackaged);
+  const fakePrinters = fakeSpecs ? new FakePrinters(fakeSpecs) : null;
+  if (fakeSpecs && fakePrinters) {
+    console.info(`[print] using ${fakeSpecs.length} fake printers`);
+    (globalThis as { e2eFakePrinters?: FakePrinters }).e2eFakePrinters = fakePrinters;
+  }
   // 打印机状态和驱动纸张都经这一个常驻 PowerShell 查询（只在 Windows 上有）。
   const probeHost =
-    process.platform === 'win32'
+    process.platform === 'win32' && fakePrinters === null
       ? new PrinterProbeHost(spawnPowerShellProbe, PROBE_QUERY_TIMEOUT_MS, (message) => console.warn(message))
       : null;
-  const profiles = new PrinterProfiles((name) => queryDriverPaper(name, probeHost), systemClock);
-  const adapter = new ElectronDriverAdapter(
-    requireWebContents,
-    (name): PrinterReadiness | null => status.get(name),
+  const profiles = new PrinterProfiles(
+    (name) => (fakePrinters ? fakePrinters.driverPaper(name) : queryDriverPaper(name, probeHost)),
     systemClock,
-    profiles,
   );
-  const probeReadiness = createReadinessProbe(probeHost);
+  const adapter: PrinterDriver = fakePrinters
+    ? new FakeDriverAdapter(fakePrinters)
+    : new ElectronDriverAdapter(
+        requireWebContents,
+        (name): PrinterReadiness | null => status.get(name),
+        systemClock,
+        profiles,
+      );
+  const probeReadiness = fakePrinters
+    ? (name: string) => fakePrinters.readiness(name)
+    : createReadinessProbe(probeHost);
   const status = new PrinterStatusMonitor(
     // 打印机名来自设置和模板：交给探测进程之前先核对系统里有这台打印机。
     async (name): Promise<PrinterReadiness | null> => ((await adapter.hasPrinter(name)) ? probeReadiness(name) : null),

@@ -1,8 +1,9 @@
 import { BrowserWindow, type WebContents } from 'electron';
 import { PrintError } from '../../core/errors';
-import type { Clock, LabelJob, PrinterAdapter, PrinterInfo } from '../../core/types';
+import type { Clock, LabelJob, PrinterInfo } from '../../core/types';
 import { renderLabelHtml } from './label-html';
 import { pageSizeMicrons } from './page-size';
+import type { PrinterDriver } from './printer-driver';
 import type { PrinterProfiles } from './printer-profiles';
 import type { PrinterReadiness } from './printer-status';
 
@@ -15,7 +16,7 @@ interface PrinterListCache {
 }
 
 /** 通过打印机驱动静默打印：隐藏窗口渲染标签 HTML，然后调用 webContents.print。 */
-export class ElectronDriverAdapter implements PrinterAdapter {
+export class ElectronDriverAdapter implements PrinterDriver {
   private cache: PrinterListCache | null = null;
 
   constructor(
@@ -71,6 +72,10 @@ export class ElectronDriverAdapter implements PrinterAdapter {
   /** 渲染进程传来的打印机名在交给系统命令之前，必须是系统里真实存在的打印机。 */
   async hasPrinter(printerName: string): Promise<boolean> {
     return (await this.knownPrinters()).some((printer) => printer.name === printerName);
+  }
+
+  async knownPrinterNames(): Promise<string[]> {
+    return (await this.knownPrinters()).map((printer) => printer.name);
   }
 
   private async knownPrinters(): Promise<PrinterInfo[]> {

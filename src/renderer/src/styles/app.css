@@ -2617,13 +2617,29 @@ textarea {
   background: var(--color-tape-wash);
 }
 
-.template-item__name {
+.template-item__text {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.template-item__name,
+.template-item__use {
   min-width: 0;
   overflow: hidden;
-  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.template-item__name {
+  font-weight: 600;
+}
+
+/* 纸张和实际会用的打印机：小一号、淡一点，名称仍然是主角 */
+.template-item__use {
+  color: var(--color-ink-soft);
+  font-size: 12px;
 }
 
 .template-stage,

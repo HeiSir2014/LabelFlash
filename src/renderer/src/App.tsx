@@ -344,6 +344,8 @@ export function App() {
               onDraftChange: templates.changeDraft,
               onSave: () => void templates.saveDraft(),
               onCancel: templates.cancelEdit,
+              printers: printers.printers,
+              paperPrinters,
             }}
             rules={{ rules, templates: templates.templates, tester: config.tester, isNarrow }}
             lookup={{

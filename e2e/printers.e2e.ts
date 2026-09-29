@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
-import { callApi, fakePrints, scan, seedLegacySelectedPrinter } from './support/app-helpers';
+import { callApi, fakePrints, openConfig, scan, seedLegacySelectedPrinter } from './support/app-helpers';
 import { expect, test } from './support/fixtures';
 
 /** 两种纸：一台装 60×40 标签，两台装 100×180 面单（打印只记下来，不碰真打印机）。 */
@@ -143,4 +143,33 @@ test('warns only on a printer whose driver paper differs from the paper it holds
     '驱动默认纸张是 100×180mm，不是 60×40mm',
   );
   await expect(page.locator('.printer-row', { hasText: '面单机B' }).locator('.paper-warning')).toHaveCount(0);
+});
+
+test('chooses the paper and printer of a template in the editor', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await assign(page, { '60x40': '标签机A' });
+  await openConfig(page, '模板');
+  await page.locator('.template-item').first().click();
+  await page.getByRole('button', { name: '复制' }).click();
+  const form = page.locator('.template-form');
+
+  // 纸张换成预设：预览的软尺跟着变。
+  await form.getByLabel('纸张尺寸').selectOption({ label: '100×100 标签（标签、箱唛）' });
+  await expect(page.locator('.template-editing .ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 100 /);
+  await expect(form.getByLabel('打印机')).toHaveValue('');
+  await expect(form.getByLabel('打印机').locator('option:checked')).toHaveText('按纸张分配（当前是 还没有）');
+
+  // 自定义尺寸：出现宽、高两个输入框。
+  await form.getByLabel('纸张尺寸').selectOption({ label: '自定义…' });
+  await form.getByLabel('纸张宽').fill('88');
+  await form.getByLabel('纸张高').fill('55');
+  await expect(page.locator('.template-editing .ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 88 /);
+  await form.getByLabel('打印机').selectOption('面单机C');
+  await form.getByLabel('模板名称').fill('E2E 88×55');
+  await page.getByRole('button', { name: '保存模板' }).click();
+
+  const item = page.locator('.template-item', { hasText: 'E2E 88×55' });
+  await expect(item.locator('.template-item__use')).toHaveText('88×55 · 面单机C');
+  const saved = (await callApi(page, 'listTemplates')).find((template) => template.name === 'E2E 88×55');
+  expect(saved).toMatchObject({ paper: { widthMm: 88, heightMm: 55 }, printer: '面单机C' });
 });

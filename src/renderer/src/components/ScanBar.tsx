@@ -1,6 +1,6 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useId, useLayoutEffect, useRef } from 'react';
 import type { NoteOption } from '../lib/note-options';
-import type { ScanFieldType } from '../lib/scan-field';
+import { pasteInto, type ScanFieldType } from '../lib/scan-field';
 import { useScanFocus } from '../view-models/use-scan-focus';
 import { useScanInput } from '../view-models/use-scan-input';
 import { Switch } from './form-controls';
@@ -30,6 +30,7 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
   const inputRef = useScanFocus(isActive);
   const input = useScanInput(lineGapMs, onScan);
   const textRef = useRef<HTMLSpanElement>(null);
+  const textId = useId();
 
   // 内容比框长时显示末尾：扫码枪和手动输入都在末尾打字，和输入框自己滚动到光标处一样。
   const { value } = input;
@@ -51,6 +52,7 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
           */}
           <span
             ref={textRef}
+            id={textId}
             className={`scan-bar__text${input.value === '' ? ' scan-bar__text--placeholder' : ''}`}
             aria-hidden="true"
           >
@@ -64,6 +66,17 @@ export function ScanBar({ isActive, autoPrint, lineGapMs, fieldType, note, onAut
             onChange={(event) => input.onChange(event.target.value)}
             onKeyDown={input.onKeyDown}
             onCompositionStart={input.onCompositionStart}
+            // 自己处理粘贴：单行输入框会删掉换行，多行的码粘进来就变了。
+            onPaste={(event) => {
+              event.preventDefault();
+              const field = event.currentTarget;
+              const start = field.selectionStart ?? field.value.length;
+              const end = field.selectionEnd ?? start;
+              input.onChange(pasteInto(field.value, start, end, event.clipboardData.getData('text/plain')));
+            }}
+            // 名字来自外层的「扫码」标签。密码框的内容读屏只念成圆点，所以把看得见的那层文字当作说明念出来
+            // （那层本身 aria-hidden，不会念两遍）。
+            aria-describedby={textId}
             // 编码里有「-」，默认双击只选中一段；扫码框里的内容是一个整体，双击全选。
             onDoubleClick={(event) => event.currentTarget.select()}
             placeholder={PLACEHOLDER}

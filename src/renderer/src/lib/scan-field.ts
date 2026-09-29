@@ -27,6 +27,15 @@ export function fromDisplay(display: string): string {
   return display.replaceAll(LINE_BREAK_MARK, '\n').replaceAll(TAB_MARK, '\t');
 }
 
+/**
+ * 粘贴到扫码框：单行输入框自己粘贴会删掉换行，多行的码就变了，所以换行、Tab 换成显示用的符号后插到选区的位置。
+ * 从表格复制一格时末尾总带着换行，它不是码的一部分，去掉。
+ */
+export function pasteInto(display: string, selectionStart: number, selectionEnd: number, pasted: string): string {
+  const text = toDisplay(pasted.replaceAll('\r\n', '\n').replaceAll('\r', '\n').replace(/\n+$/, ''));
+  return display.slice(0, selectionStart) + text + display.slice(selectionEnd);
+}
+
 export type ScanFieldType = 'password' | 'text';
 
 export function scanFieldType(platform: Platform): ScanFieldType {

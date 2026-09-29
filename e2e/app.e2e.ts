@@ -220,8 +220,7 @@ test('asks before leaving a template with unsaved changes', async ({ electronApp
 test('keeps the scan box ready without touching its selection', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
   const input = page.locator('.scan-bar__input');
-  const selection = () =>
-    input.evaluate((element: HTMLTextAreaElement) => [element.selectionStart, element.selectionEnd]);
+  const selection = () => input.evaluate((element: HTMLInputElement) => [element.selectionStart, element.selectionEnd]);
 
   // 焦点在按钮上时扫码枪开始「打字」：第一个字符就切到扫码框，一个都不丢。
   await page.getByRole('tab', { name: '打印记录' }).focus();
@@ -245,6 +244,20 @@ test('keeps the scan box ready without touching its selection', async ({ electro
   // 只有在扫码框里双击才全选：编码里有「-」，默认双击只会选中其中一截。
   await input.dblclick();
   expect(await selection()).toEqual([0, 'ABC-RED-XL'.length]);
+});
+
+test('keeps the line breaks of a code pasted into the scan box', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  const input = page.locator('.scan-bar__input');
+  await input.focus();
+  // 单行输入框（Windows 上是密码框）自己粘贴会删掉换行；从表格复制时末尾的换行不算码的一部分。
+  await input.evaluate((element: HTMLInputElement) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', '编码：CL5887\r\n颜色：灰色\r\n');
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await expect(input).toHaveValue('编码：CL5887⏎颜色：灰色');
+  await expect(page.locator('.scan-bar__text')).toHaveText('编码：CL5887⏎颜色：灰色');
 });
 
 test('opens the config center over the workbench and comes back to the scan box', async ({ electronApp }) => {

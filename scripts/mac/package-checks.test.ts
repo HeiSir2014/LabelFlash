@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { installLocation, isAdHocSigned, missingArchitectures } from './package-checks';
+import { hasPostinstallScript, installLocation, isAdHocSigned, missingArchitectures } from './package-checks';
 
 describe('missingArchitectures', () => {
   test('accepts a universal binary', () => {
@@ -42,5 +42,12 @@ describe('installLocation', () => {
 
   test('returns null when the package does not say', () => {
     expect(installLocation('<pkg-info identifier="com.cdl.labelflash"></pkg-info>')).toBeNull();
+  });
+});
+
+describe('hasPostinstallScript', () => {
+  test('finds the postinstall script in an expanded component package', () => {
+    expect(hasPostinstallScript(['Distribution', 'app.pkg/PackageInfo', 'app.pkg/Scripts/postinstall'])).toBe(true);
+    expect(hasPostinstallScript(['Distribution', 'app.pkg/PackageInfo', 'app.pkg/Payload'])).toBe(false);
   });
 });

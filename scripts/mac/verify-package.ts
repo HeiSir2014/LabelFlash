@@ -7,7 +7,7 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installLocation, isAdHocSigned, missingArchitectures } from './package-checks';
+import { hasPostinstallScript, installLocation, isAdHocSigned, missingArchitectures } from './package-checks';
 
 const DIST_DIR = 'dist';
 const APP_DIR = join(DIST_DIR, 'mac-universal');
@@ -62,16 +62,15 @@ check(
 const expanded = join(mkdtempSync(join(tmpdir(), 'labelflash-pkg-')), 'expanded');
 try {
   const expand = run(['pkgutil', '--expand', pkg, expanded]);
-  const packageInfos =
-    expand.exitCode === 0
-      ? readdirSync(expanded, { recursive: true, encoding: 'utf8' }).filter((path) => path.endsWith('PackageInfo'))
-      : [];
+  const expandedPaths = expand.exitCode === 0 ? readdirSync(expanded, { recursive: true, encoding: 'utf8' }) : [];
+  const packageInfos = expandedPaths.filter((path) => path.endsWith('PackageInfo'));
   const locations = packageInfos.map((path) => installLocation(readFileSync(join(expanded, path), 'utf8')));
   check(
     `installs into ${EXPECTED_INSTALL_LOCATION}`,
     locations.length > 0 && locations.every((location) => location === EXPECTED_INSTALL_LOCATION),
     expand.exitCode === 0 ? `安装位置是 ${locations.join(', ') || '（没有写）'}` : expand.output.trim(),
   );
+  check('runs the postinstall script', hasPostinstallScript(expandedPaths), '安装包里没有 Scripts/postinstall');
 } finally {
   rmSync(join(expanded, '..'), { recursive: true, force: true });
 }

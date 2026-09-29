@@ -11,6 +11,7 @@ files:
   - resources/**
   - "!resources/*.svg"
   - "!resources/installer.nsh"
+  - "!resources/pkg-scripts/**"
   # 安装界面（插件、脚本）只在打安装包时用，不进程序本体。
   - "!resources/installer/**"
   - "!node_modules/**"
@@ -82,6 +83,8 @@ pkg:
   installLocation: /Applications
   # 默认会按 bundle id 找到机器上已有的一份（例如开发机上 dist 里打出来的）并装到那里；固定装进「应用程序」，结果可预期。
   isRelocatable: false
+  # 装完后把程序加进系统防火墙的允许列表（resources/pkg-scripts/postinstall，局域网里的电脑才能连本机接口）。
+  scripts: pkg-scripts
   # 升级时要求先退出正在运行的旧版，否则替换中的程序可能崩溃。
   mustClose:
     - com.cdl.labelflash

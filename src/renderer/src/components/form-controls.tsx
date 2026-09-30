@@ -108,25 +108,33 @@ interface SegmentedProps<T extends string> {
   value: T;
   options: ReadonlyArray<{ value: T; label: string }>;
   onChange: (value: T) => void;
+  /** 只要选项本身（放在 SettingRow 里，标签由它显示），不要表单行和标签。 */
+  isBare?: boolean;
 }
 
-export function Segmented<T extends string>({ label, value, options, onChange }: SegmentedProps<T>) {
+export function Segmented<T extends string>({ label, value, options, onChange, isBare }: SegmentedProps<T>) {
+  const group = (
+    <fieldset className="segmented" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className="segmented__option"
+          aria-pressed={option.value === value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </fieldset>
+  );
+  if (isBare) {
+    return group;
+  }
   return (
     <div className="form-row">
       <span className="form-row__label">{label}</span>
-      <fieldset className="segmented" aria-label={label}>
-        {options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            className="segmented__option"
-            aria-pressed={option.value === value}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </fieldset>
+      {group}
     </div>
   );
 }

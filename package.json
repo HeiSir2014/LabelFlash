@@ -29,6 +29,7 @@
     "ocr:build": "bun scripts/ocr/build-addon.ts",
     "ocr:example": "bun native/ocr/node/examples/recognize.ts && node native/ocr/node/examples/recognize.ts",
     "ocr:bench": "bun native/ocr/node/bench/bench.ts",
+    "ocr:eval": "bun scripts/ocr/eval-shelf-number.ts",
     "ocr:test": "cargo test --manifest-path native/ocr/Cargo.toml && cargo clippy --manifest-path native/ocr/Cargo.toml --all-targets -- -D warnings && cargo fmt --manifest-path native/ocr/Cargo.toml --all --check",
     "release:win": "electron-vite build && bun run verify:bundle && bun scripts/installer/build-installer.ts --publish always"
   },

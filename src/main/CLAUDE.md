@@ -77,9 +77,10 @@
 
 设计见 `docs/superpowers/specs/2026-09-30-ocr-engine-design.md`（引擎）和 `2026-09-30-shelf-number-design.md`（货架号）。
 
-- **读图**：`image-text-reader.ts` 不 import electron：JPEG 由 `nativeImage` 解成 BGRA（index.ts 注入），引擎第一次用到时创建、之后复用，有启用的「图中文字识别」步骤时启动后在后台预热。引擎加载失败就从此不能读，并通知手机别再截图。
+- **读图**：`image-text-reader.ts` 不 import electron：JPEG 由 `nativeImage` 解成 BGRA（index.ts 注入），引擎第一次用到时创建、之后复用，有启用的「图中文字识别」步骤时启动后在后台预热。引擎加载失败就不再读（换档后重新试），并通知手机别再截图。ONNX Runtime 不用 CPU 内存池（arena）：每张图大小不同，内存池只涨不还。
 - **加载扩展**：`ocr-engine.ts` 用 `process.dlopen` 按绝对路径加载，bundle 里不留对 `.node` 的 require；类型取自 `native/ocr/node`。
-- **文件**：`ocr-files.ts`：安装版在 `resources/ocr/`，源码运行用 `native/ocr/node/bin` 的扩展和 `models/small`（`bun run ocr:build`、`ocr:models`）。缺文件时按「不能识别」处理，不报错。
+- **文件**：`ocr-files.ts`：安装版在 `resources/ocr/`（扩展、`models/<small|medium>/`），源码运行用 `native/ocr/node/bin` 的扩展和仓库的 `models/`（`bun run ocr:build`、`ocr:models`）。每档用哪两个模型见 `OCR_TIER_MODELS`（极速 small + small，精准 small 检测 + medium 识别）。缺文件时按「不能识别」处理，不报错。
+- **换档**：设置项 `ocrModelTier` 变了时 `ImageTextReader.reset()` 放掉旧引擎（原生引擎的 `close()` 只放掉这边的引用，正在跑的识别各自持有，跑完才释放），再预热、告诉手机。
 - **假 OCR**：`fake-ocr.ts`，环境变量 `CDL_LABELFLASH_FAKE_OCR`（字符串数组，只对未打包的程序生效），E2E 用。
 - **要不要手机截图**：`mobile/image-request.ts`：有启用的这类步骤、这台电脑能识别时才要；规则改了、引擎坏了由 `MobileStation.rulesChanged` 重新告诉手机（没变不打扰）。
 

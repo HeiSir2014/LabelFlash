@@ -13,6 +13,8 @@ export interface OcrEnginePort {
     stride: number;
     pixelFormat: 'BGRA';
   }): Promise<{ regions: ReadonlyArray<{ box: ImageTextRegion['box']; text: string; recognitionScore: number }> }>;
+  /** 放掉模型；正在跑的识别各自持有引擎，跑完才真正释放。 */
+  close(): void;
 }
 
 /** 解出来的像素：BGRA，紧密排列（Electron nativeImage.toBitmap 在 Windows、macOS 上就是这样）。 */
@@ -29,11 +31,13 @@ export interface ImageTextSource {
   read(image: ScanImage): Promise<ImageTextRegion[] | null>;
   /** 提前加载模型（有这类步骤时启动后在后台做），第一张不用等。 */
   warm(): void;
+  /** 换了模型档位：放掉现在的模型，之后按新档位加载。 */
+  reset(): void;
 }
 
 export interface ImageTextReaderDeps {
-  /** 扩展和模型文件都在（见 ocr-files.ts）。 */
-  hasFiles: boolean;
+  /** 当前档位的扩展和模型文件都在（见 ocr-files.ts）；档位可以换，所以每次都问。 */
+  hasFiles: () => boolean;
   createEngine: () => Promise<OcrEnginePort>;
   decodeJpeg: (jpeg: Uint8Array) => BgraImage | null;
   /** 引擎加载失败，从此不能读（手机不该再截图）。 */
@@ -51,7 +55,21 @@ export class ImageTextReader implements ImageTextSource {
   constructor(private readonly deps: ImageTextReaderDeps) {}
 
   canRead(): boolean {
-    return this.deps.hasFiles && !this.hasFailed;
+    return this.deps.hasFiles() && !this.hasFailed;
+  }
+
+  /**
+   * 换了模型档位：关掉现在的引擎，下一张（或 warm）按新档位加载。加载失败过也重新试：
+   * 失败的可能只是那一档的文件。
+   */
+  reset(): void {
+    const previous = this.engine;
+    this.engine = null;
+    this.hasFailed = false;
+    previous?.then(
+      (engine) => engine.close(),
+      () => {},
+    );
   }
 
   warm(): void {
@@ -84,19 +102,23 @@ export class ImageTextReader implements ImageTextSource {
 
   /** 引擎只创建一次；创建失败记日志、从此不能读（换文件要重启程序）。 */
   private async loadEngine(): Promise<OcrEnginePort | null> {
-    if (this.engine === null) {
+    // 用局部变量：等待期间可能换了档位（reset 把 this.engine 清空），这次识别仍用它开始时的那个引擎。
+    let engine = this.engine;
+    if (engine === null) {
       const startedAt = this.deps.now();
-      this.engine = this.deps.createEngine();
+      engine = this.deps.createEngine();
+      this.engine = engine;
       // 加载成功记一行：安装版里扩展、运行库、模型是否都找得到，看日志就知道。
-      this.engine.then(
+      engine.then(
         () => this.deps.log(`[ocr] text recognition engine ready in ${Math.round(this.deps.now() - startedAt)} ms`),
         () => {},
       );
     }
     try {
-      return await this.engine;
+      return await engine;
     } catch (error) {
-      if (!this.hasFailed) {
+      // 已经换掉的旧档位加载失败不算数：新档位还没试过。
+      if (this.engine === engine && !this.hasFailed) {
         this.hasFailed = true;
         this.deps.log(`[ocr] cannot load the text recognition engine: ${String(error)}`);
         this.deps.onUnavailable();

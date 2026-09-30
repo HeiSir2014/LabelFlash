@@ -52,6 +52,21 @@ function copyPixels(image: ImageData): PixelImage {
   return { data: new Uint8ClampedArray(image.data), width: image.width, height: image.height };
 }
 
+/** 截标签图的画面，和把解码画面里的点换到它上面的办法（取景时是整帧快照，拍照时就是那张照片）。 */
+interface LabelSource {
+  image: PixelImage;
+  fromDecoded(point: Point): Point;
+}
+
+function mapCorners(corners: CodeCorners, map: (point: Point) => Point): CodeCorners {
+  return {
+    topLeft: map(corners.topLeft),
+    topRight: map(corners.topRight),
+    bottomRight: map(corners.bottomRight),
+    bottomLeft: map(corners.bottomLeft),
+  };
+}
+
 /** 每秒解码约 6 帧：够快，又不让手机发烫。 */
 export const SCAN_FRAME_INTERVAL_MS = 160;
 /** 一次性提示显示多久：够看完一句话。 */
@@ -221,7 +236,8 @@ export class PhoneController {
       const copy = this.imageRequest === null ? null : copyPixels(image);
       const decoded = await this.deps.decoder.decode(image);
       if (decoded) {
-        this.scanned(decoded, () => copy, true);
+        // 照片解码和截图用的是同一张图，坐标不用换算。
+        this.scanned(decoded, () => (copy === null ? null : { image: copy, fromDecoded: (point) => point }), true);
       } else {
         this.showHint(PHOTO_EMPTY_HINT);
       }
@@ -308,7 +324,7 @@ export class PhoneController {
    * 扫到一个码：能提交时先给「嘀」的反馈，再按电脑的要求截标签图，截好（或截不了）就提交。
    * 截图在同一帧的画面上做：frame 要在任何 await 之前取，下一次取景才会覆盖画面。
    */
-  private scanned(decoded: Decoded, frame: () => PixelImage | null, explicit: boolean): void {
+  private scanned(decoded: Decoded, frame: () => LabelSource | null, explicit: boolean): void {
     if (!this.accept(decoded.text, { explicit, force: false })) {
       return;
     }
@@ -318,7 +334,8 @@ export class PhoneController {
       this.send(decoded.text, false, NO_EXTRAS);
       return;
     }
-    void this.labelImage(source, decoded.corners, request).then((image) =>
+    const corners = mapCorners(decoded.corners, source.fromDecoded);
+    void this.labelImage(source.image, corners, request).then((image) =>
       this.send(decoded.text, false, { image, fields: [] }),
     );
   }
@@ -389,7 +406,8 @@ export class PhoneController {
       return;
     }
     const element = view.viewfinderSize();
-    const image = camera.grab(element ? visibleVideoRect(element, frame) : { x: 0, y: 0, ...frame });
+    const area = element ? visibleVideoRect(element, frame) : { x: 0, y: 0, ...frame };
+    const image = camera.grab(area, this.imageRequest !== null);
     if (!image) {
       return;
     }

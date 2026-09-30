@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import { OCR_MODEL_TIERS } from '../../../../../shared/ocr-model';
 import {
   type AppSettings,
   HISTORY_LIMIT_RANGE,
@@ -7,7 +8,7 @@ import {
 } from '../../../../../shared/settings';
 import type { UpdateView } from '../../../lib/update-text';
 import { ConfirmButton } from '../../ConfirmButton';
-import { Switch } from '../../form-controls';
+import { Segmented, Switch } from '../../form-controls';
 import { SettingRow } from '../SettingRow';
 
 const NUMBER_FORMAT = new Intl.NumberFormat('zh-CN');
@@ -17,16 +18,18 @@ type SettingsChange = (patch: Partial<AppSettings>) => Promise<AppSettings | nul
 interface GeneralPageProps {
   settings: AppSettings;
   jobTotal: number;
+  canReadImageText: boolean;
   update: UpdateView;
   onChange: SettingsChange;
   onCheckForUpdates: () => void;
   onOpenLogFolder: () => void;
 }
 
-/** 通用：防重复、多行扫码等待、打印记录保留、开机自启、软件更新、日志。 */
+/** 通用：防重复、多行扫码等待、打印记录保留、开机自启、文字识别速度、软件更新、日志。 */
 export function GeneralPage({
   settings,
   jobTotal,
+  canReadImageText,
   update,
   onChange,
   onCheckForUpdates,
@@ -63,6 +66,22 @@ export function GeneralPage({
             onChange={(launchAtLogin) => void onChange({ launchAtLogin })}
           />
         </SettingRow>
+        {canReadImageText && (
+          <SettingRow
+            label="文字识别速度"
+            hint={`加工步骤「图中文字识别」（手机扫码读货架号）用的模型：${
+              OCR_MODEL_TIERS.find((tier) => tier.id === settings.ocrModelTier)?.description ?? ''
+            }`}
+          >
+            <Segmented
+              isBare
+              label="文字识别速度"
+              value={settings.ocrModelTier}
+              options={OCR_MODEL_TIERS.map((tier) => ({ value: tier.id, label: tier.label }))}
+              onChange={(ocrModelTier) => void onChange({ ocrModelTier })}
+            />
+          </SettingRow>
+        )}
       </section>
       <section className="config-card" aria-label="软件">
         <SettingRow label="软件更新" hint="新版本在后台下载，下载好后标题栏出现「重启更新」">

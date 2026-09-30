@@ -208,29 +208,38 @@ async function bootstrap(): Promise<void> {
   const userAgent = `CDL-LabelFlash/${app.getVersion()}`;
   // 标签图上的字（加工步骤「图中文字识别」）：本地 OCR 引擎，第一次用到时加载；E2E 用假的。
   const fakeOcr = parseFakeOcr(process.env, app.isPackaged);
-  const files = ocrFiles({
-    isPackaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
-    appRoot: app.getAppPath(),
-    platform: process.platform,
-    arch: process.arch,
-  });
-  const missingOcr = missingOcrFiles(files);
-  if (fakeOcr === null && missingOcr.length > 0) {
-    console.info(`[ocr] text recognition is not available here, missing: ${missingOcr.join(', ')}`);
-  }
+  // 模型档位（极速 / 精准）是设置项，可以随时换：每次都按当前档位找文件。
+  const currentOcrFiles = () =>
+    ocrFiles({
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appRoot: app.getAppPath(),
+      platform: process.platform,
+      arch: process.arch,
+      tier: settings.current.ocrModelTier,
+    });
+  const reportMissingOcr = (): void => {
+    const missing = missingOcrFiles(currentOcrFiles());
+    if (fakeOcr === null && missing.length > 0) {
+      console.info(`[ocr] text recognition is not available here, missing: ${missing.join(', ')}`);
+    }
+  };
+  reportMissingOcr();
   const imageText: ImageTextSource = fakeOcr
     ? fakeImageTextSource(fakeOcr)
     : new ImageTextReader({
-        hasFiles: missingOcr.length === 0,
-        createEngine: () =>
-          createOcrEngine(files.addon, {
+        hasFiles: () => missingOcrFiles(currentOcrFiles()).length === 0,
+        createEngine: () => {
+          const files = currentOcrFiles();
+          console.info(`[ocr] loading the ${settings.current.ocrModelTier} models: ${files.recognitionModel}`);
+          return createOcrEngine(files.addon, {
             detModelPath: files.detectionModel,
             recModelPath: files.recognitionModel,
             dictionaryPath: files.dictionary,
             intraThreads: OCR_INTRA_THREADS,
             recognitionBatchSize: OCR_RECOGNITION_BATCH_SIZE,
-          }),
+          });
+        },
         decodeJpeg: (jpeg) => {
           const image = nativeImage.createFromBuffer(Buffer.from(jpeg));
           if (image.isEmpty()) {
@@ -524,6 +533,13 @@ async function bootstrap(): Promise<void> {
       }
       if (JSON.stringify(next.voice) !== JSON.stringify(previous.voice)) {
         warmVoice();
+      }
+      if (next.ocrModelTier !== previous.ocrModelTier) {
+        // 换了模型档位：放掉旧模型、按新档位加载；能不能识别可能跟着变了，再告诉在线的手机要不要截图。
+        imageText.reset();
+        reportMissingOcr();
+        mobile.rulesChanged();
+        warmImageText();
       }
       if (next.historyLimit !== previous.historyLimit) {
         await jobs.setCapacity(next.historyLimit);

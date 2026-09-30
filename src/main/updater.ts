@@ -2,7 +2,8 @@ import { app } from 'electron';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateStatus } from '../shared/update-status';
-import { applyUpdateClientSettings, initialUpdateStatus } from './update-settings';
+import type { RelaunchWindow } from './relaunch-intent';
+import { applyUpdateClientSettings, INSTALL_OPTIONS, initialUpdateStatus } from './update-settings';
 
 /** 启动后稍等再检查，不拖慢启动；之后定期检查（车间电脑常常整天不关）。 */
 const FIRST_CHECK_DELAY_MS = 15_000;
@@ -10,13 +11,17 @@ const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 export interface AppUpdaterOptions {
   onStatus: (status: UpdateStatus) => void;
-  /** quitAndInstall 会先关闭所有窗口：调用前必须放行「关闭即隐藏到托盘」。 */
-  onBeforeInstall: () => void;
+  /**
+   * 装更新之前：记下新版本的窗口去哪（relaunch-intent.ts），并放行「关闭即隐藏到托盘」
+   * （quitAndInstall 会先关闭所有窗口）。
+   */
+  onBeforeInstall: (window: RelaunchWindow) => void;
 }
 
 /**
- * 自动更新（GitHub Releases + electron-updater）：后台下载，下载完成后由操作员决定何时重启安装；
- * 不重启的话，退出程序时自动安装。开发版和 macOS 版不更新（见 initialUpdateStatus）。
+ * 自动更新（GitHub Releases + electron-updater）：后台下载，下载完成后操作员点一次「重启更新」就静默安装并回到前台；
+ * 窗口关在托盘里没人用时也会静默安装、回到托盘（background-update.ts）；都没有的话，退出程序时自动安装。
+ * 开发版和 macOS 版不更新（见 initialUpdateStatus）。
  */
 export class AppUpdater {
   private status: UpdateStatus = initialUpdateStatus(process.platform, app.isPackaged);
@@ -64,12 +69,13 @@ export class AppUpdater {
     }
   }
 
-  install(): void {
+  /** window：新版本的窗口去哪。front = 操作员点了「重启更新」；tray = 关在托盘里时的静默更新。 */
+  install(window: RelaunchWindow): void {
     if (this.status.state !== 'ready') {
       return;
     }
-    this.options.onBeforeInstall();
-    autoUpdater.quitAndInstall();
+    this.options.onBeforeInstall(window);
+    autoUpdater.quitAndInstall(INSTALL_OPTIONS.isSilent, INSTALL_OPTIONS.isForceRunAfter);
   }
 
   private setStatus(status: UpdateStatus): void {

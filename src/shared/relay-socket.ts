@@ -1,6 +1,7 @@
 /**
  * 连接中转服务的 WebSocket：断线自动重连，应用层心跳发现半开连接。
  * 电脑（Electron 主进程的全局 WebSocket）和手机（浏览器）共用；WebSocket 和计时器由参数注入，便于测试。
+ * 帧都是 msgpack 二进制帧（见 wire.ts）：收到的文本帧不认。
  */
 import {
   CLOSE_CODES,
@@ -9,6 +10,7 @@ import {
   HEARTBEAT_TIMEOUT_MS,
   RECONNECT_DELAYS_MS,
 } from './mobile-protocol';
+import { decodeWire, encodeWire } from './wire';
 
 /**
  * 浏览器 WebSocket 和 Node 24 的全局 WebSocket 都满足的最小接口。
@@ -17,7 +19,9 @@ import {
  */
 export interface SocketLike {
   readonly readyState: number;
-  send(data: string): void;
+  /** 收二进制帧要设成 arraybuffer：浏览器默认给 Blob，要异步读，顺序就乱了。 */
+  binaryType: string;
+  send(data: Uint8Array): void;
   close(code?: number, reason?: string): void;
   onopen: ((event: never) => void) | null;
   onmessage: ((event: never) => void) | null;
@@ -40,7 +44,8 @@ export interface RelaySocketOptions {
   timers: SocketTimers;
   /** 连接已建立：这时发出第一帧（open / join）。 */
   onOpen: () => void;
-  onFrame: (text: string) => void;
+  /** 收到一帧，已从 msgpack 解开（解不开时为 null），由调用方按协议逐项检查。 */
+  onFrame: (frame: unknown) => void;
   /** 每次断线只报一次；连续重连失败不重复报，直到 markReady 之后再断。 */
   onDown: () => void;
 }
@@ -97,7 +102,7 @@ export class RelaySocket<Outgoing extends { t: string }> {
     if (!this.socket || this.socket.readyState !== OPEN) {
       return false;
     }
-    this.socket.send(JSON.stringify(frame));
+    this.socket.send(encodeWire(frame));
     return true;
   }
 
@@ -110,6 +115,7 @@ export class RelaySocket<Outgoing extends { t: string }> {
       this.handleDown();
       return;
     }
+    socket.binaryType = 'arraybuffer';
     this.socket = socket;
     this.connectTimer = this.options.timers.setTimeout(
       () => this.abandon(CLOSE_CODES.connectTimeout),
@@ -129,8 +135,8 @@ export class RelaySocket<Outgoing extends { t: string }> {
       }
       // 收到任何一帧都说明连接还活着。
       this.clearTimer('deadlineTimer');
-      if (typeof event.data === 'string') {
-        this.options.onFrame(event.data);
+      if (event.data instanceof ArrayBuffer) {
+        this.options.onFrame(decodeWire(new Uint8Array(event.data)));
       }
     };
     socket.onclose = () => {

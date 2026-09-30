@@ -112,8 +112,7 @@ test('prints a job from a program, records it with its fields and reprints it fr
   expect(job).toMatchObject({ source: 'api', raw: content, fields, templateId: waybill.id });
   expect(job?.caller).toMatch(/^key:/);
 
-  // 打印记录由主进程推送刷新；本机接口的记录按当时的模板和字段重打。
-  await page.getByRole('tab', { name: '打印记录' }).click();
+  // 打印记录（工作台右侧一直显示）由主进程推送刷新；本机接口的记录按当时的模板和字段重打。
   const apiRow = page.locator('.job-row').filter({ hasText: '本机接口（E2E）' });
   await expect(apiRow).toHaveCount(1);
   await apiRow.getByRole('button', { name: '重打' }).click();

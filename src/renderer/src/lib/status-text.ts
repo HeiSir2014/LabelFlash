@@ -20,7 +20,8 @@ import type { ConfigPage } from './app-view';
 export { formatWindow };
 
 /** 状态条上的直达按钮：配置中心的某一页，或工作台右侧的打印机页。 */
-export type StatusLinkTarget = ConfigPage | 'printers';
+/** 状态条上的链接都去配置中心的某一页（打印机也在配置中心）。 */
+export type StatusLinkTarget = ConfigPage;
 
 export type FeedbackTone = 'success' | 'warning' | 'error';
 export type StatusTone = FeedbackTone | 'idle' | 'pending';
@@ -210,20 +211,16 @@ export const IPC_ERROR_VIEW: FeedbackStatusView = {
   detail: '已写入日志；请重试，仍然不行请重启程序',
 };
 
+const IDLE_STATUS: StatusView = { tone: 'idle', title: '', detail: '' };
+
 export function describeScan(scan: ScanSnapshot | null, context: ScanContext): ScanView {
   if (context.queryingRaw !== null) {
     const [firstLine = ''] = context.queryingRaw.split('\n');
     return { status: { tone: 'pending', title: '正在查询…', detail: firstLine }, actions: NO_ACTIONS };
   }
+  // 没扫码时不说话：扫码框里写了怎么扫，「自动打印」开关就是打不打印的模式。状态条留着高度，第一张出结果时预览不跳。
   if (!scan) {
-    return {
-      status: {
-        tone: 'idle',
-        title: '等待扫码',
-        detail: context.autoPrint ? '扫码后自动预览并打印' : '扫码后先预览，核对无误按 F2 打印',
-      },
-      actions: NO_ACTIONS,
-    };
+    return { status: IDLE_STATUS, actions: NO_ACTIONS };
   }
   if (scan.hasIpcError) {
     return { status: IPC_ERROR_VIEW, actions: NO_ACTIONS };

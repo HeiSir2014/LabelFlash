@@ -22,6 +22,11 @@ interface SocketData {
 }
 
 const TICK_INTERVAL_MS = 1_000;
+/**
+ * 协议 1 的客户端（1.1.0 及更早的电脑、没刷新的老扫码页）发的是 JSON 文本帧：按它们认得的格式回一个 version 错误再断开，
+ * 电脑和手机上就会提示更新，而不是一直重连。
+ */
+const LEGACY_VERSION_ERROR = JSON.stringify({ t: 'error', code: 'version' });
 /** 连接满了时让客户端过这么久再试（HTTP 503 的 Retry-After，单位秒）；客户端本来就按退避重连。 */
 const RETRY_AFTER_SECONDS = 30;
 /**
@@ -66,7 +71,7 @@ export function startRelay(
       maxPayloadLength: MAX_FRAME_BYTES,
       idleTimeout: IDLE_TIMEOUT_SECONDS,
       sendPings: true,
-      // 帧很小，而且内容是加密的，压缩没有意义。
+      // 内容是加密的（图也在里面），压缩没有意义。
       perMessageDeflate: false,
       open(socket) {
         const peer = toPeer(socket);
@@ -80,11 +85,12 @@ export function startRelay(
         if (!peer) {
           return;
         }
-        if (typeof message !== 'string') {
-          socket.close(CLOSE_CODES.policy, 'text frames only');
+        if (typeof message === 'string') {
+          socket.send(LEGACY_VERSION_ERROR);
+          socket.close(CLOSE_CODES.policy, 'binary frames only');
           return;
         }
-        hub.receive(peer, message);
+        hub.receive(peer, new Uint8Array(message));
       },
       close(socket) {
         if (socket.data.peer) {
@@ -162,8 +168,8 @@ function toPeer(socket: ServerWebSocket<SocketData>): Peer {
   return {
     id: socket.data.id,
     ip: socket.data.ip,
-    send: (text) => {
-      socket.send(text);
+    send: (bytes) => {
+      socket.send(bytes);
     },
     close: (code, reason) => socket.close(code, reason),
   };

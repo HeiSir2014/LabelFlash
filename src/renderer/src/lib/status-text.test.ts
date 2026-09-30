@@ -37,6 +37,7 @@ const OK_PREVIEW: LabelPreview = {
     printer: PRINTER_CHOICE,
   },
   html: '<html></html>',
+  templateId: 'builtin:standard',
   templateName: '样衣标准（二维码在左）',
   isTemplateBound: true,
   qrOmitted: false,
@@ -45,6 +46,7 @@ const OK_PREVIEW: LabelPreview = {
 const INVALID_PREVIEW = (reason: 'INVALID_CONTENT' | 'NO_MATCHING_RULE'): LabelPreview => ({
   result: { status: 'invalid', reason },
   html: null,
+  templateId: null,
   templateName: null,
   isTemplateBound: false,
   qrOmitted: false,
@@ -149,10 +151,11 @@ describe('describeResult', () => {
 });
 
 describe('describeScan', () => {
-  test('waiting state mentions F2 in manual mode', () => {
-    const view = describeScan(null, context());
-    expect(view.status.tone).toBe('idle');
-    expect(view.status.detail).toContain('F2');
+  // 没扫码时状态条不说话：扫码框里已经写了怎么扫，「自动打印」开关就是打不打印的模式，再写一遍是重复。
+  test('says nothing while waiting for a scan', () => {
+    for (const autoPrint of [true, false]) {
+      expect(describeScan(null, context({ autoPrint })).status).toEqual({ tone: 'idle', title: '', detail: '' });
+    }
   });
 
   test('IPC failures are shown as internal errors, not as format errors', () => {

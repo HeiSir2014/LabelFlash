@@ -60,6 +60,8 @@ export class PhoneView implements ViewPort {
   private focusAnimation: Animation | null = null;
   private announced = '';
   private isTorchOn = false;
+  /** 列表最上面那一张的任务号：变了就把列表滚回顶上。 */
+  private latestJob: string | null = null;
 
   constructor(
     private readonly doc: Document,
@@ -191,7 +193,14 @@ export class PhoneView implements ViewPort {
         this.renderedJobs.delete(id);
       }
     }
-    this.byId('jobs').replaceChildren(...items);
+    const list = this.byId('jobs');
+    const latest = state.jobs[0]?.id ?? null;
+    list.replaceChildren(...items);
+    // 来了新的一张：列表回到顶上，最新的结果一定看得见（列表往下翻过时也一样）。
+    if (latest !== this.latestJob) {
+      this.latestJob = latest;
+      list.scrollTop = 0;
+    }
   }
 
   private fillJob(item: HTMLLIElement, job: JobEntry, view: JobView): void {

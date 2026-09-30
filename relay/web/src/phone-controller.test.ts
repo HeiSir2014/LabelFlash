@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { MAX_PENDING_JOBS, MAX_REQUEST_RAW_LENGTH, type PhonePrintResult } from '../../../src/shared/mobile-protocol';
+import {
+  MAX_IMAGE_BYTES,
+  MAX_PENDING_JOBS,
+  MAX_REQUEST_RAW_LENGTH,
+  type PhonePrintResult,
+} from '../../../src/shared/mobile-protocol';
 import { FakeTimers } from '../../../src/shared/testing/fake-socket';
 import type { CameraPort, FrameSnapshot } from './camera';
 import { DOUBLE_TAP_MS, type Lens, type Point, type Rect, type Size } from './camera-features';
@@ -8,6 +13,7 @@ import type { CodeCorners, PixelImage } from './label-crop';
 import {
   ALERT_VIBRATE_PATTERN_MS,
   HINT_DISPLAY_MS,
+  LABEL_FRAMES_WINDOW_MS,
   type PageTimers,
   PhoneController,
   SCAN_FRAME_INTERVAL_MS,
@@ -16,9 +22,9 @@ import {
   type ViewExtras,
   type ViewPort,
 } from './phone-controller';
-import type { JobExtras } from './phone-session';
+import type { JobExtras, JobRequest } from './phone-session';
 import { initialPhoneState, type PhoneState } from './phone-state';
-import { FAR_LENS_HINT, NEAR_LENS_HINT, TOO_LONG_HINT, TOO_MANY_PENDING_HINT } from './result-view';
+import { FAR_LENS_HINT, JOB_GONE_HINT, NEAR_LENS_HINT, TOO_LONG_HINT, TOO_MANY_PENDING_HINT } from './result-view';
 import { SAME_CODE_REARM_MS } from './scan-gate';
 import type { SoundCue } from './scan-sound';
 
@@ -201,11 +207,18 @@ let visible: boolean;
 let visibilityListener: (() => void) | null;
 let submitted: { raw: string; force: boolean }[];
 let extras: JobExtras[];
-let jpeg: string | null;
+let jpeg: Uint8Array | null;
 /** 交给 JPEG 编码的截图。 */
 let encoded: PixelImage[];
+/** 假的 JPEG 编码：默认给出 jpeg；测试可以换掉，按大小上限决定给不给。 */
+let encodeJpeg: (image: PixelImage, maxBytes: number) => Promise<Uint8Array | null>;
+/** 假的 JPEG 字节（FF D8 FF 开头）。 */
+const FAKE_JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
 let controller: PhoneController;
 let nextJob: number;
+
+/** 会话保管的任务内容（和真实的 PhoneSession 一样：提交时记下，按任务号查）。 */
+let requests: Map<string, JobRequest>;
 
 const session = {
   submit(raw: string, force: boolean, jobExtras: JobExtras): string {
@@ -213,8 +226,12 @@ const session = {
     extras.push(jobExtras);
     nextJob += 1;
     const job = `job${nextJob}`;
+    requests.set(job, { raw, ...jobExtras });
     controller.dispatch({ type: 'submitted', job, raw, force });
     return job;
+  },
+  requestOf(job: string): JobRequest | null {
+    return requests.get(job) ?? null;
   },
 };
 
@@ -225,9 +242,9 @@ function createController(hasLink = true): PhoneController {
       decoder,
       view,
       readPhoto: async () => ({}) as ImageData,
-      encodeJpeg: async (image) => {
+      encodeJpeg: (image, maxBytes) => {
         encoded.push(image);
-        return jpeg;
+        return encodeJpeg(image, maxBytes);
       },
       vibrate: (pattern) => vibrations.push(pattern),
       sound,
@@ -279,8 +296,10 @@ beforeEach(() => {
   visibilityListener = null;
   submitted = [];
   extras = [];
-  jpeg = '/9j/fake';
+  jpeg = FAKE_JPEG;
   encoded = [];
+  requests = new Map();
+  encodeJpeg = async () => jpeg;
   nextJob = 0;
   controller = createController();
 });
@@ -581,7 +600,7 @@ function redAt(image: PixelImage | undefined, x: number, y: number): number | un
 }
 
 describe('PhoneController: the label image', () => {
-  const REQUEST = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 20 };
+  const REQUEST = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 20, frames: 1 };
   const CORNERS: CodeCorners = {
     topLeft: { x: 10, y: 10 },
     topRight: { x: 30, y: 10 },
@@ -601,7 +620,7 @@ describe('PhoneController: the label image', () => {
     await scanningWithImages();
     await frame(RAW);
     expect(submitted).toEqual([{ raw: RAW, force: false }]);
-    expect(extras).toEqual([{ image: { jpeg: '/9j/fake', code: { x: 50, y: 30, size: 20 } }, fields: [] }]);
+    expect(extras).toEqual([{ images: [{ jpeg: FAKE_JPEG, code: { x: 50, y: 30, size: 20 } }], fields: [] }]);
     expect(camera.snapshots).toBe(1);
   });
 
@@ -629,7 +648,7 @@ describe('PhoneController: the label image', () => {
     camera.frameImage = FRAME;
     decoder.corners = CORNERS;
     await frame(RAW);
-    expect(extras).toEqual([{ image: null, fields: [] }]);
+    expect(extras).toEqual([{ images: [], fields: [] }]);
     expect(camera.snapshots).toBe(0);
   });
 
@@ -638,7 +657,7 @@ describe('PhoneController: the label image', () => {
     jpeg = null;
     await frame(RAW);
     expect(submitted).toEqual([{ raw: RAW, force: false }]);
-    expect(extras).toEqual([{ image: null, fields: [] }]);
+    expect(extras).toEqual([{ images: [], fields: [] }]);
   });
 
   test('does not crop a label that is held in view again', async () => {
@@ -658,6 +677,34 @@ describe('PhoneController: the label image', () => {
     expect(extras[1]).toEqual(extras[0]);
   });
 
+  // 页面刷新后恢复的任务：内容由会话保管，「强制补打」照样带着标签图和手动补的货架号（原来会丢，打出没有货架号的标签）。
+  test('resends a job restored after a reload with the frames and fields the session kept', async () => {
+    await scanningWithImages();
+    const kept: JobRequest = {
+      raw: RAW,
+      images: [{ jpeg: FAKE_JPEG, code: { x: 50, y: 30, size: 20 } }],
+      fields: [{ name: '货架号', value: 'A-1-2-3' }],
+    };
+    requests.set('restored', kept);
+    controller.dispatch({ type: 'submitted', job: 'restored', raw: RAW, force: false });
+    const job = view.state?.jobs.find((entry) => entry.id === 'restored');
+    if (!job) throw new Error('expected the restored job');
+    controller.jobAction(job, 'force');
+    expect(submitted.at(-1)).toEqual({ raw: RAW, force: true });
+    expect(extras.at(-1)).toEqual({ images: kept.images, fields: kept.fields });
+  });
+
+  // 会话里查不到这一张（不应发生）：说清楚，不发一个缺了图和字段的任务。
+  test('says so instead of resending a job whose content is gone', async () => {
+    await scanningWithImages();
+    controller.dispatch({ type: 'submitted', job: 'gone', raw: RAW, force: false });
+    const job = view.state?.jobs.find((entry) => entry.id === 'gone');
+    if (!job) throw new Error('expected the job');
+    controller.jobAction(job, 'again');
+    expect(submitted).toEqual([]);
+    expect(view.extras?.hint).toBe(JOB_GONE_HINT);
+  });
+
   test('sends a typed shelf number with the same content and no image', async () => {
     await scanningWithImages();
     await frame(RAW);
@@ -666,7 +713,90 @@ describe('PhoneController: the label image', () => {
     expect(controller.fillField(job, '货架号', '   ')).toBe(false);
     expect(controller.fillField(job, '货架号', ' A-1-2-3 ')).toBe(true);
     expect(submitted.at(-1)).toEqual({ raw: RAW, force: false });
-    expect(extras.at(-1)).toEqual({ image: null, fields: [{ name: '货架号', value: 'A-1-2-3' }] });
+    expect(extras.at(-1)).toEqual({ images: [], fields: [{ name: '货架号', value: 'A-1-2-3' }] });
+  });
+});
+
+// 多帧择优：货架号的横杠在有的帧里淡到读不出，同一张标签接下来的几帧一起发，电脑依次识别。
+describe('PhoneController: several frames of the label', () => {
+  const REQUEST = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 20, frames: 3 };
+  const CORNERS: CodeCorners = {
+    topLeft: { x: 10, y: 10 },
+    topRight: { x: 30, y: 10 },
+    bottomRight: { x: 30, y: 30 },
+    bottomLeft: { x: 10, y: 30 },
+  };
+  const FRAME: PixelImage = { data: new Uint8ClampedArray(40 * 40 * 4).fill(200), width: 40, height: 40 };
+  const IMAGE = { jpeg: FAKE_JPEG, code: { x: 50, y: 30, size: 20 } };
+
+  async function scanningForFrames(): Promise<void> {
+    await scanning();
+    controller.dispatch({ type: 'printer', printer: '热敏标签机', image: REQUEST });
+    camera.frameImage = FRAME;
+    decoder.corners = CORNERS;
+  }
+
+  test('sends the next frames of the same label together with the first', async () => {
+    await scanningForFrames();
+    await frame(RAW);
+    expect(submitted).toEqual([]);
+    await frame(RAW);
+    await frame(RAW);
+    expect(submitted).toEqual([{ raw: RAW, force: false }]);
+    expect(extras).toEqual([{ images: [IMAGE, IMAGE, IMAGE], fields: [] }]);
+    expect(camera.snapshots).toBe(3);
+  });
+
+  test('beeps once, at the first frame', async () => {
+    await scanningForFrames();
+    await frame(RAW);
+    await frame(RAW);
+    await frame(RAW);
+    expect(sound.played).toEqual(['scanned']);
+  });
+
+  test('sends what it has when the label leaves the view', async () => {
+    await scanningForFrames();
+    await frame(RAW);
+    await frame(null);
+    timers.advance(LABEL_FRAMES_WINDOW_MS);
+    await settle();
+    expect(extras).toEqual([{ images: [IMAGE], fields: [] }]);
+  });
+
+  test('sends the label at once when another code comes into view', async () => {
+    await scanningForFrames();
+    await frame(RAW);
+    await frame('CL9999-QZ-黑色-40');
+    expect(submitted).toEqual([{ raw: RAW, force: false }]);
+    expect(extras).toEqual([{ images: [IMAGE], fields: [] }]);
+  });
+
+  // 每一帧各自不超过 MAX_IMAGE_BYTES；压不到上限以下的那一帧不带，其余的照样发。
+  test('leaves out a frame that cannot be made small enough and sends the rest', async () => {
+    await scanningForFrames();
+    const budgets: number[] = [];
+    encodeJpeg = async (_image, maxBytes) => {
+      budgets.push(maxBytes);
+      return budgets.length === 2 ? null : FAKE_JPEG;
+    };
+    await frame(RAW);
+    await frame(RAW);
+    await frame(RAW);
+    await settle();
+    expect(budgets).toEqual([MAX_IMAGE_BYTES, MAX_IMAGE_BYTES, MAX_IMAGE_BYTES]);
+    expect(extras).toEqual([{ images: [IMAGE, IMAGE], fields: [] }]);
+  });
+
+  test('sends the frames again when a job is retried', async () => {
+    await scanningForFrames();
+    await frame(RAW);
+    await frame(RAW);
+    await frame(RAW);
+    const job = view.state?.jobs[0];
+    if (!job) throw new Error('expected a job');
+    controller.jobAction(job, 'retry');
+    expect(extras[1]).toEqual(extras[0]);
   });
 });
 

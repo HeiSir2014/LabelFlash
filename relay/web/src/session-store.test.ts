@@ -49,7 +49,7 @@ let now: number;
 const clock = () => now;
 
 function job(raw = 'CL5640-TK-图片色-XL'): StoredJob {
-  return { id: randomId(), raw, force: false };
+  return { id: randomId(), raw, force: false, images: [], fields: [] };
 }
 
 beforeEach(() => {
@@ -74,6 +74,23 @@ describe('openSessionStore', () => {
     const reopened = openSessionStore(storage, session, clock);
     expect(reopened.token).toBe(token);
     expect(reopened.jobs).toEqual(jobs);
+  });
+
+  // 多帧择优：同一张标签的几帧随任务存着，刷新页面后重发的仍带着全部几帧（localStorage 里存成 base64url，读回来是字节）。
+  test('keeps every frame of a waiting job as bytes', () => {
+    const session = randomId();
+    const image = { jpeg: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), code: { x: 10, y: 20, size: 130 } };
+    const jobs = [{ ...job(), images: [image, { ...image, jpeg: new Uint8Array([0xff, 0xd8, 0xff, 0xe1]) }] }];
+    openSessionStore(storage, session, clock).saveJobs(jobs);
+    expect(openSessionStore(storage, session, clock).jobs).toEqual(jobs);
+  });
+
+  // 协议 1 的记录里图是 base64（可能有好几 MB），新页面不再读它们：打开时就清掉，不占手机的存储空间。
+  test('clears the records left by protocol 1', () => {
+    const old = `labelflash.session.${randomId()}`;
+    storage.setItem(old, JSON.stringify({ token: null, jobs: [], savedAt: now }));
+    openSessionStore(storage, randomId(), clock).saveToken(randomId());
+    expect(storage.items.has(old)).toBe(false);
   });
 
   test('keeps sessions apart', () => {

@@ -63,7 +63,6 @@ html {
 html,
 body {
   margin: 0;
-  min-height: 100dvh;
   background: var(--color-page);
   color: var(--color-text);
   font-family: var(--font-body);
@@ -72,9 +71,15 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+/*
+ * 整页固定为一屏高，页面本身不滚动：取景框在上、拍照和手动输入在下，一直在屏幕上，只有任务列表在中间滚动。
+ * 原来整页随任务变长，扫了十几张后取景框被顶出屏幕。
+ */
 body {
   display: flex;
   flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
   padding-bottom: env(safe-area-inset-bottom);
 }
 
@@ -148,6 +153,7 @@ body {
 
 main {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -157,6 +163,7 @@ main {
 
 .screen {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -171,6 +178,7 @@ h1 {
 
 /* 整页提示：垂直居中。 */
 .screen-message {
+  overflow-y: auto;
   justify-content: center;
   gap: var(--space-4);
   text-align: center;
@@ -187,6 +195,7 @@ h1 {
   position: relative;
   overflow: hidden;
   width: 100%;
+  flex: none;
   aspect-ratio: 1 / 1;
   max-height: 46dvh;
   border-radius: var(--radius);
@@ -308,6 +317,7 @@ h1 {
 }
 
 .hint {
+  flex: none;
   margin: 0;
   text-align: center;
   color: var(--color-text-soft);
@@ -321,14 +331,23 @@ h1 {
   color: var(--color-text);
 }
 
-/* 任务列表：像一串刚打出来的小票，最新的一张在最上面、最醒目。 */
+/* 任务列表：像一串刚打出来的小票，最新的一张在最上面、最醒目；放不下时只有它自己滚动。 */
 .jobs {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* 卡片在滚动区里不被压扁。 */
+.jobs > * {
+  flex: none;
 }
 
 .job {
@@ -421,6 +440,40 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+/* 旧的卡片收成一行：标题和摘要并排，摘要放不下就省略；最新一张保持醒目。 */
+.job:not(:first-child) {
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+}
+
+.job:not(:first-child) .job-mark {
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+}
+
+.job[data-tone="pending"]:not(:first-child) .job-mark {
+  border-width: 2px;
+}
+
+.job:not(:first-child) .job-body {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.job:not(:first-child) .job-title {
+  flex: none;
+  font-size: 14px;
+}
+
+.job:not(:first-child) .job-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 没认出货架号时卡片上的手动输入：和底部的手动输入一样的样式，放在正文那一列。 */
 .job-field {
   grid-column: 2;
@@ -434,18 +487,21 @@ h1 {
   margin-top: var(--space-2);
 }
 
-/* 摄像头用不了时的两种办法 */
+/* 摄像头用不了时的两种办法：拍照识别和手动输入并排一行，固定在屏幕下方。 */
 .fallback {
+  flex: none;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin-top: auto;
-  padding-top: var(--space-3);
+  gap: var(--space-2);
 }
 
 .manual {
   display: flex;
   gap: var(--space-2);
+}
+
+.fallback .manual {
+  flex: 1;
+  min-width: 0;
 }
 
 .manual input {

@@ -54,7 +54,8 @@
 | `notify/` | 打印结果通知：先写进本机队列（`webhook-outbox.ts`），后台发送并按退避策略重试，签名用 HMAC-SHA256 |
 | `voice/` | 语音用 msedge-tts 合成，mp3 按「文本 + 音色 + 语速」缓存；断网时退回提示音 |
 | `logging.ts` | 日志在数据目录的 `logs/labelflash-YYYY-MM-DD.log`，纯文本，时间带时区，保留 14 天；`console.*` 和界面的 console 都会写进去 |
-| `updater.ts` + `update-settings.ts` | 自动更新，只有打包好的 Windows 版（macOS 的 pkg 没有开发者签名，装不了更新）。是否检查（`initialUpdateStatus`）和所有更新行为都在 `update-settings.ts` 里显式设置，不依赖库的默认值 |
+| `updater.ts` + `update-settings.ts` | 自动更新，只有打包好的 Windows 版（macOS 的 pkg 没有开发者签名，装不了更新）。是否检查（`initialUpdateStatus`）和所有更新行为都在 `update-settings.ts` 里显式设置，不依赖库的默认值。「重启更新」点一次就静默安装（`INSTALL_OPTIONS`），装完由安装程序带 `--updated` 启动新版本；新版本的窗口去哪（到最前，或关在托盘里静默更新的留在托盘）由旧版本写下的 `relaunch-intent.ts` 决定。窗口关到托盘超过 1 分钟、打印队列和本机接口队列都空、手机扫码没开时静默更新（`background-update.ts`） |
+| `window-activation.ts` | 窗口到最前并拿到焦点：启动、更新后重启、托盘、双击快捷方式、点通知都经过它。Windows 有前台锁，后台进程拉起的窗口 `show()`/`focus()` 会留在后面（任务栏闪），先最小化再还原才能到前台；Electron 的 `isFocused()` 这时也会说有焦点，不能拿它判断（2026-09-30 实测） |
 | `window-placement.ts` | 按显示器记忆窗口位置。保存时扣掉 Windows 小数缩放下创建窗口的尺寸误差，否则窗口每次启动都会变大一点 |
 | `security.ts`、`app-protocol.ts` | 拒绝导航、新窗口、重定向和 webview；只经 `app://bundle/` 提供界面文件 |
 | `mobile/` | 手机扫码的电脑端，见下一节 |

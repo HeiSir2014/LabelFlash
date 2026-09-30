@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { EnrichStep } from '../../core/scan/enrich-model';
 import { LABEL_AREA, SHELF_NUMBER_PATTERN } from '../../core/scan/image-text';
-import { PIXELS_PER_CODE, phoneImageRequest } from './image-request';
+import { LABEL_FRAMES, PIXELS_PER_CODE, phoneImageRequest } from './image-request';
 
 const SHELF: EnrichStep = {
   kind: 'imageText',
@@ -18,6 +18,7 @@ describe('phoneImageRequest', () => {
     expect(phoneImageRequest([[TEMPLATE], [SHELF]], true)).toEqual({
       area: LABEL_AREA,
       pixelsPerCode: PIXELS_PER_CODE,
+      frames: LABEL_FRAMES,
     });
   });
 

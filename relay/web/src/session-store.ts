@@ -5,7 +5,10 @@
  *
  * 存在 localStorage，每个会话一条记录；打开时顺手清掉早已结束的会话留下的记录。
  * 无痕模式或禁用存储时 localStorage 可能抛错，这时退回内存：本页有效，刷新后需要在电脑上重新开始。
+ * localStorage 只能存字符串：标签图在这里存成 base64url，读出来再换回字节（发出去的仍是原始字节）。
  */
+
+import { fromBase64Url, toBase64Url } from '../../../src/shared/mobile-crypto';
 import {
   isRandomId,
   isRequestRaw,
@@ -13,7 +16,7 @@ import {
   type PhoneField,
   type PhoneImage,
   parseManualFields,
-  parsePhoneImage,
+  parsePhoneImages,
 } from '../../../src/shared/mobile-protocol';
 
 export interface KeyValueStorage {
@@ -29,8 +32,8 @@ export interface StoredJob {
   id: string;
   raw: string;
   force: boolean;
-  image?: PhoneImage;
-  fields?: PhoneField[];
+  images: PhoneImage[];
+  fields: PhoneField[];
 }
 
 export interface SessionStore {
@@ -46,7 +49,10 @@ interface SessionRecord {
   savedAt: number;
 }
 
-const KEY_PREFIX = 'labelflash.session.';
+/** 所有版本的记录共用的前缀。 */
+const RECORD_PREFIX = 'labelflash.session.';
+/** v2：协议 2 起标签图是字节（存成 base64url），1 版留下的记录不再读，打开页面时清掉。 */
+const KEY_PREFIX = `${RECORD_PREFIX}v2.`;
 /** 记录保留多久：会话空闲 30 分钟就会结束，一天前的记录不会再用到。 */
 export const RECORD_TTL_MS = 24 * 60 * 60_000;
 
@@ -57,7 +63,7 @@ export function openSessionStore(storage: KeyValueStorage | null, session: strin
   const save = (changes: Partial<SessionRecord>): void => {
     record = { ...record, ...changes, savedAt: now() };
     try {
-      storage?.setItem(key, JSON.stringify(record));
+      storage?.setItem(key, JSON.stringify({ ...record, jobs: record.jobs.map(storedForm) }));
     } catch (error) {
       // 存不进去（无痕模式、空间满）也能用：内存里有，本页继续有效。
       console.warn('[session-store] cannot save', error);
@@ -122,12 +128,25 @@ function parseJob(value: unknown): StoredJob | null {
     return null;
   }
   // 图和字段按协议同样的规则检查：存储被改坏了就当这个任务没有，不发出去让电脑拒收。
-  const image = record['image'] === undefined ? undefined : parsePhoneImage(record['image']);
-  const fields = record['fields'] === undefined ? undefined : parseManualFields(record['fields']);
-  if (image === null || fields === null) {
+  const images = parsePhoneImages(Array.isArray(record['images']) ? record['images'].map(imageFromStorage) : null);
+  const fields = parseManualFields(record['fields']);
+  if (images === null || fields === null) {
     return null;
   }
-  return { id, raw, force, ...(image === undefined ? {} : { image }), ...(fields === undefined ? {} : { fields }) };
+  return { id, raw, force, images, fields };
+}
+
+/** 存进 localStorage 的样子：标签图的字节换成 base64url。 */
+function storedForm(job: StoredJob): unknown {
+  return { ...job, images: job.images.map((image) => ({ ...image, jpeg: toBase64Url(image.jpeg) })) };
+}
+
+function imageFromStorage(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+  const { jpeg } = value as Record<string, unknown>;
+  return { ...value, jpeg: typeof jpeg === 'string' ? fromBase64Url(jpeg) : null };
 }
 
 /** 删掉别的会话留下的过期记录。存储不可用时什么都不做。 */
@@ -136,12 +155,13 @@ function removeExpired(storage: KeyValueStorage | null, currentKey: string, now:
     const keys: string[] = [];
     for (let index = 0; index < (storage?.length ?? 0); index += 1) {
       const key = storage?.key(index);
-      if (key?.startsWith(KEY_PREFIX) && key !== currentKey) {
+      if (key?.startsWith(RECORD_PREFIX) && key !== currentKey) {
         keys.push(key);
       }
     }
     for (const key of keys) {
-      const record = readRecord(storage, key);
+      // 协议 1 的记录（图是 base64，可能有好几 MB）一律清掉；本版本的按过期时间清。
+      const record = key.startsWith(KEY_PREFIX) ? readRecord(storage, key) : null;
       if (record === null || now - record.savedAt >= RECORD_TTL_MS) {
         storage?.removeItem(key);
       }

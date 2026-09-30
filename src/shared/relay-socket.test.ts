@@ -48,7 +48,7 @@ beforeEach(() => {
       return socket;
     },
     onOpen: () => events.push('open'),
-    onFrame: (text) => events.push(`frame:${text}`),
+    onFrame: (frame) => events.push(`frame:${JSON.stringify(frame)}`),
     onDown: () => events.push('down'),
   });
 });
@@ -83,7 +83,7 @@ describe('RelaySocket', () => {
     latest().open();
     timers.advance(HEARTBEAT_INTERVAL_MS);
     expect(latest().frames()).toEqual([{ t: 'ping' }]);
-    latest().receive('{"t":"pong"}');
+    latest().receiveFrame({ t: 'pong' });
     timers.advance(HEARTBEAT_TIMEOUT_MS);
     expect(sockets).toHaveLength(1);
     expect(latest().closedWith).toBeNull();
@@ -153,17 +153,18 @@ describe('RelaySocket', () => {
     relay.stop();
     expect(socket.closedWith?.code).toBe(1000);
     socket.drop();
-    socket.receive('{"t":"pong"}');
+    socket.receiveFrame({ t: 'pong' });
     timers.advance(60_000);
     expect(sockets).toHaveLength(1);
     expect(events).toEqual(['open']);
   });
 
-  test('ignores binary frames', () => {
+  // 协议 2 只有二进制帧：文本帧（老版本的 JSON）不认。
+  test('ignores text frames', () => {
     relay.start();
     latest().open();
-    latest().receive(new Uint8Array([1, 2, 3]));
     latest().receive('{"t":"opened"}');
+    latest().receiveFrame({ t: 'opened' });
     expect(events).toEqual(['open', 'frame:{"t":"opened"}']);
   });
 

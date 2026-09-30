@@ -21,18 +21,11 @@ import {
 } from './camera-features';
 import type { Decoded, DecoderPort } from './decoder';
 import { type CodeCorners, cropLabel, cropLayout, type PixelImage } from './label-crop';
-import { type JobExtras, NO_EXTRAS } from './phone-session';
-import {
-  canSubmit,
-  isFinished,
-  JOB_HISTORY,
-  type JobEntry,
-  type PhoneEvent,
-  type PhoneState,
-  reducePhone,
-} from './phone-state';
+import { type JobExtras, type JobRequest, NO_EXTRAS } from './phone-session';
+import { canSubmit, isFinished, type JobEntry, type PhoneEvent, type PhoneState, reducePhone } from './phone-state';
 import {
   FAR_LENS_HINT,
+  JOB_GONE_HINT,
   type JobAction,
   NEAR_LENS_HINT,
   PHOTO_EMPTY_HINT,
@@ -43,9 +36,6 @@ import {
 } from './result-view';
 import { ScanGate } from './scan-gate';
 import type { SoundCue } from './scan-sound';
-
-/** 记住多少个任务带的图：和页面上保留的任务一样多就够了。 */
-const JOB_EXTRAS_KEPT = JOB_HISTORY;
 
 /** 复制一份像素（解码会把原来的转交给 worker）。 */
 function copyPixels(image: ImageData): PixelImage {
@@ -69,6 +59,19 @@ function mapCorners(corners: CodeCorners, map: (point: Point) => Point): CodeCor
 
 /** 每秒解码约 6 帧：够快，又不让手机发烫。 */
 export const SCAN_FRAME_INTERVAL_MS = 160;
+/**
+ * 电脑要几帧标签图时，扫到码之后最多再等多久收后面的帧：约三次取帧（每次 SCAN_FRAME_INTERVAL_MS 加上解码）。
+ * 标签离开画面、换了别的码时不等满，收到几帧发几帧。
+ */
+export const LABEL_FRAMES_WINDOW_MS = 600;
+
+/** 正在收同一张标签的几帧：摆正截好的图（按顺序），收满或到时间就一起发出。 */
+interface LabelFrames {
+  text: string;
+  request: ImageRequest;
+  crops: PixelImage[];
+  timer: unknown;
+}
 /** 一次性提示显示多久：够看完一句话。 */
 export const HINT_DISPLAY_MS = 5_000;
 /** 扫到一个码时的短振动，相当于扫码枪的「嘀」（安卓支持；iPhone 的浏览器不支持振动）。 */
@@ -78,6 +81,8 @@ export const ALERT_VIBRATE_PATTERN_MS = [80, 60, 80];
 
 export interface SessionPort {
   submit(raw: string, force: boolean, extras: JobExtras): string;
+  /** 这个任务发出去的内容（会话保管，刷新页面后恢复的任务也有）；不认识的任务返回 null。 */
+  requestOf(job: string): JobRequest | null;
 }
 
 /** 提示音（sound-player.ts）；测试里换成假的。 */
@@ -119,7 +124,7 @@ export interface PhoneControllerDeps {
   view: ViewPort;
   readPhoto: (file: File) => Promise<ImageData>;
   /** 截下来的标签图压成 JPEG（标准 base64）；压不到上限以下时为 null。 */
-  encodeJpeg: (image: PixelImage, maxBytes: number) => Promise<string | null>;
+  encodeJpeg: (image: PixelImage, maxBytes: number) => Promise<Uint8Array | null>;
   vibrate: (pattern: number | number[]) => void;
   sound: SoundPort;
   isVisible: () => boolean;
@@ -144,8 +149,8 @@ export class PhoneController {
   private unwatchVisibility: (() => void) | null = null;
   /** 电脑要的标签图（welcome、printer 里说的）；不需要时为 null，就不截图。 */
   private imageRequest: ImageRequest | null = null;
-  /** 最近的任务带的图和手动字段：点「重试」「强制补打」「再打一张」时原样带上，不能丢了货架号。 */
-  private readonly jobExtras = new Map<string, JobExtras>();
+  /** 正在收的标签帧；没有时为 null。 */
+  private labelFrames: LabelFrames | null = null;
 
   constructor(
     private readonly deps: PhoneControllerDeps,
@@ -204,8 +209,18 @@ export class PhoneController {
     }
   }
 
+  /**
+   * 「重试」「强制补打」「再打一张」：按这一张原来发出去的内容重发（同样的图和手动字段，读出的货架号也一样）。
+   * 内容只由会话保管（刷新页面后恢复的任务也有）；查不到时提示重新扫码，不发一个缺了图和字段的任务。
+   */
   jobAction(job: JobEntry, action: JobAction): void {
-    this.submit(job.raw, { explicit: true, force: action !== 'retry' }, this.jobExtras.get(job.id) ?? NO_EXTRAS);
+    const request = this.session?.requestOf(job.id) ?? null;
+    if (request === null) {
+      this.showHint(JOB_GONE_HINT);
+      return;
+    }
+    const { raw, ...extras } = request;
+    this.submit(raw, { explicit: true, force: action !== 'retry' }, extras);
   }
 
   /**
@@ -220,7 +235,7 @@ export class PhoneController {
     return this.submit(
       job.raw,
       { explicit: true, force: false },
-      { image: null, fields: [{ name: field, value: text }] },
+      { images: [], fields: [{ name: field, value: text }] },
     );
   }
 
@@ -334,26 +349,84 @@ export class PhoneController {
       this.send(decoded.text, false, NO_EXTRAS);
       return;
     }
-    const corners = mapCorners(decoded.corners, source.fromDecoded);
-    void this.labelImage(source.image, corners, request).then((image) =>
-      this.send(decoded.text, false, { image, fields: [] }),
-    );
+    const crop = this.cropLabel(source, decoded.corners, request);
+    const frames: LabelFrames = { text: decoded.text, request, crops: crop === null ? [] : [crop], timer: null };
+    // 拍照识别只有一张图；电脑只要一帧时也不用等。
+    if (explicit || request.frames <= 1) {
+      this.sendLabel(frames);
+      return;
+    }
+    frames.timer = this.deps.timers.setTimeout(() => this.finishLabelFrames(), LABEL_FRAMES_WINDOW_MS);
+    this.labelFrames = frames;
   }
 
-  /** 截标签图、压 JPEG；出任何问题都返回 null，这一张照样打（电脑那一步按「没有图」处理）。 */
-  private async labelImage(
-    source: PixelImage,
-    corners: CodeCorners,
-    request: ImageRequest,
-  ): Promise<PhoneImage | null> {
+  /**
+   * 取景里又解出一个码：正在收的是同一张标签就截下这一帧（收满就发）并返回 true，这一帧不再当作新的扫码；
+   * 换了别的码就先把收到的发出去，返回 false，由调用方按新的扫码处理。
+   */
+  private collectLabelFrame(decoded: Decoded, frame: () => LabelSource | null): boolean {
+    const frames = this.labelFrames;
+    if (frames === null) {
+      return false;
+    }
+    if (decoded.text !== frames.text) {
+      this.finishLabelFrames();
+      return false;
+    }
+    const source = decoded.corners === null ? null : frame();
+    const crop =
+      source === null || decoded.corners === null ? null : this.cropLabel(source, decoded.corners, frames.request);
+    if (crop !== null) {
+      frames.crops.push(crop);
+    }
+    if (frames.crops.length >= frames.request.frames) {
+      this.finishLabelFrames();
+    }
+    return true;
+  }
+
+  private finishLabelFrames(): void {
+    const frames = this.labelFrames;
+    if (frames === null) {
+      return;
+    }
+    this.deps.timers.clearTimeout(frames.timer);
+    this.labelFrames = null;
+    this.sendLabel(frames);
+  }
+
+  /** 截图要在任何 await 之前做：下一次取景会覆盖快照。截不了时返回 null，这一张照样打。 */
+  private cropLabel(source: LabelSource, corners: CodeCorners, request: ImageRequest): PixelImage | null {
     try {
-      const crop = cropLabel(source, corners, request);
-      const jpeg = crop === null ? null : await this.deps.encodeJpeg(crop, MAX_IMAGE_BYTES);
-      return jpeg === null ? null : { jpeg, code: cropLayout(request).code };
+      return cropLabel(source.image, mapCorners(corners, source.fromDecoded), request);
     } catch (error) {
       console.warn('[PhoneController] cannot crop the label', error);
       return null;
     }
+  }
+
+  private sendLabel(frames: LabelFrames): void {
+    void this.encodeLabel(frames).then((images) => this.send(frames.text, false, { images, fields: [] }));
+  }
+
+  /**
+   * 按顺序压 JPEG，每一帧不超过 MAX_IMAGE_BYTES；压不下的那一帧不带。
+   * 出任何问题都少带图而不是不打（电脑那一步按「没有图」或已有的帧处理）。
+   */
+  private async encodeLabel(frames: LabelFrames): Promise<PhoneImage[]> {
+    const code = cropLayout(frames.request).code;
+    const images: PhoneImage[] = [];
+    for (const crop of frames.crops) {
+      try {
+        const jpeg = await this.deps.encodeJpeg(crop, MAX_IMAGE_BYTES);
+        if (jpeg !== null) {
+          images.push({ jpeg, code });
+        }
+      } catch (error) {
+        console.warn('[PhoneController] cannot encode the label', error);
+      }
+    }
+    return images;
   }
 
   /** 能不能提交这一张（防抖、排队上限、长度）；能的话给「嘀」的反馈。 */
@@ -386,14 +459,7 @@ export class PhoneController {
     if (!this.session) {
       return;
     }
-    const job = this.session.submit(raw, force, extras);
-    if (extras.image !== null || extras.fields.length > 0) {
-      this.jobExtras.set(job, extras);
-      // 页面上只留最近的任务：更早的图用不到了，不占内存。
-      for (const id of [...this.jobExtras.keys()].slice(0, -JOB_EXTRAS_KEPT)) {
-        this.jobExtras.delete(id);
-      }
-    }
+    this.session.submit(raw, force, extras);
   }
 
   private scanFrame(): void {
@@ -413,7 +479,7 @@ export class PhoneController {
     }
     decoder.decode(image).then(
       (decoded) => {
-        if (decoded) {
+        if (decoded && !this.collectLabelFrame(decoded, () => camera.snapshot())) {
           this.scanned(decoded, () => camera.snapshot(), false);
         }
       },
@@ -494,6 +560,9 @@ export class PhoneController {
 
   /** 会话结束：关掉摄像头、取景循环、解码 worker，不再听页面可见性。 */
   private teardown(): void {
+    // 会话结束了：还在收的标签帧发不出去，丢掉。
+    this.deps.timers.clearTimeout(this.labelFrames?.timer);
+    this.labelFrames = null;
     this.deps.timers.clearInterval(this.scanTimer);
     this.scanTimer = null;
     this.deps.timers.clearTimeout(this.hintTimer);

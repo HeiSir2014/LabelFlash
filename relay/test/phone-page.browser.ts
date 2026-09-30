@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Browser, chromium } from '@playwright/test';
+import { type Browser, chromium, devices, expect as expectPage } from '@playwright/test';
 import sharp from 'sharp';
 import { buildRelay } from '../../scripts/relay/build';
 import { systemClock } from '../../src/core/types';
@@ -35,6 +35,8 @@ const BUILD_TIMEOUT_MS = 60_000;
 const SCAN_TIMEOUT_MS = 30_000;
 /** 看着同一张标签再等一会儿，确认防抖让它只打一次。 */
 const HOLD_STILL_MS = 4_000;
+/** 布局检查连扫几张：一屏放不下的数量。 */
+const MANY_JOBS = 12;
 
 let workDir: string;
 let relay: RunningRelay;
@@ -188,10 +190,11 @@ function brightness(pixels: Buffer, width: number, x: number, y: number): number
 
 // 货架号识别：电脑要图时，手机按二维码的四个角把整张标签摆正截下来，随扫码发给电脑。
 // 假摄像头里标签横着放（顺时针转了 90°），二维码下方有一条黑条（货架号那一行）：截图里它应当在二维码正下方。
+// 电脑要 3 帧：假摄像头的画面一直在，手机应当截满 3 帧一起发。
 test(
-  'crops the label upright from a sideways photo and sends it with the scan',
+  'crops the label upright from a sideways photo and sends several frames with the scan',
   async () => {
-    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130, frames: 3 };
     const video = join(workDir, 'sideways.y4m');
     await writeQrVideo(video, 'SHELF-TEST-001', { shelfBar: true, rotated: true });
     const sideways = await chromium.launch({
@@ -215,13 +218,10 @@ test(
         await Bun.sleep(50);
       }
       const job = jobs.find((entry) => entry.raw === 'SHELF-TEST-001');
-      expect(job?.image).not.toBeNull();
-      const image = job?.image;
+      expect(job?.images).toHaveLength(3);
+      const image = job?.images[0];
       if (!image) throw new Error('expected a label image');
-      const { data, info } = await sharp(Buffer.from(image.jpeg, 'base64'))
-        .grayscale()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
+      const { data, info } = await sharp(image.jpeg).grayscale().raw().toBuffer({ resolveWithObject: true });
       expect({ width: info.width, height: info.height }).toEqual({ width: 780, height: 520 });
       const { x, y, size } = image.code;
       expect({ x, y, size }).toEqual({ x: 325, y: 195, size: 130 });
@@ -239,3 +239,39 @@ test(
   },
   SCAN_TIMEOUT_MS * 2,
 );
+
+// 扫了很多张之后页面不能被撑长：取景框在上、手动输入在下，都一直在屏幕上，只有任务列表在中间滚动。
+for (const device of ['Pixel 7', 'iPhone SE'] as const) {
+  test(
+    `keeps the viewfinder and the manual input on screen after many jobs on ${device}`,
+    async () => {
+      const status = host.status() as Extract<MobileStatus, { state: 'active' }>;
+      const context = await browser.newContext({ ...devices[device] });
+      try {
+        const page = await context.newPage();
+        await page.goto(status.url);
+        await page.getByRole('button', { name: '开始扫码' }).click({ timeout: SCAN_TIMEOUT_MS });
+        const manual = page.getByRole('textbox', { name: '手动输入扫码内容' });
+        for (let index = 1; index <= MANY_JOBS; index += 1) {
+          await manual.fill(`LAYOUT-${device}-${index}`);
+          await manual.press('Enter');
+        }
+        await expectPage(page.locator('.job')).toHaveCount(MANY_JOBS + 1, { timeout: SCAN_TIMEOUT_MS });
+        // 页面本身不滚动（中转服务的 tsconfig 不带 DOM 类型，按对象读取）。
+        const scroll = await page.evaluate(() => {
+          const root = (globalThis as unknown as { document: { documentElement: { scrollHeight: number } } }).document;
+          return root.documentElement.scrollHeight;
+        });
+        const viewport = page.viewportSize()?.height ?? 0;
+        const viewfinder = await page.locator('#viewfinder').boundingBox();
+        const input = await manual.boundingBox();
+        expect(scroll).toBeLessThanOrEqual(viewport + 1);
+        expect(viewfinder?.y).toBeGreaterThanOrEqual(0);
+        expect((input?.y ?? Number.POSITIVE_INFINITY) + (input?.height ?? 0)).toBeLessThanOrEqual(viewport);
+      } finally {
+        await context.close();
+      }
+    },
+    SCAN_TIMEOUT_MS * 2,
+  );
+}

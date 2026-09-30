@@ -9,9 +9,11 @@ import {
   MOBILE_PROTOCOL_VERSION,
   type SealedBody,
 } from '../../src/shared/mobile-protocol';
+import { decodeWire, encodeWire } from '../../src/shared/wire';
 import { type Peer, RelayHub } from './hub';
 
-const BODY: SealedBody = { iv: 'aaaaaaaaaaaaaaaa', ct: 'Y2lwaGVy' };
+/** 密文里放一段认得出的文字：日志里不能出现它。 */
+const BODY: SealedBody = { iv: new Uint8Array(12).fill(7), ct: new TextEncoder().encode('secret-cipher-text') };
 
 class FakePeer implements Peer {
   readonly received: Record<string, unknown>[] = [];
@@ -22,8 +24,8 @@ class FakePeer implements Peer {
     readonly ip = '203.0.113.1',
   ) {}
 
-  send(text: string): void {
-    this.received.push(JSON.parse(text));
+  send(bytes: Uint8Array): void {
+    this.received.push(decodeWire(bytes) as Record<string, unknown>);
   }
 
   close(code: number, reason: string): void {
@@ -53,7 +55,7 @@ function peer(ip?: string): FakePeer {
 }
 
 function send(from: FakePeer, frame: object): void {
-  hub.receive(from, JSON.stringify(frame));
+  hub.receive(from, encodeWire(frame));
 }
 
 function openDesktop(
@@ -307,7 +309,7 @@ describe('limits', () => {
 
 describe('phone bytes', () => {
   /** 接近单帧上限的一帧（一张最大的标签图）。 */
-  const bigFrame = () => JSON.stringify({ t: 'ping', pad: 'x'.repeat(MAX_FRAME_BYTES - 64) });
+  const bigFrame = () => encodeWire({ t: 'ping', pad: new Uint8Array(MAX_FRAME_BYTES - 64) });
 
   test('lets a phone resend its whole outbox with label images after reconnecting', () => {
     const { session } = openDesktop();
@@ -338,6 +340,6 @@ describe('logging', () => {
     const text = logs.join('\n');
     expect(text).toContain(session.slice(0, 6));
     expect(text).not.toContain(session);
-    expect(text).not.toContain(BODY.ct);
+    expect(text).not.toContain('secret-cipher-text');
   });
 });

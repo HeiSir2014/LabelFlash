@@ -41,28 +41,32 @@ test('loads the UI over app:// and previews a scanned label', async ({ electronA
   await expect(page.locator('.title-bar__name')).toHaveText('CDL-云签速印');
   await expect(page.locator('.title-bar__version')).toHaveText(`v${version}`);
 
-  // 没扫码时用示例内容展示当前模板。
+  // 没扫码时用示例内容展示当前模板：模板只在下拉框里显示一次，旁边只说内容从哪来。
   const usage = page.locator('.preview-toolbar__usage');
-  await expect(usage).toHaveText('示例内容 · 模板：通用（二维码在左） · 打印机：还没有');
+  await expect(usage).toHaveText('示例内容');
+  await expect(page.getByRole('combobox', { name: '模板', exact: true }).locator('option:checked')).toHaveText(
+    '通用（二维码在左）',
+  );
 
   // 横杠三段：默认绑定样衣标准模板，只显示编码 / 颜色 / 尺码。
   await scan(page, 'CL5640-TK-图片色-XXL');
   await expect(page.locator('.status-strip__title')).toHaveText('没有可用的打印机');
-  await expect(usage).toHaveText(
-    '规则：横杠三段（编码-颜色-尺码） · 模板：样衣标准（二维码在左）（规则指定） · 打印机：还没有',
-  );
+  const template = page.getByRole('combobox', { name: '模板', exact: true });
+  await expect(usage).toHaveText('规则：横杠三段（编码-颜色-尺码）');
+  await expect(template.locator('option:checked')).toHaveText('样衣标准（二维码在左）');
   const values = page.frameLocator('.label-frame').locator('.value');
   await expect(values).toHaveText(['CL5640-TK', '图片色', 'XXL']);
 
   // 纯数字订单号：用当前模板（通用），字段区列出「订单号」。
   await scan(page, '202609280001');
-  await expect(usage).toHaveText('规则：纯数字订单号 · 模板：通用（二维码在左） · 打印机：还没有');
+  await expect(usage).toHaveText('规则：纯数字订单号');
+  await expect(template.locator('option:checked')).toHaveText('通用（二维码在左）');
   await expect(values).toHaveText(['202609280001']);
   await expect(page.frameLocator('.label-frame').locator('.prefix')).toHaveText(['订单号：']);
 
   // 任意内容原样打印。
   await scan(page, 'hello');
-  await expect(usage).toHaveText('规则：原样打印 · 模板：通用（二维码在左） · 打印机：还没有');
+  await expect(usage).toHaveText('规则：原样打印');
   await expect(values).toHaveText(['hello']);
 
   // 含不可见字符的内容无法识别。
@@ -76,17 +80,16 @@ test('takes a burst of lines with Enters in between as one multi-line scan', asy
   await input.focus();
   // 像扫码枪一样连续发出按键：码里的换行后面紧跟着下一个字符，只有最后的回车后面是停顿。
   await typeLikeScanner(page, ['订单号：A001', '款号：CL5640', '尺码：XL']);
-  await expect(page.locator('.preview-toolbar__usage')).toHaveText(
-    '规则：多行键值 · 模板：通用（二维码在左） · 打印机：还没有',
-  );
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：多行键值');
   await expect(page.frameLocator('.label-frame').locator('.value')).toHaveText(['A001', 'CL5640', 'XL']);
   await expect(input).toHaveValue('');
 });
 
 test('tries content against the rules and previews with the template a rule is bound to', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
-  // 工作台右侧栏只剩打印机和打印记录。
-  await expect(page.getByRole('tab')).toHaveText(['打印机', '打印记录']);
+  // 工作台右侧栏只有打印记录（打印机在配置中心的「打印机」页），没有标签页。
+  await expect(page.getByRole('tab')).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: '打印记录' })).toBeVisible();
 
   await openConfig(page, '识别规则');
   const tester = page.getByLabel('要识别的内容');
@@ -107,9 +110,12 @@ test('tries content against the rules and previews with the template a rule is b
   await page.getByLabel('「纯数字订单号」用的模板').selectOption({ label: '样衣标准（二维码在左）' });
   await page.getByRole('button', { name: '返回工作台' }).click();
   await scan(page, '202609280001');
-  await expect(page.locator('.preview-toolbar__usage')).toHaveText(
-    '规则：纯数字订单号 · 模板：样衣标准（二维码在左）（规则指定） · 打印机：还没有',
-  );
+  // 规则指定的模板显示在下拉框里、锁住（改当前模板对这一张不起作用），旁边标「规则指定」。
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：纯数字订单号');
+  const template = page.getByRole('combobox', { name: '模板', exact: true });
+  await expect(template.locator('option:checked')).toHaveText('样衣标准（二维码在左）');
+  await expect(template).toBeDisabled();
+  await expect(page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
 });
 
 test('imports a lookup table and shows its first rows', async ({ electronApp }) => {
@@ -131,10 +137,8 @@ test('imports a lookup table and shows its first rows', async ({ electronApp }) 
 
 test('switches the current template from the preview toolbar', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
-  await page.getByRole('combobox', { name: '当前模板' }).selectOption({ label: '通用（二维码在右）' });
-  await expect(page.locator('.preview-toolbar__usage')).toHaveText(
-    '示例内容 · 模板：通用（二维码在右） · 打印机：还没有',
-  );
+  await page.getByRole('combobox', { name: '模板', exact: true }).selectOption({ label: '通用（二维码在右）' });
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText('示例内容');
   await expect(page.frameLocator('.label-frame').locator('body')).toHaveClass(/layout-qr-right/);
   await expect(page.locator('.scan-bar__input')).toBeFocused();
 });
@@ -166,7 +170,9 @@ test('keeps a saved custom template and the note selection after a restart', asy
   await first.app.close();
 
   const second = await electronApp.launch();
-  await expect(second.page.locator('.preview-toolbar__usage')).toHaveText('示例内容 · 模板：E2E 模板 · 打印机：还没有');
+  await expect(second.page.getByRole('combobox', { name: '模板', exact: true }).locator('option:checked')).toHaveText(
+    'E2E 模板',
+  );
   await expect(second.page.getByRole('combobox', { name: '备注' }).locator('option:checked')).toHaveText(
     'E2E 备注 {日期}',
   );
@@ -190,7 +196,7 @@ test('previews a template by selecting it, without switching the current templat
   await expect(page.frameLocator('.config-center .label-frame').locator('.value')).toHaveText(['202609280001']);
 
   await page.getByRole('button', { name: '返回工作台' }).click();
-  await expect(page.getByRole('combobox', { name: '当前模板' }).locator('option:checked')).toHaveText(
+  await expect(page.getByRole('combobox', { name: '模板', exact: true }).locator('option:checked')).toHaveText(
     '通用（二维码在左）',
   );
 });
@@ -229,13 +235,13 @@ test('keeps the scan box ready without touching its selection', async ({ electro
   const selection = () => input.evaluate((element: HTMLInputElement) => [element.selectionStart, element.selectionEnd]);
 
   // 焦点在按钮上时扫码枪开始「打字」：第一个字符就切到扫码框，一个都不丢。
-  await page.getByRole('tab', { name: '打印记录' }).focus();
+  await page.getByRole('button', { name: '配置', exact: true }).focus();
   await page.keyboard.type('ABC-RED-XL');
   await expect(input).toHaveValue('ABC-RED-XL');
 
   // 焦点在下拉框上时也一样：字母不会被下拉框当成跳选吞掉。
   await input.fill('');
-  await page.getByRole('combobox', { name: '当前模板' }).focus();
+  await page.getByRole('combobox', { name: '模板', exact: true }).focus();
   await page.keyboard.type('CL5640');
   await expect(input).toHaveValue('CL5640');
   await input.fill('ABC-RED-XL');
@@ -286,9 +292,7 @@ test('edits the scan box by hand after a click and goes back to scanning', async
   await page.keyboard.type('X');
   await expect(input).toHaveValue('CLX5887-M');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.preview-toolbar__usage')).toHaveText(
-    '规则：原样打印 · 模板：通用（二维码在左） · 打印机：还没有',
-  );
+  await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：原样打印');
   await expect(page.frameLocator('.label-frame').locator('.value')).toHaveText(['CLX5887-M']);
   await expect(input).toHaveAttribute('type', scanType);
 
@@ -356,7 +360,8 @@ test('opens the config center over the workbench and comes back to the scan box'
   await expect(page.getByRole('heading', { level: 1, name: '模板' })).toBeFocused();
   await expect(page.getByRole('button', { name: '配置', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(workspaceInert).toHaveCount(1);
-  await expect(page.getByText('配置中不打印')).toBeVisible();
+  // 「配置中不打印」只在这里扫了码之后才出现。
+  await expect(page.getByText('配置中不打印')).toHaveCount(0);
   const nav = page.getByRole('navigation', { name: '配置' });
   await expect(nav.getByRole('button', { name: '模板', exact: true })).toHaveAttribute('aria-current', 'page');
 

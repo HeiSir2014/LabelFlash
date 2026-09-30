@@ -6,6 +6,7 @@ import { windowChromeFor } from '../shared/window-chrome';
 import { APP_ENTRY_URL } from './bundle-path';
 import { buildContextMenuTemplate } from './context-menu';
 import { forwardRendererConsole } from './logging';
+import { bringToFront } from './window-activation';
 import type { WindowPlacement } from './window-state';
 
 const HOUSING_COLOR = '#E4E7E2';
@@ -20,6 +21,11 @@ export interface MainWindowOptions {
   placement: WindowPlacement;
   shouldHideOnClose: () => boolean;
   onHidden: () => void;
+  /**
+   * 启动时窗口去哪：front = 到最前并拿到焦点（扫码框要有焦点才收得到扫码枪的输入）；
+   * tray = 关在托盘里时静默更新的，新版本也待在托盘里。
+   */
+  startup: 'front' | 'tray';
 }
 
 /** 无系统边框窗口，标题栏由渲染进程自绘。 */
@@ -49,10 +55,18 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
   });
 
   window.once('ready-to-show', () => {
+    if (options.startup === 'tray') {
+      // maximize() 会把隐藏的窗口显示出来：等第一次从托盘打开时再最大化。
+      if (isMaximized) {
+        window.once('show', () => window.maximize());
+      }
+      return;
+    }
     if (isMaximized) {
       window.maximize();
     }
-    window.show();
+    // 从最小化还原时回到最大化的样子。
+    bringToFront(window, process.platform);
   });
   window.on('close', (event) => {
     if (options.shouldHideOnClose()) {

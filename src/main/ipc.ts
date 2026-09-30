@@ -305,7 +305,7 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.OpenShop, () => shell.openExternal(BRAND.shop.url));
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
-  handle(IpcChannel.InstallUpdate, () => deps.updater.install());
+  handle(IpcChannel.InstallUpdate, () => deps.updater.install('front'));
   handle(IpcChannel.VoiceClip, (cue) => {
     // 音色和语速取主进程当前设置，不信任页面传入。
     const { name, ratePercent } = deps.settings.current.voice;
@@ -353,8 +353,24 @@ export function registerIpc(deps: IpcDeps): void {
 /** 预览和实际打印用同一份 HTML：二维码按这张要打到的打印机的分辨率对齐。 */
 function renderPreview(result: PreviewResult, { template, isBound }: PrintTemplate, dpi: number): LabelPreview {
   if (result.status !== 'ok') {
-    return { result, html: null, templateName: null, isTemplateBound: false, qrOmitted: false, paper: null };
+    return {
+      result,
+      html: null,
+      templateId: null,
+      templateName: null,
+      isTemplateBound: false,
+      qrOmitted: false,
+      paper: null,
+    };
   }
   const { html, qrOmitted } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() }, dpi);
-  return { result, html, templateName: template.name, isTemplateBound: isBound, qrOmitted, paper: template.paper };
+  return {
+    result,
+    html,
+    templateId: template.id,
+    templateName: template.name,
+    isTemplateBound: isBound,
+    qrOmitted,
+    paper: template.paper,
+  };
 }

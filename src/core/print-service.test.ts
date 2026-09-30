@@ -307,19 +307,19 @@ describe('PrintService processing steps', () => {
     expect((await service.submit(request({ source: 'mobile' }))).status).toBe('printed');
   });
 
-  test('hands the phone image and typed fields to the processing steps', async () => {
+  test('hands the phone frames and typed fields to the processing steps', async () => {
     const { service, useEnrich } = createHarness();
     const contexts: EnrichContext[] = [];
     useEnrich(async (scan, context) => {
       contexts.push(context);
       return { scan, traces: [], blocked: null };
     });
-    const image = { jpeg: new Uint8Array([1]), code: { x: 1, y: 2, size: 3 } };
-    await service.submit(request({ source: 'mobile', image, manualFields: { 货架号: 'A-1-2-3' } }));
+    const images = [1, 2].map((byte) => ({ jpeg: new Uint8Array([byte]), code: { x: 1, y: 2, size: 3 } }));
+    await service.submit(request({ source: 'mobile', images, manualFields: { 货架号: 'A-1-2-3' } }));
     await service.submit(request({ raw: 'other', force: true }));
     expect(contexts).toEqual([
-      { image, manualFields: { 货架号: 'A-1-2-3' } },
-      { image: null, manualFields: {} },
+      { images, manualFields: { 货架号: 'A-1-2-3' } },
+      { images: [], manualFields: {} },
     ]);
   });
 

@@ -198,8 +198,20 @@ describe('linkBanner', () => {
     const view = jobView(
       done({ status: 'failed', reason: 'TEXT_NOT_FOUND', detail: '没认出货架号', issue: null, field: '货架号' }),
       'online',
+      true,
     );
     expect(view).toMatchObject({ tone: 'error', title: '没认出标签上的字，没有打印', actions: [], input: '货架号' });
     expect(view.detail).toBe('没认出货架号：对准整张标签重扫，或在下面手动输入');
+  });
+
+  // 扫了很多张之后，旧的「没认出」卡片不再各带一个输入框：只有最新一张能手动补，旧的收成一行。
+  test('asks for the unread field only on the latest card', () => {
+    const view = jobView(
+      done({ status: 'failed', reason: 'TEXT_NOT_FOUND', detail: '没认出货架号', issue: null, field: '货架号' }),
+      'online',
+      false,
+    );
+    expect(view.input).toBeUndefined();
+    expect(view.detail).toBe('没认出货架号');
   });
 });

@@ -27,6 +27,7 @@ import { lanIPv4Addresses } from './api/network';
 import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
+import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
 import { BUILD_NUMBER } from './build-info';
 import { addFirewallRule, firewallStatus } from './firewall';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
@@ -44,6 +45,7 @@ import { fakeImageTextSource, parseFakeOcr } from './ocr/fake-ocr';
 import { ImageTextReader, type ImageTextSource } from './ocr/image-text-reader';
 import { createOcrEngine } from './ocr/ocr-engine';
 import { missingOcrFiles, ocrFiles } from './ocr/ocr-files';
+import { OCR_SAMPLES_DIR_NAME, OCR_SAMPLES_KEPT, OcrSamples } from './ocr/ocr-samples';
 import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
 import { queryDriverPaper } from './printing/driver-paper';
@@ -54,6 +56,7 @@ import type { PrinterDriver } from './printing/printer-driver';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { PrinterProfiles } from './printing/printer-profiles';
 import { createReadinessProbe, type PrinterReadiness, PrinterStatusMonitor } from './printing/printer-status';
+import { RelaunchIntents, UPDATED_ARG } from './relaunch-intent';
 import { createHttpStepRunner } from './scan/http-step';
 import { RuleService } from './scan/rule-service';
 import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './scan/sandboxed-regex';
@@ -73,6 +76,7 @@ import { AppUpdater } from './updater';
 import { synthesizeWithEdge } from './voice/edge-synthesizer';
 import { VoiceClips } from './voice/voice-clips';
 import { createMainWindow } from './window';
+import { bringToFront } from './window-activation';
 import { planInitialPlacement, trackWindowPlacement } from './window-placement';
 
 /** 本地 OCR 的线程数和识别批大小（OCR 引擎设计第 8 节的默认值）。 */
@@ -111,15 +115,12 @@ if (app.isPackaged) {
   Menu.setApplicationMenu(null);
 }
 
+/** 托盘、双击桌面快捷方式（second-instance）、点系统通知：窗口到最前并拿到焦点（前台锁见 window-activation.ts）。 */
 function showMainWindow(): void {
   if (!mainWindow) {
     return;
   }
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore();
-  }
-  mainWindow.show();
-  mainWindow.focus();
+  bringToFront(mainWindow, process.platform);
 }
 
 function quit(): void {
@@ -196,6 +197,9 @@ async function bootstrap(): Promise<void> {
   handleAppScheme(join(__dirname, '../renderer'));
 
   const dataPath = app.getPath('userData');
+  // 更新后重启的新版本窗口去哪（旧版本装更新前写下）：每次启动都读掉，过期的不会留到下次。
+  const relaunch = new RelaunchIntents(dataPath, () => Date.now());
+  const relaunchWindow = relaunch.consume();
   database = openDatabase(join(dataPath, DATABASE_FILE_NAME));
   const settings = new SqliteSettingsStore(database);
   const jobs = new SqliteJobStore(database, settings.current.historyLimit);
@@ -225,6 +229,7 @@ async function bootstrap(): Promise<void> {
     }
   };
   reportMissingOcr();
+  const ocrSamples = new OcrSamples(join(dataPath, OCR_SAMPLES_DIR_NAME), OCR_SAMPLES_KEPT, () => Date.now());
   const imageText: ImageTextSource = fakeOcr
     ? fakeImageTextSource(fakeOcr)
     : new ImageTextReader({
@@ -252,6 +257,7 @@ async function bootstrap(): Promise<void> {
         onUnavailable: () => mobile.rulesChanged(),
         now: () => performance.now(),
         log: (line) => console.warn(line),
+        record: (image, regions) => ocrSamples.save(image, regions),
       });
   // 这台电脑能不能识别标签上的字：不能时不向手机要图，这一步跳过。
   const canReadImages = (): boolean => imageText.canRead();
@@ -363,12 +369,14 @@ async function bootstrap(): Promise<void> {
       return () => clearTimeout(timer);
     },
   });
+  // 桌面扫码、手机扫码、本机接口都经这一个打印队列：关到托盘后的静默更新看它是否空闲。
+  const printQueue = new PrintQueue(PRINT_TIMEOUT_MS);
   const service = new PrintService({
     adapter,
     store: jobs,
     guard,
     clock: systemClock,
-    queue: new PrintQueue(PRINT_TIMEOUT_MS),
+    queue: printQueue,
     createId: randomUUID,
     recognize: (raw) => recognize(raw, activeRules(rules, settings.current), runRegex),
     enrich: (scan, context) => enrich(scan, rules.get(scan.ruleId)?.steps ?? [], enrichDeps, new Date(), context),
@@ -387,8 +395,9 @@ async function bootstrap(): Promise<void> {
   };
   const updater = new AppUpdater({
     onStatus: (status) => sendToMainWindow(IpcChannel.UpdateStatusChanged, status),
-    onBeforeInstall: () => {
+    onBeforeInstall: (window) => {
       isQuitting = true;
+      relaunch.write(window);
     },
   });
   // 有启用的「图中文字识别」步骤时，后台先把模型加载好：手机扫的第一张不用等。
@@ -560,12 +569,23 @@ async function bootstrap(): Promise<void> {
   }
   const windowStates = new SqliteWindowStateStore(database);
   const placement = planInitialPlacement(windowStates);
+  // 关在托盘里静默更新的，安装程序带 --updated 启动新版本：它也待在托盘里。其余都到最前（前台锁见 window-activation.ts）。
+  const startup = process.argv.includes(UPDATED_ARG) && relaunchWindow === 'tray' ? 'tray' : 'front';
   mainWindow = createMainWindow({
     icon: appIcon,
     placement,
     // 没有托盘图标时照常关闭：藏起来之后就再也叫不回窗口了。
     shouldHideOnClose: () => !isQuitting && tray !== null,
     onHidden: () => tray?.notifyHiddenOnce(),
+    startup,
+  });
+  // 窗口关在托盘里的起始时间：关到托盘后的静默更新要等一会儿（background-update.ts）。
+  let hiddenSince: number | null = startup === 'tray' ? Date.now() : null;
+  mainWindow.on('hide', () => {
+    hiddenSince = Date.now();
+  });
+  mainWindow.on('show', () => {
+    hiddenSince = null;
   });
   // 必须先于下面的 session-end 处理注册：关机时先保存窗口位置，再关闭数据库。
   trackWindowPlacement(mainWindow, windowStates, placement.bounds);
@@ -589,9 +609,24 @@ async function bootstrap(): Promise<void> {
     console.error('[tray] could not create the tray icon, closing the window will quit', error);
   }
   updater.start();
+  const backgroundUpdateTimer = setInterval(() => {
+    const state = {
+      isUpdateReady: updater.current.state === 'ready',
+      // 托盘建不起来时关窗就是退出，不会有「关在托盘里」。
+      hiddenSince: tray === null ? null : hiddenSince,
+      pendingPrints: printQueue.pending + localApi.pendingJobs,
+      isMobileOn: mobile.status().state !== 'off',
+      now: Date.now(),
+    };
+    if (canUpdateInBackground(state)) {
+      console.info('[updater] installing in the background: the window is in the tray and nothing is in use');
+      updater.install('tray');
+    }
+  }, BACKGROUND_UPDATE_CHECK_MS);
   warmVoice();
   app.on('will-quit', () => {
     clearInterval(mobileTicker);
+    clearInterval(backgroundUpdateTimer);
     void localApi.stop();
     outbox.stop();
     status.stop();

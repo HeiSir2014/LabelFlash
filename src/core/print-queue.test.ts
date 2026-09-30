@@ -124,4 +124,18 @@ describe('PrintQueue', () => {
     const next = queue.enqueue('P1', async () => 'ok');
     expect(await Promise.all([hung, failed, next])).toEqual(['hung', 'failed', 'ok']);
   });
+
+  test('counts the jobs waiting or printing on every printer', async () => {
+    const queue = new PrintQueue(LONG_TIMEOUT_MS);
+    const gate = deferred();
+    const jobs = [
+      queue.enqueue('P1', () => gate.promise),
+      queue.enqueue('P1', async () => {}),
+      queue.enqueue('P2', () => gate.promise),
+    ];
+    expect(queue.pending).toBe(3);
+    gate.resolve();
+    await Promise.all(jobs);
+    expect(queue.pending).toBe(0);
+  });
 });

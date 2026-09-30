@@ -16,8 +16,8 @@ export interface PrintRequest {
   force?: boolean;
   /** 谁提交的（写进打印记录）：本机接口为 key:<密钥编号> 或 origin:<网站>；其他入口没有。 */
   caller?: string;
-  /** 手机扫码时拍下的标签图（加工步骤「图中文字识别」用）；其他入口没有。 */
-  image?: ScanImage;
+  /** 手机扫码时拍下的标签图，同一张标签连续的几帧（加工步骤「图中文字识别」依次识别）；其他入口没有。 */
+  images?: readonly ScanImage[];
   /** 手机上手动输入的字段（例如没认出时补的货架号）：图中文字识别直接用它。 */
   manualFields?: Readonly<Record<string, string>>;
 }

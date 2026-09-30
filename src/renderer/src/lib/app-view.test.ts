@@ -29,11 +29,17 @@ describe('config navigation', () => {
     expect(pageLabel('notes')).toBe('常用备注');
   });
 
-  test('keeps mobile scanning and the local api with the other integrations', () => {
+  test('keeps the local api with the other integrations', () => {
     const integrations = CONFIG_NAV.find((group) => group.label === '集成');
-    expect(integrations?.pages.map((item) => item.page)).toEqual(['webhooks', 'mobile', 'localApi']);
-    expect(pageLabel('mobile')).toBe('手机扫码');
+    expect(integrations?.pages.map((item) => item.page)).toEqual(['webhooks', 'localApi']);
     expect(pageLabel('localApi')).toBe('本机接口');
+  });
+
+  // 打印机是准备工作（按纸张分配），和模板放在一起；工作台右侧只留每天都看的打印记录。
+  test('puts the printers next to the templates', () => {
+    const labels = CONFIG_NAV.find((group) => group.label === '标签');
+    expect(labels?.pages.map((item) => item.page)).toEqual(['templates', 'printers', 'notes']);
+    expect(pageLabel('printers')).toBe('打印机');
   });
 
   test('lets only the pages with a fixed preview or tester lay out their own scrolling', () => {

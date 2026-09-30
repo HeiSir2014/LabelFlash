@@ -37,9 +37,10 @@ describe('ruleFieldNames', () => {
   });
 
   test('reads the fields of every rule kind', () => {
-    expect(ruleFieldNames(builtIn(DASH_THREE_RULE_ID))).toEqual(['编码', '颜色', '尺码']);
-    expect(ruleFieldNames(builtIn('builtin:key-value'))).toEqual(['订单号', '款号', '颜色', '尺码', '数量']);
-    expect(ruleFieldNames(builtIn(RAW_RULE_ID))).toEqual(['内容']);
+    // 内置规则都带「图中文字识别」，最后都多一个货架号。
+    expect(ruleFieldNames(builtIn(DASH_THREE_RULE_ID))).toEqual(['编码', '颜色', '尺码', '货架号']);
+    expect(ruleFieldNames(builtIn('builtin:key-value'))).toEqual(['订单号', '款号', '颜色', '尺码', '数量', '货架号']);
+    expect(ruleFieldNames(builtIn(RAW_RULE_ID))).toEqual(['内容', '货架号']);
   });
 
   test('includes what regex replacements and HTTP queries write', () => {

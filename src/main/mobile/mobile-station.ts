@@ -157,10 +157,10 @@ export class MobileStation {
   }
 
   /** 打到哪台由 PrintService 按模板决定（和扫码枪一样）；这种纸没有打印机时手机收到 no-printer。 */
-  private async print({ raw, force, image, fields }: PhoneJob) {
+  private async print({ raw, force, images, fields }: PhoneJob) {
     const request: PrintRequest = { raw, source: 'mobile', force };
-    if (image !== null) {
-      request.image = { jpeg: new Uint8Array(Buffer.from(image.jpeg, 'base64')), code: image.code };
+    if (images.length > 0) {
+      request.images = images;
     }
     if (fields.length > 0) {
       request.manualFields = Object.fromEntries(fields.map((field) => [field.name, field.value]));

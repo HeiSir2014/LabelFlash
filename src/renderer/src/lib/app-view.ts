@@ -3,12 +3,12 @@ import type { WindowChrome } from '../../../shared/window-chrome';
 /** 配置中心的页面，顺序就是导航顺序。 */
 export const CONFIG_PAGES = [
   'templates',
+  'printers',
   'notes',
   'rules',
   'lookup',
   'secrets',
   'webhooks',
-  'mobile',
   'localApi',
   'voice',
   'general',
@@ -26,6 +26,7 @@ export const CONFIG_NAV: readonly NavGroup[] = [
     label: '标签',
     pages: [
       { page: 'templates', label: '模板' },
+      { page: 'printers', label: '打印机' },
       { page: 'notes', label: '常用备注' },
     ],
   },
@@ -41,7 +42,6 @@ export const CONFIG_NAV: readonly NavGroup[] = [
     label: '集成',
     pages: [
       { page: 'webhooks', label: '打印结果通知' },
-      { page: 'mobile', label: '手机扫码' },
       { page: 'localApi', label: '本机接口' },
     ],
   },

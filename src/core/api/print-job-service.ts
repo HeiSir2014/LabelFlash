@@ -143,6 +143,11 @@ export class PrintJobService {
     return this.deps.store.list(caller, limit, cursor);
   }
 
+  /** 收下还没打完的任务数（排着的和正在打的）：关到托盘后的静默更新要等它们打完。 */
+  get pending(): number {
+    return this.queue.pending;
+  }
+
   /** 等队列里的任务都结束（测试和退出时用）。 */
   async idle(): Promise<void> {
     let seen: Promise<void> | null = null;

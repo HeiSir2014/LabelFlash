@@ -12,7 +12,8 @@
 - **协议只有一份**：
   - 消息类型、校验、常量都在 `src/shared/mobile-protocol.ts`，三方共用。
   - 改协议时同时改电脑端（`src/main/mobile/`）、手机端（`web/src/phone-session.ts`）、设计文档第 5 节，并补测试。
-  - 协议不兼容的改动要升 `MOBILE_PROTOCOL_VERSION`，并让中转服务在一段时间内同时接受新旧版本。
+  - 协议不兼容的改动要升 `MOBILE_PROTOCOL_VERSION`。不保留旧版本的实现：中转服务对老版本回 `version` 错误并断开（按老版本认得的格式），老客户端据此提示更新；老的发布版本标记为弃用。
+  - 帧都是 msgpack 二进制帧（`src/shared/wire.ts`），图和密文是原始字节，不用 base64。
 - **协议按正规做法设计，不为界面兜底**：
   - 打印任务是幂等的（任务号去重），防重放靠本次连接的 `nonce` 加严格递增的 `seq`，背压靠明确的 `refused`。
   - 不要加「超时就提示用户去看看」这类兜底。

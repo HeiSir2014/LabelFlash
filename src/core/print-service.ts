@@ -183,7 +183,7 @@ export class PrintService {
       };
       return this.finish(id, request, target, raw, duplicate, recognized);
     }
-    const context: EnrichContext = { image: request.image ?? null, manualFields: request.manualFields ?? {} };
+    const context: EnrichContext = { images: request.images ?? [], manualFields: request.manualFields ?? {} };
     const enriched = options.enrich
       ? await this.enrich(recognized, context)
       : { scan: recognized, traces: [], blocked: null };

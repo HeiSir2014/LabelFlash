@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { type ImageRequest, MAX_IMAGE_SIDE } from '../../../src/shared/mobile-protocol';
 import { type CodeCorners, cropLabel, cropLayout, type PixelImage, squareToQuad } from './label-crop';
 
-const REQUEST: ImageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 20 };
+const REQUEST: ImageRequest = {
+  area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 },
+  pixelsPerCode: 20,
+  frames: 1,
+};
 
 /** 一张 w×h 的画面，按 color(x, y) 上色（灰度）。 */
 function frame(width: number, height: number, color: (x: number, y: number) => number): PixelImage {

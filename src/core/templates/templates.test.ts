@@ -47,11 +47,18 @@ describe('built-in templates', () => {
     expect(ids.every((id) => TEMPLATE_ID_PATTERN.test(id))).toBe(true);
   });
 
-  test('default to the generic all-fields template; the garment ones pick 编码 / 颜色 / 尺码', () => {
+  test('default to the generic all-fields template; the garment ones pick 编码 / 颜色 / 尺码 / 货架号', () => {
     expect(DEFAULT_TEMPLATE_ID).toBe(GENERIC_TEMPLATE.id);
     expect(GENERIC_TEMPLATE.fieldsArea.mode).toBe('all');
     expect(STANDARD_TEMPLATE.fieldsArea.mode).toBe('pick');
-    expect(STANDARD_TEMPLATE.fieldsArea.slots.map((slot) => slot.field)).toEqual(['编码', '颜色', '尺码']);
+    expect(STANDARD_TEMPLATE.fieldsArea.slots.map((slot) => slot.field)).toEqual(['编码', '颜色', '尺码', '货架号']);
+  });
+
+  // 内置规则都会从手机拍的标签上读货架号：每个挑字段的内置模板都要显示它（没读到时这一行不显示）。
+  test('every built-in template that picks fields shows the shelf number', () => {
+    for (const template of BUILT_IN_TEMPLATES.filter((item) => item.fieldsArea.mode === 'pick')) {
+      expect(template.fieldsArea.slots.map((slot) => slot.field)).toContain('货架号');
+    }
   });
 });
 
@@ -156,8 +163,13 @@ describe('expandNoteText', () => {
     );
   });
 
-  test('leaves unknown variables and fields that were not recognised untouched', () => {
-    expect(expandNoteText('质检 {工号} {订单号} {}', SCAN, new Date())).toBe('质检 {工号} {订单号} {}');
+  // 标签上不能出现「{货架号}」这样的原文：这次没有这个字段（扫码枪扫的没有图、没认出、规则里没有）就印成空。
+  test('prints nothing for a field this scan did not produce', () => {
+    expect(expandNoteText('货架号：{货架号} 质检 {工号}', SCAN, new Date())).toBe('货架号： 质检 ');
+  });
+
+  test('keeps braces that are not a variable', () => {
+    expect(expandNoteText('{} 尺码{', SCAN, new Date())).toBe('{} 尺码{');
   });
 
   test('prefers the fixed variables over a recognised field with the same name', () => {

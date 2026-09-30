@@ -1,5 +1,6 @@
 import { type PrinterTarget, resolvePrinter } from '../../../core/printing/resolve-printer';
 import type { DriverPaper } from '../../../shared/driver-paper';
+import { DEFAULT_PAPER } from '../../../shared/label-paper';
 import { formatPaperName, isSamePaper, type PaperSize, paperKey, parsePaperKey } from '../../../shared/paper-sizes';
 
 /** 分配表只用到模板的这几项。 */
@@ -125,4 +126,22 @@ export function describeTemplatePrinter(
   }
   const name = displayName(choice.printerName);
   return choice.reason === 'template-missing' ? `${name}（指定的 ${choice.missingPrinter} 不在这台电脑上）` : name;
+}
+
+/**
+ * 模板列表一行里模板名下面的说明：只写和默认不同的——不是默认纸张（写纸张和这种纸打到哪台），
+ * 或者模板自己指定了打印机（写实际用哪台）。默认纸张、按纸张分配的返回 null：
+ * 每一行都写「60×40 标签 · 还没有打印机」是噪音，打印机的情况在标题栏和「打印机」页。
+ */
+export function describeTemplateUse(
+  target: PrinterTarget,
+  paperPrinters: Readonly<Record<string, string>>,
+  installed: readonly string[],
+  displayName: (printerName: string) => string = (printerName) => printerName,
+): string | null {
+  const printer = describeTemplatePrinter(target, paperPrinters, installed, displayName);
+  if (!isSamePaper(target.paper, DEFAULT_PAPER)) {
+    return `${formatPaperName(target.paper)} · ${printer}`;
+  }
+  return target.printer === null ? null : printer;
 }

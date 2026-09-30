@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   describeTemplatePrinter,
+  describeTemplateUse,
   expectedPaperKey,
   paperRows,
   responsibilitiesOf,
@@ -113,6 +114,29 @@ describe('describeTemplatePrinter', () => {
     expect(describeTemplatePrinter(label, {}, ['A'])).toBe('还没有打印机');
     expect(describeTemplatePrinter({ ...label, printer: 'B' }, { '60x40': 'A' }, ['A'])).toBe(
       'A（指定的 B 不在这台电脑上）',
+    );
+  });
+});
+
+describe('describeTemplateUse', () => {
+  const label = { paper: { widthMm: 60, heightMm: 40 }, printer: null };
+  const waybill = { paper: { widthMm: 100, heightMm: 180 }, printer: null };
+
+  // 模板列表每一行都写「60×40 标签 · 还没有打印机」是噪音：默认纸张、按纸张分配的，只写模板名。
+  test('says nothing for a template on the default paper that follows the paper assignment', () => {
+    expect(describeTemplateUse(label, {}, ['A'])).toBeNull();
+    expect(describeTemplateUse(label, { '60x40': 'A' }, ['A'])).toBeNull();
+  });
+
+  test('names another paper and where it prints', () => {
+    expect(describeTemplateUse(waybill, { '100x180': 'B' }, ['B'])).toBe('100×180 二联面单 · B');
+    expect(describeTemplateUse(waybill, {}, ['B'])).toBe('100×180 二联面单 · 还没有打印机');
+  });
+
+  test('names the printer a template chooses itself', () => {
+    expect(describeTemplateUse({ ...label, printer: 'C' }, {}, ['C'])).toBe('C');
+    expect(describeTemplateUse({ ...label, printer: 'D' }, { '60x40': 'A' }, ['A'])).toBe(
+      'A（指定的 D 不在这台电脑上）',
     );
   });
 });

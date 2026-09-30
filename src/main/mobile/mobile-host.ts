@@ -125,9 +125,9 @@ export class MobileHost {
     // 排进收件链：和 welcome 一样按顺序发，不会有手机先收到新打印机、再收到旧的。
     this.enqueue(run, async () => {
       const printer = await this.printerLabel();
-      const image = this.imageRequest();
+      const image = this.deps.imageRequest();
       for (const connection of run.session.onlineConnections()) {
-        this.send(run, connection, { type: 'printer', printer, ...image });
+        this.send(run, connection, { type: 'printer', printer, image });
       }
     });
   }
@@ -183,8 +183,8 @@ export class MobileHost {
         onOpen: () => {
           run.socket.send({ t: 'open', v: MOBILE_PROTOCOL_VERSION, session: run.sessionId, secret: run.secret });
         },
-        onFrame: (text) => {
-          const frame = parseRelayToDesktop(text);
+        onFrame: (value) => {
+          const frame = parseRelayToDesktop(value);
           if (!frame) {
             this.deps.log('mobile: dropped a malformed relay frame');
             return;
@@ -271,7 +271,7 @@ export class MobileHost {
           token: reply.token,
           nonce: reply.nonce,
           printer,
-          ...this.imageRequest(),
+          image: this.deps.imageRequest(),
         });
         this.deps.log(`mobile: phone welcomed ${device}`);
       } else {
@@ -331,12 +331,6 @@ export class MobileHost {
       this.deps.log(`mobile: printing a phone job failed unexpectedly: ${String(error)}`);
       return { status: 'failed', reason: 'PRINT_ERROR', detail: null, issue: null, field: null };
     }
-  }
-
-  /** 发给手机的截图要求：不需要时整个字段省略（老手机页面反正也不认它）。 */
-  private imageRequest(): { image?: ImageRequest } {
-    const image = this.deps.imageRequest();
-    return image === null ? {} : { image };
   }
 
   private printerLabel(): Promise<string | null> {

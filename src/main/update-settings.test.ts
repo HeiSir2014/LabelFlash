@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { applyUpdateClientSettings, initialUpdateStatus, type UpdateClientSettings } from './update-settings';
+import {
+  applyUpdateClientSettings,
+  INSTALL_OPTIONS,
+  initialUpdateStatus,
+  type UpdateClientSettings,
+} from './update-settings';
 
 /** 每一项都和期望相反：只有 applyUpdateClientSettings 设过的值才可能通过断言。 */
 function clientWithOppositeDefaults(): UpdateClientSettings {
@@ -55,5 +60,12 @@ describe('applyUpdateClientSettings', () => {
     applyUpdateClientSettings(client);
     expect(client.allowPrerelease).toBe(false);
     expect(client.allowDowngrade).toBe(false);
+  });
+});
+
+describe('INSTALL_OPTIONS', () => {
+  // 「重启更新」点一次就装：不弹安装界面，装完自动启动新版本（新版本自己回到前台，见 window-activation.ts）。
+  test('installs silently and starts the new version afterwards', () => {
+    expect(INSTALL_OPTIONS).toEqual({ isSilent: true, isForceRunAfter: true });
   });
 });

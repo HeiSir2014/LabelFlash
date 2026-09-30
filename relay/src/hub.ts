@@ -24,12 +24,14 @@ import {
   type RelayToDesktop,
   type RelayToPhone,
 } from '../../src/shared/mobile-protocol';
+import { decodeWire, encodeWire } from '../../src/shared/wire';
 import { TokenBucket } from './token-bucket';
 
 export interface Peer {
   readonly id: string;
   readonly ip: string;
-  send(text: string): void;
+  /** 一帧 msgpack（二进制帧）。 */
+  send(bytes: Uint8Array): void;
   close(code: number, reason: string): void;
 }
 
@@ -71,7 +73,7 @@ const DESKTOP_FRAMES_PER_SECOND = 50;
 /** 电脑重连时一次回复所有手机：每部手机的 welcome 加上它每个任务的进度；留一倍余量。 */
 const DESKTOP_FRAME_BURST = 2 * MAX_PHONES_PER_SESSION * (1 + MAX_PENDING_JOBS);
 /**
- * 手机平均每秒最多一个最大帧的字节数：一帧可以带一张标签图（最大约 1 MB），正常扫码一两秒一张、每张几百 KB。
+ * 手机平均每秒最多一个最大帧的字节数：一帧可以带同一张标签的几帧图（最大约 1.6 MB），正常扫码一两秒一张、每张几百 KB。
  * 只按帧数限速的话，手机每秒能推 5 个最大帧，服务器扛不住几个这样的连接。
  */
 const PHONE_BYTES_PER_SECOND = MAX_FRAME_BYTES;
@@ -145,21 +147,21 @@ export class RelayHub {
     return true;
   }
 
-  /** 一帧文本。帧的字节数上限由 server.ts 的 maxPayloadLength 把关，超了连接直接被关掉，到不了这里。 */
-  receive(peer: Peer, text: string): void {
+  /** 一帧 msgpack。帧的字节数上限由 server.ts 的 maxPayloadLength 把关，超了连接直接被关掉，到不了这里。 */
+  receive(peer: Peer, bytes: Uint8Array): void {
     const connection = this.connections.get(peer.id);
     if (!connection) {
       return;
     }
-    // 按 UTF-16 长度算：帧是 base64url 和 JSON，都是 ASCII，和字节数一样。
-    if (!connection.bucket.take() || (connection.bytes !== null && !connection.bytes.take(text.length))) {
+    if (!connection.bucket.take() || (connection.bytes !== null && !connection.bytes.take(bytes.length))) {
       this.throttle(connection);
       return;
     }
+    const frame = decodeWire(bytes);
     if (connection.role === 'desktop') {
-      this.receiveFromDesktop(connection, parseDesktopFrame(text));
+      this.receiveFromDesktop(connection, parseDesktopFrame(frame));
     } else {
-      this.receiveFromPhone(connection, parsePhoneFrame(text));
+      this.receiveFromPhone(connection, parsePhoneFrame(frame));
     }
   }
 
@@ -405,7 +407,7 @@ export class RelayHub {
 }
 
 function sendTo(connection: Connection, frame: RelayToDesktop | RelayToPhone): void {
-  connection.peer.send(JSON.stringify(frame));
+  connection.peer.send(encodeWire(frame));
 }
 
 function sha256(text: string): Buffer {

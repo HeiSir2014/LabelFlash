@@ -1,61 +1,29 @@
-import type { PrinterChoice } from '../../../core/printing/resolve-printer';
 import type { LabelPreview } from '../../../shared/ipc-contract';
 
-/** 预览工具条右侧的说明，分几段：放不下时先省略内容来源，模板（决定打出来的样子）尽量完整显示。 */
+/**
+ * 预览工具条：模板只显示一处。下拉框显示这一张实际用的模板；规则指定了模板时锁住并标「规则指定」
+ * （改当前模板对这一张不起作用，要改去识别规则里改）。旁边只说内容从哪来。
+ * 原来下拉框写当前模板、旁边又写「模板：规则指定的那套」，两处对不上；打印机在标题栏和出错提示里，这里不再重复。
+ */
 export interface PreviewUsage {
-  /** 「规则：横杠三段（编码-颜色-尺码）」或「示例内容」。 */
-  source: string;
-  /** 「模板：样衣标准（二维码在左）（规则指定）」。 */
-  template: string;
-  /** 「打印机：面单机B」；还不知道时为 null。 */
-  printer: string | null;
+  /** 「规则：横杠三段（编码-颜色-尺码）」或「示例内容」；识别不了时为 null。 */
+  source: string | null;
+  /** 下拉框显示的模板：规则指定的模板，否则当前模板。 */
+  templateId: string | null;
+  isRuleBound: boolean;
 }
 
-/**
- * 这张标签是哪条规则识别的、用哪个模板、打到哪台打印机，方便核对规则指定的模板和纸张分配是否生效。
- * 没扫码时说明预览的是示例内容（samplePrinter 是示例标签会打到的打印机）；识别不了时没有说明。
- */
-export function describePreviewUsage(
-  preview: LabelPreview | null,
-  activeTemplateName: string | null,
-  samplePrinter: PrinterChoice | null = null,
-  /** 系统打印机名 → 界面上显示的名字（macOS 上系统名是打印队列名）。 */
-  displayName: (printerName: string) => string = (printerName) => printerName,
-): PreviewUsage | null {
+export function describePreviewUsage(preview: LabelPreview | null, activeTemplateId: string | null): PreviewUsage {
   if (preview === null) {
-    return activeTemplateName === null
-      ? null
-      : {
-          source: '示例内容',
-          template: `模板：${activeTemplateName}`,
-          printer: samplePrinter && describePreviewPrinter(samplePrinter, displayName),
-        };
+    return { source: '示例内容', templateId: activeTemplateId, isRuleBound: false };
   }
-  if (preview.result.status !== 'ok' || preview.templateName === null) {
-    return null;
+  if (preview.result.status !== 'ok') {
+    return { source: null, templateId: activeTemplateId, isRuleBound: false };
   }
-  const bound = preview.isTemplateBound ? '（规则指定）' : '';
+  const isRuleBound = preview.isTemplateBound && preview.templateId !== null;
   return {
     source: `规则：${preview.result.scan.ruleName}`,
-    template: `模板：${preview.templateName}${bound}`,
-    printer: describePreviewPrinter(preview.result.printer, displayName),
+    templateId: isRuleBound ? preview.templateId : activeTemplateId,
+    isRuleBound,
   };
-}
-
-/** 这张会打到哪台：模板指定的打印机不在时说明已退回纸张分配。 */
-export function describePreviewPrinter(
-  choice: PrinterChoice,
-  displayName: (printerName: string) => string = (printerName) => printerName,
-): string {
-  if (choice.printerName === null) {
-    return '打印机：还没有';
-  }
-  const name = displayName(choice.printerName);
-  return choice.reason === 'template-missing'
-    ? `打印机：${name}（模板指定的 ${choice.missingPrinter} 不在这台电脑上）`
-    : `打印机：${name}`;
-}
-
-export function usageText(usage: PreviewUsage): string {
-  return [usage.source, usage.template, usage.printer].filter((part) => part !== null).join(' · ');
 }

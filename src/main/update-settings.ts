@@ -29,7 +29,7 @@ export type UpdateClientSettings = Pick<
  * 全部显式设置，不依赖 electron-updater 的默认值：库升级时默认值变了，更新方式也不会悄悄跟着变。
  */
 const UPDATE_CLIENT_SETTINGS: Readonly<UpdateClientSettings> = {
-  // 后台自动下载；下载完成后由操作员点「重启更新」决定何时安装。
+  // 后台自动下载；下载完成后由操作员点「重启更新」决定何时安装，窗口关在托盘里没人用时也会静默装（background-update.ts）。
   autoDownload: true,
   // 操作员一直没点「重启更新」：退出程序时静默安装，下次打开就是新版。
   autoInstallOnAppQuit: true,
@@ -43,6 +43,12 @@ const UPDATE_CLIENT_SETTINGS: Readonly<UpdateClientSettings> = {
   disableWebInstaller: true,
   disableDifferentialDownload: false,
 };
+
+/**
+ * 安装更新的方式：静默安装，不弹安装界面（点一次「重启更新」就够，界面上的进度对操作员没有用），
+ * 装完由安装程序带 --updated 启动新版本；新版本的窗口去哪由 relaunch-intent.ts 决定。
+ */
+export const INSTALL_OPTIONS = { isSilent: true, isForceRunAfter: true } as const;
 
 export function applyUpdateClientSettings(client: UpdateClientSettings): void {
   Object.assign(client, UPDATE_CLIENT_SETTINGS);

@@ -44,6 +44,7 @@ import { fakeImageTextSource, parseFakeOcr } from './ocr/fake-ocr';
 import { ImageTextReader, type ImageTextSource } from './ocr/image-text-reader';
 import { createOcrEngine } from './ocr/ocr-engine';
 import { missingOcrFiles, ocrFiles } from './ocr/ocr-files';
+import { OCR_SAMPLES_DIR_NAME, OCR_SAMPLES_KEPT, OcrSamples } from './ocr/ocr-samples';
 import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
 import { queryDriverPaper } from './printing/driver-paper';
@@ -225,6 +226,7 @@ async function bootstrap(): Promise<void> {
     }
   };
   reportMissingOcr();
+  const ocrSamples = new OcrSamples(join(dataPath, OCR_SAMPLES_DIR_NAME), OCR_SAMPLES_KEPT, () => Date.now());
   const imageText: ImageTextSource = fakeOcr
     ? fakeImageTextSource(fakeOcr)
     : new ImageTextReader({
@@ -252,6 +254,7 @@ async function bootstrap(): Promise<void> {
         onUnavailable: () => mobile.rulesChanged(),
         now: () => performance.now(),
         log: (line) => console.warn(line),
+        record: (image, regions) => ocrSamples.save(image, regions),
       });
   // 这台电脑能不能识别标签上的字：不能时不向手机要图，这一步跳过。
   const canReadImages = (): boolean => imageText.canRead();

@@ -3,6 +3,7 @@
  * 不 import electron：解码、创建引擎都由参数注入，用 bun test 测试；index.ts 负责接上 nativeImage 和扩展。
  */
 import type { ImageTextRegion, ScanImage } from '../../core/scan/image-text';
+import { describeRecognition } from './ocr-samples';
 
 /** 引擎里这里用到的部分（native/ocr/node 的 NativeEngine）。 */
 export interface OcrEnginePort {
@@ -44,6 +45,8 @@ export interface ImageTextReaderDeps {
   onUnavailable: () => void;
   now: () => number;
   log: (line: string) => void;
+  /** 留下这一张的样本（图和读到的文字，见 ocr-samples.ts）；存不了只记日志，不影响识别。 */
+  record: (image: ScanImage, regions: readonly ImageTextRegion[]) => Promise<void>;
 }
 
 const BGRA_BYTES = 4;
@@ -90,6 +93,7 @@ export class ImageTextReader implements ImageTextSource {
     if (decoded === null) {
       throw new Error('标签图解不开');
     }
+    const startedAt = this.deps.now();
     const result = await engine.recognize({
       data: decoded.data,
       width: decoded.width,
@@ -97,7 +101,16 @@ export class ImageTextReader implements ImageTextSource {
       stride: decoded.width * BGRA_BYTES,
       pixelFormat: 'BGRA',
     });
-    return result.regions.map((region) => ({ box: region.box, text: region.text, score: region.recognitionScore }));
+    const regions = result.regions.map((region) => ({
+      box: region.box,
+      text: region.text,
+      score: region.recognitionScore,
+    }));
+    this.deps.log(describeRecognition(regions, this.deps.now() - startedAt));
+    this.deps
+      .record(image, regions)
+      .catch((error: unknown) => this.deps.log(`[ocr] cannot save the sample: ${String(error)}`));
+    return regions;
   }
 
   /** 引擎只创建一次；创建失败记日志、从此不能读（换文件要重启程序）。 */

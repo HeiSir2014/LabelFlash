@@ -39,6 +39,7 @@ function harness(overrides: Partial<ImageTextReaderDeps> = {}) {
     },
     now: () => 0,
     log: (line) => calls.logs.push(line),
+    record: async () => {},
     ...overrides,
   });
   return { reader, calls };
@@ -116,6 +117,26 @@ describe('ImageTextReader', () => {
     expect(reader.canRead()).toBe(true);
     present = false;
     expect(reader.canRead()).toBe(false);
+  });
+
+  // 货架号认不出时要看手机实际拍到了什么：每次识别都记下读到的文字，并把图和结果交出去存样本。
+  test('logs what was read and hands the image and texts to the sample store', async () => {
+    const recorded: unknown[] = [];
+    const { reader, calls } = harness({ record: async (image, regions) => void recorded.push({ image, regions }) });
+    await reader.read(IMAGE);
+    expect(calls.logs).toContain('[ocr] read 1 texts in 0 ms: "A-1-2-3" 0.98');
+    expect(recorded).toEqual([{ image: IMAGE, regions: [{ box: [...BOX], text: 'A-1-2-3', score: 0.98 }] }]);
+  });
+
+  test('still returns what was read when the sample cannot be saved', async () => {
+    const { reader, calls } = harness({
+      record: async () => {
+        throw new Error('磁盘满了');
+      },
+    });
+    expect(await reader.read(IMAGE)).toEqual([{ box: [...BOX], text: 'A-1-2-3', score: 0.98 }]);
+    await Promise.resolve();
+    expect(calls.logs.some((line) => line.includes('磁盘满了'))).toBe(true);
   });
 
   test('reports an image that cannot be decoded', async () => {

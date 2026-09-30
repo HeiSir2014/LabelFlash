@@ -80,6 +80,19 @@ describe('PrintJobService', () => {
     expect(printed[0]?.printerName).toBe('标签机A');
   });
 
+  // 关到托盘后的静默更新要等接口的任务打完：收下还没打完的都算。
+  test('counts the jobs accepted but not finished', async () => {
+    const { service, usePrinter } = createHarness();
+    const { promise, resolve } = Promise.withResolvers<PrintResult>();
+    usePrinter(() => promise);
+    await service.create('key:k1', INPUT);
+    await service.create('key:k1', INPUT);
+    expect(service.pending).toBe(2);
+    resolve(SENT);
+    await service.idle();
+    expect(service.pending).toBe(0);
+  });
+
   // 服装标签要按提交的顺序连续出纸：任务排成一队，一个打完（所有份数）再打下一个。
   test('prints jobs one after another in the order they were submitted', async () => {
     const { service, printed, usePrinter } = createHarness();

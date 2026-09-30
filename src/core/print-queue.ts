@@ -18,6 +18,15 @@ export class PrintQueue {
     }
   }
 
+  /** 所有打印机上排着的和正在打的任务数。 */
+  get pending(): number {
+    let total = 0;
+    for (const queue of this.queues.values()) {
+      total += queue.pending;
+    }
+    return total;
+  }
+
   enqueue<T>(printerName: string, task: PrintTask<T>): Promise<T> {
     let queue = this.queues.get(printerName);
     if (!queue) {

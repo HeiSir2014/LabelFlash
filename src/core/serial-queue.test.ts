@@ -27,4 +27,19 @@ describe('SerialQueue', () => {
     expect(await failed.catch((e: unknown) => e)).toBe(boom);
     expect(await next).toBe('ok');
   });
+
+  // 关到托盘后的静默更新要知道还有没有任务：排着的和正在跑的都算，跑完（成功或失败）就不算。
+  test('counts the tasks waiting or running until each settles', async () => {
+    const queue = new SerialQueue();
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+    const first = queue.run(() => gate);
+    const second = queue.run(async () => {
+      throw new Error('boom');
+    });
+    expect(queue.pending).toBe(2);
+    release();
+    await first;
+    await second.catch(() => undefined);
+    expect(queue.pending).toBe(0);
+  });
 });

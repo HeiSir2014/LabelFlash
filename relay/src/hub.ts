@@ -13,6 +13,7 @@ import {
   type DesktopFrame,
   type EndReason,
   FIRST_FRAME_TIMEOUT_MS,
+  MAX_FRAME_BYTES,
   MAX_PENDING_JOBS,
   MAX_PHONES_PER_SESSION,
   MOBILE_PROTOCOL_VERSION,
@@ -69,6 +70,13 @@ const PHONE_FRAME_BURST = 2 * (1 + MAX_PENDING_JOBS);
 const DESKTOP_FRAMES_PER_SECOND = 50;
 /** 电脑重连时一次回复所有手机：每部手机的 welcome 加上它每个任务的进度；留一倍余量。 */
 const DESKTOP_FRAME_BURST = 2 * MAX_PHONES_PER_SESSION * (1 + MAX_PENDING_JOBS);
+/**
+ * 手机平均每秒最多一个最大帧的字节数：一帧可以带一张标签图（最大约 1 MB），正常扫码一两秒一张、每张几百 KB。
+ * 只按帧数限速的话，手机每秒能推 5 个最大帧，服务器扛不住几个这样的连接。
+ */
+const PHONE_BYTES_PER_SECOND = MAX_FRAME_BYTES;
+/** 手机重新被接纳时一次补发发件箱里所有还没结果的任务，每个都可能带一张最大的图。 */
+const PHONE_BYTE_BURST = (1 + MAX_PENDING_JOBS) * MAX_FRAME_BYTES;
 /** 超出限速累计这么多次就断开：偶尔超出只丢帧，持续刷就关掉。 */
 const MAX_RATE_VIOLATIONS = 50;
 /** 日志里只记会话号的前几个字符，够排查问题，又不能拿来加入会话。 */
@@ -81,6 +89,8 @@ interface Connection {
   /** 发出第一帧（open / join）之后才有。 */
   session: string | null;
   bucket: TokenBucket;
+  /** 按字节限速（只有手机）。 */
+  bytes: TokenBucket | null;
   violations: number;
 }
 
@@ -120,12 +130,15 @@ export class RelayHub {
       role === 'phone'
         ? new TokenBucket(PHONE_FRAMES_PER_SECOND, PHONE_FRAME_BURST, this.deps.clock)
         : new TokenBucket(DESKTOP_FRAMES_PER_SECOND, DESKTOP_FRAME_BURST, this.deps.clock);
+    // 电脑只转发结果和排队更新，帧都很小，不按字节限速。
+    const bytes = role === 'phone' ? new TokenBucket(PHONE_BYTES_PER_SECOND, PHONE_BYTE_BURST, this.deps.clock) : null;
     this.connections.set(peer.id, {
       peer,
       role,
       attachedAt: this.deps.clock.now(),
       session: null,
       bucket,
+      bytes,
       violations: 0,
     });
     this.connectionsPerIp.set(peer.ip, perIp + 1);
@@ -138,7 +151,8 @@ export class RelayHub {
     if (!connection) {
       return;
     }
-    if (!connection.bucket.take()) {
+    // 按 UTF-16 长度算：帧是 base64url 和 JSON，都是 ASCII，和字节数一样。
+    if (!connection.bucket.take() || (connection.bytes !== null && !connection.bytes.take(text.length))) {
       this.throttle(connection);
       return;
     }

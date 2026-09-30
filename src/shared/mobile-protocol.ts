@@ -21,17 +21,21 @@ export const IV_BYTES = 12;
  * 单帧上限（字节）：中转服务按它设置 maxPayloadLength，超过的连接直接断开。
  * 手机随扫码带一张标签图（最多 MAX_IMAGE_BYTES），所以比只有文字时大。
  */
-export const MAX_FRAME_BYTES = 192 * 1024;
+export const MAX_FRAME_BYTES = 1152 * 1024;
 /**
  * 内层消息的明文上限（UTF-8 字节）：加密后经 base64url 约变成 4/3 倍，加上信封仍小于 MAX_FRAME_BYTES。
  * 最长的请求（MAX_REQUEST_RAW_LENGTH 个字符，每个 JSON 转义后最多 6 字节，加上最大的图和手动字段）
  * 和最长的结果都在这个范围内，由测试保证。
  */
-export const MAX_MESSAGE_BYTES = 128 * 1024;
-/** 标签图（JPEG）的上限：整张 60×40 标签按每个二维码边长 130 像素截，几十 KB；手机压不到这么小时降低画质。 */
-export const MAX_IMAGE_BYTES = 64 * 1024;
-/** 截图的边长上限（像素）：电脑要的清晰度再高，手机也不截比这更大的图。 */
-export const MAX_IMAGE_SIDE = 1024;
+export const MAX_MESSAGE_BYTES = 768 * 1024;
+/**
+ * 标签图（JPEG）的上限：画质优先，字的边缘越清楚 OCR 越准；4G 下 0.5 MB 也只要零点几秒。
+ * 实际多大由电脑要的清晰度（ImageRequest.pixelsPerCode）决定，手机压不到这么小时才降低画质。
+ * 图在消息里是 base64（约 4/3 倍），整条消息加密后再 base64url 一次，所以 MAX_MESSAGE_BYTES、MAX_FRAME_BYTES 跟着放大。
+ */
+export const MAX_IMAGE_BYTES = 512 * 1024;
+/** 截图的边长上限（像素）：整张标签是二维码边长的 6 倍宽，1600 像素够每个边长截 260 多像素；再大手机编码太慢。 */
+export const MAX_IMAGE_SIDE = 1600;
 /** 每个二维码边长截多少像素：太少字看不清，太多图太大（见 ImageRequest）。 */
 export const PIXELS_PER_CODE_RANGE = { min: 40, max: 400 } as const;
 /** 区域离二维码最多这么多个边长（和加工步骤的 areaExtent 一致）。 */

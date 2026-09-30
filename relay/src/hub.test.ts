@@ -4,6 +4,8 @@ import { randomId } from '../../src/shared/mobile-crypto';
 import {
   DESKTOP_GRACE_MS,
   FIRST_FRAME_TIMEOUT_MS,
+  MAX_FRAME_BYTES,
+  MAX_PENDING_JOBS,
   MOBILE_PROTOCOL_VERSION,
   type SealedBody,
 } from '../../src/shared/mobile-protocol';
@@ -300,6 +302,30 @@ describe('limits', () => {
     }
     expect(phone.received).toContainEqual({ t: 'error', code: 'rate-limited' });
     expect(phone.closed?.code).toBe(1008);
+  });
+});
+
+describe('phone bytes', () => {
+  /** 接近单帧上限的一帧（一张最大的标签图）。 */
+  const bigFrame = () => JSON.stringify({ t: 'ping', pad: 'x'.repeat(MAX_FRAME_BYTES - 64) });
+
+  test('lets a phone resend its whole outbox with label images after reconnecting', () => {
+    const { session } = openDesktop();
+    const phone = joinPhone(session);
+    for (let index = 0; index < 1 + MAX_PENDING_JOBS; index += 1) {
+      hub.receive(phone, bigFrame());
+    }
+    expect(phone.received).not.toContainEqual({ t: 'error', code: 'rate-limited' });
+  });
+
+  test('drops large frames from a phone that keeps pushing more than its byte budget', () => {
+    const { session } = openDesktop();
+    const phone = joinPhone(session);
+    // 帧数还在帧数限速之内（突发 2 × (1 + MAX_PENDING_JOBS) 帧），只是字节超了。
+    for (let index = 0; index < Math.ceil(1.5 * (1 + MAX_PENDING_JOBS)); index += 1) {
+      hub.receive(phone, bigFrame());
+    }
+    expect(phone.received).toContainEqual({ t: 'error', code: 'rate-limited' });
   });
 });
 

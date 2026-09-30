@@ -5,7 +5,6 @@
 import {
   type ImageRequest,
   isRequestRaw,
-  MAX_IMAGE_BASE64_LENGTH,
   MAX_IMAGE_BYTES,
   MAX_MANUAL_VALUE_LENGTH,
   type PhoneImage,
@@ -133,7 +132,7 @@ export interface PhoneControllerDeps {
   view: ViewPort;
   readPhoto: (file: File) => Promise<ImageData>;
   /** 截下来的标签图压成 JPEG（标准 base64）；压不到上限以下时为 null。 */
-  encodeJpeg: (image: PixelImage, maxBytes: number) => Promise<string | null>;
+  encodeJpeg: (image: PixelImage, maxBytes: number) => Promise<Uint8Array | null>;
   vibrate: (pattern: number | number[]) => void;
   sound: SoundPort;
   isVisible: () => boolean;
@@ -236,7 +235,7 @@ export class PhoneController {
     return this.submit(
       job.raw,
       { explicit: true, force: false },
-      { image: null, moreImages: [], fields: [{ name: field, value: text }] },
+      { images: [], fields: [{ name: field, value: text }] },
     );
   }
 
@@ -407,26 +406,21 @@ export class PhoneController {
   }
 
   private sendLabel(frames: LabelFrames): void {
-    void this.encodeLabel(frames).then(([image = null, ...moreImages]) =>
-      this.send(frames.text, false, { image, moreImages, fields: [] }),
-    );
+    void this.encodeLabel(frames).then((images) => this.send(frames.text, false, { images, fields: [] }));
   }
 
   /**
-   * 按顺序压 JPEG：几帧合起来不超过 MAX_IMAGE_BYTES（和电脑的检查一样按 base64 长度算），后面的帧只能用剩下的。
-   * 压不下的那一帧不带；出任何问题都少带图而不是不打（电脑那一步按「没有图」或已有的帧处理）。
+   * 按顺序压 JPEG，每一帧不超过 MAX_IMAGE_BYTES；压不下的那一帧不带。
+   * 出任何问题都少带图而不是不打（电脑那一步按「没有图」或已有的帧处理）。
    */
   private async encodeLabel(frames: LabelFrames): Promise<PhoneImage[]> {
     const code = cropLayout(frames.request).code;
     const images: PhoneImage[] = [];
-    let base64Left = MAX_IMAGE_BASE64_LENGTH;
     for (const crop of frames.crops) {
-      const bytesLeft = Math.min(MAX_IMAGE_BYTES, Math.floor(base64Left / 4) * 3);
       try {
-        const jpeg = bytesLeft > 0 ? await this.deps.encodeJpeg(crop, bytesLeft) : null;
+        const jpeg = await this.deps.encodeJpeg(crop, MAX_IMAGE_BYTES);
         if (jpeg !== null) {
           images.push({ jpeg, code });
-          base64Left -= jpeg.length;
         }
       } catch (error) {
         console.warn('[PhoneController] cannot encode the label', error);
@@ -466,7 +460,7 @@ export class PhoneController {
       return;
     }
     const job = this.session.submit(raw, force, extras);
-    if (extras.image !== null || extras.fields.length > 0) {
+    if (extras.images.length > 0 || extras.fields.length > 0) {
       this.jobExtras.set(job, extras);
       // 页面上只留最近的任务：更早的图用不到了，不占内存。
       for (const id of [...this.jobExtras.keys()].slice(0, -JOB_EXTRAS_KEPT)) {

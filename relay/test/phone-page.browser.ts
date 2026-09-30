@@ -221,10 +221,7 @@ test(
       expect(job?.images).toHaveLength(3);
       const image = job?.images[0];
       if (!image) throw new Error('expected a label image');
-      const { data, info } = await sharp(Buffer.from(image.jpeg, 'base64'))
-        .grayscale()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
+      const { data, info } = await sharp(image.jpeg).grayscale().raw().toBuffer({ resolveWithObject: true });
       expect({ width: info.width, height: info.height }).toEqual({ width: 780, height: 520 });
       const { x, y, size } = image.code;
       expect({ x, y, size }).toEqual({ x: 325, y: 195, size: 130 });

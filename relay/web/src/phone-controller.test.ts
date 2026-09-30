@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
-  MAX_IMAGE_BASE64_LENGTH,
+  MAX_IMAGE_BYTES,
   MAX_PENDING_JOBS,
   MAX_REQUEST_RAW_LENGTH,
   type PhonePrintResult,
-  withinImageBudget,
 } from '../../../src/shared/mobile-protocol';
 import { FakeTimers } from '../../../src/shared/testing/fake-socket';
 import type { CameraPort, FrameSnapshot } from './camera';
@@ -208,11 +207,13 @@ let visible: boolean;
 let visibilityListener: (() => void) | null;
 let submitted: { raw: string; force: boolean }[];
 let extras: JobExtras[];
-let jpeg: string | null;
+let jpeg: Uint8Array | null;
 /** 交给 JPEG 编码的截图。 */
 let encoded: PixelImage[];
 /** 假的 JPEG 编码：默认给出 jpeg；测试可以换掉，按大小上限决定给不给。 */
-let encodeJpeg: (image: PixelImage, maxBytes: number) => Promise<string | null>;
+let encodeJpeg: (image: PixelImage, maxBytes: number) => Promise<Uint8Array | null>;
+/** 假的 JPEG 字节（FF D8 FF 开头）。 */
+const FAKE_JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
 let controller: PhoneController;
 let nextJob: number;
 
@@ -288,7 +289,7 @@ beforeEach(() => {
   visibilityListener = null;
   submitted = [];
   extras = [];
-  jpeg = '/9j/fake';
+  jpeg = FAKE_JPEG;
   encoded = [];
   encodeJpeg = async () => jpeg;
   nextJob = 0;
@@ -611,9 +612,7 @@ describe('PhoneController: the label image', () => {
     await scanningWithImages();
     await frame(RAW);
     expect(submitted).toEqual([{ raw: RAW, force: false }]);
-    expect(extras).toEqual([
-      { image: { jpeg: '/9j/fake', code: { x: 50, y: 30, size: 20 } }, moreImages: [], fields: [] },
-    ]);
+    expect(extras).toEqual([{ images: [{ jpeg: FAKE_JPEG, code: { x: 50, y: 30, size: 20 } }], fields: [] }]);
     expect(camera.snapshots).toBe(1);
   });
 
@@ -641,7 +640,7 @@ describe('PhoneController: the label image', () => {
     camera.frameImage = FRAME;
     decoder.corners = CORNERS;
     await frame(RAW);
-    expect(extras).toEqual([{ image: null, moreImages: [], fields: [] }]);
+    expect(extras).toEqual([{ images: [], fields: [] }]);
     expect(camera.snapshots).toBe(0);
   });
 
@@ -650,7 +649,7 @@ describe('PhoneController: the label image', () => {
     jpeg = null;
     await frame(RAW);
     expect(submitted).toEqual([{ raw: RAW, force: false }]);
-    expect(extras).toEqual([{ image: null, moreImages: [], fields: [] }]);
+    expect(extras).toEqual([{ images: [], fields: [] }]);
   });
 
   test('does not crop a label that is held in view again', async () => {
@@ -678,7 +677,7 @@ describe('PhoneController: the label image', () => {
     expect(controller.fillField(job, '货架号', '   ')).toBe(false);
     expect(controller.fillField(job, '货架号', ' A-1-2-3 ')).toBe(true);
     expect(submitted.at(-1)).toEqual({ raw: RAW, force: false });
-    expect(extras.at(-1)).toEqual({ image: null, moreImages: [], fields: [{ name: '货架号', value: 'A-1-2-3' }] });
+    expect(extras.at(-1)).toEqual({ images: [], fields: [{ name: '货架号', value: 'A-1-2-3' }] });
   });
 });
 
@@ -692,7 +691,7 @@ describe('PhoneController: several frames of the label', () => {
     bottomLeft: { x: 10, y: 30 },
   };
   const FRAME: PixelImage = { data: new Uint8ClampedArray(40 * 40 * 4).fill(200), width: 40, height: 40 };
-  const IMAGE = { jpeg: '/9j/fake', code: { x: 50, y: 30, size: 20 } };
+  const IMAGE = { jpeg: FAKE_JPEG, code: { x: 50, y: 30, size: 20 } };
 
   async function scanningForFrames(): Promise<void> {
     await scanning();
@@ -708,7 +707,7 @@ describe('PhoneController: several frames of the label', () => {
     await frame(RAW);
     await frame(RAW);
     expect(submitted).toEqual([{ raw: RAW, force: false }]);
-    expect(extras).toEqual([{ image: IMAGE, moreImages: [IMAGE, IMAGE], fields: [] }]);
+    expect(extras).toEqual([{ images: [IMAGE, IMAGE, IMAGE], fields: [] }]);
     expect(camera.snapshots).toBe(3);
   });
 
@@ -726,7 +725,7 @@ describe('PhoneController: several frames of the label', () => {
     await frame(null);
     timers.advance(LABEL_FRAMES_WINDOW_MS);
     await settle();
-    expect(extras).toEqual([{ image: IMAGE, moreImages: [], fields: [] }]);
+    expect(extras).toEqual([{ images: [IMAGE], fields: [] }]);
   });
 
   test('sends the label at once when another code comes into view', async () => {
@@ -734,21 +733,23 @@ describe('PhoneController: several frames of the label', () => {
     await frame(RAW);
     await frame('CL9999-QZ-黑色-40');
     expect(submitted).toEqual([{ raw: RAW, force: false }]);
-    expect(extras).toEqual([{ image: IMAGE, moreImages: [], fields: [] }]);
+    expect(extras).toEqual([{ images: [IMAGE], fields: [] }]);
   });
 
-  // 几帧合起来不能超过电脑收的上限（withinImageBudget），放不下的帧不带，前面的照样发。
-  test('leaves out the frames that do not fit in the image budget', async () => {
+  // 每一帧各自不超过 MAX_IMAGE_BYTES；压不到上限以下的那一帧不带，其余的照样发。
+  test('leaves out a frame that cannot be made small enough and sends the rest', async () => {
     await scanningForFrames();
-    const large = `/9j/${'A'.repeat(Math.floor((MAX_IMAGE_BASE64_LENGTH * 0.4) / 4) * 4 - 4)}`;
-    encodeJpeg = async (_image, maxBytes) => ((large.length / 4) * 3 <= maxBytes ? large : null);
+    const budgets: number[] = [];
+    encodeJpeg = async (_image, maxBytes) => {
+      budgets.push(maxBytes);
+      return budgets.length === 2 ? null : FAKE_JPEG;
+    };
     await frame(RAW);
     await frame(RAW);
     await frame(RAW);
     await settle();
-    const sent = extras[0];
-    expect(sent?.moreImages).toHaveLength(1);
-    expect(withinImageBudget([sent?.image, ...(sent?.moreImages ?? [])].filter((image) => image != null))).toBe(true);
+    expect(budgets).toEqual([MAX_IMAGE_BYTES, MAX_IMAGE_BYTES, MAX_IMAGE_BYTES]);
+    expect(extras).toEqual([{ images: [IMAGE, IMAGE], fields: [] }]);
   });
 
   test('sends the frames again when a job is retried', async () => {

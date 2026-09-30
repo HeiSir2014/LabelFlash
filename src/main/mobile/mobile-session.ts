@@ -197,8 +197,8 @@ export class MobileSession {
       request: {
         raw: message.raw,
         force: message.force,
-        images: message.image === undefined ? [] : [message.image, ...(message.moreImages ?? [])],
-        fields: message.fields ?? [],
+        images: message.images,
+        fields: message.fields,
       },
     };
   }

@@ -133,7 +133,7 @@
 ### 4.5 中转服务的防滥用
 
 - **连接**：
-  - 只接受 JSON 文本帧，单帧最大 64 KiB；
+  - 只接受 msgpack 二进制帧，单帧最大 `MAX_FRAME_BYTES`（满额三帧标签图加余量，约 1.6 MB）；收到文本帧（协议 1 的 JSON）回一个 JSON 的 `version` 错误就断开，老电脑和老扫码页据此提示更新；
   - 连接后 10 秒内必须发出第一帧（`open` / `join`），否则断开。
 - **频率**：每个连接按令牌桶限速，超出的帧丢弃并回复错误；累计超出 50 次就断开。计时用单调时钟，服务器校时不影响限速和宽限期。
   - 手机每秒 5 帧，突发 22：被接纳时一次发出 hello 加发件箱里的 10 个任务，留一倍余量；
@@ -166,7 +166,10 @@ X-Content-Type-Options: nosniff
 
 ## 5. 协议
 
-所有消息都是 JSON 文本帧，版本号 `MOBILE_PROTOCOL_VERSION = 1`。
+所有消息都是 msgpack 二进制帧（编解码在 `src/shared/wire.ts`，解码时限制字符串、字节、数组、键值对的长度，不接受扩展类型），版本号 `MOBILE_PROTOCOL_VERSION = 2`。
+
+- **协议 2（2026-09-30）**：原来是 JSON 文本帧，标签图在内层消息里 base64 一次、加密后放进信封再 base64url 一次，上传量约为原图的 1.78 倍；改成 msgpack 后图和密文都是原始字节。同时一次扫码可以带同一张标签的最多 3 帧图（见 `2026-09-30-shelf-number-design.md` 第 11 节），每帧最多 512 KB。
+- **不兼容协议 1**：不保留旧实现。中转服务收到 1 版的文本帧就回 `{t:'error', code:'version'}`（JSON）并断开，1.1.0 及更早的电脑、没刷新的老扫码页会提示更新；老的发布版本标记为弃用。
 
 ### 5.1 外层信封（中转服务能看到）
 
@@ -200,7 +203,7 @@ X-Content-Type-Options: nosniff
 | → 手机 | `{t:'kicked'}` | 被电脑断开（手机满了，或被移除） |
 | → 手机 | `{t:'pong'}`、`{t:'error', code}` | 心跳回复；错误 |
 
-`body` 是加密后的内容 `{iv, ct}`（base64url），中转服务原样转发。`phone` 是中转服务分配的 16 字节随机连接号，电脑发来的格式不对就当作坏帧。
+`body` 是加密后的内容 `{iv, ct}`（原始字节：12 字节 IV 和密文），中转服务原样转发。`phone` 是中转服务分配的 16 字节随机连接号，电脑发来的格式不对就当作坏帧。
 
 关闭码都在 `CLOSE_CODES` 里：`1000` 正常、`1008` 违反协议、`1013` 满了稍后再试、`4000` 心跳超时、`4001` 被同一台电脑的新连接取代、`4002` 连接超时。
 
@@ -209,20 +212,18 @@ X-Content-Type-Options: nosniff
 | 方向 | 消息 | 说明 |
 |---|---|---|
 | 手机 → 电脑 | `{type:'hello', token, device}` | 加入或恢复；`device` 是页面从 UA 得出的简短描述，例如「iPhone · 微信」 |
-| 手机 → 电脑 | `{type:'submit', nonce, seq, job, raw, force, image?, fields?}` | 提交打印任务；`job` 是幂等键，见 4.3。`image`：电脑要图时随扫码截的整张标签（按二维码摆正的 JPEG 和二维码在图里的位置）；`fields`：手机上手动输入的字段（没认出货架号时补的） |
-| 电脑 → 手机 | `{type:'welcome', token, nonce, printer, image?}` | 加入或恢复成功；`printer` 是当前打印机的显示名，没选时为 null；`image` 是要手机随扫码截的标签图（区域和清晰度），不需要时没有 |
+| 手机 → 电脑 | `{type:'submit', nonce, seq, job, raw, force, images, fields}` | 提交打印任务；`job` 是幂等键，见 4.3。`images`：电脑要图时随扫码截的同一张标签连续的几帧（每帧是按二维码摆正的 JPEG 字节和二维码在图里的位置，最多 3 帧），不要图时为空；`fields`：手机上手动输入的字段（没认出货架号时补的），没有时为空 |
+| 电脑 → 手机 | `{type:'welcome', token, nonce, printer, image}` | 加入或恢复成功；`printer` 是当前打印机的显示名，没选时为 null；`image` 是要手机随扫码截的标签图（区域、清晰度、要几帧），不需要时为 null |
 | 电脑 → 手机 | `{type:'denied', reason}` | 没被接纳：`full`（手机满了）/ `removed`（被电脑移除）/ `locked`（电脑暂停了新手机加入） |
-| 电脑 → 手机 | `{type:'printer', printer, image?}` | 电脑上选的打印机变了，或者要不要截图变了（`image` 同 `welcome`） |
+| 电脑 → 手机 | `{type:'printer', printer, image}` | 电脑上选的打印机变了，或者要不要截图变了（`image` 同 `welcome`） |
 | 电脑 → 手机 | `{type:'accepted', job, ahead}` | 回复 `submit`：在排队，前面还有 `ahead` 个任务 |
 | 电脑 → 手机 | `{type:'queue', jobs: [{job, ahead}]}` | 队伍往前走了：这部手机所有排队中任务的新位置（1–10 条）；只发给位置变了的手机 |
 | 电脑 → 手机 | `{type:'started', job}` | 开始打印 |
 | 电脑 → 手机 | `{type:'result', job, result}` | 最终结果：`printed`（带规则名和字段摘要）、`duplicate`、`invalid`、`failed`（`TEXT_NOT_FOUND` 时带没认出的字段名 `field`），或 `no-printer` |
 | 电脑 → 手机 | `{type:'refused', job, reason}` | 没有接受（也就没有执行）：`rate-limited` / `too-many-pending` |
 
-**货架号识别加的字段（2026-09-30，见 `2026-09-30-shelf-number-design.md`）**：都是可选字段，老版本忽略它们，不升协议版本号。
-- 老电脑不在 `welcome` 里要图，新扫码页就不截图，帧也不会变大；老电脑的失败结果没有 `field`，扫码页按 null。
-- 单帧上限从 64 KB 提到 192 KB、单条明文从 32 KB 提到 128 KB（图最多 64 KB），中转服务的 `maxPayloadLength` 用同一个常量。2026-09-30 画质优先，再放宽到图 512 KB、明文 768 KB、单帧 1152 KB；手机连接加一个按字节的限速（平均每秒一个最大帧，突发够补发整个发件箱）。
-- 新的失败原因 `TEXT_NOT_FOUND` 只有新电脑会发：**先部署中转服务（带新的扫码页），再发电脑端的新版本**，否则老扫码页不认这个结果。
+**大小**：每帧标签图最多 512 KB，最多 3 帧；单条明文 = 3 × 512 KB + 64 KB（原文和其余字段的余量），单帧 = 明文 + 4 KB（信封和认证标签），中转服务的 `maxPayloadLength` 用同一个常量。手机连接另有一个按字节的限速：平均每秒一个最大帧，突发够补发整个发件箱。
+**部署顺序**：先部署中转服务（带新的扫码页），再发电脑端的新版本。中转服务一换，老电脑就连不上了（收到 `version` 错误），要更新到新版本。
 
 ### 5.3 心跳与重连
 

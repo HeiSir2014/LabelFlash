@@ -39,7 +39,7 @@ function join(connection: string, device = 'iPhone · 微信', token: string | n
 
 function submission(phone: Joined, job = randomId(), force = false): Submit {
   phone.seq += 1;
-  return { type: 'submit', nonce: phone.nonce, seq: phone.seq, job, raw: RAW, force };
+  return { type: 'submit', nonce: phone.nonce, seq: phone.seq, job, raw: RAW, force, images: [], fields: [] };
 }
 
 /** 提交一个任务，返回任务号。 */
@@ -177,10 +177,10 @@ describe('the queue', () => {
 
   test('carries the label frames in order and typed fields of a job', () => {
     const phone = join('c1');
-    const image = { jpeg: '/9j/AAAA', code: { x: 10, y: 20, size: 130 } };
-    const next = { jpeg: '/9j/BBBB', code: { x: 11, y: 20, size: 130 } };
+    const image = { jpeg: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), code: { x: 10, y: 20, size: 130 } };
+    const next = { jpeg: new Uint8Array([0xff, 0xd8, 0xff, 0xe1]), code: { x: 11, y: 20, size: 130 } };
     const fields = [{ name: '货架号', value: 'A-1-2-3' }];
-    const decision = session.submit('c1', { ...submission(phone), image, moreImages: [next], fields });
+    const decision = session.submit('c1', { ...submission(phone), images: [image, next], fields });
     expect(decision).toMatchObject({ kind: 'run', request: { raw: RAW, force: false, images: [image, next], fields } });
   });
 
@@ -277,7 +277,16 @@ describe('submissions', () => {
   test('ignores submissions before the phone has joined', () => {
     session.phoneJoined('c1');
     expect(
-      session.submit('c1', { type: 'submit', nonce: randomId(), seq: 1, job: randomId(), raw: RAW, force: false }),
+      session.submit('c1', {
+        type: 'submit',
+        nonce: randomId(),
+        seq: 1,
+        job: randomId(),
+        raw: RAW,
+        force: false,
+        images: [],
+        fields: [],
+      }),
     ).toEqual({ kind: 'ignore' });
   });
 

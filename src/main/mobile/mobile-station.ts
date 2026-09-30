@@ -160,10 +160,7 @@ export class MobileStation {
   private async print({ raw, force, images, fields }: PhoneJob) {
     const request: PrintRequest = { raw, source: 'mobile', force };
     if (images.length > 0) {
-      request.images = images.map((image) => ({
-        jpeg: new Uint8Array(Buffer.from(image.jpeg, 'base64')),
-        code: image.code,
-      }));
+      request.images = images;
     }
     if (fields.length > 0) {
       request.manualFields = Object.fromEntries(fields.map((field) => [field.name, field.value]));

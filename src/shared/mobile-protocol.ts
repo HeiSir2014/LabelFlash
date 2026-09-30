@@ -2,6 +2,7 @@
  * 手机扫码打印的协议：电脑、手机与云端中转服务三方共用。
  *
  * 分两层：外层信封由中转服务按会话路由；内层消息加密后放在信封的 body 里，只有手机和电脑能解开。
+ * 两层都是 msgpack（WebSocket 二进制帧，编解码见 wire.ts）：标签图、密文都是原始字节，不用 base64。
  * 所有收到的消息都不可信：解析函数逐字段检查，只返回白名单里的字段，不合法时返回 null。
  */
 import type { CodeRelativeArea, CodeSquare } from '../core/scan/image-text';
@@ -10,7 +11,11 @@ import { isValidFieldName } from '../core/scan/rule-model';
 import { type InvalidReason, PRINT_FAILURE_REASONS, type PrintFailureReason, type RecentPrint } from '../core/types';
 import { PRINTER_ISSUES, type PrinterIssue } from './printer-readiness';
 
-export const MOBILE_PROTOCOL_VERSION = 1;
+/**
+ * 协议版本。2：两层都改成 msgpack 二进制帧、一次扫码带几帧标签图（2026-09-30）。
+ * 不兼容 1：中转服务收到 1 版的 JSON 文本帧，回一个 version 错误就断开，老电脑和老扫码页提示更新。
+ */
+export const MOBILE_PROTOCOL_VERSION = 2;
 /** 会话号、所有权密钥、手机令牌、nonce、任务号、中转服务分配的连接号：16 字节随机数（128 位，不可猜），base64url 后 22 个字符。 */
 export const ID_BYTES = 16;
 /** 内容密钥：AES-256，32 字节，base64url 后 43 个字符。 */
@@ -18,27 +23,23 @@ export const KEY_BYTES = 32;
 /** AES-GCM 的 IV：12 字节，base64url 后 16 个字符。 */
 export const IV_BYTES = 12;
 /**
- * 单帧上限（字节）：中转服务按它设置 maxPayloadLength，超过的连接直接断开。
- * 手机随扫码带一张标签图（最多 MAX_IMAGE_BYTES），所以比只有文字时大。
- */
-export const MAX_FRAME_BYTES = 1152 * 1024;
-/**
- * 内层消息的明文上限（UTF-8 字节）：加密后经 base64url 约变成 4/3 倍，加上信封仍小于 MAX_FRAME_BYTES。
- * 最长的请求（MAX_REQUEST_RAW_LENGTH 个字符，每个 JSON 转义后最多 6 字节，加上最大的图和手动字段）
- * 和最长的结果都在这个范围内，由测试保证。
- */
-export const MAX_MESSAGE_BYTES = 768 * 1024;
-/**
- * 标签图（JPEG）的上限：画质优先，字的边缘越清楚 OCR 越准；4G 下 0.5 MB 也只要零点几秒。
- * 实际多大由电脑要的清晰度（ImageRequest.pixelsPerCode）决定，手机压不到这么小时才降低画质。
- * 图在消息里是 base64（约 4/3 倍），整条消息加密后再 base64url 一次，所以 MAX_MESSAGE_BYTES、MAX_FRAME_BYTES 跟着放大。
+ * 每一帧标签图（JPEG）的上限：画质优先，字的边缘越清楚 OCR 越准。
+ * 实际多大由电脑要的清晰度（ImageRequest.pixelsPerCode）决定，一般一百 KB 左右；手机压不到这么小时才降低画质。
  */
 export const MAX_IMAGE_BYTES = 512 * 1024;
 /**
  * 一次扫码最多带几帧标签图（同一张标签连续的几帧）。货架号的横杠这类细笔画，在有的帧里淡到读不出，
- * 真手机试扫时单帧只有约 2/3 能读出；几帧依次识别，一帧读不出还有下一帧。所有帧合起来仍不超过 MAX_IMAGE_BYTES。
+ * 真手机试扫时单帧只有约 2/3 能读出；几帧依次识别，一帧读不出还有下一帧。每一帧各自不超过 MAX_IMAGE_BYTES。
  */
 export const MAX_LABEL_FRAMES = 3;
+/** 除了图以外，一条消息里其余内容（原文、手动字段、结果）的余量：最长的原文按 UTF-8 也只有十几 KB。 */
+const MESSAGE_TEXT_ALLOWANCE_BYTES = 64 * 1024;
+/** 内层消息（msgpack）的明文上限：满额的几帧图加上其余内容。最长的请求和结果都在这个范围内，由测试保证。 */
+export const MAX_MESSAGE_BYTES = MAX_LABEL_FRAMES * MAX_IMAGE_BYTES + MESSAGE_TEXT_ALLOWANCE_BYTES;
+/** 信封（帧类型、手机号、IV）和 AES-GCM 的 16 字节认证标签的余量。 */
+const ENVELOPE_ALLOWANCE_BYTES = 4 * 1024;
+/** 单帧上限（字节）：中转服务按它设置 maxPayloadLength，超过的连接直接断开。 */
+export const MAX_FRAME_BYTES = MAX_MESSAGE_BYTES + ENVELOPE_ALLOWANCE_BYTES;
 /** 截图的边长上限（像素）：整张标签是二维码边长的 6 倍宽，1600 像素够每个边长截 260 多像素；再大手机编码太慢。 */
 export const MAX_IMAGE_SIDE = 1600;
 /** 每个二维码边长截多少像素：太少字看不清，太多图太大（见 ImageRequest）。 */
@@ -114,10 +115,10 @@ export type EndReason = (typeof END_REASONS)[number];
 export const RELAY_ERROR_CODES = ['version', 'session-taken', 'bad-frame', 'rate-limited', 'server-busy'] as const;
 export type RelayErrorCode = (typeof RELAY_ERROR_CODES)[number];
 
-/** 加密后的内层消息：iv 和密文都是 base64url。 */
+/** 加密后的内层消息：iv 和密文都是原始字节。 */
 export interface SealedBody {
-  iv: string;
-  ct: string;
+  iv: Uint8Array;
+  ct: Uint8Array;
 }
 
 export type DesktopFrame =
@@ -165,13 +166,13 @@ export type RefusalReason = (typeof REFUSAL_REASONS)[number];
 export interface ImageRequest {
   area: CodeRelativeArea;
   pixelsPerCode: number;
-  /** 要连续几帧（1 到 MAX_LABEL_FRAMES）；老电脑不发，按 1 帧。 */
+  /** 要连续几帧（1 到 MAX_LABEL_FRAMES）。 */
   frames: number;
 }
 
-/** 手机截的标签图：按二维码摆正后的 JPEG（标准 base64），二维码在图里的位置（像素）。 */
+/** 手机截的标签图：按二维码摆正后的 JPEG（原始字节），二维码在图里的位置（像素）。 */
 export interface PhoneImage {
-  jpeg: string;
+  jpeg: Uint8Array;
   code: CodeSquare;
 }
 
@@ -185,9 +186,8 @@ export type PhoneMessage =
    *   断线重连后，手机把还没结果的任务原样重发，不会丢，也不会多打。
    * - nonce、seq：防重放。nonce 是本次连接的 welcome 给的，seq 在本次连接内严格递增。
    * - force：强制补打（跳过防重复窗口）。补打是一个新任务，有自己的任务号。
-   * - image：电脑要图时（见 welcome.image）随扫码截的标签图；老手机页面、电脑没要时没有。
-   * - moreImages：电脑要几帧时，同一张标签接下来的几帧（不含 image），和 image 合起来不超过 MAX_IMAGE_BYTES；没有时省略。
-   * - fields：手机上手动输入的字段（例如没认出时补的货架号）；没有时省略。
+   * - images：电脑要图时（见 welcome.image）随扫码截的同一张标签连续的几帧，按顺序；电脑没要、截不了时为空。
+   * - fields：手机上手动输入的字段（例如没认出时补的货架号）；没有时为空。
    */
   | {
       type: 'submit';
@@ -196,9 +196,8 @@ export type PhoneMessage =
       job: string;
       raw: string;
       force: boolean;
-      image?: PhoneImage;
-      moreImages?: PhoneImage[];
-      fields?: PhoneField[];
+      images: PhoneImage[];
+      fields: PhoneField[];
     };
 
 export interface PhoneField {
@@ -216,7 +215,7 @@ export type PhonePrintResult =
       reason: PrintFailureReason;
       detail: string | null;
       issue: PrinterIssue | null;
-      /** TEXT_NOT_FOUND 时没认出的字段名（手机上显示它的输入框）；老电脑不发，按 null。 */
+      /** TEXT_NOT_FOUND 时没认出的字段名（手机上显示它的输入框）；其他原因为 null。 */
       field: string | null;
     }
   /** 这张的纸在电脑上没有可用的打印机（协议不变：手机不需要知道是哪种纸）。 */
@@ -232,13 +231,13 @@ export interface QueuePosition {
 export type DesktopMessage =
   /**
    * 加入或恢复成功：这部手机的令牌、本次连接的 nonce、当前打印机（显示名，没选时为 null）。
-   * image：要手机随扫码截标签图时才有（老电脑没有，手机就不截）。
+   * image：要手机随扫码截标签图时才有；不要时为 null，手机就不截。
    */
-  | { type: 'welcome'; token: string; nonce: string; printer: string | null; image?: ImageRequest }
+  | { type: 'welcome'; token: string; nonce: string; printer: string | null; image: ImageRequest | null }
   /** 没被接纳。 */
   | { type: 'denied'; reason: DenialReason }
   /** 电脑上选的打印机变了，或者要不要截图变了（加工步骤改了）：image 同 welcome。 */
-  | { type: 'printer'; printer: string | null; image?: ImageRequest }
+  | { type: 'printer'; printer: string | null; image: ImageRequest | null }
   /** 任务已收到，在排队（回复 submit）。 */
   | { type: 'accepted'; job: string; ahead: number }
   /**
@@ -263,7 +262,6 @@ const BASE64URL = /^[A-Za-z0-9_-]+$/;
 const UNSAFE_LABEL_CHARACTERS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 const RANDOM_ID_LENGTH = base64UrlLength(ID_BYTES);
 const KEY_LENGTH = base64UrlLength(KEY_BYTES);
-const IV_LENGTH = base64UrlLength(IV_BYTES);
 
 /** 不带填充的 base64url 长度。 */
 function base64UrlLength(bytes: number): number {
@@ -294,8 +292,8 @@ export function cleanDeviceLabel(text: string): string {
   return clipText(text.replace(UNSAFE_LABEL_CHARACTERS, '').trim(), MAX_DEVICE_LENGTH);
 }
 
-export function parseDesktopFrame(text: string): DesktopFrame | null {
-  const frame = parseRecord(text);
+export function parseDesktopFrame(value: unknown): DesktopFrame | null {
+  const frame = isRecord(value) ? value : null;
   switch (frame?.['t']) {
     case 'open': {
       const { v, session, secret } = frame;
@@ -319,8 +317,8 @@ export function parseDesktopFrame(text: string): DesktopFrame | null {
   }
 }
 
-export function parseRelayToDesktop(text: string): RelayToDesktop | null {
-  const frame = parseRecord(text);
+export function parseRelayToDesktop(value: unknown): RelayToDesktop | null {
+  const frame = isRecord(value) ? value : null;
   switch (frame?.['t']) {
     case 'opened':
       return { t: 'opened' };
@@ -341,8 +339,8 @@ export function parseRelayToDesktop(text: string): RelayToDesktop | null {
   }
 }
 
-export function parsePhoneFrame(text: string): PhoneFrame | null {
-  const frame = parseRecord(text);
+export function parsePhoneFrame(value: unknown): PhoneFrame | null {
+  const frame = isRecord(value) ? value : null;
   switch (frame?.['t']) {
     case 'join': {
       const { v, session } = frame;
@@ -359,8 +357,8 @@ export function parsePhoneFrame(text: string): PhoneFrame | null {
   }
 }
 
-export function parseRelayToPhone(text: string): RelayToPhone | null {
-  const frame = parseRecord(text);
+export function parseRelayToPhone(value: unknown): RelayToPhone | null {
+  const frame = isRecord(value) ? value : null;
   switch (frame?.['t']) {
     case 'online':
     case 'waiting':
@@ -404,26 +402,12 @@ export function parsePhoneMessage(value: unknown): PhoneMessage | null {
       ) {
         return null;
       }
-      const image = value['image'] === undefined ? undefined : parsePhoneImage(value['image']);
-      const moreImages = value['moreImages'] === undefined ? undefined : parseMoreImages(value['moreImages']);
-      const fields = value['fields'] === undefined ? undefined : parseManualFields(value['fields']);
-      if (image === null || moreImages === null || fields === null) {
+      const images = parsePhoneImages(value['images']);
+      const fields = parseManualFields(value['fields']);
+      if (images === null || fields === null) {
         return null;
       }
-      if (moreImages !== undefined && (image === undefined || !withinImageBudget([image, ...moreImages]))) {
-        return null;
-      }
-      return {
-        type: 'submit',
-        nonce,
-        seq,
-        job,
-        raw,
-        force,
-        ...(image === undefined ? {} : { image }),
-        ...(moreImages === undefined ? {} : { moreImages }),
-        ...(fields === undefined ? {} : { fields }),
-      };
+      return { type: 'submit', nonce, seq, job, raw, force, images, fields };
     }
     default:
       return null;
@@ -437,21 +421,21 @@ export function parseDesktopMessage(value: unknown): DesktopMessage | null {
   switch (value['type']) {
     case 'welcome': {
       const { token, nonce, printer } = value;
-      const image = value['image'] === undefined ? undefined : readImageRequest(value['image']);
-      if (!isRandomId(token) || !isRandomId(nonce) || !isStringOrNull(printer) || image === null) {
+      const image = value['image'] === null ? null : readImageRequest(value['image']);
+      if (!isRandomId(token) || !isRandomId(nonce) || !isStringOrNull(printer) || image === undefined) {
         return null;
       }
-      return { type: 'welcome', token, nonce, printer, ...(image === undefined ? {} : { image }) };
+      return { type: 'welcome', token, nonce, printer, image };
     }
     case 'denied':
       return isOneOf(value['reason'], DENIAL_REASONS) ? { type: 'denied', reason: value['reason'] } : null;
     case 'printer': {
       const { printer } = value;
-      const image = value['image'] === undefined ? undefined : readImageRequest(value['image']);
-      if (!isStringOrNull(printer) || image === null) {
+      const image = value['image'] === null ? null : readImageRequest(value['image']);
+      if (!isStringOrNull(printer) || image === undefined) {
         return null;
       }
-      return { type: 'printer', printer, ...(image === undefined ? {} : { image }) };
+      return { type: 'printer', printer, image };
     }
     case 'accepted': {
       const position = readQueuePosition(value);
@@ -507,9 +491,7 @@ function readPrintResult(value: unknown): PhonePrintResult | null {
     case 'invalid':
       return isOneOf(value['reason'], INVALID_REASONS) ? { status: 'invalid', reason: value['reason'] } : null;
     case 'failed': {
-      const { reason, detail, issue } = value;
-      // 老电脑不发 field：按 null。
-      const field = value['field'] ?? null;
+      const { reason, detail, issue, field } = value;
       if (!isOneOf(reason, PRINT_FAILURE_REASONS) || !isStringOrNull(detail) || !isStringOrNull(field)) {
         return null;
       }
@@ -572,39 +554,24 @@ function readBody(value: unknown): SealedBody | null {
     return null;
   }
   const { iv, ct } = value;
-  const isIv = typeof iv === 'string' && iv.length === IV_LENGTH && BASE64URL.test(iv);
-  const isCipherText = typeof ct === 'string' && ct.length <= MAX_FRAME_BYTES && BASE64URL.test(ct);
+  const isIv = iv instanceof Uint8Array && iv.length === IV_BYTES;
+  const isCipherText = ct instanceof Uint8Array && ct.length > 0 && ct.length <= MAX_FRAME_BYTES;
   return isIv && isCipherText ? { iv, ct } : null;
 }
 
-function parseRecord(text: string): Record<string, unknown> | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    return isRecord(value) ? value : null;
-  } catch {
-    return null;
-  }
-}
+/** JPEG 以 FF D8 FF 开头。 */
+const JPEG_SIGNATURE = [0xff, 0xd8, 0xff] as const;
 
-/** 标准 base64 的 JPEG：以 FF D8 FF 开头（base64 后是 /9j/），解码后不超过 MAX_IMAGE_BYTES。 */
-const JPEG_BASE64 = /^\/9j\/[A-Za-z0-9+/]*={0,2}$/;
-/** MAX_IMAGE_BYTES 换成 base64 的长度：一次扫码带的所有帧合起来按它检查。 */
-export const MAX_IMAGE_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
-
-/** 同一张标签接下来的几帧：数组，最多 MAX_LABEL_FRAMES - 1 张，每张都是合法的标签图。 */
-export function parseMoreImages(value: unknown): PhoneImage[] | null {
-  if (!Array.isArray(value) || value.length > MAX_LABEL_FRAMES - 1) {
+/** 同一张标签连续的几帧：数组，最多 MAX_LABEL_FRAMES 张，每张都是合法的标签图。 */
+export function parsePhoneImages(value: unknown): PhoneImage[] | null {
+  if (!Array.isArray(value) || value.length > MAX_LABEL_FRAMES) {
     return null;
   }
   const images = value.map(parsePhoneImage);
   return images.every((image): image is PhoneImage => image !== null) ? images : null;
 }
 
-/** 一次扫码带的所有帧合起来不超过 MAX_IMAGE_BYTES（按 base64 长度算），消息和帧的上限因此不用变。 */
-export function withinImageBudget(images: readonly PhoneImage[]): boolean {
-  return images.reduce((total, image) => total + image.jpeg.length, 0) <= MAX_IMAGE_BASE64_LENGTH;
-}
-
+/** 一帧标签图：JPEG 字节（不超过 MAX_IMAGE_BYTES）和二维码在图里的位置。 */
 export function parsePhoneImage(value: unknown): PhoneImage | null {
   if (!isRecord(value) || !isRecord(value['code'])) {
     return null;
@@ -614,10 +581,9 @@ export function parsePhoneImage(value: unknown): PhoneImage | null {
   const isCoordinate = (n: unknown): n is number =>
     typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= MAX_IMAGE_SIDE;
   if (
-    typeof jpeg !== 'string' ||
-    jpeg.length > MAX_IMAGE_BASE64_LENGTH ||
-    jpeg.length % 4 !== 0 ||
-    !JPEG_BASE64.test(jpeg) ||
+    !(jpeg instanceof Uint8Array) ||
+    jpeg.length > MAX_IMAGE_BYTES ||
+    JPEG_SIGNATURE.some((byte, index) => jpeg[index] !== byte) ||
     !isCoordinate(x) ||
     !isCoordinate(y) ||
     !isCoordinate(size) ||
@@ -657,12 +623,12 @@ export function parseManualFields(value: unknown): PhoneField[] | null {
   return fields;
 }
 
-function readImageRequest(value: unknown): ImageRequest | null {
+/** 不合法时返回 undefined（null 是「不要图」）。 */
+function readImageRequest(value: unknown): ImageRequest | undefined {
   if (!isRecord(value) || !isRecord(value['area'])) {
-    return null;
+    return undefined;
   }
-  const { pixelsPerCode } = value;
-  const frames = value['frames'] ?? 1;
+  const { pixelsPerCode, frames } = value;
   const { left, top, right, bottom } = value['area'];
   const inRange = (n: unknown): n is number =>
     typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= IMAGE_AREA_EXTENT;
@@ -680,13 +646,14 @@ function readImageRequest(value: unknown): ImageRequest | null {
     (frames as number) < 1 ||
     (frames as number) > MAX_LABEL_FRAMES
   ) {
-    return null;
+    return undefined;
   }
   return { area: { left, top, right, bottom }, pixelsPerCode: pixelsPerCode as number, frames: frames as number };
 }
 
+/** 键值对：不是数组，也不是字节（msgpack 的 bin 解出来是 Uint8Array）。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && !ArrayBuffer.isView(value);
 }
 
 function isOneOf<T extends string>(value: unknown, options: readonly T[]): value is T {

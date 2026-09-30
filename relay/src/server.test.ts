@@ -3,12 +3,13 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomId } from '../../src/shared/mobile-crypto';
-import { MAX_FRAME_BYTES, MOBILE_PROTOCOL_VERSION } from '../../src/shared/mobile-protocol';
+import { CLOSE_CODES, MAX_FRAME_BYTES, MOBILE_PROTOCOL_VERSION } from '../../src/shared/mobile-protocol';
+import { decodeWire, encodeWire } from '../../src/shared/wire';
 import type { RelayConfig } from './config';
 import { type RunningRelay, startRelay } from './server';
 
 const ORIGIN = 'https://relay.example.com';
-const BODY = { iv: 'aaaaaaaaaaaaaaaa', ct: 'Y2lwaGVy' };
+const BODY = { iv: new Uint8Array(12).fill(7), ct: new Uint8Array([1, 2, 3, 4]) };
 /** 帧超过 maxPayloadLength 时 Bun 直接断开 TCP 连接，不发关闭帧，客户端看到的是 1006。 */
 const CLOSE_ABNORMAL = 1006;
 
@@ -23,8 +24,11 @@ class Client {
   readonly closed: Promise<number>;
 
   constructor(readonly socket: WebSocket) {
+    socket.binaryType = 'arraybuffer';
     socket.onmessage = (event) => {
-      const frame = JSON.parse(String(event.data));
+      // 二进制帧是 msgpack；文本帧只有中转服务回给协议 1 客户端的 version 错误。
+      const frame =
+        typeof event.data === 'string' ? JSON.parse(event.data) : decodeWire(new Uint8Array(event.data as ArrayBuffer));
       const waiter = this.waiters.shift();
       if (waiter) {
         waiter(frame);
@@ -38,7 +42,7 @@ class Client {
   }
 
   send(frame: object): void {
-    this.socket.send(JSON.stringify(frame));
+    this.socket.send(encodeWire(frame));
   }
 
   next(): Promise<unknown> {
@@ -132,13 +136,21 @@ describe('websockets', () => {
     expect(await phone.closed).toBe(1000);
   });
 
+  // 1.1.0 及更早的电脑、没刷新的老扫码页发 JSON 文本帧：按它们认得的格式回 version 错误再断开，它们会提示更新。
+  test('answers a protocol 1 text frame with a version error it can read, then closes', async () => {
+    const desktop = await connect('/ws/desktop');
+    desktop.socket.send(JSON.stringify({ t: 'open', v: 1, session: randomId(), secret: randomId() }));
+    expect(await desktop.next()).toEqual({ t: 'error', code: 'version' });
+    expect(await desktop.closed).toBe(CLOSE_CODES.policy);
+  });
+
   test('refuses a phone from another origin', async () => {
     await expect(connect('/ws/phone', 'https://evil.example')).rejects.toThrow();
   });
 
   test('closes a connection that sends an oversized frame', async () => {
     const desktop = await connect('/ws/desktop');
-    desktop.socket.send('x'.repeat(MAX_FRAME_BYTES + 1));
+    desktop.socket.send(new Uint8Array(MAX_FRAME_BYTES + 1));
     expect(await desktop.closed).toBe(CLOSE_ABNORMAL);
   });
 });

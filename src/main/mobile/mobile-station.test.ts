@@ -210,9 +210,9 @@ describe('MobileStation', () => {
     expect(statuses.at(-1)).toEqual({ state: 'connecting' });
   });
 
-  test('hands the label frames as bytes and typed fields to the print service', async () => {
+  test('hands the label frames and typed fields to the print service', async () => {
     createStation().start();
-    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0]).toString('base64');
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
     await onlyHost().deps.print({
       raw: 'CL5640',
       force: false,

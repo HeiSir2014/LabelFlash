@@ -18,6 +18,7 @@ import {
 } from '../../shared/mobile-protocol';
 import type { MobileStatus } from '../../shared/mobile-status';
 import type { SocketLike, SocketTimers } from '../../shared/relay-socket';
+import { decodeWire, encodeWire } from '../../shared/wire';
 import { MobileHost } from './mobile-host';
 import type { PhoneJob } from './mobile-session';
 
@@ -231,8 +232,9 @@ describe('MobileHost', () => {
     const socket = new WebSocket(`ws://127.0.0.1:${port}/ws/phone`, { headers: { Origin: ORIGIN } });
     const received: DesktopMessage[] = [];
     let isOnline = false;
+    socket.binaryType = 'arraybuffer';
     socket.onmessage = async (event) => {
-      const frame = JSON.parse(String(event.data)) as { t: string; body?: SealedBody };
+      const frame = decodeWire(new Uint8Array(event.data as ArrayBuffer)) as { t: string; body?: SealedBody };
       isOnline ||= frame.t === 'online';
       if (frame.t === 'recv' && frame.body) {
         received.push((await openMessage(key, 'd2p', fragment.session, frame.body)) as DesktopMessage);
@@ -242,17 +244,17 @@ describe('MobileHost', () => {
       socket.onopen = resolve;
     });
     const send = async (message: object) =>
-      socket.send(JSON.stringify({ t: 'send', body: await sealMessage(key, 'p2d', fragment.session, message) }));
-    socket.send(JSON.stringify({ t: 'join', v: MOBILE_PROTOCOL_VERSION, session: fragment.session }));
+      socket.send(encodeWire({ t: 'send', body: await sealMessage(key, 'p2d', fragment.session, message) }));
+    socket.send(encodeWire({ t: 'join', v: MOBILE_PROTOCOL_VERSION, session: fragment.session }));
     await waitFor(() => isOnline, 'the relay to report the desktop online');
     await send({ type: 'hello', token: null, device: '手写手机' });
     await waitFor(() => received.some((message) => message.type === 'welcome'), 'the welcome');
     const welcome = received.find((message) => message.type === 'welcome');
     const nonce = welcome?.type === 'welcome' ? welcome.nonce : '';
     const job = randomId();
-    await send({ type: 'submit', nonce, seq: 1, job, raw: RAW, force: false });
+    await send({ type: 'submit', nonce, seq: 1, job, raw: RAW, force: false, images: [], fields: [] });
     await waitFor(() => received.some((message) => message.type === 'result'), 'the first result');
-    await send({ type: 'submit', nonce, seq: 2, job, raw: RAW, force: false });
+    await send({ type: 'submit', nonce, seq: 2, job, raw: RAW, force: false, images: [], fields: [] });
     await waitFor(() => received.filter((message) => message.type === 'result').length === 2, 'the repeated result');
     expect(prints).toHaveLength(1);
     socket.close();
@@ -283,10 +285,10 @@ describe('MobileHost', () => {
     const events: SessionEvent[] = [];
     const phone = await welcomedPhone(await activeUrl(), events);
     expect(events).toContainEqual({ type: 'welcomed', printer: '热敏标签机', image: imageRequest });
-    const image = { jpeg: '/9j/4AAQSkZJRgABAQ==', code: { x: 325, y: 195, size: 130 } };
+    const image = { jpeg: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), code: { x: 325, y: 195, size: 130 } };
     const fields = [{ name: '货架号', value: 'A-1-2-3' }];
-    const next = { ...image, jpeg: '/9j/4AAQSkZJRgABAg==' };
-    phone.submit(RAW, false, { image, moreImages: [next], fields });
+    const next = { ...image, jpeg: new Uint8Array([0xff, 0xd8, 0xff, 0xe1]) };
+    phone.submit(RAW, false, { images: [image, next], fields });
     await waitFor(() => requests.length === 1, 'the job');
     expect(requests).toEqual([{ raw: RAW, force: false, images: [image, next], fields }]);
   });

@@ -305,7 +305,7 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.OpenShop, () => shell.openExternal(BRAND.shop.url));
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
-  handle(IpcChannel.InstallUpdate, () => deps.updater.install());
+  handle(IpcChannel.InstallUpdate, () => deps.updater.install('front'));
   handle(IpcChannel.VoiceClip, (cue) => {
     // 音色和语速取主进程当前设置，不信任页面传入。
     const { name, ratePercent } = deps.settings.current.voice;

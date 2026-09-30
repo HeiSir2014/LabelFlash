@@ -137,6 +137,11 @@ export class LocalApi {
   private jobsChangedTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly freshSecrets = new Map<string, { secret: string; expiresAt: number }>();
 
+  /** 收下还没打完的接口任务数：关到托盘后的静默更新要等它们打完（重启会把没打完的标成中断）。 */
+  get pendingJobs(): number {
+    return this.jobs.pending;
+  }
+
   constructor(private readonly deps: LocalApiDeps) {
     this.keys = new SqliteApiKeyStore(deps.db, deps.clock);
     this.jobs = new PrintJobService({

@@ -3,7 +3,6 @@ import { BRAND } from '../../../shared/brand';
 import type { PrinterSummaryView } from '../../../shared/printer-summary';
 import type { MobileButtonView } from '../lib/mobile-text';
 import { useWindowControls } from '../view-models/use-window-controls';
-import { ConfirmButton } from './ConfirmButton';
 import { MOBILE_OVERLAY_ID } from './MobileOverlay';
 
 export interface ConfigButtonProps {
@@ -67,12 +66,10 @@ export function TitleBar({
       </div>
       <div className="title-bar__actions">
         {readyUpdateVersion && (
-          <ConfirmButton
-            className="update-pill"
-            label={`新版本 ${readyUpdateVersion} 已就绪 · 重启更新`}
-            confirmLabel="再点一次：立即重启并更新"
-            onConfirm={onInstallUpdate}
-          />
+          // 点一次就重启：静默安装，新版本自己回到前台。更新是操作员主动点的，不再二次确认。
+          <button type="button" className="update-pill" onClick={onInstallUpdate}>
+            新版本 {readyUpdateVersion} 已就绪 · 重启更新
+          </button>
         )}
         {/* 切换按钮：状态只由 aria-pressed 和按下的样式表达，名称始终是「配置」。 */}
         <button

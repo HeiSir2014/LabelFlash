@@ -8,6 +8,7 @@ import {
   isRequestRaw,
   MAX_DEVICE_LENGTH,
   MAX_IMAGE_BYTES,
+  MAX_LABEL_FRAMES,
   MAX_MANUAL_FIELDS,
   MAX_MANUAL_VALUE_LENGTH,
   MAX_PENDING_JOBS,
@@ -216,6 +217,25 @@ describe('parsePhoneMessage', () => {
     }
   });
 
+  // 多帧择优：同一张标签接下来的几帧一起发，电脑依次识别（货架号的横杠太淡时，单帧只有约 2/3 能读出）。
+  test('accepts more frames of the same label', () => {
+    const message = { ...submit, image, moreImages: [image, image] };
+    expect(parsePhoneMessage(message)).toEqual(message);
+  });
+
+  test('rejects more frames without the first, too many frames or frames beyond the image budget', () => {
+    const half = { ...image, jpeg: `/9j/${'A'.repeat((Math.ceil(MAX_IMAGE_BYTES / 3) * 4) / 2)}` };
+    for (const bad of [
+      { ...submit, moreImages: [image] },
+      { ...submit, image, moreImages: Array.from({ length: MAX_LABEL_FRAMES }, () => image) },
+      { ...submit, image, moreImages: [{ ...image, jpeg: 'iVBORw0KGgo=' }] },
+      { ...submit, image, moreImages: image },
+      { ...submit, image: half, moreImages: [half] },
+    ]) {
+      expect(parsePhoneMessage(bad)).toBeNull();
+    }
+  });
+
   test('rejects typed fields with bad names, empty or long values, control characters or duplicates', () => {
     const field = { name: '货架号', value: 'A-1-2-3' };
     for (const fields of [
@@ -332,13 +352,33 @@ describe('parseDesktopMessage', () => {
   });
 
   test('carries the image request in welcome and printer updates', () => {
-    const image = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    const image = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130, frames: 3 };
     const messages: DesktopMessage[] = [
       { type: 'welcome', token: SECRET, nonce: SESSION, printer: null, image },
       { type: 'printer', printer: '热敏标签机', image },
     ];
     for (const message of messages) {
       expect(parseDesktopMessage(message)).toEqual(message);
+    }
+  });
+
+  test('carries how many frames the desktop wants and treats an old request as one frame', () => {
+    const area = { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 };
+    const wanted = { area, pixelsPerCode: 170, frames: 3 };
+    expect(parseDesktopMessage({ type: 'printer', printer: null, image: wanted })).toEqual({
+      type: 'printer',
+      printer: null,
+      image: wanted,
+    });
+    expect(parseDesktopMessage({ type: 'printer', printer: null, image: { area, pixelsPerCode: 170 } })).toEqual({
+      type: 'printer',
+      printer: null,
+      image: { area, pixelsPerCode: 170, frames: 1 },
+    });
+    for (const frames of [0, MAX_LABEL_FRAMES + 1, 1.5, '3']) {
+      expect(
+        parseDesktopMessage({ type: 'printer', printer: null, image: { area, pixelsPerCode: 170, frames } }),
+      ).toBeNull();
     }
   });
 

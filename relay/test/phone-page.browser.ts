@@ -188,10 +188,11 @@ function brightness(pixels: Buffer, width: number, x: number, y: number): number
 
 // 货架号识别：电脑要图时，手机按二维码的四个角把整张标签摆正截下来，随扫码发给电脑。
 // 假摄像头里标签横着放（顺时针转了 90°），二维码下方有一条黑条（货架号那一行）：截图里它应当在二维码正下方。
+// 电脑要 3 帧：假摄像头的画面一直在，手机应当截满 3 帧一起发。
 test(
-  'crops the label upright from a sideways photo and sends it with the scan',
+  'crops the label upright from a sideways photo and sends several frames with the scan',
   async () => {
-    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130, frames: 3 };
     const video = join(workDir, 'sideways.y4m');
     await writeQrVideo(video, 'SHELF-TEST-001', { shelfBar: true, rotated: true });
     const sideways = await chromium.launch({
@@ -215,8 +216,8 @@ test(
         await Bun.sleep(50);
       }
       const job = jobs.find((entry) => entry.raw === 'SHELF-TEST-001');
-      expect(job?.image).not.toBeNull();
-      const image = job?.image;
+      expect(job?.images).toHaveLength(3);
+      const image = job?.images[0];
       if (!image) throw new Error('expected a label image');
       const { data, info } = await sharp(Buffer.from(image.jpeg, 'base64'))
         .grayscale()

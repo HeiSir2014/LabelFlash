@@ -462,7 +462,8 @@ async function photograph(label: Label, sample: Sample, capture: Capture, next: 
 
 /** 和扫码页一样：按二维码摆正截整张标签，从高到低试 JPEG 质量，直到不超过 MAX_IMAGE_BYTES。 */
 async function phoneCrop(frame: Frame, pixelsPerCode: number, firstQuality: number): Promise<Buffer> {
-  const request = { area: LABEL_AREA, pixelsPerCode };
+  // 评估的是单帧的读出率：一次只截一帧。
+  const request = { area: LABEL_AREA, pixelsPerCode, frames: 1 };
   const crop = cropLabel({ data: frame.rgba, width: frame.width, height: frame.height }, frame.code, request);
   if (crop === null) {
     throw new Error('截不了图');
@@ -595,7 +596,7 @@ async function runWorker(pair: string, enhance: string, manifestPath: string, du
   const [det, rec] = pair.split('/');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Manifest;
   const entries = manifest.entries;
-  const layout = cropLayout({ area: LABEL_AREA, pixelsPerCode: manifest.pixelsPerCode });
+  const layout = cropLayout({ area: LABEL_AREA, pixelsPerCode: manifest.pixelsPerCode, frames: 1 });
   const mb = () => process.memoryUsage().rss / 1024 / 1024;
   const rssBeforeMb = mb();
   const engine = await OcrEngine.create({

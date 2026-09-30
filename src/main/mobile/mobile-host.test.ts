@@ -278,22 +278,23 @@ describe('MobileHost', () => {
   });
 
   // 货架号识别：电脑要图时 welcome 里告诉手机截哪块；手机带着图和手动字段提交，电脑原样交给打印。
-  test('asks the phone for the label image and hands the image and typed fields to printing', async () => {
-    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+  test('asks the phone for the label frames and hands them and typed fields to printing', async () => {
+    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130, frames: 3 };
     const events: SessionEvent[] = [];
     const phone = await welcomedPhone(await activeUrl(), events);
     expect(events).toContainEqual({ type: 'welcomed', printer: '热敏标签机', image: imageRequest });
     const image = { jpeg: '/9j/4AAQSkZJRgABAQ==', code: { x: 325, y: 195, size: 130 } };
     const fields = [{ name: '货架号', value: 'A-1-2-3' }];
-    phone.submit(RAW, false, { image, fields });
+    const next = { ...image, jpeg: '/9j/4AAQSkZJRgABAg==' };
+    phone.submit(RAW, false, { image, moreImages: [next], fields });
     await waitFor(() => requests.length === 1, 'the job');
-    expect(requests).toEqual([{ raw: RAW, force: false, image, fields }]);
+    expect(requests).toEqual([{ raw: RAW, force: false, images: [image, next], fields }]);
   });
 
   test('tells the phone when the image request changes', async () => {
     const events: SessionEvent[] = [];
     await welcomedPhone(await activeUrl(), events);
-    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 };
+    imageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130, frames: 3 };
     host.printerChanged();
     await waitFor(() => events.some((event) => event.type === 'printer'), 'the update');
     expect(events).toContainEqual({ type: 'printer', printer: '热敏标签机', image: imageRequest });

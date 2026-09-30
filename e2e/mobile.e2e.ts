@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import sharp from 'sharp';
 import type { SessionEvent } from '../relay/web/src/phone-session';
 import { SHELF_NUMBER_PATTERN } from '../src/core/scan/image-text';
-import { PIXELS_PER_CODE } from '../src/main/mobile/image-request';
+import { LABEL_FRAMES, PIXELS_PER_CODE } from '../src/main/mobile/image-request';
 import { missingOcrFiles, ocrFiles } from '../src/main/ocr/ocr-files';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
 import type { MobileStatus } from '../src/shared/mobile-status';
@@ -201,9 +201,13 @@ test('reads the shelf number from the label image a phone sends', async ({ elect
     await expect.poll(() => hasEvent(phone.events, 'welcomed')).toBe(true);
     // 有这种步骤、电脑能识别：welcome 里要整张标签的图。
     expect(phone.events.find((event) => event.type === 'welcomed')).toMatchObject({
-      image: { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: PIXELS_PER_CODE },
+      image: {
+        area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 },
+        pixelsPerCode: PIXELS_PER_CODE,
+        frames: LABEL_FRAMES,
+      },
     });
-    const job = phone.session.submit(SHELF_RAW, false, { image: LABEL_IMAGE, fields: [] });
+    const job = phone.session.submit(SHELF_RAW, false, { image: LABEL_IMAGE, moreImages: [], fields: [] });
     await expect.poll(() => resultOf(phone.events, job)?.status).toBe('printed');
     expect(resultOf(phone.events, job)).toMatchObject({
       fields: expect.arrayContaining([{ name: '货架号', value: 'A-12-3-10' }]),
@@ -223,7 +227,7 @@ test('asks the phone for the shelf number it could not read and prints it once t
   const phone = await connectTestPhone(relay, await activeUrl(page));
   try {
     await expect.poll(() => hasEvent(phone.events, 'welcomed')).toBe(true);
-    const unread = phone.session.submit(SHELF_RAW, false, { image: LABEL_IMAGE, fields: [] });
+    const unread = phone.session.submit(SHELF_RAW, false, { image: LABEL_IMAGE, moreImages: [], fields: [] });
     await expect.poll(() => resultOf(phone.events, unread)?.status).toBe('failed');
     expect(resultOf(phone.events, unread)).toEqual({
       status: 'failed',
@@ -237,6 +241,7 @@ test('asks the phone for the shelf number it could not read and prints it once t
 
     const typed = phone.session.submit(SHELF_RAW, false, {
       image: null,
+      moreImages: [],
       fields: [{ name: '货架号', value: 'B-1-2-3' }],
     });
     await expect.poll(() => resultOf(phone.events, typed)?.status).toBe('printed');
@@ -293,7 +298,7 @@ for (const { id: tier } of OCR_MODEL_TIERS) {
     try {
       await expect.poll(() => hasEvent(phone.events, 'welcomed')).toBe(true);
       const image = { jpeg: jpeg.toString('base64'), code: { x: 237, y: 17, size: 340 } };
-      const job = phone.session.submit(SHELF_RAW, false, { image, fields: [] });
+      const job = phone.session.submit(SHELF_RAW, false, { image, moreImages: [], fields: [] });
       await expect.poll(() => resultOf(phone.events, job)?.status, { timeout: 30_000 }).toBe('printed');
       const [record] = (await callApi(page, 'listJobs', { limit: 1 })).jobs;
       expect(record?.fields).toContainEqual({ name: '货架号', value: 'A-1-2-3' });

@@ -76,6 +76,15 @@ describe('openSessionStore', () => {
     expect(reopened.jobs).toEqual(jobs);
   });
 
+  // 多帧择优：同一张标签的几帧随任务存着，刷新页面后重发的仍带着全部几帧。
+  test('keeps every frame of a waiting job', () => {
+    const session = randomId();
+    const image = { jpeg: '/9j/AAAA', code: { x: 10, y: 20, size: 130 } };
+    const jobs = [{ ...job(), image, moreImages: [image, { ...image, jpeg: '/9j/BBBB' }] }];
+    openSessionStore(storage, session, clock).saveJobs(jobs);
+    expect(openSessionStore(storage, session, clock).jobs).toEqual(jobs);
+  });
+
   test('keeps sessions apart', () => {
     openSessionStore(storage, randomId(), clock).saveToken(randomId());
     expect(openSessionStore(storage, randomId(), clock).token).toBeNull();

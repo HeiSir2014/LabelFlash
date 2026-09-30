@@ -52,8 +52,9 @@ interface ImageTextStep {
 
 | 消息 | 新增 | 说明 |
 |---|---|---|
-| `welcome` | `image?: { area, pixelsPerCode }` | 电脑要图时才有。老手机页面忽略它，不截图 |
+| `welcome` | `image?: { area, pixelsPerCode, frames }` | 电脑要图时才有。老手机页面忽略它，不截图。`frames`：要同一张标签连续几帧（1–3，见第 11 节），老电脑不发按 1 |
 | `submit` | `image?: { jpeg, code }` | `jpeg` 是 base64；`code` 是二维码在截图里的位置（左上角和边长，像素）。只在 `welcome` 要图时发 |
+| `submit` | `moreImages?: [{ jpeg, code }]` | 同一张标签接下来的几帧（不含 `image`，最多 2 张），和 `image` 合起来不超过 512 KB。只在 `frames` 大于 1 时发 |
 | `submit` | `fields?: { 字段名: 值 }` | 手机上手动输入的字段（目前只用于补货架号），最多 10 个 |
 | `result`（failed） | `field?: string` | 原因是 `TEXT_NOT_FOUND` 时，没认出的字段名；手机据此显示输入框 |
 
@@ -64,7 +65,7 @@ interface ImageTextStep {
 
 ## 5. 电脑端
 
-- `PrintRequest` 增加 `image?: ScanImage`、`manualFields?: Record<string, string>`；`PrintService` 把它们交给加工步骤（`enrich(scan, context)`）。
+- `PrintRequest` 增加 `images?: ScanImage[]`（同一张标签连续的几帧，按顺序；最初是一张 `image`，第 11 节改成几帧）、`manualFields?: Record<string, string>`；`PrintService` 把它们交给加工步骤（`enrich(scan, context)`）。
 - `EnrichDeps.readImageText(image) → ImageTextRegion[]`：主进程实现（`src/main/ocr/`），JPEG 用 `nativeImage` 解成 BGRA，交给 OCR 引擎。引擎在第一次用到时创建，之后复用；创建失败记日志，这一步按「OCR 不可用」处理。
 - 失败原因 `TEXT_NOT_FOUND`：第 5 条迁移重建 `jobs` 表加上这个取值（和第 3 条一样：建新表、复制、删旧表、改名，序号不变）。界面：「没认出货架号，没有打印」（说明里写字段名）；手机扫码的结果照旧不播报；本机接口永远不带图，映射成 `PRINT_ERROR` 只为穷尽。
 - 语音新增一句 `textNotFound`：「没认出标签上的字，没有打印」（桌面上用不到，手机结果的标题用它）。
@@ -158,3 +159,22 @@ interface ImageTextStep {
 - 模拟和真实拍摄有差距（字体、打印质量、真实的抖动和反光），结论要用真手机扫真标签核对（验收 #57）。
 
 内存：ONNX Runtime 默认的 CPU 内存池（arena）按见过的最大图留着内存不还，识别时峰值 253 MB；关掉后 131 MB，速度基本不变（`native/ocr/crates/ocr-core/src/inference.rs`）。
+
+## 11. 真手机复盘：横杠太淡，改为多帧择优（2026-09-30）
+
+1.1.0 发布后，真手机（安卓 · 微信）扫同一张标签多次，货架号大多没认出。打印记录里只有「没认出」，没有图，看不出是哪一环的问题，于是先加了识别样本：
+每次识别都在日志里写读到的文字和把握，数据目录的 `ocr-samples/` 留最近 20 张手机发来的标签图和识别结果（`src/main/ocr/ocr-samples.ts`）。
+
+- **电脑端没有问题**：用用户拍的标签照片走整条路（zxing 解码 → 扫码页的 `cropLabel` → JPEG → Electron `nativeImage` → 安装版的扩展和模型 → 正则），读出 `A-1-2-3`、把握 0.98–0.997；画面缩到二维码只有约 45 像素、加上较重的模糊也照样读对。
+- **手机截图没有问题**：真手机发来的 7 张（6 张不同，1 张是「再打一张」重发的）都摆得正、整张标签都在。
+- **读漏的原因**：6 张里 4 张读对、2 张读成 `A-123` / `A123`，**货架号的横杠被读丢了**，正则要三个 `-`，就对不上。标签上的横杠是一两个像素的细线，比数字淡得多，经过拍屏幕、视频压缩后，有的帧里淡到识别模型跳过它。没有一张读错。
+- **图像增强救不回来**：在这几张真样本上试了 medium 识别模型、对比度拉伸、gamma、把这一行放大两倍再识别，都是救回一张、弄坏另一张，`A123` 那张怎么都读不出。
+- **根因**：读不读得出是逐帧碰运气（约 2/3），而手机只发**第一次解出码的那一帧**，一次扫码只有一次机会。
+
+**多帧择优**：电脑在 `welcome` 里要 3 帧（`LABEL_FRAMES`，`src/main/mobile/image-request.ts`）。手机扫到码后照常「嘀」一声，接着在最多 0.6 秒内（`LABEL_FRAMES_WINDOW_MS`，约三次取帧）再截同一张标签的两帧，截满、标签离开画面或换了别的码就把收到的几帧一起发出。
+电脑按顺序识别，第一帧认出就停，后面的帧不识别；都没认出时，报告把握最大的那次读到了什么。
+
+- 几帧合起来不超过 512 KB（按 base64 长度算，和电脑的检查一致），后面的帧只用剩下的额度，放不下就不带；消息和帧的上限不用变。
+- 兼容：老手机页面忽略 `frames`，只发一帧；老电脑不发 `frames`，新手机页面只发一帧。
+- 代价：每次扫码多等约 0.3–0.5 秒；只有第一帧读不出时电脑才多识别一两张（每张约 0.3 秒）。
+- 拍照识别只有一张图，不等后面的帧。

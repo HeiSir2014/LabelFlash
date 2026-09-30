@@ -13,6 +13,7 @@ import {
   type PhoneField,
   type PhoneImage,
   parseManualFields,
+  parseMoreImages,
   parsePhoneImage,
 } from '../../../src/shared/mobile-protocol';
 
@@ -30,6 +31,7 @@ export interface StoredJob {
   raw: string;
   force: boolean;
   image?: PhoneImage;
+  moreImages?: PhoneImage[];
   fields?: PhoneField[];
 }
 
@@ -123,11 +125,19 @@ function parseJob(value: unknown): StoredJob | null {
   }
   // 图和字段按协议同样的规则检查：存储被改坏了就当这个任务没有，不发出去让电脑拒收。
   const image = record['image'] === undefined ? undefined : parsePhoneImage(record['image']);
+  const moreImages = record['moreImages'] === undefined ? undefined : parseMoreImages(record['moreImages']);
   const fields = record['fields'] === undefined ? undefined : parseManualFields(record['fields']);
-  if (image === null || fields === null) {
+  if (image === null || moreImages === null || fields === null) {
     return null;
   }
-  return { id, raw, force, ...(image === undefined ? {} : { image }), ...(fields === undefined ? {} : { fields }) };
+  return {
+    id,
+    raw,
+    force,
+    ...(image === undefined ? {} : { image }),
+    ...(moreImages === undefined ? {} : { moreImages }),
+    ...(fields === undefined ? {} : { fields }),
+  };
 }
 
 /** 删掉别的会话留下的过期记录。存储不可用时什么都不做。 */

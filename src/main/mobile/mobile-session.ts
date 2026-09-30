@@ -38,11 +38,11 @@ export interface Delivery {
   message: DesktopMessage;
 }
 
-/** 一个手机任务要打印的内容：扫到的内容、是否补打、随扫码截的标签图、手机上手动输入的字段。 */
+/** 一个手机任务要打印的内容：扫到的内容、是否补打、随扫码截的标签图（同一张标签连续的几帧，按顺序）、手机上手动输入的字段。 */
 export interface PhoneJob {
   raw: string;
   force: boolean;
-  image: PhoneImage | null;
+  images: PhoneImage[];
   fields: PhoneField[];
 }
 
@@ -197,7 +197,7 @@ export class MobileSession {
       request: {
         raw: message.raw,
         force: message.force,
-        image: message.image ?? null,
+        images: message.image === undefined ? [] : [message.image, ...(message.moreImages ?? [])],
         fields: message.fields ?? [],
       },
     };

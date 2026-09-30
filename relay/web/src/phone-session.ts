@@ -64,13 +64,17 @@ export interface PhoneSessionOptions {
   onEvent: (event: SessionEvent) => void;
 }
 
-/** 任务随带的东西：摆正的标签图（电脑要时才有）、手机上手动输入的字段。 */
+/**
+ * 任务随带的东西：摆正的标签图（电脑要时才有）和同一张标签接下来的几帧（电脑要几帧时才有，不含 image）、
+ * 手机上手动输入的字段。
+ */
 export interface JobExtras {
   image: PhoneImage | null;
+  moreImages: PhoneImage[];
   fields: PhoneField[];
 }
 
-export const NO_EXTRAS: JobExtras = { image: null, fields: [] };
+export const NO_EXTRAS: JobExtras = { image: null, moreImages: [], fields: [] };
 
 interface OutgoingJob extends JobExtras {
   raw: string;
@@ -103,6 +107,7 @@ export class PhoneSession {
         raw: job.raw,
         force: job.force,
         image: job.image ?? null,
+        moreImages: job.moreImages ?? [],
         fields: job.fields ?? [],
         isAccepted: false,
         retryTimer: null,
@@ -271,6 +276,7 @@ export class PhoneSession {
       raw: job.raw,
       force: job.force,
       ...(job.image === null ? {} : { image: job.image }),
+      ...(job.moreImages.length === 0 ? {} : { moreImages: job.moreImages }),
       ...(job.fields.length === 0 ? {} : { fields: job.fields }),
     });
     this.scheduleRetry(jobId, job);
@@ -318,6 +324,7 @@ export class PhoneSession {
         raw: job.raw,
         force: job.force,
         ...(job.image === null ? {} : { image: job.image }),
+        ...(job.moreImages.length === 0 ? {} : { moreImages: job.moreImages }),
         ...(job.fields.length === 0 ? {} : { fields: job.fields }),
       })),
     );

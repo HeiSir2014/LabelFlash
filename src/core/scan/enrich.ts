@@ -10,7 +10,13 @@ import type {
   RegexReplaceStep,
   StepKind,
 } from './enrich-model';
-import { findImageText, IMAGE_TEXT_MIN_SCORE, type ImageTextRegion, type ScanImage } from './image-text';
+import {
+  findImageText,
+  IMAGE_TEXT_MIN_SCORE,
+  type ImageTextMatch,
+  type ImageTextRegion,
+  type ScanImage,
+} from './image-text';
 import { parseJsonPath, readJsonPath } from './json-path';
 import type { RegexRunner } from './recognize';
 import { fieldValue, type ScanField, type ScanResult } from './scan-result';
@@ -45,13 +51,15 @@ export interface EnrichDeps {
   now: () => number;
 }
 
-/** 这一次扫码随请求带来的东西：手机拍下的标签图、手机上手动输入的字段。 */
+/**
+ * 这一次扫码随请求带来的东西：手机拍下的标签图（同一张标签连续的几帧，按顺序；没有图时为空）、手机上手动输入的字段。
+ */
 export interface EnrichContext {
-  image: ScanImage | null;
+  images: readonly ScanImage[];
   manualFields: Readonly<Record<string, string>>;
 }
 
-export const NO_ENRICH_CONTEXT: EnrichContext = { image: null, manualFields: {} };
+export const NO_ENRICH_CONTEXT: EnrichContext = { images: [], manualFields: {} };
 
 /** 拦下不打印的原因：LOOKUP_FAILED = HTTP 查询失败；TEXT_NOT_FOUND = 图中文字没认出。 */
 export type BlockReason = 'LOOKUP_FAILED' | 'TEXT_NOT_FOUND';
@@ -84,7 +92,7 @@ interface StepOutcome {
   field?: string;
 }
 
-/** 同一次扫码只识别一次图：几个图中文字识别步骤共用结果。 */
+/** 同一次扫码每一帧最多识别一次：几个图中文字识别步骤共用结果。 */
 type ReadImage = (image: ScanImage) => Promise<ImageTextRegion[] | null>;
 
 /**
@@ -100,10 +108,14 @@ export async function enrich(
 ): Promise<EnrichResult> {
   let current = scan;
   const traces: StepTrace[] = [];
-  let recognized: Promise<ImageTextRegion[] | null> | undefined;
+  const recognized = new Map<ScanImage, Promise<ImageTextRegion[] | null>>();
   const readImage: ReadImage = (image) => {
-    recognized ??= deps.readImageText(image);
-    return recognized;
+    let regions = recognized.get(image);
+    if (regions === undefined) {
+      regions = deps.readImageText(image);
+      recognized.set(image, regions);
+    }
+    return regions;
   };
   for (const [stepIndex, step] of steps.entries()) {
     const startedAt = deps.now();
@@ -154,7 +166,8 @@ function runStep(
 
 /**
  * 图中文字识别：手动输入的值优先；没有图（不是手机扫码）或这台电脑上没有文字识别时跳过；
- * 否则识别整张标签，按正则取值（优先区域先看）。没认出时按设置拦下或留空。
+ * 否则按顺序识别同一张标签的几帧，按正则取值（优先区域先看），第一帧认出就停，后面的帧不再识别。
+ * 几帧都没认出时按设置拦下或留空；有读到但没把握的，说出把握最大的那次读到了什么。
  */
 async function imageText(
   step: ImageTextStep,
@@ -166,31 +179,38 @@ async function imageText(
   if (manual !== undefined && manual !== '') {
     return done([[step.output, manual]]);
   }
-  const { image } = context;
-  if (image === null) {
+  if (context.images.length === 0) {
     return skip('这次扫码没有标签图（只有手机扫码带图），跳过');
   }
-  let regions: ImageTextRegion[] | null;
-  try {
-    regions = await readImage(image);
-  } catch (error) {
-    return textNotFound(step, `识别标签上的字时出错：${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (regions === null) {
-    return skip('这台电脑上没有文字识别，跳过');
-  }
   const query = { pattern: step.pattern, flags: step.flags, preferredArea: step.preferredArea };
-  const found = findImageText(regions, image.code, query, match);
-  if (found === null) {
-    return textNotFound(step, `没认出${step.output}`);
+  let unsure: ImageTextMatch | null = null;
+  let failure: string | null = null;
+  for (const image of context.images) {
+    let regions: ImageTextRegion[] | null;
+    try {
+      regions = await readImage(image);
+    } catch (error) {
+      failure = `识别标签上的字时出错：${error instanceof Error ? error.message : String(error)}`;
+      continue;
+    }
+    if (regions === null) {
+      return skip('这台电脑上没有文字识别，跳过');
+    }
+    const found = findImageText(regions, image.code, query, match);
+    if (found !== null && found.score >= IMAGE_TEXT_MIN_SCORE) {
+      return done([[step.output, found.value]]);
+    }
+    if (found !== null && (unsure === null || found.score > unsure.score)) {
+      unsure = found;
+    }
   }
-  if (found.score < IMAGE_TEXT_MIN_SCORE) {
+  if (unsure !== null) {
     return textNotFound(
       step,
-      `没认出${step.output}：读到「${found.value}」，但把握只有 ${Math.floor(found.score * 100)}%`,
+      `没认出${step.output}：读到「${unsure.value}」，但把握只有 ${Math.floor(unsure.score * 100)}%`,
     );
   }
-  return done([[step.output, found.value]]);
+  return textNotFound(step, failure ?? `没认出${step.output}`);
 }
 
 function textNotFound(step: ImageTextStep, detail: string): StepOutcome {

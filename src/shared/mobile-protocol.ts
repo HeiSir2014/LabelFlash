@@ -34,6 +34,11 @@ export const MAX_MESSAGE_BYTES = 768 * 1024;
  * 图在消息里是 base64（约 4/3 倍），整条消息加密后再 base64url 一次，所以 MAX_MESSAGE_BYTES、MAX_FRAME_BYTES 跟着放大。
  */
 export const MAX_IMAGE_BYTES = 512 * 1024;
+/**
+ * 一次扫码最多带几帧标签图（同一张标签连续的几帧）。货架号的横杠这类细笔画，在有的帧里淡到读不出，
+ * 真手机试扫时单帧只有约 2/3 能读出；几帧依次识别，一帧读不出还有下一帧。所有帧合起来仍不超过 MAX_IMAGE_BYTES。
+ */
+export const MAX_LABEL_FRAMES = 3;
 /** 截图的边长上限（像素）：整张标签是二维码边长的 6 倍宽，1600 像素够每个边长截 260 多像素；再大手机编码太慢。 */
 export const MAX_IMAGE_SIDE = 1600;
 /** 每个二维码边长截多少像素：太少字看不清，太多图太大（见 ImageRequest）。 */
@@ -160,6 +165,8 @@ export type RefusalReason = (typeof REFUSAL_REASONS)[number];
 export interface ImageRequest {
   area: CodeRelativeArea;
   pixelsPerCode: number;
+  /** 要连续几帧（1 到 MAX_LABEL_FRAMES）；老电脑不发，按 1 帧。 */
+  frames: number;
 }
 
 /** 手机截的标签图：按二维码摆正后的 JPEG（标准 base64），二维码在图里的位置（像素）。 */
@@ -179,6 +186,7 @@ export type PhoneMessage =
    * - nonce、seq：防重放。nonce 是本次连接的 welcome 给的，seq 在本次连接内严格递增。
    * - force：强制补打（跳过防重复窗口）。补打是一个新任务，有自己的任务号。
    * - image：电脑要图时（见 welcome.image）随扫码截的标签图；老手机页面、电脑没要时没有。
+   * - moreImages：电脑要几帧时，同一张标签接下来的几帧（不含 image），和 image 合起来不超过 MAX_IMAGE_BYTES；没有时省略。
    * - fields：手机上手动输入的字段（例如没认出时补的货架号）；没有时省略。
    */
   | {
@@ -189,6 +197,7 @@ export type PhoneMessage =
       raw: string;
       force: boolean;
       image?: PhoneImage;
+      moreImages?: PhoneImage[];
       fields?: PhoneField[];
     };
 
@@ -396,8 +405,12 @@ export function parsePhoneMessage(value: unknown): PhoneMessage | null {
         return null;
       }
       const image = value['image'] === undefined ? undefined : parsePhoneImage(value['image']);
+      const moreImages = value['moreImages'] === undefined ? undefined : parseMoreImages(value['moreImages']);
       const fields = value['fields'] === undefined ? undefined : parseManualFields(value['fields']);
-      if (image === null || fields === null) {
+      if (image === null || moreImages === null || fields === null) {
+        return null;
+      }
+      if (moreImages !== undefined && (image === undefined || !withinImageBudget([image, ...moreImages]))) {
         return null;
       }
       return {
@@ -408,6 +421,7 @@ export function parsePhoneMessage(value: unknown): PhoneMessage | null {
         raw,
         force,
         ...(image === undefined ? {} : { image }),
+        ...(moreImages === undefined ? {} : { moreImages }),
         ...(fields === undefined ? {} : { fields }),
       };
     }
@@ -574,7 +588,22 @@ function parseRecord(text: string): Record<string, unknown> | null {
 
 /** 标准 base64 的 JPEG：以 FF D8 FF 开头（base64 后是 /9j/），解码后不超过 MAX_IMAGE_BYTES。 */
 const JPEG_BASE64 = /^\/9j\/[A-Za-z0-9+/]*={0,2}$/;
-const MAX_IMAGE_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
+/** MAX_IMAGE_BYTES 换成 base64 的长度：一次扫码带的所有帧合起来按它检查。 */
+export const MAX_IMAGE_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
+
+/** 同一张标签接下来的几帧：数组，最多 MAX_LABEL_FRAMES - 1 张，每张都是合法的标签图。 */
+export function parseMoreImages(value: unknown): PhoneImage[] | null {
+  if (!Array.isArray(value) || value.length > MAX_LABEL_FRAMES - 1) {
+    return null;
+  }
+  const images = value.map(parsePhoneImage);
+  return images.every((image): image is PhoneImage => image !== null) ? images : null;
+}
+
+/** 一次扫码带的所有帧合起来不超过 MAX_IMAGE_BYTES（按 base64 长度算），消息和帧的上限因此不用变。 */
+export function withinImageBudget(images: readonly PhoneImage[]): boolean {
+  return images.reduce((total, image) => total + image.jpeg.length, 0) <= MAX_IMAGE_BASE64_LENGTH;
+}
 
 export function parsePhoneImage(value: unknown): PhoneImage | null {
   if (!isRecord(value) || !isRecord(value['code'])) {
@@ -633,6 +662,7 @@ function readImageRequest(value: unknown): ImageRequest | null {
     return null;
   }
   const { pixelsPerCode } = value;
+  const frames = value['frames'] ?? 1;
   const { left, top, right, bottom } = value['area'];
   const inRange = (n: unknown): n is number =>
     typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= IMAGE_AREA_EXTENT;
@@ -645,11 +675,14 @@ function readImageRequest(value: unknown): ImageRequest | null {
     top >= bottom ||
     !Number.isSafeInteger(pixelsPerCode) ||
     (pixelsPerCode as number) < PIXELS_PER_CODE_RANGE.min ||
-    (pixelsPerCode as number) > PIXELS_PER_CODE_RANGE.max
+    (pixelsPerCode as number) > PIXELS_PER_CODE_RANGE.max ||
+    !Number.isSafeInteger(frames) ||
+    (frames as number) < 1 ||
+    (frames as number) > MAX_LABEL_FRAMES
   ) {
     return null;
   }
-  return { area: { left, top, right, bottom }, pixelsPerCode: pixelsPerCode as number };
+  return { area: { left, top, right, bottom }, pixelsPerCode: pixelsPerCode as number, frames: frames as number };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

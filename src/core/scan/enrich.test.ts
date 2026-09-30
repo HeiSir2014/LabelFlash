@@ -93,7 +93,7 @@ async function run(steps: EnrichStep[], deps = createDeps().deps, context?: Enri
   return enrich(SCAN, steps, deps, PRINTED_AT, context);
 }
 
-const WITH_IMAGE: EnrichContext = { image: IMAGE, manualFields: {} };
+const WITH_IMAGE: EnrichContext = { images: [IMAGE], manualFields: {} };
 
 describe('enrich', () => {
   test('runs steps in order so later steps can use earlier outputs', async () => {
@@ -228,7 +228,7 @@ describe('enrich: text on the label image', () => {
 
   test('uses a value typed on the phone without reading the image', async () => {
     const { deps, reads } = createDeps();
-    const result = await run([shelfStep()], deps, { image: IMAGE, manualFields: { 货架号: ' B-12-3-10 ' } });
+    const result = await run([shelfStep()], deps, { images: [IMAGE], manualFields: { 货架号: ' B-12-3-10 ' } });
     expect(result.scan.fields.at(-1)).toEqual({ name: '货架号', value: 'B-12-3-10' });
     expect(reads).toHaveLength(0);
   });
@@ -289,5 +289,57 @@ describe('enrich: text on the label image', () => {
       { name: '款号', value: 'CL5640-TK' },
     ]);
     expect(reads).toHaveLength(1);
+  });
+});
+
+describe('enrich: several frames of the same label', () => {
+  /** 同一张标签接下来的几帧（内容不同，才分得出读的是哪一帧）。 */
+  const FRAMES: ScanImage[] = [0, 1, 2].map((index) => ({ ...IMAGE, jpeg: new Uint8Array([0xff, 0xd8, index]) }));
+  const withFrames: EnrichContext = { images: FRAMES, manualFields: {} };
+
+  /** 按帧给出读到的字：真手机上货架号的横杠有时淡到读不出，读成 A-123。 */
+  function readsByFrame(texts: Array<readonly ImageTextRegion[]>) {
+    const { deps, reads } = createDeps();
+    deps.readImageText = async (image) => {
+      reads.push(image);
+      return [...(texts[FRAMES.indexOf(image)] ?? [])];
+    };
+    return { deps, reads };
+  }
+
+  test('reads the next frame when the shelf number is not readable in the first', async () => {
+    const { deps, reads } = readsByFrame([[region('A-123', 200, 290)], LABEL_TEXT]);
+    const result = await run([shelfStep()], deps, withFrames);
+    expect(result.scan.fields.at(-1)).toEqual({ name: '货架号', value: 'A-1-2-3' });
+    expect(result.blocked).toBeNull();
+    expect(reads).toEqual(FRAMES.slice(0, 2));
+  });
+
+  test('stops at the first frame that shows the shelf number', async () => {
+    const { deps, reads } = readsByFrame([LABEL_TEXT, LABEL_TEXT, LABEL_TEXT]);
+    await run([shelfStep()], deps, withFrames);
+    expect(reads).toEqual(FRAMES.slice(0, 1));
+  });
+
+  test('says what it read with the most confidence when no frame is sure enough', async () => {
+    const unsure = (score: number) => [{ ...region('E-113-409-55', 200, 290), score }];
+    const { deps, reads } = readsByFrame([[], unsure(0.7), unsure(0.85)]);
+    const result = await run([shelfStep()], deps, withFrames);
+    expect(result.blocked).toMatchObject({
+      reason: 'TEXT_NOT_FOUND',
+      detail: '没认出货架号：读到「E-113-409-55」，但把握只有 85%',
+    });
+    expect(reads).toHaveLength(3);
+  });
+
+  test('reads each frame once for several steps', async () => {
+    const { deps, reads } = readsByFrame([[region('A-123', 200, 290)], LABEL_TEXT]);
+    const code = shelfStep({ pattern: String.raw`CL\d+-[A-Z]+`, output: '款号', whenMissing: 'empty' });
+    const result = await run([shelfStep(), code], deps, withFrames);
+    expect(result.scan.fields.slice(-2)).toEqual([
+      { name: '货架号', value: 'A-1-2-3' },
+      { name: '款号', value: 'CL5640-TK' },
+    ]);
+    expect(reads).toEqual(FRAMES.slice(0, 2));
   });
 });

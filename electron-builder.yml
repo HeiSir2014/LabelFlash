@@ -50,7 +50,8 @@ win:
         - x64
   icon: resources/icon.png
   executableName: CDL-LabelFlash
-  # 本地 OCR（货架号识别）：扩展、VC++ 运行库、模型，由 scripts/ocr/stage-resources.ts 放到 dist/.ocr（打安装包前自动运行）。
+  # 本地 OCR（货架号识别）：扩展（静态链接自己编的 /MT ONNX Runtime，只依赖系统 DLL）、模型和 ONNX Runtime 的许可声明，
+  # 由 scripts/ocr/stage-resources.ts 放到 dist/.ocr（打安装包前自动运行）。
   # 主进程按 resources/ocr 找它们（src/main/ocr/ocr-files.ts）。macOS 这一版不带，这一步按「没有文字识别」处理。
   extraResources:
     - from: dist/.ocr

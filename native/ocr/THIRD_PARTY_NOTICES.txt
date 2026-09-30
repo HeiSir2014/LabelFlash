@@ -7,7 +7,9 @@ CDL-云签速印 本地文字识别（resources\ocr）使用的第三方组件
    Copyright (c) PaddlePaddle Authors. 模型文件未经修改；dict.txt 由识别模型 inference.yml 里的字典逐行写出。
 
 2. ONNX Runtime（静态链接在 ocr-addon.node 里）
-   来源：https://github.com/microsoft/onnxruntime ，经 Rust crate ort（https://github.com/pykeio/ort）提供的预编译静态库
+   来源：https://github.com/microsoft/onnxruntime ，由本项目从源码编译成静态库（/MT，见 scripts/ocr/build-onnxruntime.ts）
+   ONNX Runtime 连同它的依赖（protobuf、abseil、re2、onnx、cpuinfo、flatbuffers 等）一起编进了扩展，
+   它们的许可和声明见同目录的 onnxruntime-LICENSE.txt、onnxruntime-ThirdPartyNotices.txt（ONNX Runtime 源码里原样的文件）。
    许可：MIT License
    Copyright (c) Microsoft Corporation
 
@@ -28,5 +30,5 @@ CDL-云签速印 本地文字识别（resources\ocr）使用的第三方组件
    ort、ort-sys（MIT OR Apache-2.0，pyke.io）；napi、napi-derive、napi-build（MIT，napi-rs）；
    thiserror（MIT OR Apache-2.0，David Tolnay）。许可证全文见各自的仓库。
 
-4. Microsoft Visual C++ 运行库（msvcp140.dll、msvcp140_1.dll、vcruntime140.dll、vcruntime140_1.dll）
-   随程序分发的可再发行组件（Visual Studio 的 Redist 目录），按 Microsoft 软件许可条款中「可分发代码」的规定随本程序提供。
+4. Microsoft C/C++ 运行库（静态链接，/MT）
+   ONNX Runtime 和扩展都静态链接了 Visual Studio 的 C/C++ 运行库，按 Microsoft 软件许可条款随本程序提供；不单独分发运行库 DLL。

@@ -1,5 +1,5 @@
 /**
- * 本地 OCR 用到的文件在哪：安装版在 resources/ocr/（扩展、VC++ 运行库、模型，由安装包带上）；
+ * 本地 OCR 用到的文件在哪：安装版在 resources/ocr/（扩展和模型，由安装包带上）；
  * 开发版和 E2E 用仓库里编译好的扩展（bun run ocr:build）和下载好的模型（bun run ocr:models）。
  * 模型用 small 检测 + small 识别：tiny 识别会把热敏纸上的 A 读成 4（见 OCR 引擎设计第 10 节）。
  */

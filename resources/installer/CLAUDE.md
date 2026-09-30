@@ -12,7 +12,7 @@
 - **防火墙规则**：安装和卸载都经 `firewall.nsh` 运行 `firewall.ps1`（由 `build-skin.ts` 从 `src/shared/firewall-rule.ts` 生成，和程序里的按钮同一份脚本），只动本程序路径下的规则。PowerShell 写系统目录的绝对路径，用 `-Command` 把脚本当作代码块运行（组策略规定了执行策略时 `-File` 会被拦下）；路径按 PowerShell 单引号字符串转义（用户名里可以有单引号）。
 - **本地 OCR 的文件**：`scripts/ocr/stage-resources.ts` 在两段构建之前把扩展、small 模型和 ONNX Runtime 的许可声明放到 `dist/.ocr`，`electron-builder.yml` 的 `win.extraResources` 装进 `resources/ocr/`。
   - 扩展静态链接从源码编的 ONNX Runtime（/MT，`scripts/ocr/build-onnxruntime.ts`），只依赖系统 DLL：放好后用 dumpbin 核对依赖、用样张识别一次，不通过就不打包。
-  - 构建机要有 Rust、Visual Studio 的 C++ 工具和 Python 3.10+（只给 ONNX Runtime 的构建脚本用）。第一次编 ONNX Runtime 约半小时，结果按版本和选项存在 `native/ocr/target/onnxruntime/`，CI 缓存这个目录。
+  - ONNX Runtime 的静态库从本仓库的预发布版本（`onnxruntime-v<版本>-<指纹>`，由 `.github/workflows/onnxruntime.yml` 用 Visual Studio 2022 编）下载，按 `ONNXRUNTIME_PREBUILT` 的 SHA-256 核对，放在 `native/ocr/target/onnxruntime/`。构建机只要 Rust 和 Visual Studio 的 C++ 工具（2022 或更新）。要在本机从源码编时设置 `LABELFLASH_ORT_FROM_SOURCE=1`（另需 Python 3.10+，约半小时）。
 - **卸载程序只来自第一段**：它由 electron-builder 自带脚本加上 `resources/installer.nsh` 生成。卸载时的行为改在 `installer.nsh` 的 `customUnInstall` 里；覆盖安装和更新都会带 `--updated` 运行旧版的卸载程序，这时不能删开机自启项。
 
 ## NSIS 的坑（都实际遇到过）

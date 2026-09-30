@@ -1,9 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import {
   cmakeGenerator,
+  formatSha256Sums,
+  githubRepository,
   isSupportedPython,
   libsToMerge,
+  ONNXRUNTIME_PREBUILT,
   onnxRuntimeBuildKey,
+  PREBUILT_ASSETS,
+  prebuiltAssetUrl,
+  prebuiltReleaseTag,
   unwantedImports,
 } from './onnxruntime-build';
 
@@ -92,5 +98,44 @@ describe('unwantedImports', () => {
         ]),
       ),
     ).toEqual(['MSVCP140.dll', 'VCRUNTIME140_1.dll', 'api-ms-win-crt-heap-l1-1-0.dll', 'DirectML.dll', 'd3d12.dll']);
+  });
+});
+
+describe('prebuilt release', () => {
+  test('is tagged by the build key, so a new version or new options need a new release', () => {
+    expect(prebuiltReleaseTag()).toBe(`onnxruntime-v${onnxRuntimeBuildKey()}`);
+  });
+
+  test('downloads assets from the repository release of that tag', () => {
+    expect(prebuiltAssetUrl({ owner: 'acme', repo: 'app' }, 'onnxruntime-v1.0.0-abc', PREBUILT_ASSETS.library)).toBe(
+      `https://github.com/acme/app/releases/download/onnxruntime-v1.0.0-abc/${PREBUILT_ASSETS.library}`,
+    );
+  });
+
+  test('the pinned checksums belong to the current version and options', () => {
+    // 改了版本或编译选项却没重新发布：这里失败，提醒先跑发布 ONNX Runtime 的工作流再更新 ONNXRUNTIME_PREBUILT。
+    if (ONNXRUNTIME_PREBUILT !== null) {
+      expect(ONNXRUNTIME_PREBUILT.key).toBe(onnxRuntimeBuildKey());
+      expect(Object.keys(ONNXRUNTIME_PREBUILT.sha256).sort()).toEqual(Object.values(PREBUILT_ASSETS).sort());
+    }
+  });
+});
+
+describe('githubRepository', () => {
+  test('reads owner and name from the package.json repository url', () => {
+    expect(githubRepository('git+https://github.com/acme/app.git')).toEqual({ owner: 'acme', repo: 'app' });
+    expect(githubRepository('https://github.com/acme/app')).toEqual({ owner: 'acme', repo: 'app' });
+  });
+
+  test('rejects urls that are not GitHub repositories', () => {
+    expect(() => githubRepository('https://example.invalid/acme/app')).toThrow('GitHub');
+  });
+});
+
+describe('SHA256SUMS', () => {
+  const sums = { 'b.txt': 'b'.repeat(64), 'a.lib.gz': 'a'.repeat(64) };
+
+  test('uses the sha256sum format, sorted by file name', () => {
+    expect(formatSha256Sums(sums)).toBe(`${'a'.repeat(64)}  a.lib.gz\n${'b'.repeat(64)}  b.txt\n`);
   });
 });

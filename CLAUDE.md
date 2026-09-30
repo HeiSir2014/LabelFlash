@@ -42,7 +42,7 @@
 | `bun run check` | Biome + 五份 tsconfig（主进程与脚本、界面、E2E、中转服务、扫码页）的类型检查 + 全部单元测试 |
 | `bun test <路径>` | 只跑某个单元测试文件 |
 | `bun run test:e2e` | 构建 → 检查 bundle → Playwright 驱动构建版 Electron |
-| `bun run dist:win` | Windows 安装包（两段构建，见 `resources/installer/CLAUDE.md`），输出到 `dist/`；自动下载模型、从源码编译 ONNX Runtime（第一次约半小时，需要 Python 3.10+）和 OCR 扩展（需要 Rust 和 Visual Studio 的 C++ 工具），见 `scripts/ocr/build-onnxruntime.ts` |
+| `bun run dist:win` | Windows 安装包（两段构建，见 `resources/installer/CLAUDE.md`），输出到 `dist/`；自动下载模型和预编译的 ONNX Runtime 静态库（本仓库的预发布版本，核对 SHA-256），编译 OCR 扩展（需要 Rust 和 Visual Studio 的 C++ 工具），见 `scripts/ocr/build-onnxruntime.ts` |
 | `bun run dist:mac` | macOS 的 pkg 安装包（只能在 macOS 上打），输出到 `dist/` |
 | `bun run installer:skin` | 只生成安装界面的皮肤，调界面时用 |
 | `bun run icons` | 改了 `resources/*.svg` 后重新生成 PNG 图标 |
@@ -142,6 +142,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 - **latest 分支**：始终指向最新发布版本的提交。发布作业公开 Release 之后把它快进到这个标签，快进不了就报错，不往回拨。分支有保护，不能删除、不能强推，管理员也一样；不要手工往上面提交。
 - **构建号**：CI 把工作流的 `run_number` 设成环境变量 `BUILD_NUMBER`。electron-builder 写进 Windows 文件版本（`1.0.2.123`）和 macOS 的 CFBundleVersion，程序在「关于」和启动日志里显示（`src/main/build-info.ts`）。`version` 本身保持 `x.y.z`，不带构建号：标签检查、自动更新的版本比较、按文件名找旧版 blockmap 都依赖它。
 - **标签要等确认**：打版本标签前先得到用户确认。
+- **ONNX Runtime 预编译包**：改了 `scripts/ocr/onnxruntime-build.ts` 里的版本或编译选项，要推送 `onnxruntime-v<版本>-<指纹>` 标签（`.github/workflows/onnxruntime.yml` 编好后发布成预发布版本，不标成 latest），再把工作流打印的 SHA-256 填进 `ONNXRUNTIME_PREBUILT`；没更新时单元测试会失败。这类标签不是程序版本，推送前同样先得到用户确认。
 
 ## Windows 上开发的坑
 

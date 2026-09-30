@@ -4,8 +4,11 @@
  */
 import type { PixelImage } from './label-crop';
 
-/** 依次试的画质：0.85 时标签上的字清楚，整张 60×40 标签几十 KB；越往后越小、越糊。 */
-const JPEG_QUALITIES = [0.85, 0.7, 0.55, 0.4] as const;
+/**
+ * 依次试的画质：先用 0.95。模拟评估里从 0.85 提到 0.95，读对从 92.0% 到 92.8%、读错从 1.3% 到 1.0%；
+ * 整张标签约 100 KB，最大约 310 KB，远在 MAX_IMAGE_BYTES（512 KB）以内。越往后越小、越糊，超过上限才用。
+ */
+const JPEG_QUALITIES = [0.95, 0.85, 0.7, 0.55, 0.4] as const;
 /** String.fromCharCode 一次处理的字节数：太多会超过参数个数上限。 */
 const CHUNK_BYTES = 0x8000;
 

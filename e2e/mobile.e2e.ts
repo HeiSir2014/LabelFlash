@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import sharp from 'sharp';
 import type { SessionEvent } from '../relay/web/src/phone-session';
 import { SHELF_NUMBER_PATTERN } from '../src/core/scan/image-text';
+import { PIXELS_PER_CODE } from '../src/main/mobile/image-request';
 import { missingOcrFiles, ocrFiles } from '../src/main/ocr/ocr-files';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
 import type { MobileStatus } from '../src/shared/mobile-status';
@@ -200,7 +201,7 @@ test('reads the shelf number from the label image a phone sends', async ({ elect
     await expect.poll(() => hasEvent(phone.events, 'welcomed')).toBe(true);
     // 有这种步骤、电脑能识别：welcome 里要整张标签的图。
     expect(phone.events.find((event) => event.type === 'welcomed')).toMatchObject({
-      image: { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 130 },
+      image: { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: PIXELS_PER_CODE },
     });
     const job = phone.session.submit(SHELF_RAW, false, { image: LABEL_IMAGE, fields: [] });
     await expect.poll(() => resultOf(phone.events, job)?.status).toBe('printed');

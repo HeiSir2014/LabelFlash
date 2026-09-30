@@ -131,7 +131,15 @@ export function jobView(job: JobEntry, link: LinkState, isLatest = false): JobVi
       return { tone: 'warning', title: REFUSAL_TITLES[job.reason], detail: job.raw, actions: ['retry'] };
     case 'done': {
       const view = resultView(job.result, job.force, job.raw);
-      return isLatest && job.result.status === 'printed' ? { ...view, actions: ['again'] } : view;
+      if (isLatest) {
+        return job.result.status === 'printed' ? { ...view, actions: ['again'] } : view;
+      }
+      // 扫了很多张之后，旧的「没认出」卡片不再各带一个输入框（页面会被撑得很长）：只有最新一张能手动补，旧的收成一行。
+      if (view.input !== undefined) {
+        const { input, ...rest } = view;
+        return { ...rest, detail: `没认出${input}` };
+      }
+      return view;
     }
   }
 }

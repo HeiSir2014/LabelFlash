@@ -21,18 +21,11 @@ import {
 } from './camera-features';
 import type { Decoded, DecoderPort } from './decoder';
 import { type CodeCorners, cropLabel, cropLayout, type PixelImage } from './label-crop';
-import { type JobExtras, NO_EXTRAS } from './phone-session';
-import {
-  canSubmit,
-  isFinished,
-  JOB_HISTORY,
-  type JobEntry,
-  type PhoneEvent,
-  type PhoneState,
-  reducePhone,
-} from './phone-state';
+import { type JobExtras, type JobRequest, NO_EXTRAS } from './phone-session';
+import { canSubmit, isFinished, type JobEntry, type PhoneEvent, type PhoneState, reducePhone } from './phone-state';
 import {
   FAR_LENS_HINT,
+  JOB_GONE_HINT,
   type JobAction,
   NEAR_LENS_HINT,
   PHOTO_EMPTY_HINT,
@@ -43,9 +36,6 @@ import {
 } from './result-view';
 import { ScanGate } from './scan-gate';
 import type { SoundCue } from './scan-sound';
-
-/** 记住多少个任务带的图：和页面上保留的任务一样多就够了。 */
-const JOB_EXTRAS_KEPT = JOB_HISTORY;
 
 /** 复制一份像素（解码会把原来的转交给 worker）。 */
 function copyPixels(image: ImageData): PixelImage {
@@ -91,6 +81,8 @@ export const ALERT_VIBRATE_PATTERN_MS = [80, 60, 80];
 
 export interface SessionPort {
   submit(raw: string, force: boolean, extras: JobExtras): string;
+  /** 这个任务发出去的内容（会话保管，刷新页面后恢复的任务也有）；不认识的任务返回 null。 */
+  requestOf(job: string): JobRequest | null;
 }
 
 /** 提示音（sound-player.ts）；测试里换成假的。 */
@@ -159,8 +151,6 @@ export class PhoneController {
   private imageRequest: ImageRequest | null = null;
   /** 正在收的标签帧；没有时为 null。 */
   private labelFrames: LabelFrames | null = null;
-  /** 最近的任务带的图和手动字段：点「重试」「强制补打」「再打一张」时原样带上，不能丢了货架号。 */
-  private readonly jobExtras = new Map<string, JobExtras>();
 
   constructor(
     private readonly deps: PhoneControllerDeps,
@@ -219,8 +209,18 @@ export class PhoneController {
     }
   }
 
+  /**
+   * 「重试」「强制补打」「再打一张」：按这一张原来发出去的内容重发（同样的图和手动字段，读出的货架号也一样）。
+   * 内容只由会话保管（刷新页面后恢复的任务也有）；查不到时提示重新扫码，不发一个缺了图和字段的任务。
+   */
   jobAction(job: JobEntry, action: JobAction): void {
-    this.submit(job.raw, { explicit: true, force: action !== 'retry' }, this.jobExtras.get(job.id) ?? NO_EXTRAS);
+    const request = this.session?.requestOf(job.id) ?? null;
+    if (request === null) {
+      this.showHint(JOB_GONE_HINT);
+      return;
+    }
+    const { raw, ...extras } = request;
+    this.submit(raw, { explicit: true, force: action !== 'retry' }, extras);
   }
 
   /**
@@ -459,14 +459,7 @@ export class PhoneController {
     if (!this.session) {
       return;
     }
-    const job = this.session.submit(raw, force, extras);
-    if (extras.images.length > 0 || extras.fields.length > 0) {
-      this.jobExtras.set(job, extras);
-      // 页面上只留最近的任务：更早的图用不到了，不占内存。
-      for (const id of [...this.jobExtras.keys()].slice(0, -JOB_EXTRAS_KEPT)) {
-        this.jobExtras.delete(id);
-      }
-    }
+    this.session.submit(raw, force, extras);
   }
 
   private scanFrame(): void {

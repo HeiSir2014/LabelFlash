@@ -261,6 +261,8 @@ export function linkBanner(link: LinkState): string | null {
 /** 等结果的太多时的提示。 */
 export const TOO_MANY_PENDING_HINT = `还有 ${MAX_PENDING_JOBS} 张在等结果，稍等再扫`;
 export const TOO_LONG_HINT = `内容超过 ${MAX_REQUEST_RAW_LENGTH} 个字，不能打印`;
+/** 「重试」「强制补打」「再打一张」时，手机上已经没有这一张的内容（不应发生）：不发一个缺了图和字段的任务。 */
+export const JOB_GONE_HINT = '这一张的内容已经不在手机上了，请重新扫码';
 export const PHOTO_EMPTY_HINT = '照片里没有找到条码或二维码。靠近一点、对准后再拍。';
 export const PHOTO_FAILED_HINT = '这张照片读不出来，换一张再试。';
 /** 切换焦段后的提示：告诉拿手机的人现在该离标签多远。 */

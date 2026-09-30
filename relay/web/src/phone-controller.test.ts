@@ -22,9 +22,9 @@ import {
   type ViewExtras,
   type ViewPort,
 } from './phone-controller';
-import type { JobExtras } from './phone-session';
+import type { JobExtras, JobRequest } from './phone-session';
 import { initialPhoneState, type PhoneState } from './phone-state';
-import { FAR_LENS_HINT, NEAR_LENS_HINT, TOO_LONG_HINT, TOO_MANY_PENDING_HINT } from './result-view';
+import { FAR_LENS_HINT, JOB_GONE_HINT, NEAR_LENS_HINT, TOO_LONG_HINT, TOO_MANY_PENDING_HINT } from './result-view';
 import { SAME_CODE_REARM_MS } from './scan-gate';
 import type { SoundCue } from './scan-sound';
 
@@ -217,14 +217,21 @@ const FAKE_JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
 let controller: PhoneController;
 let nextJob: number;
 
+/** 会话保管的任务内容（和真实的 PhoneSession 一样：提交时记下，按任务号查）。 */
+let requests: Map<string, JobRequest>;
+
 const session = {
   submit(raw: string, force: boolean, jobExtras: JobExtras): string {
     submitted.push({ raw, force });
     extras.push(jobExtras);
     nextJob += 1;
     const job = `job${nextJob}`;
+    requests.set(job, { raw, ...jobExtras });
     controller.dispatch({ type: 'submitted', job, raw, force });
     return job;
+  },
+  requestOf(job: string): JobRequest | null {
+    return requests.get(job) ?? null;
   },
 };
 
@@ -291,6 +298,7 @@ beforeEach(() => {
   extras = [];
   jpeg = FAKE_JPEG;
   encoded = [];
+  requests = new Map();
   encodeJpeg = async () => jpeg;
   nextJob = 0;
   controller = createController();
@@ -667,6 +675,34 @@ describe('PhoneController: the label image', () => {
     controller.jobAction(job, 'retry');
     expect(extras).toHaveLength(2);
     expect(extras[1]).toEqual(extras[0]);
+  });
+
+  // 页面刷新后恢复的任务：内容由会话保管，「强制补打」照样带着标签图和手动补的货架号（原来会丢，打出没有货架号的标签）。
+  test('resends a job restored after a reload with the frames and fields the session kept', async () => {
+    await scanningWithImages();
+    const kept: JobRequest = {
+      raw: RAW,
+      images: [{ jpeg: FAKE_JPEG, code: { x: 50, y: 30, size: 20 } }],
+      fields: [{ name: '货架号', value: 'A-1-2-3' }],
+    };
+    requests.set('restored', kept);
+    controller.dispatch({ type: 'submitted', job: 'restored', raw: RAW, force: false });
+    const job = view.state?.jobs.find((entry) => entry.id === 'restored');
+    if (!job) throw new Error('expected the restored job');
+    controller.jobAction(job, 'force');
+    expect(submitted.at(-1)).toEqual({ raw: RAW, force: true });
+    expect(extras.at(-1)).toEqual({ images: kept.images, fields: kept.fields });
+  });
+
+  // 会话里查不到这一张（不应发生）：说清楚，不发一个缺了图和字段的任务。
+  test('says so instead of resending a job whose content is gone', async () => {
+    await scanningWithImages();
+    controller.dispatch({ type: 'submitted', job: 'gone', raw: RAW, force: false });
+    const job = view.state?.jobs.find((entry) => entry.id === 'gone');
+    if (!job) throw new Error('expected the job');
+    controller.jobAction(job, 'again');
+    expect(submitted).toEqual([]);
+    expect(view.extras?.hint).toBe(JOB_GONE_HINT);
   });
 
   test('sends a typed shelf number with the same content and no image', async () => {

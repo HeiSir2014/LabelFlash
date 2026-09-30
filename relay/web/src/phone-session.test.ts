@@ -12,6 +12,7 @@ import {
 } from '../../../src/shared/mobile-protocol';
 import { FakeSocket, FakeTimers } from '../../../src/shared/testing/fake-socket';
 import { PhoneSession, type SessionEvent } from './phone-session';
+import { JOB_HISTORY } from './phone-state';
 import { openSessionStore, type SessionStore } from './session-store';
 
 const URL = 'wss://relay.example.com/labelflash/ws/phone';
@@ -370,6 +371,57 @@ describe('PhoneSession: surviving a page reload', () => {
     await expectSent(2);
     await expectEvent(() => socket().receiveFrame({ t: 'ended', reason: 'stopped' }));
     expect(store.jobs).toEqual([]);
+  });
+});
+
+// 「重试」「强制补打」「再打一张」按原样重发：内容、标签图、手动字段都由会话保管（唯一的来源），
+// 页面刷新后恢复的任务也一样。原来控制器另存一份、只在内存里，刷新后恢复的任务重发时丢了货架号。
+describe('PhoneSession: what a job sent', () => {
+  const FAILED: PhonePrintResult = {
+    status: 'failed',
+    reason: 'PRINT_TIMEOUT',
+    detail: null,
+    issue: null,
+    field: null,
+  };
+  const extras = { images: [LABEL_IMAGE], fields: [{ name: '货架号', value: 'A-1-2-3' }] };
+
+  test('keeps the frames and typed fields of a job after its result arrives', async () => {
+    await welcome();
+    const job = phone.submit(RAW, false, extras);
+    await expectSent(2);
+    await expectEvent(() => fromDesktop({ type: 'result', job, result: FAILED }));
+    expect(phone.requestOf(job)).toEqual({ raw: RAW, ...extras });
+  });
+
+  test('keeps them for a job restored after a page reload', async () => {
+    const job = phone.submit(RAW, false, extras);
+    phone.stop();
+    phone = createPhone();
+    phone.start();
+    await welcome();
+    await expectSent(2);
+    await expectEvent(() => fromDesktop({ type: 'result', job, result: FAILED }));
+    expect(phone.requestOf(job)).toEqual({ raw: RAW, ...extras });
+  });
+
+  // 和页面上显示的任务一样多：更早的卡片已经不显示了，它们的图不再占内存。
+  test('forgets finished jobs beyond the history the page shows, but never a waiting one', async () => {
+    await welcome();
+    const waiting = phone.submit('WAITING', false, extras);
+    const finished: string[] = [];
+    for (let index = 0; index <= JOB_HISTORY; index += 1) {
+      const job = phone.submit(`JOB-${index}`, false);
+      finished.push(job);
+      await expectEvent(() => fromDesktop({ type: 'result', job, result: PRINTED }));
+    }
+    expect(phone.requestOf(finished[0] ?? '')).toBeNull();
+    expect(phone.requestOf(finished.at(-1) ?? '')).toEqual({ raw: `JOB-${JOB_HISTORY}`, images: [], fields: [] });
+    expect(phone.requestOf(waiting)).toEqual({ raw: 'WAITING', ...extras });
+  });
+
+  test('knows nothing about a job it never sent', () => {
+    expect(phone.requestOf(randomId())).toBeNull();
   });
 });
 

@@ -30,6 +30,7 @@ import {
   type RelayToPhone,
 } from '../../../src/shared/mobile-protocol';
 import { RelaySocket, type SocketLike, type SocketTimers } from '../../../src/shared/relay-socket';
+import { JOB_HISTORY } from './phone-state';
 import type { SessionStore } from './session-store';
 
 /** 会话发给页面的事件。 */
@@ -72,6 +73,11 @@ export interface JobExtras {
 
 export const NO_EXTRAS: JobExtras = { images: [], fields: [] };
 
+/** 一个任务发出去的内容：「重试」「强制补打」「再打一张」按它原样重发（同样的图，电脑读出的货架号也一样）。 */
+export interface JobRequest extends JobExtras {
+  raw: string;
+}
+
 interface OutgoingJob extends JobExtras {
   raw: string;
   force: boolean;
@@ -87,6 +93,11 @@ export class PhoneSession {
   private seq = 0;
   /** 发件箱：还没拿到结果的任务，按提交顺序排列（Map 保持插入顺序）。 */
   private readonly outbox = new Map<string, OutgoingJob>();
+  /**
+   * 已有结果的任务发出去的内容，最近的 JOB_HISTORY 个（和页面上显示的一样多）。任务的内容只由会话保管：
+   * 发件箱会存进 localStorage，刷新页面后恢复的任务也查得到；更早的卡片已经不显示，它们的图不再占内存。
+   */
+  private readonly finished = new Map<string, JobRequest>();
   /** 被这个会话接纳过：包括刷新页面之前（存着令牌）。 */
   private wasWelcomed: boolean;
   /** 被接纳过的会话第一次收到 not-found 的时间：中转服务可能刚重启，电脑还没连回来。 */
@@ -138,6 +149,12 @@ export class PhoneSession {
     this.isStopped = true;
     this.leaveChannel();
     this.socket.stop();
+  }
+
+  /** 这个任务发出去的内容：还在等结果的，或最近 JOB_HISTORY 个已有结果的；不认识的任务返回 null。 */
+  requestOf(jobId: string): JobRequest | null {
+    const job = this.outbox.get(jobId) ?? this.finished.get(jobId);
+    return job ? { raw: job.raw, images: job.images, fields: job.fields } : null;
   }
 
   /** 提交一个打印任务，返回任务号。没连上时先留在发件箱里，被接纳后自动发出。 */
@@ -308,6 +325,10 @@ export class PhoneSession {
     this.clearRetry(job);
     this.outbox.delete(jobId);
     this.saveOutbox();
+    this.finished.set(jobId, { raw: job.raw, images: job.images, fields: job.fields });
+    for (const id of [...this.finished.keys()].slice(0, -JOB_HISTORY)) {
+      this.finished.delete(id);
+    }
     return true;
   }
 

@@ -7,7 +7,10 @@
  * 「读错」（读出一个不对的货架号）比「没找到」危险：没找到时手机会提示重扫或手动输入，读错会直接打出错的标签。
  *
  * 用法：bun run ocr:eval [--sets normal,far,blur,dark,tilt,jpeg] [--pairs small/small,medium/medium]
+ *                        [--enhance none,clahe,...] [--pixels-per-code 130]
  *                        [--samples 200] [--seed 1] [--frame-scale 1.5] [--no-back-off] [--out <目录>]
+ * --enhance：识别前对截图做的增强（ENHANCEMENTS），和 --pairs 交叉组合；用 sharp 做原型，采用哪种再在引擎里实现。
+ * --pixels-per-code：截图时每个二维码边长多少像素（电脑向手机要的，现在是 130）。
  * --pairs 是「检测档位/识别档位」，模型放在 models/<档位>/（bun run ocr:models）；需要编好的扩展（bun run ocr:build）。
  * 每个组合在单独的进程里跑，内存各算各的。截图留在 --out 目录里（默认 native/ocr/target/eval），可以打开看。
  * 结论记在货架号识别设计的第 10 节。
@@ -35,8 +38,135 @@ const LABEL_MM = { width: 60, height: 40 };
 const LABEL_SUPERSAMPLE = 2;
 /** 扫码页取帧的基准大小（1280×720）；--frame-scale 1.5 是现在的 1080p 截图。 */
 const BASE_FRAME = { width: 1280, height: 720 };
-/** 和电脑向手机要的一样（mobile/image-request.ts）。 */
-const PIXELS_PER_CODE = 130;
+/** 和电脑向手机要的一样（mobile/image-request.ts）；--pixels-per-code 可以改。 */
+const DEFAULT_PIXELS_PER_CODE = 130;
+/** 看识别置信度门槛的效果：低于门槛的结果当作「没认出」。 */
+const SCORE_THRESHOLDS = [0.8, 0.85, 0.9, 0.95] as const;
+
+type SharpImage = ReturnType<typeof sharp>;
+
+/** 识别前的增强候选（sharp 做原型）。 */
+const ENHANCEMENTS: Record<string, { title: string; apply: (image: SharpImage) => SharpImage }> = {
+  none: { title: '不处理', apply: (image) => image },
+  gray: { title: '灰度', apply: (image) => image.greyscale() },
+  stretch: { title: '对比度拉伸', apply: (image) => image.normalise({ lower: 1, upper: 99 }) },
+  clahe: { title: '局部均衡（CLAHE）', apply: (image) => image.clahe({ width: 64, height: 64, maxSlope: 3 }) },
+  'sharpen-light': { title: '轻度锐化', apply: (image) => image.sharpen({ sigma: 0.8 }) },
+  sharpen: { title: '较强锐化', apply: (image) => image.sharpen({ sigma: 1.5, m1: 1, m2: 4 }) },
+  'stretch-sharpen': {
+    title: '拉伸 + 轻度锐化',
+    apply: (image) => image.normalise({ lower: 1, upper: 99 }).sharpen({ sigma: 0.8 }),
+  },
+};
+/**
+ * 文档扫描类应用的常见处理（在灰度上逐像素做）：
+ * - flatten：去阴影、白底。最大值滤波抹掉深色笔画只剩纸，再模糊得到光照背景，原图除以背景，纸变成均匀的白。
+ * - flatten-sharpen：去阴影后再轻度锐化。
+ * - binarize：自适应二值化（Sauvola），按局部均值和标准差定黑白阈值，即「黑白」模式。
+ * - flatten-binarize：先去阴影再二值化。
+ */
+const DOCUMENT_FILTERS: Record<
+  string,
+  { title: string; apply: (gray: Uint8Array, width: number, height: number) => Promise<Uint8Array> }
+> = {
+  flatten: { title: '去阴影（背景平整）', apply: (gray, width, height) => flattenBackground(gray, width, height) },
+  'flatten-sharpen': {
+    title: '去阴影 + 轻度锐化',
+    apply: async (gray, width, height) =>
+      new Uint8Array(
+        await sharp(await flattenBackground(gray, width, height), { raw: { width, height, channels: 1 } })
+          .sharpen({ sigma: 0.8 })
+          // 单通道进来，sharp 默认按 sRGB 输出三个通道：只取一个。
+          .extractChannel(0)
+          .raw()
+          .toBuffer(),
+      ),
+  },
+  binarize: { title: '自适应二值化（黑白）', apply: async (gray, width, height) => sauvola(gray, width, height) },
+  // 文档扫描类应用的「黑白」多是先增强再二值化：直接在暗、对比度低的图上二值化，细笔画会被当成背景。
+  'flatten-binarize': {
+    title: '去阴影 + 二值化',
+    apply: async (gray, width, height) => sauvola(await flattenBackground(gray, width, height), width, height),
+  },
+};
+/** 去阴影时抹掉笔画的窗口：比笔画粗、比字间距小（截图宽的 1/50，130 像素一个二维码边长时约 16 像素）。 */
+const FLATTEN_WINDOW_FRACTION = 1 / 50;
+/** Sauvola 的窗口（截图宽的 1/30）和参数（论文里常用的 k = 0.2、R = 128）。 */
+const SAUVOLA_WINDOW_FRACTION = 1 / 30;
+const SAUVOLA_K = 0.2;
+const SAUVOLA_R = 128;
+
+/** 一维最大值滤波（横、竖各做一次就是方形窗口）。 */
+function maxFilter(source: Uint8Array, width: number, height: number, radius: number, horizontal: boolean): Uint8Array {
+  const out = new Uint8Array(source.length);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let max = 0;
+      for (let d = -radius; d <= radius; d += 1) {
+        const xx = horizontal ? Math.min(width - 1, Math.max(0, x + d)) : x;
+        const yy = horizontal ? y : Math.min(height - 1, Math.max(0, y + d));
+        max = Math.max(max, source[yy * width + xx] ?? 0);
+      }
+      out[y * width + x] = max;
+    }
+  }
+  return out;
+}
+
+async function flattenBackground(gray: Uint8Array, width: number, height: number): Promise<Uint8Array> {
+  const radius = Math.max(2, Math.round((width * FLATTEN_WINDOW_FRACTION) / 2));
+  const paper = maxFilter(maxFilter(gray, width, height, radius, true), width, height, radius, false);
+  const background = await sharp(paper, { raw: { width, height, channels: 1 } })
+    .blur(radius)
+    .extractChannel(0)
+    .raw()
+    .toBuffer();
+  const out = new Uint8Array(gray.length);
+  for (let i = 0; i < gray.length; i += 1) {
+    out[i] = Math.min(255, Math.round(((gray[i] ?? 0) / Math.max(1, background[i] ?? 255)) * 255));
+  }
+  return out;
+}
+
+function sauvola(gray: Uint8Array, width: number, height: number): Uint8Array {
+  // 积分图：任意窗口的和、平方和都是常数时间。
+  const sum = new Float64Array((width + 1) * (height + 1));
+  const squares = new Float64Array((width + 1) * (height + 1));
+  for (let y = 0; y < height; y += 1) {
+    let row = 0;
+    let rowSquares = 0;
+    for (let x = 0; x < width; x += 1) {
+      const value = gray[y * width + x] ?? 0;
+      row += value;
+      rowSquares += value * value;
+      const at = (y + 1) * (width + 1) + x + 1;
+      sum[at] = (sum[at - width - 1] ?? 0) + row;
+      squares[at] = (squares[at - width - 1] ?? 0) + rowSquares;
+    }
+  }
+  const half = Math.max(3, Math.round((width * SAUVOLA_WINDOW_FRACTION) / 2));
+  const out = new Uint8Array(gray.length);
+  const area = (table: Float64Array, x0: number, y0: number, x1: number, y1: number) =>
+    (table[y1 * (width + 1) + x1] ?? 0) -
+    (table[y0 * (width + 1) + x1] ?? 0) -
+    (table[y1 * (width + 1) + x0] ?? 0) +
+    (table[y0 * (width + 1) + x0] ?? 0);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const x0 = Math.max(0, x - half);
+      const y0 = Math.max(0, y - half);
+      const x1 = Math.min(width, x + half + 1);
+      const y1 = Math.min(height, y + half + 1);
+      const count = (x1 - x0) * (y1 - y0);
+      const mean = area(sum, x0, y0, x1, y1) / count;
+      const deviation = Math.sqrt(Math.max(0, area(squares, x0, y0, x1, y1) / count - mean * mean));
+      const threshold = mean * (1 + SAUVOLA_K * (deviation / SAUVOLA_R - 1));
+      out[y * width + x] = (gray[y * width + x] ?? 0) > threshold ? 255 : 0;
+    }
+  }
+  return out;
+}
+
 /** 扫码页压 JPEG 依次试的质量（jpeg-encoder.ts）。 */
 const JPEG_QUALITIES = [85, 70, 55, 40] as const;
 const MAX_PLACEMENT_ATTEMPTS = 200;
@@ -331,17 +461,19 @@ async function photograph(label: Label, sample: Sample, capture: Capture, next: 
 // ---- 扫码页截图 ----
 
 /** 和扫码页一样：按二维码摆正截整张标签，从高到低试 JPEG 质量，直到不超过 MAX_IMAGE_BYTES。 */
-async function phoneCrop(frame: Frame): Promise<Buffer> {
-  const request = { area: LABEL_AREA, pixelsPerCode: PIXELS_PER_CODE };
+async function phoneCrop(frame: Frame, pixelsPerCode: number, firstQuality: number): Promise<Buffer> {
+  const request = { area: LABEL_AREA, pixelsPerCode };
   const crop = cropLabel({ data: frame.rgba, width: frame.width, height: frame.height }, frame.code, request);
   if (crop === null) {
     throw new Error('截不了图');
   }
-  for (const quality of JPEG_QUALITIES) {
+  // 先试 firstQuality（--jpeg-quality），超过上限再按扫码页的档位往下降。
+  const qualities = [firstQuality, ...JPEG_QUALITIES.filter((quality) => quality < firstQuality)];
+  for (const quality of qualities) {
     const jpeg = await sharp(Buffer.from(crop.data), { raw: { width: crop.width, height: crop.height, channels: 4 } })
       .jpeg({ quality })
       .toBuffer();
-    if (jpeg.length <= MAX_IMAGE_BYTES || quality === JPEG_QUALITIES.at(-1)) {
+    if (jpeg.length <= MAX_IMAGE_BYTES || quality === qualities.at(-1)) {
       return jpeg;
     }
   }
@@ -354,6 +486,12 @@ interface ManifestEntry {
   set: string;
   file: string;
   shelf: string;
+  bytes: number;
+}
+
+interface Manifest {
+  pixelsPerCode: number;
+  entries: ManifestEntry[];
 }
 
 async function generateSet(name: string, scenario: Scenario, options: GenerateOptions): Promise<ManifestEntry[]> {
@@ -376,10 +514,14 @@ async function generateSet(name: string, scenario: Scenario, options: GenerateOp
       blur: range(next, scenario.blur) * options.frameScale,
     };
     const label = await renderLabel(sample, next);
-    const jpeg = await phoneCrop(await photograph(label, sample, capture, next));
+    const jpeg = await phoneCrop(
+      await photograph(label, sample, capture, next),
+      options.pixelsPerCode,
+      options.jpegQuality,
+    );
     const file = join(dir, `${String(i).padStart(3, '0')}-${sample.shelf}.jpg`);
     writeFileSync(file, jpeg);
-    entries.push({ set: name, file, shelf: sample.shelf });
+    entries.push({ set: name, file, shelf: sample.shelf, bytes: jpeg.length });
   }
   return entries;
 }
@@ -390,12 +532,15 @@ interface GenerateOptions {
   frameScale: number;
   backOff: boolean;
   outDir: string;
+  pixelsPerCode: number;
+  jpegQuality: number;
 }
 
 // ---- 识别（每个组合一个子进程） ----
 
 interface WorkerResult {
-  results: Array<{ found: string | null; ms: number; read: string }>;
+  /** score：读出货架号的那一段文字的识别置信度（没读出时为 null）。 */
+  results: Array<{ found: string | null; score: number | null; ms: number; read: string }>;
   rssBeforeMb: number;
   rssLoadedMb: number;
   rssPeakMb: number;
@@ -404,10 +549,53 @@ interface WorkerResult {
 const runRegex = (pattern: string, flags: string, input: string) =>
   new RegExp(pattern, flags).exec(input)?.groups ?? null;
 
-async function runWorker(pair: string, manifestPath: string): Promise<void> {
+/** 识别用的 RGBA：灰度等处理后通道数会变，补齐成 4 个通道。 */
+async function decodeForRecognition(file: string, enhance: string) {
+  const documentFilter = DOCUMENT_FILTERS[enhance];
+  if (documentFilter) {
+    const { data: gray, info: grayInfo } = await sharp(file).greyscale().raw().toBuffer({ resolveWithObject: true });
+    const filtered = await documentFilter.apply(new Uint8Array(gray), grayInfo.width, grayInfo.height);
+    return expandToRgba(Buffer.from(filtered), grayInfo.width, grayInfo.height, 1);
+  }
+  const enhancement = ENHANCEMENTS[enhance];
+  if (!enhancement) {
+    throw new Error(`没有增强方式 ${enhance}，可选：${enhancementNames().join('、')}`);
+  }
+  const { data, info } = await enhancement.apply(sharp(file)).raw().toBuffer({ resolveWithObject: true });
+  return expandToRgba(data, info.width, info.height, info.channels);
+}
+
+function enhancementNames(): string[] {
+  return [...Object.keys(ENHANCEMENTS), ...Object.keys(DOCUMENT_FILTERS)];
+}
+
+function enhancementTitle(name: string): string {
+  return ENHANCEMENTS[name]?.title ?? DOCUMENT_FILTERS[name]?.title ?? name;
+}
+
+function expandToRgba(data: Buffer, width: number, height: number, channels: number) {
+  const info = { width, height, channels };
+  if (info.channels === 4) {
+    return { data, width: info.width, height: info.height };
+  }
+  const rgba = Buffer.alloc(info.width * info.height * 4);
+  for (let pixel = 0; pixel < info.width * info.height; pixel += 1) {
+    for (let c = 0; c < 3; c += 1) {
+      rgba[pixel * 4 + c] = data[pixel * info.channels + (info.channels >= 3 ? c : 0)] ?? 0;
+    }
+    rgba[pixel * 4 + 3] = 255;
+  }
+  return { data: rgba, width: info.width, height: info.height };
+}
+
+/** --dump：把每种增强处理后的前几张存成 PNG，看处理得对不对。 */
+const DUMPED_IMAGES = 3;
+
+async function runWorker(pair: string, enhance: string, manifestPath: string, dumpDir?: string): Promise<void> {
   const [det, rec] = pair.split('/');
-  const entries = JSON.parse(readFileSync(manifestPath, 'utf8')) as ManifestEntry[];
-  const layout = cropLayout({ area: LABEL_AREA, pixelsPerCode: PIXELS_PER_CODE });
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Manifest;
+  const entries = manifest.entries;
+  const layout = cropLayout({ area: LABEL_AREA, pixelsPerCode: manifest.pixelsPerCode });
   const mb = () => process.memoryUsage().rss / 1024 / 1024;
   const rssBeforeMb = mb();
   const engine = await OcrEngine.create({
@@ -421,9 +609,15 @@ async function runWorker(pair: string, manifestPath: string): Promise<void> {
   let rssPeakMb = rssLoadedMb;
   const results: WorkerResult['results'] = [];
   for (const entry of entries) {
-    const { data, info } = await sharp(entry.file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const image = await decodeForRecognition(entry.file, enhance);
+    if (dumpDir !== undefined && results.length < DUMPED_IMAGES) {
+      mkdirSync(dumpDir, { recursive: true });
+      await sharp(image.data, { raw: { width: image.width, height: image.height, channels: 4 } })
+        .png()
+        .toFile(join(dumpDir, `${enhance}-${results.length}.png`));
+    }
     const started = performance.now();
-    const result = await engine.recognize({ data, width: info.width, height: info.height, pixelFormat: 'RGBA' });
+    const result = await engine.recognize({ ...image, pixelFormat: 'RGBA' });
     const ms = performance.now() - started;
     rssPeakMb = Math.max(rssPeakMb, mb());
     const regions: ImageTextRegion[] = result.regions.map((region) => ({
@@ -432,16 +626,32 @@ async function runWorker(pair: string, manifestPath: string): Promise<void> {
       score: region.recognitionScore,
     }));
     const query = { pattern: SHELF_NUMBER_PATTERN, flags: '', preferredArea: BELOW_CODE_AREA };
-    const found = findImageText(regions, layout.code, query, runRegex);
-    results.push({ found, ms, read: regions.map((region) => region.text).join(' | ') });
+    const match = findImageText(regions, layout.code, query, runRegex);
+    const found = match?.value ?? null;
+    const score = match?.score ?? null;
+    results.push({ found, score, ms, read: regions.map((region) => region.text).join(' | ') });
   }
   engine.close();
   const output: WorkerResult = { results, rssBeforeMb, rssLoadedMb, rssPeakMb };
   console.log(JSON.stringify(output));
 }
 
-async function recognizeWith(pair: string, manifestPath: string): Promise<WorkerResult> {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--worker', pair, '--manifest', manifestPath], {
+async function recognizeWith(
+  pair: string,
+  enhance: string,
+  manifestPath: string,
+  dumpDir?: string,
+): Promise<WorkerResult> {
+  const args = [
+    '--worker',
+    pair,
+    '--enhance',
+    enhance,
+    '--manifest',
+    manifestPath,
+    ...(dumpDir ? ['--dump', dumpDir] : []),
+  ];
+  const child = Bun.spawn([process.execPath, import.meta.path, ...args], {
     stdout: 'pipe',
     stderr: 'inherit',
   });
@@ -460,8 +670,8 @@ const quantile = (values: number[], q: number) => {
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))] ?? 0;
 };
 
-function modelSizeMb(pair: string): number {
-  const [det, rec] = pair.split('/');
+function modelSizeMb(variant: string): number {
+  const [det, rec] = (variant.split(' + ')[0] ?? '').split('/');
   return (statSync(`models/${det}/det.onnx`).size + statSync(`models/${rec}/rec.onnx`).size) / 1024 / 1024;
 }
 
@@ -504,9 +714,27 @@ function report(entries: ManifestEntry[], sets: string[], outcomes: Map<string, 
       .filter(({ entry, result }) => result?.found != null && result.found !== entry.shelf);
     if (wrong.length > 0) {
       console.log(
-        `\n${pair} 读错的：${wrong.map(({ entry, result }) => `${entry.shelf}→${result?.found}`).join('，')}`,
+        `\n${pair} 读错的：${wrong.map(({ entry, result }) => `${entry.shelf}→${result?.found}（${result?.score?.toFixed(3)}）`).join('，')}`,
       );
     }
+  }
+  console.log(
+    `\n识别置信度门槛（低于门槛当作没认出，手机提示重扫或手动输入），合计读对 / 读错：\n\n| 组合 | 不设 | ${SCORE_THRESHOLDS.join(' | ')} |\n|---|---|${SCORE_THRESHOLDS.map(() => '---').join('|')}|`,
+  );
+  for (const pair of pairs) {
+    const results = outcomes.get(pair)?.results ?? [];
+    const cells = [0, ...SCORE_THRESHOLDS].map((threshold) => {
+      let correct = 0;
+      let wrong = 0;
+      entries.forEach((entry, i) => {
+        const result = results[i];
+        if (!result || result.found === null || (result.score ?? 0) < threshold) return;
+        if (result.found === entry.shelf) correct += 1;
+        else wrong += 1;
+      });
+      return `${percent(correct, entries.length)} / ${percent(wrong, entries.length)}`;
+    });
+    console.log(`| ${pair} | ${cells.join(' | ')} |`);
   }
 }
 
@@ -516,6 +744,10 @@ const { values } = parseArgs({
   options: {
     sets: { type: 'string', default: Object.keys(SCENARIOS).join(',') },
     pairs: { type: 'string', default: DEFAULT_PAIRS },
+    enhance: { type: 'string', default: 'none' },
+    'pixels-per-code': { type: 'string', default: String(DEFAULT_PIXELS_PER_CODE) },
+    // 扫码页压 JPEG 先试的质量（现在是 85）。
+    'jpeg-quality': { type: 'string', default: String(JPEG_QUALITIES[0]) },
     samples: { type: 'string', default: '200' },
     seed: { type: 'string', default: '1' },
     // 取帧分辨率相对 1280×720 的倍数：1.5 是现在扫码页的 1080p 截图，1 是改之前。
@@ -524,15 +756,22 @@ const { values } = parseArgs({
     'no-back-off': { type: 'boolean', default: false },
     out: { type: 'string', default: join('native', 'ocr', 'target', 'eval') },
     worker: { type: 'string' },
+    dump: { type: 'string' },
     manifest: { type: 'string' },
   },
 });
 
 if (values.worker !== undefined && values.manifest !== undefined) {
-  await runWorker(values.worker, values.manifest);
+  await runWorker(values.worker, values.enhance, values.manifest, values.dump);
 } else {
   const sets = values.sets.split(',');
   const pairs = values.pairs.split(',');
+  const enhancements = values.enhance.split(',');
+  for (const enhance of enhancements) {
+    if (!enhancementNames().includes(enhance)) {
+      throw new Error(`没有增强方式 ${enhance}，可选：${enhancementNames().join('、')}`);
+    }
+  }
   for (const set of sets) {
     if (!SCENARIOS[set]) {
       throw new Error(`没有测试集 ${set}，可选：${Object.keys(SCENARIOS).join('、')}`);
@@ -552,6 +791,8 @@ if (values.worker !== undefined && values.manifest !== undefined) {
     frameScale: Number(values['frame-scale']),
     backOff: !values['no-back-off'],
     outDir: resolve(values.out),
+    pixelsPerCode: Number(values['pixels-per-code']),
+    jpegQuality: Number(values['jpeg-quality']),
   };
   const entries: ManifestEntry[] = [];
   for (const set of sets) {
@@ -562,15 +803,21 @@ if (values.worker !== undefined && values.manifest !== undefined) {
     );
   }
   const manifestPath = join(options.outDir, 'manifest.json');
-  writeFileSync(manifestPath, JSON.stringify(entries));
+  const manifest: Manifest = { pixelsPerCode: options.pixelsPerCode, entries };
+  writeFileSync(manifestPath, JSON.stringify(manifest));
   const outcomes = new Map<string, WorkerResult>();
   for (const pair of pairs) {
-    const started = performance.now();
-    outcomes.set(pair, await recognizeWith(pair, manifestPath));
-    console.log(`[eval] ${pair}：${((performance.now() - started) / 1000).toFixed(0)} 秒`);
+    for (const enhance of enhancements) {
+      const variant = enhance === 'none' ? pair : `${pair} + ${enhancementTitle(enhance)}`;
+      const started = performance.now();
+      outcomes.set(variant, await recognizeWith(pair, enhance, manifestPath, values.dump));
+      console.log(`[eval] ${variant}：${((performance.now() - started) / 1000).toFixed(0)} 秒`);
+    }
   }
+  const sizes = entries.map((entry) => entry.bytes / 1024);
   console.log(
-    `\n取帧 ${BASE_FRAME.width * options.frameScale}×${BASE_FRAME.height * options.frameScale}，每组 ${options.samples} 张，种子 ${options.seed}${options.backOff ? '' : '，不退远'}`,
+    `\n取帧 ${BASE_FRAME.width * options.frameScale}×${BASE_FRAME.height * options.frameScale}，每组 ${options.samples} 张，种子 ${options.seed}${options.backOff ? '' : '，不退远'}；` +
+      `截图每个二维码边长 ${options.pixelsPerCode} 像素、JPEG 先试质量 ${options.jpegQuality}，JPEG 平均 ${(sizes.reduce((a, b) => a + b, 0) / sizes.length).toFixed(0)} KB、最大 ${Math.max(...sizes).toFixed(0)} KB`,
   );
   report(entries, sets, outcomes);
 }

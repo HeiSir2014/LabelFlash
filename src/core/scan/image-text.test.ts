@@ -32,6 +32,9 @@ function line(text: string, cx: number, cy: number, w = 120, h = 30): ImageTextR
 }
 
 const anywhere = { pattern: SHELF_NUMBER_PATTERN, flags: '', preferredArea: null };
+
+/** 只看找到的值。 */
+const findValue = (...args: Parameters<typeof findImageText>) => findImageText(...args)?.value ?? null;
 const belowFirst = { pattern: SHELF_NUMBER_PATTERN, flags: '', preferredArea: BELOW_CODE_AREA };
 
 describe('normalizeImageText', () => {
@@ -73,44 +76,49 @@ describe('searchOrder', () => {
 describe('findImageText', () => {
   test('reads a shelf number with two-digit parts', () => {
     const regions = [line('尺码：36', 420, 150), line('B-12-3-10', 200, 290)];
-    expect(findImageText(regions, CODE, anywhere, runRegex)).toBe('B-12-3-10');
+    expect(findValue(regions, CODE, anywhere, runRegex)).toBe('B-12-3-10');
   });
 
   test('takes the matching part of a longer line', () => {
-    expect(findImageText([line('货架 A-1-2-3 号', 200, 290)], CODE, anywhere, runRegex)).toBe('A-1-2-3');
+    expect(findValue([line('货架 A-1-2-3 号', 200, 290)], CODE, anywhere, runRegex)).toBe('A-1-2-3');
   });
 
   test('matches after normalizing dashes', () => {
-    expect(findImageText([line('A一1一2一3', 200, 290)], CODE, belowFirst, runRegex)).toBe('A-1-2-3');
+    expect(findValue([line('A一1一2一3', 200, 290)], CODE, belowFirst, runRegex)).toBe('A-1-2-3');
   });
 
   // 货架号换了位置（印到了二维码右边）：优先区域里没有，照样在标签别处找到。
   test('still finds the value after it moved out of the preferred area', () => {
     const regions = [line('4-1-2-3', 200, 290), line('A-1-2-3', 420, 120)];
-    expect(findImageText(regions, CODE, belowFirst, runRegex)).toBe('A-1-2-3');
+    expect(findValue(regions, CODE, belowFirst, runRegex)).toBe('A-1-2-3');
   });
 
   test('prefers the area when two places look like a shelf number', () => {
     const regions = [line('B-9-9-9', 420, 120), line('A-1-2-3', 200, 290)];
-    expect(findImageText(regions, CODE, belowFirst, runRegex)).toBe('A-1-2-3');
+    expect(findValue(regions, CODE, belowFirst, runRegex)).toBe('A-1-2-3');
   });
 
   test('uses the first match in reading order without a preferred area', () => {
     const regions = [line('A-1-2-3', 200, 280), line('A-9-9-9', 200, 340)];
-    expect(findImageText(regions, CODE, anywhere, runRegex)).toBe('A-1-2-3');
+    expect(findValue(regions, CODE, anywhere, runRegex)).toBe('A-1-2-3');
   });
 
   test('returns null when nothing matches', () => {
     const regions = [line('4-1-2-3', 200, 290), line('尺码：36', 420, 120)];
-    expect(findImageText(regions, CODE, anywhere, runRegex)).toBeNull();
+    expect(findValue(regions, CODE, anywhere, runRegex)).toBeNull();
   });
 
   test('does not cut a shelf number out of a longer code', () => {
-    expect(findImageText([line('XA-1-2-3456', 200, 290)], CODE, anywhere, runRegex)).toBeNull();
+    expect(findValue([line('XA-1-2-3456', 200, 290)], CODE, anywhere, runRegex)).toBeNull();
+  });
+
+  test('returns how sure the OCR was about the line it took the value from', () => {
+    const doubtful = { ...line('E-113-409-55', 200, 290), score: 0.82 };
+    expect(findImageText([doubtful], CODE, anywhere, runRegex)).toEqual({ value: 'E-113-409-55', score: 0.82 });
   });
 
   test('treats a timed-out regex as no match', () => {
     const timedOut: RegexRunner = () => null;
-    expect(findImageText([line('A-1-2-3', 200, 290)], CODE, anywhere, timedOut)).toBeNull();
+    expect(findValue([line('A-1-2-3', 200, 290)], CODE, anywhere, timedOut)).toBeNull();
   });
 });

@@ -10,7 +10,7 @@ import type {
   RegexReplaceStep,
   StepKind,
 } from './enrich-model';
-import { findImageText, type ImageTextRegion, type ScanImage } from './image-text';
+import { findImageText, IMAGE_TEXT_MIN_SCORE, type ImageTextRegion, type ScanImage } from './image-text';
 import { parseJsonPath, readJsonPath } from './json-path';
 import type { RegexRunner } from './recognize';
 import { fieldValue, type ScanField, type ScanResult } from './scan-result';
@@ -180,8 +180,17 @@ async function imageText(
     return skip('这台电脑上没有文字识别，跳过');
   }
   const query = { pattern: step.pattern, flags: step.flags, preferredArea: step.preferredArea };
-  const value = findImageText(regions, image.code, query, match);
-  return value === null ? textNotFound(step, `没认出${step.output}`) : done([[step.output, value]]);
+  const found = findImageText(regions, image.code, query, match);
+  if (found === null) {
+    return textNotFound(step, `没认出${step.output}`);
+  }
+  if (found.score < IMAGE_TEXT_MIN_SCORE) {
+    return textNotFound(
+      step,
+      `没认出${step.output}：读到「${found.value}」，但把握只有 ${Math.floor(found.score * 100)}%`,
+    );
+  }
+  return done([[step.output, found.value]]);
 }
 
 function textNotFound(step: ImageTextStep, detail: string): StepOutcome {

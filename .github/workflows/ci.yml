@@ -54,23 +54,13 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
-      # 安装包里的 OCR 扩展静态链接自己编的 ONNX Runtime（/MT，见 scripts/ocr/build-onnxruntime.ts）：
-      # 它的构建脚本要 Python 3.10+；编一次要一个多小时，编好的库按版本和选项缓存。
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - uses: actions/cache@v6
-        with:
-          path: native/ocr/target/onnxruntime
-          key: onnxruntime-static-${{ runner.os }}-${{ hashFiles('scripts/ocr/onnxruntime-build.ts', 'scripts/ocr/build-onnxruntime.ts') }}
+      # 安装包里的 OCR 扩展静态链接的 ONNX Runtime（/MT）：dist:win 从本仓库的预发布版本下载、核对 SHA-256，
+      # 不在这里编（发布它的是 onnxruntime.yml，见 scripts/ocr/build-onnxruntime.ts）。
       # 手机扫码的默认中转地址：代码里不写域名，官方安装包从仓库的 Actions 变量注入（见 electron.vite.config.ts）。
       # check 作业不注入：E2E 要验证「没有默认地址」时的提示。
       - run: bun run dist:win
         env:
           CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
-          ORT_BUILD_PYTHON: python
-          # 中间文件放短路径：ONNX Runtime 的构建目录很深，放在仓库里会超出 MSBuild 的路径长度限制。
-          LABELFLASH_ORT_WORK_DIR: ${{ runner.temp }}\ort
       - uses: actions/upload-artifact@v4
         with:
           name: CDL-LabelFlash-windows
@@ -156,22 +146,12 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
-      # 安装包里的 OCR 扩展静态链接自己编的 ONNX Runtime（/MT，见 scripts/ocr/build-onnxruntime.ts）：
-      # 它的构建脚本要 Python 3.10+；编一次要一个多小时，编好的库按版本和选项缓存。
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - uses: actions/cache@v6
-        with:
-          path: native/ocr/target/onnxruntime
-          key: onnxruntime-static-${{ runner.os }}-${{ hashFiles('scripts/ocr/onnxruntime-build.ts', 'scripts/ocr/build-onnxruntime.ts') }}
+      # 安装包里的 OCR 扩展静态链接的 ONNX Runtime（/MT）：dist:win 从本仓库的预发布版本下载、核对 SHA-256，
+      # 不在这里编（发布它的是 onnxruntime.yml，见 scripts/ocr/build-onnxruntime.ts）。
       - run: bun run release:win
         env:
           CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ORT_BUILD_PYTHON: python
-          # 中间文件放短路径：ONNX Runtime 的构建目录很深，放在仓库里会超出 MSBuild 的路径长度限制。
-          LABELFLASH_ORT_WORK_DIR: ${{ runner.temp }}\ort
 
   release-macos:
     needs: release-draft

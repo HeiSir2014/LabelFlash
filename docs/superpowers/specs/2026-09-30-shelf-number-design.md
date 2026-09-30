@@ -80,7 +80,8 @@ interface ImageTextStep {
 - 扩展只依赖系统 DLL：ONNX Runtime 由 `scripts/ocr/build-onnxruntime.ts` 从微软的源码编成 /MT 静态库（静态 C 运行库），扩展也用 crt-static 编。
   - 最初用 ort 下载的预编译包：它只有 /MD 版本，扩展因此依赖 VC++ 运行库（要随包带 4 个 DLL），还导入 DirectML.dll；而且它按 `/arch:AVX2` 编，没有 AVX2 的 CPU 上加载就崩。
   - 自己编的按 x64 基线，矩阵运算在运行时挑 AVX2 / AVX-512；二维码附近一块慢约 50 毫秒（0.20 秒对 0.15 秒），换来任何 x64 CPU 都能用。
-- 构建：`dist:win` 里由 `scripts/ocr/stage-resources.ts` 下载模型、编 ONNX Runtime（第一次约半小时，按版本和选项缓存）、编扩展、核对依赖、用样张识别一次，放到 `dist/.ocr`；CI 的 Windows 打包作业同样执行，缓存编好的 ONNX Runtime。
+- 构建：`dist:win` 里由 `scripts/ocr/stage-resources.ts` 下载模型、下载预编译的 ONNX Runtime 静态库、编扩展、核对依赖、用样张识别一次，放到 `dist/.ocr`。
+- ONNX Runtime 的静态库只在版本或编译选项变了时编一次：推送 `onnxruntime-v<版本>-<指纹>` 标签，`.github/workflows/onnxruntime.yml` 在 windows-2022 上从源码编（约 50 分钟）、附上构建来源证明，发布成预发布版本（不标成 latest，自动更新看不到它）；代码里记着每个文件的 SHA-256。扩展是我们自己的 Rust 代码，每次打包都从源码编，不做成预编译包：这样标签里的源码和装进安装包的二进制不会对不上。
 - macOS：这一版不带 OCR，这一步按「OCR 不可用」处理。
 
 ## 8. 测试与验收

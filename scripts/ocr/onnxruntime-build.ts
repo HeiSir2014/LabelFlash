@@ -123,8 +123,18 @@ export interface PrebuiltOnnxRuntime {
   sha256: Record<string, string>;
 }
 
-/** 还没发布时是 null：只能从源码编。 */
-export const ONNXRUNTIME_PREBUILT: PrebuiltOnnxRuntime | null = null;
+/**
+ * 当前版本和选项的预编译包（标签 onnxruntime-v1.30.0-824dcd48a962，发布工作流打印的 SHA256SUMS）。
+ * 改了 ONNXRUNTIME_SOURCE 或 ONNXRUNTIME_BUILD_OPTIONS 后单元测试会失败：推送新标签发布、把这里换成新的，或改回 null。
+ */
+export const ONNXRUNTIME_PREBUILT: PrebuiltOnnxRuntime | null = {
+  key: '1.30.0-824dcd48a962',
+  sha256: {
+    'onnxruntime-win-x64-static.lib.gz': '748136043451c5e1f6d2238e87d2d2dbb4291c9091e53356616bcdbc3381e09d',
+    'onnxruntime-LICENSE.txt': 'c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674',
+    'onnxruntime-ThirdPartyNotices.txt': 'c53a76501ef60db6f865f20599f220761201ac4057683acefdab37d861b86622',
+  },
+};
 
 export function prebuiltReleaseTag(): string {
   return `onnxruntime-v${onnxRuntimeBuildKey()}`;

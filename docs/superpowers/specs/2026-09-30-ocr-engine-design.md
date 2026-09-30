@@ -160,8 +160,8 @@ pub trait RegionDetector: Send + Sync { fn detect(&self, image: &ImageView<'_>) 
 
 **打包时要处理的**：
 - `.node` 约 21.8 MB（ONNX Runtime 静态链接进来，没有单独的 onnxruntime.dll）。
-- 依赖 VC++ 运行库（MSVCP140、VCRUNTIME140），不是每台 Windows 都有：装进安装包时一起带上这几个 DLL，或者评估静态链接 C 运行库。
-- 依赖 DirectML、D3D12：Windows 10 1903 起系统自带（静态库里带了 DirectML 执行器，没有启用），以后精简 ONNX Runtime 时可以去掉。
+- 依赖 VC++ 运行库（MSVCP140、VCRUNTIME140），不是每台 Windows 都有。后来改为自己从源码编 /MT 的 ONNX Runtime，安装包里的扩展不再依赖它（见货架号识别设计第 7 节）；开发时（`ocr:build`、`ocr:test`）仍用 ort 的预编译包。
+- 依赖 DirectML、D3D12：Windows 10 1903 起系统自带（预编译的静态库里带了 DirectML 执行器，没有启用）。安装包里的扩展改用自己编的 ONNX Runtime 后没有这两个依赖。
 
 ## 11. 以后
 

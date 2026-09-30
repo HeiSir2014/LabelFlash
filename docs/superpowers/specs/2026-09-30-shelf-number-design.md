@@ -76,8 +76,11 @@ interface ImageTextStep {
 
 ## 7. 打包（Windows）
 
-- 安装包带上 OCR：`resources/ocr/ocr-addon.node`、VC++ 运行库（`msvcp140.dll`、`msvcp140_1.dll`、`vcruntime140.dll`、`vcruntime140_1.dll`，放在同一目录，Windows 按扩展所在目录找依赖）、模型 `models/small/{det.onnx, rec.onnx, dict.txt}`。安装包大约增加 50 MB（未压缩）。
-- 构建：`dist:win` 里由 `scripts/ocr/stage-resources.ts` 下载模型、编译扩展、收集运行库到 `dist/.ocr`；CI 的 Windows 打包作业同样执行（Windows 上自带 Rust 工具链）。VC++ 运行库从构建机的 Visual Studio 里取（vswhere 定位）。
+- 安装包带上 OCR：`resources/ocr/ocr-addon.node`、模型 `models/small/{det.onnx, rec.onnx, dict.txt}` 和 ONNX Runtime 的许可声明。
+- 扩展只依赖系统 DLL：ONNX Runtime 由 `scripts/ocr/build-onnxruntime.ts` 从微软的源码编成 /MT 静态库（静态 C 运行库），扩展也用 crt-static 编。
+  - 最初用 ort 下载的预编译包：它只有 /MD 版本，扩展因此依赖 VC++ 运行库（要随包带 4 个 DLL），还导入 DirectML.dll；而且它按 `/arch:AVX2` 编，没有 AVX2 的 CPU 上加载就崩。
+  - 自己编的按 x64 基线，矩阵运算在运行时挑 AVX2 / AVX-512；二维码附近一块慢约 50 毫秒（0.20 秒对 0.15 秒），换来任何 x64 CPU 都能用。
+- 构建：`dist:win` 里由 `scripts/ocr/stage-resources.ts` 下载模型、编 ONNX Runtime（第一次约半小时，按版本和选项缓存）、编扩展、核对依赖、用样张识别一次，放到 `dist/.ocr`；CI 的 Windows 打包作业同样执行，缓存编好的 ONNX Runtime。
 - macOS：这一版不带 OCR，这一步按「OCR 不可用」处理。
 
 ## 8. 测试与验收
@@ -93,3 +96,4 @@ interface ImageTextStep {
 - 全部按上面的设计完成，Windows 上验收见 `docs/windows-acceptance.md` #53–#56；真手机、干净系统待验收（#57）。
 - 真实照片上货架号在二维码左边（不在默认的优先区域「二维码下方」里），按「优先区域先看、再找别处」照样读出 `A-1-2-3`。
 - 安装包 137 MB（多约 31 MB：扩展 21 MB、small 模型 30 MB，压缩后）。第一次更新到这个版本时差分下载会多下这一部分。
+- 同日改为自己编 ONNX Runtime（第 7 节）：扩展 18.1 MB，不再带 VC++ 运行库，安装包 136.9 MB；验收见 #58。

@@ -32,6 +32,7 @@ describe('sanitizeSettings', () => {
       historyLimit: 20_000,
       launchAtLogin: false,
       voice: { enabled: false, name: 'zh-CN-YunxiNeural', ratePercent: 30 },
+      ocrModelTier: 'accurate',
       ruleSettings: [
         { id: 'custom:a1', enabled: true, templateId: 'custom:3f2c-9a' },
         { id: 'builtin:raw', enabled: false, templateId: null },
@@ -81,6 +82,13 @@ describe('sanitizeSettings', () => {
   test('starts with the computer by default, so a scan station is ready right after the installer finishes', () => {
     expect(DEFAULT_SETTINGS.launchAtLogin).toBe(true);
     expect(sanitizeSettings({}).launchAtLogin).toBe(true);
+  });
+
+  test('reads text in images at the fast tier unless the user picked the accurate one', () => {
+    expect(DEFAULT_SETTINGS.ocrModelTier).toBe('fast');
+    expect(sanitizeSettings({}).ocrModelTier).toBe('fast');
+    expect(sanitizeSettings({ ocrModelTier: 'accurate' }).ocrModelTier).toBe('accurate');
+    expect(sanitizeSettings({ ocrModelTier: 'huge' }).ocrModelTier).toBe('fast');
   });
 
   test('sanitizes voice settings and snaps the rate to 10% steps', () => {

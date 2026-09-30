@@ -1,5 +1,6 @@
 /**
- * 下载 PP-OCRv6 官方 ONNX 模型到 models/{tiny,small}/：det.onnx、rec.onnx、dict.txt（另存 det.yml、rec.yml 备查）。
+ * 下载 PP-OCRv6 官方 ONNX 模型到 models/{tiny,small,medium}/：det.onnx、rec.onnx、dict.txt（另存 det.yml、rec.yml 备查）。
+ * medium 只下识别模型：「精准」档是 small 检测 + medium 识别（见 src/main/ocr/ocr-files.ts 的 OCR_TIER_MODELS）。
  * 从 Hugging Face 的 PaddlePaddle 官方仓库按固定版本下载，逐个核对 SHA-256；已经下载且哈希对的跳过。
  * 模型是 Apache-2.0 许可，不进 git，也不嵌进 .node（见 docs/superpowers/specs/2026-09-30-ocr-engine-design.md）。
  * 用法：bun run ocr:models
@@ -21,10 +22,10 @@ interface ModelSource {
   ymlSha256: string;
 }
 
-type Tier = 'tiny' | 'small';
-type Kind = 'det' | 'rec';
+type Tier = 'tiny' | 'small' | 'medium';
 
-export const MODEL_SOURCES: Record<Tier, Record<Kind, ModelSource>> = {
+/** 每一档的识别模型（带字典）必有；检测模型用不到的档位不下。 */
+export const MODEL_SOURCES: Record<Tier, { det?: ModelSource; rec: ModelSource }> = {
   tiny: {
     det: {
       repo: 'PaddlePaddle/PP-OCRv6_tiny_det_onnx',
@@ -51,6 +52,14 @@ export const MODEL_SOURCES: Record<Tier, Record<Kind, ModelSource>> = {
       revision: 'b8f84f0b80c529de40b4fbb3544b84fa7233a513',
       onnxSha256: '5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634',
       ymlSha256: 'ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1',
+    },
+  },
+  medium: {
+    rec: {
+      repo: 'PaddlePaddle/PP-OCRv6_medium_rec_onnx',
+      revision: '50c7eacafc52fa7bcf4194e8cd08e46f8558504b',
+      onnxSha256: '9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba',
+      ymlSha256: '991b700facf5b50a7de193468207d5f4255b538dde0d312ae3b7c7a9b6873129',
     },
   },
 };
@@ -82,8 +91,7 @@ async function fetchVerified(url: string, target: string, expectedSha256: string
   return data;
 }
 
-async function fetchModel(tier: Tier, kind: Kind): Promise<string> {
-  const source = MODEL_SOURCES[tier][kind];
+async function fetchModel(tier: Tier, kind: 'det' | 'rec', source: ModelSource): Promise<string> {
   const dir = join(MODELS_DIR, tier);
   const base = `https://huggingface.co/${source.repo}/resolve/${source.revision}`;
   await fetchVerified(`${base}/inference.onnx`, join(dir, `${kind}.onnx`), source.onnxSha256);
@@ -94,9 +102,14 @@ async function fetchModel(tier: Tier, kind: Kind): Promise<string> {
 export async function fetchModels(): Promise<void> {
   for (const tier of Object.keys(MODEL_SOURCES) as Tier[]) {
     await mkdir(join(MODELS_DIR, tier), { recursive: true });
-    const det = readDetectionConfig(await fetchModel(tier, 'det'));
-    const rec = readRecognitionConfig(await fetchModel(tier, 'rec'));
+    const sources = MODEL_SOURCES[tier];
+    const rec = readRecognitionConfig(await fetchModel(tier, 'rec', sources.rec));
     await writeFile(join(MODELS_DIR, tier, 'dict.txt'), dictionaryText(rec.dictionary), 'utf8');
+    if (sources.det === undefined) {
+      console.log(`[ocr] ${tier}: ${rec.modelName}，字典 ${rec.dictionary.length} 个字（这一档不用检测模型）`);
+      continue;
+    }
+    const det = readDetectionConfig(await fetchModel(tier, 'det', sources.det));
     console.log(
       `[ocr] ${tier}: ${det.modelName} + ${rec.modelName}，字典 ${rec.dictionary.length} 个字；` +
         `模型自带的 DB 参数 thresh ${det.thresh}、box_thresh ${det.boxThresh}、unclip_ratio ${det.unclipRatio}`,

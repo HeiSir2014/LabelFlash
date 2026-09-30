@@ -439,6 +439,7 @@ export function App() {
             localApi={localApi}
             general={{
               jobTotal: jobLog.total,
+              canReadImageText: appInfo?.canReadImageText ?? true,
               update: updateView,
               onCheckForUpdates: updates.check,
               onOpenLogFolder: openLogFolder,

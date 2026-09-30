@@ -6,6 +6,7 @@ import { SHELF_NUMBER_PATTERN } from '../src/core/scan/image-text';
 import { missingOcrFiles, ocrFiles } from '../src/main/ocr/ocr-files';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
 import type { MobileStatus } from '../src/shared/mobile-status';
+import { OCR_MODEL_TIERS, type OcrModelTier } from '../src/shared/ocr-model';
 import { callApi, openConfig } from './support/app-helpers';
 import { APP_ROOT } from './support/electron-app';
 import { expect, test } from './support/fixtures';
@@ -259,8 +260,8 @@ test('prints scanner scans without the image text step getting in the way', asyn
   expect(record?.fields?.some((field) => field.name === '货架号')).toBe(false);
 });
 
-/** 仓库里编译好的扩展和下载好的模型（bun run ocr:build、ocr:models）；CI 上没有，这个用例跳过。 */
-const HAS_REAL_OCR =
+/** 仓库里编译好的扩展和下载好的这一档模型（bun run ocr:build、ocr:models）；CI 上没有，这个用例跳过。 */
+const hasRealOcr = (tier: OcrModelTier): boolean =>
   missingOcrFiles(
     ocrFiles({
       isPackaged: false,
@@ -268,31 +269,45 @@ const HAS_REAL_OCR =
       appRoot: APP_ROOT,
       platform: process.platform,
       arch: process.arch,
+      tier,
     }),
   ).length === 0;
 
 // 真实的文字识别：主进程加载扩展和模型，读一张真实的标签照片（横着拍的，货架号在二维码左边，不在优先区域里）。
-test('reads the shelf number from a real label photo with the local OCR engine', async ({ electronApp }) => {
-  test.skip(!HAS_REAL_OCR, '没有编译好的 OCR 扩展或模型（bun run ocr:build、bun run ocr:models）');
-  // 像手机那样只截标签那一块、压成 JPEG（不超过 64 KB）。
-  const jpeg = await sharp(join(APP_ROOT, 'native', 'ocr', 'fixtures', 'shelf-label.jpg'))
-    .extract({ left: 200, top: 270, width: 640, height: 880 })
-    .grayscale()
-    .jpeg({ quality: 80 })
-    .toBuffer();
-  const { page } = await electronApp.launch({ fakePrinters: [LABEL_PRINTER] });
-  await useShelfRule(page);
-  expect((await callApi(page, 'getAppInfo')).canReadImageText).toBe(true);
-  await startMobile(page);
-  const phone = await connectTestPhone(relay, await activeUrl(page));
-  try {
-    await expect.poll(() => hasEvent(phone.events, 'welcomed')).toBe(true);
-    const image = { jpeg: jpeg.toString('base64'), code: { x: 237, y: 17, size: 340 } };
-    const job = phone.session.submit(SHELF_RAW, false, { image, fields: [] });
-    await expect.poll(() => resultOf(phone.events, job)?.status, { timeout: 30_000 }).toBe('printed');
-    const [record] = (await callApi(page, 'listJobs', { limit: 1 })).jobs;
-    expect(record?.fields).toContainEqual({ name: '货架号', value: 'A-1-2-3' });
-  } finally {
-    phone.session.stop();
-  }
+for (const { id: tier } of OCR_MODEL_TIERS) {
+  test(`reads the shelf number from a real label photo with the ${tier} OCR models`, async ({ electronApp }) => {
+    test.skip(!hasRealOcr(tier), '没有编译好的 OCR 扩展或模型（bun run ocr:build、bun run ocr:models）');
+    // 像手机那样只截标签那一块、压成 JPEG（不超过 64 KB）。
+    const jpeg = await sharp(join(APP_ROOT, 'native', 'ocr', 'fixtures', 'shelf-label.jpg'))
+      .extract({ left: 200, top: 270, width: 640, height: 880 })
+      .grayscale()
+      .jpeg({ quality: 80 })
+      .toBuffer();
+    const { page } = await electronApp.launch({ fakePrinters: [LABEL_PRINTER] });
+    await callApi(page, 'updateSettings', { ocrModelTier: tier });
+    await useShelfRule(page);
+    expect((await callApi(page, 'getAppInfo')).canReadImageText).toBe(true);
+    await startMobile(page);
+    const phone = await connectTestPhone(relay, await activeUrl(page));
+    try {
+      await expect.poll(() => hasEvent(phone.events, 'welcomed')).toBe(true);
+      const image = { jpeg: jpeg.toString('base64'), code: { x: 237, y: 17, size: 340 } };
+      const job = phone.session.submit(SHELF_RAW, false, { image, fields: [] });
+      await expect.poll(() => resultOf(phone.events, job)?.status, { timeout: 30_000 }).toBe('printed');
+      const [record] = (await callApi(page, 'listJobs', { limit: 1 })).jobs;
+      expect(record?.fields).toContainEqual({ name: '货架号', value: 'A-1-2-3' });
+    } finally {
+      phone.session.stop();
+    }
+  });
+}
+
+test('switches the text recognition speed on the general page and keeps it', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: [LABEL_PRINTER], fakeOcr: ['A-1-2-3'] });
+  await openConfig(page, '通用');
+  const speed = page.getByRole('group', { name: '文字识别速度' });
+  await expect(speed.getByRole('button', { name: '极速' })).toHaveAttribute('aria-pressed', 'true');
+  await speed.getByRole('button', { name: '精准' }).click();
+  await expect.poll(async () => (await callApi(page, 'getSettings')).ocrModelTier).toBe('accurate');
+  await expect(speed.getByRole('button', { name: '精准' })).toHaveAttribute('aria-pressed', 'true');
 });

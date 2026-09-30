@@ -18,6 +18,8 @@ import { WebhooksPage, type WebhooksPageProps } from './pages/WebhooksPage';
 /** 通用页除设置本身以外要的东西。 */
 export interface GeneralPageExtras {
   jobTotal: number;
+  /** 这台电脑能识别标签图上的字：不能时（macOS 这一版）不显示文字识别的设置。 */
+  canReadImageText: boolean;
   update: UpdateView;
   onCheckForUpdates: () => void;
   onOpenLogFolder: () => void;

@@ -6,6 +6,7 @@ import { DEFAULT_NOTE_OVERRIDE, type NoteOverride } from '../core/templates/note
 import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
 import { DEFAULT_PAPER } from './label-paper';
 import { isWebOrigin } from './local-api';
+import { DEFAULT_OCR_MODEL_TIER, isOcrModelTier, type OcrModelTier } from './ocr-model';
 import { paperKey, parsePaperKey } from './paper-sizes';
 import { sanitizeRelayUrl } from './relay-url';
 import { DEFAULT_VOICE_NAME, isVoiceName, VOICE_RATE_RANGE, type VoiceSettings } from './voice';
@@ -28,6 +29,8 @@ export interface AppSettings {
   launchAtLogin: boolean;
   /** 扫码 / 打印后的语音确认播报。 */
   voice: VoiceSettings;
+  /** 图中文字识别（货架号）用哪一档模型：极速（默认）或精准。 */
+  ocrModelTier: OcrModelTier;
   /** 识别规则的顺序、启用和绑定的模板（本机设置，不随规则导出）。 */
   ruleSettings: RuleSetting[];
   /** 多行扫码：回车 / Tab 之后这么久没有新字符才算一次扫码结束（毫秒）。 */
@@ -86,6 +89,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // 只由程序按设置注册（不在安装脚本里写），自动更新重新运行安装程序时不会覆盖用户关掉的选择。
   launchAtLogin: true,
   voice: { enabled: true, name: DEFAULT_VOICE_NAME, ratePercent: 0 },
+  ocrModelTier: DEFAULT_OCR_MODEL_TIER,
   ruleSettings: defaultRuleSettings(),
   scanLineGapMs: SCAN_LINE_GAP_RANGE.default,
   webhooks: [],
@@ -120,6 +124,7 @@ export function sanitizeSettings(value: unknown): AppSettings {
     ),
     launchAtLogin: sanitizeBoolean(input['launchAtLogin'], DEFAULT_SETTINGS.launchAtLogin),
     voice: sanitizeVoice(input['voice']),
+    ocrModelTier: isOcrModelTier(input['ocrModelTier']) ? input['ocrModelTier'] : DEFAULT_SETTINGS.ocrModelTier,
     ruleSettings: sanitizeRuleSettings(input['ruleSettings']),
     scanLineGapMs: sanitizeInteger(
       input['scanLineGapMs'],

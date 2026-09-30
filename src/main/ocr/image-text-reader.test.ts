@@ -11,8 +11,9 @@ const BOX = [
 ] as const;
 
 function harness(overrides: Partial<ImageTextReaderDeps> = {}) {
-  const calls: { engines: number; inputs: unknown[]; unavailable: number; logs: string[] } = {
+  const calls: { engines: number; closed: number; inputs: unknown[]; unavailable: number; logs: string[] } = {
     engines: 0,
+    closed: 0,
     inputs: [],
     unavailable: 0,
     logs: [],
@@ -22,9 +23,12 @@ function harness(overrides: Partial<ImageTextReaderDeps> = {}) {
       calls.inputs.push(input);
       return { regions: [{ box: [...BOX], text: 'A-1-2-3', recognitionScore: 0.98 }] };
     },
+    close: () => {
+      calls.closed += 1;
+    },
   };
   const reader = new ImageTextReader({
-    hasFiles: true,
+    hasFiles: () => true,
     createEngine: async () => {
       calls.engines += 1;
       return engine;
@@ -56,7 +60,7 @@ describe('ImageTextReader', () => {
   });
 
   test('cannot read without the addon and models', async () => {
-    const { reader, calls } = harness({ hasFiles: false });
+    const { reader, calls } = harness({ hasFiles: () => false });
     expect(reader.canRead()).toBe(false);
     expect(await reader.read(IMAGE)).toBeNull();
     expect(calls.engines).toBe(0);
@@ -74,6 +78,44 @@ describe('ImageTextReader', () => {
     expect(reader.canRead()).toBe(false);
     expect(calls.unavailable).toBe(1);
     expect(calls.logs.some((line) => line.includes('VCRUNTIME140.dll'))).toBe(true);
+  });
+
+  // 换了模型档位：旧引擎关掉（正在跑的识别各自持有引擎，不受影响），下一张用新档位的模型。
+  test('reset closes the current engine and the next read loads a new one', async () => {
+    const { reader, calls } = harness();
+    await reader.read(IMAGE);
+    reader.reset();
+    await Promise.resolve();
+    expect(calls.closed).toBe(1);
+    await reader.read(IMAGE);
+    expect(calls.engines).toBe(2);
+  });
+
+  test('reset lets another tier try to load after an engine failed', async () => {
+    let attempts = 0;
+    const { reader, calls } = harness({
+      createEngine: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error('模型文件损坏');
+        }
+        return { recognize: async () => ({ regions: [] }), close: () => {} };
+      },
+    });
+    expect(await reader.read(IMAGE)).toBeNull();
+    expect(reader.canRead()).toBe(false);
+    reader.reset();
+    expect(reader.canRead()).toBe(true);
+    expect(await reader.read(IMAGE)).toEqual([]);
+    expect(calls.unavailable).toBe(1);
+  });
+
+  test('checks the files of the current tier every time', () => {
+    let present = true;
+    const { reader } = harness({ hasFiles: () => present });
+    expect(reader.canRead()).toBe(true);
+    present = false;
+    expect(reader.canRead()).toBe(false);
   });
 
   test('reports an image that cannot be decoded', async () => {

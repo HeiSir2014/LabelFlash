@@ -36,5 +36,5 @@ export function fakeImageTextSource(texts: readonly string[]): ImageTextSource {
       score: 1,
     };
   });
-  return { canRead: () => true, read: async () => regions, warm: () => {} };
+  return { canRead: () => true, read: async () => regions, warm: () => {}, reset: () => {} };
 }

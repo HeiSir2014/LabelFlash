@@ -53,6 +53,7 @@
 | `bun run ocr:build` | 编译本地 OCR 的 Node-API 扩展（Rust，需要 cargo） |
 | `bun run ocr:test` | 本地 OCR 引擎的 Rust 测试、clippy 和格式检查（有模型时跑真实模型的集成测试） |
 | `bun run ocr:example` / `bun run ocr:bench` | 用样张在 Bun 和 Node.js 上各识别一次 / 跑 benchmark |
+| `bun run ocr:eval` | 货架号识别的评估：模拟手机拍标签到电脑读出货架号的整条路，比较模型和取图方式（见 `scripts/ocr/eval-shelf-number.ts`） |
 
 ## 提交前必须通过
 

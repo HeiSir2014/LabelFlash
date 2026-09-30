@@ -163,8 +163,13 @@ describe('expandNoteText', () => {
     );
   });
 
-  test('leaves unknown variables and fields that were not recognised untouched', () => {
-    expect(expandNoteText('质检 {工号} {订单号} {}', SCAN, new Date())).toBe('质检 {工号} {订单号} {}');
+  // 标签上不能出现「{货架号}」这样的原文：这次没有这个字段（扫码枪扫的没有图、没认出、规则里没有）就印成空。
+  test('prints nothing for a field this scan did not produce', () => {
+    expect(expandNoteText('货架号：{货架号} 质检 {工号}', SCAN, new Date())).toBe('货架号： 质检 ');
+  });
+
+  test('keeps braces that are not a variable', () => {
+    expect(expandNoteText('{} 尺码{', SCAN, new Date())).toBe('{} 尺码{');
   });
 
   test('prefers the fixed variables over a recognised field with the same name', () => {

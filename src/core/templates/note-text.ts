@@ -11,24 +11,34 @@ export function variableNames(text: string): string[] {
   return [...text.matchAll(VARIABLE_PATTERN)].map((match) => match[1] ?? '');
 }
 
-/** 展开备注（和二维码文本）里的变量；本次没有识别到的字段名和未知变量原样保留。 */
+/**
+ * 展开标签上（备注、二维码文本）的变量：本次没有的字段印成空，标签上不会出现「{货架号}」这样的原文。
+ * 扫码枪、本机接口扫的码没有标签图，货架号这一步跳过，就没有这个字段；手机没认出、规则里没有也一样。
+ */
 export function expandNoteText(text: string, scan: ScanResult, printedAt: Date): string {
-  return expandVariables(text, scan, printedAt);
+  return expandVariables(text, scan, printedAt, (value) => value, 'empty');
 }
+
+/** 本次没有的变量：keep = 原样保留（HTTP 请求里的 {密钥:名称} 留给主进程替换）；empty = 换成空。 */
+export type MissingVariable = 'keep' | 'empty';
 
 /**
  * 展开变量，展开出来的值先经过 encode（例如放进 URL 时按 URL 编码）；
- * 未知变量原样保留、不经过 encode（例如请求头里的 {密钥:名称} 留给主进程替换）。
+ * 本次没有的变量按 missing 处理，不经过 encode。
  */
 export function expandVariables(
   text: string,
   scan: ScanResult,
   printedAt: Date,
   encode: (value: string) => string = (value) => value,
+  missing: MissingVariable = 'keep',
 ): string {
   return text.replace(VARIABLE_PATTERN, (match, name: string) => {
     const value = variableValue(name, scan, printedAt);
-    return value === undefined ? match : encode(value);
+    if (value === undefined) {
+      return missing === 'keep' ? match : '';
+    }
+    return encode(value);
   });
 }
 

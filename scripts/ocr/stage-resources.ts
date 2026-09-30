@@ -13,7 +13,7 @@ import sharp from 'sharp';
 import { OcrEngine } from '../../native/ocr/node/src/index.ts';
 import { PACKAGED_ADDON_NAME } from '../../src/main/ocr/ocr-files';
 import { buildStaticRuntimeAddon } from './build-addon';
-import { buildOnnxRuntime } from './build-onnxruntime';
+import { onnxRuntimeLibrary } from './build-onnxruntime';
 import { fetchModels, MODELS_DIR } from './fetch-models';
 import { msvcTool } from './msvc';
 import { unwantedImports } from './onnxruntime-build';
@@ -71,7 +71,7 @@ export async function stageOcrResources(): Promise<void> {
     throw new Error('只有 Windows 安装包带本地 OCR');
   }
   await fetchModels();
-  const onnxRuntimeDir = buildOnnxRuntime();
+  const onnxRuntimeDir = await onnxRuntimeLibrary();
   const addon = buildStaticRuntimeAddon(onnxRuntimeDir);
   verifyImports(addon);
 

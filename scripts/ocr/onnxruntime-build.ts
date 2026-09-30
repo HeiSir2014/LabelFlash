@@ -104,3 +104,54 @@ export function unwantedImports(dependentsOutput: string): string[] {
     .map((line) => line.trim())
     .filter((line) => /\.dll$/i.test(line) && unwanted.test(line));
 }
+
+/**
+ * 预编译好的静态库：由 .github/workflows/onnxruntime.yml 在本仓库的一个预发布版本（prerelease，不是程序的发布，
+ * 不标成 latest，自动更新看不到它）里发布。打安装包时下载、按下面的 SHA-256 核对，不用每次花半小时编。
+ * 只有静态库贵：扩展是我们自己的 Rust 代码，随源码每次编（约 1 分钟），不做成预编译包。
+ */
+export const PREBUILT_ASSETS = {
+  library: 'onnxruntime-win-x64-static.lib.gz',
+  license: 'onnxruntime-LICENSE.txt',
+  notices: 'onnxruntime-ThirdPartyNotices.txt',
+} as const;
+
+export interface PrebuiltOnnxRuntime {
+  /** 发布时的 onnxRuntimeBuildKey()：和当前的不一样，说明改了版本或选项，要重新发布。 */
+  key: string;
+  /** 每个文件的 SHA-256（发布工作流打印出来的 SHA256SUMS）。 */
+  sha256: Record<string, string>;
+}
+
+/** 还没发布时是 null：只能从源码编。 */
+export const ONNXRUNTIME_PREBUILT: PrebuiltOnnxRuntime | null = null;
+
+export function prebuiltReleaseTag(): string {
+  return `onnxruntime-v${onnxRuntimeBuildKey()}`;
+}
+
+export interface GitHubRepository {
+  owner: string;
+  repo: string;
+}
+
+/** 从 package.json 的 repository.url 读出仓库，下载地址不另写一份。 */
+export function githubRepository(url: string): GitHubRepository {
+  const match = /github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(url);
+  if (!match?.[1] || !match[2]) {
+    throw new Error(`package.json 的 repository 不是 GitHub 仓库：${url}`);
+  }
+  return { owner: match[1], repo: match[2] };
+}
+
+export function prebuiltAssetUrl(repository: GitHubRepository, tag: string, asset: string): string {
+  return `https://github.com/${repository.owner}/${repository.repo}/releases/download/${tag}/${asset}`;
+}
+
+/** sha256sum 的格式（「哈希  文件名」），按文件名排序。 */
+export function formatSha256Sums(sums: Record<string, string>): string {
+  return Object.keys(sums)
+    .sort()
+    .map((name) => `${sums[name]}  ${name}\n`)
+    .join('');
+}

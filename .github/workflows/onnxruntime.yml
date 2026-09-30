@@ -1,0 +1,54 @@
+# 发布 Windows 安装包用的 ONNX Runtime 静态库（/MT，见 scripts/ocr/onnxruntime-build.ts）。
+#
+# 这不是程序的发布：推送 onnxruntime-v<版本>-<指纹> 标签时，从源码编一次，发布成预发布版本（prerelease、不标成 latest，
+# 自动更新只看 latest，看不到它）。打安装包时下载、按代码里的 SHA-256 核对，不再每次编半个多小时。
+# 标签必须等于 scripts/ocr/build-onnxruntime.ts 按版本和选项算出来的那个，不符就不发布。
+# 发布后把日志里打印的 key 和 sha256 填进 onnxruntime-build.ts 的 ONNXRUNTIME_PREBUILT。
+name: ONNX Runtime
+
+on:
+  push:
+    tags:
+      - 'onnxruntime-v*'
+
+permissions: {}
+
+jobs:
+  publish:
+    # 用 Visual Studio 2022 编：新版链接器能链接旧版编译器编的静态库，反过来不行，本机只装了 2022 的也能用。
+    runs-on: windows-2022
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      # ONNX Runtime 的构建脚本要 Python 3.10+（只在构建机上用）。
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Build and package ONNX Runtime
+        run: bun scripts/ocr/build-onnxruntime.ts --package dist/onnxruntime-release --tag "${{ github.ref_name }}"
+        env:
+          LABELFLASH_ORT_FROM_SOURCE: '1'
+          ORT_BUILD_PYTHON: python
+          # 中间文件放短路径：ONNX Runtime 的构建目录很深，放在仓库里会超出 MSBuild 的路径长度限制。
+          LABELFLASH_ORT_WORK_DIR: ${{ runner.temp }}\ort
+      # 构建来源证明：谁都可以用 gh attestation verify 核对这些文件是这个仓库的这个工作流、从这个提交编出来的。
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/onnxruntime-release/*
+      - name: Publish prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/onnxruntime-release/* \
+            --verify-tag --prerelease --latest=false \
+            --title "$GITHUB_REF_NAME（构建依赖，不是程序版本）" \
+            --notes "Windows 安装包里本地 OCR 扩展链接的 ONNX Runtime 静态库（/MT，x64 基线，不带遥测），由 .github/workflows/onnxruntime.yml 从微软的源码编出。不是 CDL-云签速印 的程序版本，不要下载安装。"
+          cat dist/onnxruntime-release/SHA256SUMS

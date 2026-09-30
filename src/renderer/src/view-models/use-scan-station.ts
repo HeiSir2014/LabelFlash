@@ -10,6 +10,7 @@ import { WINDOW_TIMERS } from '../lib/timers';
 const NO_PREVIEW: LabelPreview = {
   result: { status: 'invalid', reason: 'INVALID_CONTENT' },
   html: null,
+  templateId: null,
   templateName: null,
   isTemplateBound: false,
   qrOmitted: false,

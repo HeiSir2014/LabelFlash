@@ -699,49 +699,21 @@ textarea {
   white-space: nowrap;
 }
 
-/* 宽度随最长的模板名，最宽 220px：窄窗口下把地方留给右侧说明。 */
+/* 宽度随最长的模板名，最宽 220px：窄窗口下把地方留给右侧说明。规则指定时下拉框锁住，旁边标「规则指定」。 */
 .preview-toolbar__select {
   max-width: 220px;
 }
 
+/* 内容从哪来：放不下时省略。 */
 .preview-toolbar__usage {
-  display: flex;
   flex: 1;
-  justify-content: flex-end;
   min-width: 0;
   margin: 0;
-  color: var(--color-ink-soft);
-  white-space: pre;
-}
-
-/* 放不下时先省略内容来源，再省略打印机；模板名不收缩，只在超过「整行减去来源和打印机的最小宽度」时才省略。 */
-.preview-toolbar__source,
-.preview-toolbar__used-template,
-.preview-toolbar__printer {
   overflow: hidden;
+  color: var(--color-ink-soft);
+  text-align: right;
   text-overflow: ellipsis;
-}
-
-.preview-toolbar__source {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-.preview-toolbar__separator {
-  flex-shrink: 0;
-}
-
-.preview-toolbar__used-template {
-  --source-min: 5em;
-  --printer-min: 6em;
-  flex-shrink: 0;
-  max-width: calc(100% - var(--source-min) - var(--printer-min));
-  color: var(--color-ink);
-}
-
-.preview-toolbar__printer {
-  flex: 0 1 auto;
-  min-width: 0;
+  white-space: nowrap;
 }
 
 /* 软尺框住实物比例的标签：工作台和配置中心共用 */
@@ -979,32 +951,6 @@ textarea {
   background: var(--color-paper);
 }
 
-.tabs {
-  display: flex;
-  border-bottom: 1px solid var(--color-rule);
-}
-
-.tab {
-  flex: 1;
-  height: 44px;
-  border: 0;
-  border-bottom: 3px solid transparent;
-  background: transparent;
-  color: var(--color-ink-soft);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.tab[aria-selected="true"] {
-  border-bottom-color: var(--color-tape);
-  color: var(--color-ink);
-}
-
-.tab-panel[hidden] {
-  display: none;
-}
-
-.tab-panel,
 .panel-body {
   display: flex;
   flex: 1;

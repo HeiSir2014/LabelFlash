@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../../../core/scan/scan-result';
 import type { LabelPreview } from '../../../shared/ipc-contract';
-import { describePreviewPrinter, describePreviewUsage, usageText } from './preview-usage';
+import { describePreviewUsage } from './preview-usage';
 
 const SCAN: ScanResult = {
   raw: 'CL5640-TK-图片色-XL',
@@ -20,6 +20,7 @@ function preview(overrides: Partial<LabelPreview> = {}): LabelPreview {
       printer: { printerName: '热敏标签机', reason: 'paper' },
     },
     html: '<html></html>',
+    templateId: 'builtin:standard',
     templateName: '样衣标准（二维码在左）',
     isTemplateBound: true,
     qrOmitted: false,
@@ -27,56 +28,37 @@ function preview(overrides: Partial<LabelPreview> = {}): LabelPreview {
     ...overrides,
   };
 }
-
-function text(value: LabelPreview | null, activeTemplateName: string | null): string | null {
-  const usage = describePreviewUsage(value, activeTemplateName);
-  return usage && usageText(usage);
-}
+const ACTIVE = 'builtin:generic';
 
 describe('describePreviewUsage', () => {
-  test('names the rule and the template, marking a template chosen by the rule', () => {
-    expect(describePreviewUsage(preview(), '通用（二维码在左）')).toEqual({
+  // 模板只显示一处：下拉框显示这一张实际用的模板。原来下拉框写当前模板、旁边又写规则指定的模板，两处对不上。
+  test('shows the template the rule chose in the template box and locks it', () => {
+    expect(describePreviewUsage(preview(), ACTIVE)).toEqual({
       source: '规则：横杠三段（编码-颜色-尺码）',
-      template: '模板：样衣标准（二维码在左）（规则指定）',
-      printer: '打印机：热敏标签机',
+      templateId: 'builtin:standard',
+      isRuleBound: true,
     });
-    const unbound = preview({ templateName: '通用（二维码在左）', isTemplateBound: false });
-    expect(text(unbound, '通用（二维码在左）')).toBe(
-      '规则：横杠三段（编码-颜色-尺码） · 模板：通用（二维码在左） · 打印机：热敏标签机',
-    );
   });
 
-  test('shows the sample and the current template before anything is scanned', () => {
-    expect(text(null, '通用（二维码在左）')).toBe('示例内容 · 模板：通用（二维码在左）');
-    const sample = describePreviewUsage(null, '通用（二维码在左）', { printerName: '标签机A', reason: 'paper' });
-    expect(sample && usageText(sample)).toBe('示例内容 · 模板：通用（二维码在左） · 打印机：标签机A');
-    expect(describePreviewUsage(null, null)).toBeNull();
+  test('leaves the current template selectable when the rule does not choose one', () => {
+    const unbound = preview({ templateId: ACTIVE, templateName: '通用（二维码在左）', isTemplateBound: false });
+    expect(describePreviewUsage(unbound, ACTIVE)).toEqual({
+      source: '规则：横杠三段（编码-颜色-尺码）',
+      templateId: ACTIVE,
+      isRuleBound: false,
+    });
   });
 
-  test('says nothing for a scan that could not be recognised', () => {
-    const invalid = preview({ result: { status: 'invalid', reason: 'INVALID_CONTENT' }, templateName: null });
-    expect(describePreviewUsage(invalid, '通用（二维码在左）')).toBeNull();
-  });
-});
-
-describe('describePreviewPrinter', () => {
-  test('names the printer the label goes to', () => {
-    expect(describePreviewPrinter({ printerName: '面单机B', reason: 'paper' })).toBe('打印机：面单机B');
+  test('says the sample is shown before anything is scanned', () => {
+    expect(describePreviewUsage(null, ACTIVE)).toEqual({ source: '示例内容', templateId: ACTIVE, isRuleBound: false });
   });
 
-  test('explains a fallback from a missing template printer', () => {
-    const choice = { printerName: '面单机B', reason: 'template-missing', missingPrinter: '面单机D' } as const;
-    expect(describePreviewPrinter(choice)).toBe('打印机：面单机B（模板指定的 面单机D 不在这台电脑上）');
-  });
-
-  test('says when there is no printer', () => {
-    const choice = { printerName: null, reason: 'unassigned', paperKey: '100x180', missingPrinter: null } as const;
-    expect(describePreviewPrinter(choice)).toBe('打印机：还没有');
-  });
-
-  test('uses the name the system displays', () => {
-    expect(describePreviewPrinter({ printerName: 'Label_Printer_01', reason: 'paper' }, () => '标签机A')).toBe(
-      '打印机：标签机A',
-    );
+  test('names no source for a scan that could not be recognised', () => {
+    const invalid = preview({
+      result: { status: 'invalid', reason: 'INVALID_CONTENT' },
+      templateId: null,
+      templateName: null,
+    });
+    expect(describePreviewUsage(invalid, ACTIVE)).toEqual({ source: null, templateId: ACTIVE, isRuleBound: false });
   });
 });

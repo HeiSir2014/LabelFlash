@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
 import type { JobRecord } from '../../core/types';
 import { describePrintersSummary } from '../../shared/printer-summary';
@@ -16,10 +16,9 @@ import { PrinterList } from './components/PrinterList';
 import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
-import type { SideTab } from './components/workbench/WorkbenchSide';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
 import { describeCaller } from './lib/local-api-text';
-import { describeMobileButton, describeMobileOverlay, describeMobileState } from './lib/mobile-text';
+import { describeMobileButton, describeMobileOverlay } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
 import { describePreviewUsage } from './lib/preview-usage';
@@ -65,8 +64,6 @@ export function App() {
   const platform = platformForChrome(windowChrome());
   const fieldType = scanFieldType(platform);
 
-  // 工作台右侧当前的标签页：标题栏的打印机胶囊、状态条的「去指定打印机」都能切到打印机页。
-  const [sideTab, setSideTab] = useState<SideTab>('printers');
   const autoPrint = settings?.autoPrint ?? DEFAULT_SETTINGS.autoPrint;
   const historyLimit = settings?.historyLimit ?? DEFAULT_SETTINGS.historyLimit;
 
@@ -266,12 +263,7 @@ export function App() {
       <TitleBar
         version={appInfo?.version ?? null}
         printerChip={printerChip}
-        onOpenPrinters={() => {
-          setSideTab('printers');
-          if (!isWorkbench) {
-            appView.close();
-          }
-        }}
+        onOpenPrinters={() => appView.open('printers')}
         readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
         config={{
           isOpen: !isWorkbench,
@@ -298,8 +290,6 @@ export function App() {
       ) : (
         <Workbench
           isActive={isWorkbench}
-          sideTab={sideTab}
-          onSideTabChange={setSideTab}
           scanBar={{
             autoPrint,
             lineGapMs: settings.scanLineGapMs,
@@ -312,13 +302,7 @@ export function App() {
             toolbar: (
               <PreviewToolbar
                 templates={templates.templates}
-                activeTemplateId={templates.active?.id ?? null}
-                usage={describePreviewUsage(
-                  station.scan?.preview ?? null,
-                  templates.active?.name ?? null,
-                  samplePreview?.result.status === 'ok' ? samplePreview.result.printer : null,
-                  displayNameOf,
-                )}
+                usage={describePreviewUsage(station.scan?.preview ?? null, templates.active?.id ?? null)}
                 onActivate={(id) => void templates.activate(id)}
               />
             ),
@@ -327,30 +311,8 @@ export function App() {
             override,
             onPrint: () => station.printCurrent(false),
             onForceReprint: () => station.printCurrent(true),
-            onOpenPage: (page) => {
-              // 打印机页在工作台右侧，不在配置中心。
-              if (page === 'printers') {
-                setSideTab('printers');
-              } else {
-                appView.open(page);
-              }
-            },
+            onOpenPage: appView.open,
           }}
-          printers={
-            <PrinterList
-              printers={printers.printers}
-              isLoading={printers.isLoading}
-              rows={paperRowsView}
-              profileOf={printerProfiles.profileOf}
-              responsibilitiesOf={responsibilitiesByName}
-              openingName={printerProfiles.openingName}
-              displayName={displayNameOf}
-              onAssign={(key, name) => void assignPaper(key, name)}
-              onOpenPreferences={(name) => void printerProfiles.openPreferences(name)}
-              onRefresh={() => void printers.refresh()}
-              onTestPrint={printTest}
-            />
-          }
           history={
             <JobLog
               jobs={jobLog.jobs}
@@ -432,14 +394,26 @@ export function App() {
                   endpoint ? config.endpointEditor.start(endpoint) : config.endpointEditor.startNew(),
                 ),
             }}
-            mobile={{
-              defaultRelayUrl: appInfo?.defaultRelayUrl ?? null,
-              statusText: describeMobileState(mobile.status),
-            }}
+            printers={
+              <PrinterList
+                printers={printers.printers}
+                isLoading={printers.isLoading}
+                rows={paperRowsView}
+                profileOf={printerProfiles.profileOf}
+                responsibilitiesOf={responsibilitiesByName}
+                openingName={printerProfiles.openingName}
+                displayName={displayNameOf}
+                onAssign={(key, name) => void assignPaper(key, name)}
+                onOpenPreferences={(name) => void printerProfiles.openPreferences(name)}
+                onRefresh={() => void printers.refresh()}
+                onTestPrint={printTest}
+              />
+            }
             localApi={localApi}
             general={{
               jobTotal: jobLog.total,
               canReadImageText: appInfo?.canReadImageText ?? true,
+              defaultRelayUrl: appInfo?.defaultRelayUrl ?? null,
             }}
             about={{
               appInfo,

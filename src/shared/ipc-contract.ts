@@ -103,6 +103,7 @@ export interface LabelPreview {
   /** 与实际打印相同的标签 HTML；识别不了时为 null。 */
   html: string | null;
   /** 这次用的模板（规则指定的模板或当前模板）；识别不了时为 null。 */
+  templateId: string | null;
   templateName: string | null;
   /**
    * 模板由命中的规则指定（即使它恰好也是当前模板）；规则没指定、指定的模板已删除、

@@ -48,14 +48,14 @@ const MS_PER_SECOND = 1_000;
 const SECONDS_PER_MINUTE = 60;
 const SECONDS_DIGITS = 2;
 const UNKNOWN_DEVICE = '未知设备';
-const RELAY_LINK = { page: 'mobile', label: '查看中转地址' } as const;
+const RELAY_LINK = { page: 'general', label: '查看中转地址' } as const;
 
 /** 失败时的说明；running = 会话还在（仍在自动重试），可以结束；否则会话已停，可以重新开始。 */
 const FAILURES: Record<MobileFailure, { message: string; isRunning: boolean; link: MobileOverlayView['link'] }> = {
   'not-configured': {
     message: '还没有设置中转地址，手机扫码连不上。',
     isRunning: false,
-    link: { page: 'mobile', label: '去填写中转地址' },
+    link: { page: 'general', label: '去填写中转地址' },
   },
   unreachable: {
     message: '连不上中转服务，正在自动重试。请检查网络：电脑要能直接访问中转地址（不支持系统代理）。',

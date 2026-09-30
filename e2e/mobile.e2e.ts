@@ -107,8 +107,9 @@ test('points to the relay address when none is set, and edits it in the config c
   await page.getByRole('button', { name: '手机扫码' }).click();
   const overlay = page.getByRole('dialog', { name: '手机扫码' });
   await expect(overlay).toContainText('还没有设置中转地址');
+  // 中转地址在「通用」里（手机扫码没有单独的一页）。
   await overlay.getByRole('button', { name: '去填写中转地址' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('手机扫码');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('通用');
 
   const address = page.getByLabel('中转地址');
   await address.fill('http://relay.example.com/');
@@ -126,10 +127,12 @@ test('points to the relay address when none is set, and edits it in the config c
   await expect(address).toHaveValue('');
 });
 
-test('opens the mobile scan page from the config navigation', async ({ electronApp }) => {
+// 手机扫码只有中转地址一个设置：放在「通用」里，导航里没有单独的一页；开始、停止在标题栏的「手机扫码」。
+test('keeps the relay address on the general page instead of a page of its own', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
-  await openConfig(page, '手机扫码');
-  await expect(page.getByLabel('中转地址')).toBeVisible();
+  await openConfig(page, '通用');
+  await expect(page.getByLabel('手机扫码中转地址')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '配置' }).getByRole('button', { name: '手机扫码' })).toHaveCount(0);
 });
 
 // ---------- 货架号识别：手机随扫码带标签图，电脑读出货架号补进这一张 ----------

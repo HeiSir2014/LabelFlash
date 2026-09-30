@@ -50,7 +50,8 @@ describe('describeMobileOverlay', () => {
 
   test('links to the relay address when none is set', () => {
     const view = describeMobileOverlay({ state: 'failed', error: 'not-configured' }, ready);
-    expect(view.link).toEqual({ page: 'mobile', label: '去填写中转地址' });
+    // 中转地址在「通用」里（手机扫码没有单独的一页）。
+    expect(view.link).toEqual({ page: 'general', label: '去填写中转地址' });
     expect(view.actions.start).toBe(true);
   });
 

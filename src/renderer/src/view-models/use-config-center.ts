@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { applyNoteOverride } from '../../../core/templates/note-override';
 import { BRAND } from '../../../shared/brand';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../../shared/settings';
@@ -95,6 +95,12 @@ export function useConfigCenter({
   // 配置中心里扫码：有测试框的页面填进测试框（替换原有内容），其他页面提醒「正在配置，没有打印」。永远不打印。
   const [testerRaw, setTesterRaw] = useState('');
   const [pillFlashes, setPillFlashes] = useState(0);
+  // 「配置中不打印」只提醒这一次进配置中心时扫过码的人：回到工作台就收起。
+  useEffect(() => {
+    if (!isOpen) {
+      setPillFlashes(0);
+    }
+  }, [isOpen]);
   const sink = useConfigScan({
     isEnabled: isOpen && appView.leaveConfirm === null,
     lineGapMs: settings?.scanLineGapMs ?? DEFAULT_SETTINGS.scanLineGapMs,

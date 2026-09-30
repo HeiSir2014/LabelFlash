@@ -8,6 +8,7 @@ import {
 } from '../../../../../shared/settings';
 import { ConfirmButton } from '../../ConfirmButton';
 import { Segmented, Switch } from '../../form-controls';
+import { RelayUrlSetting } from '../RelayUrlSetting';
 import { SettingRow } from '../SettingRow';
 
 const NUMBER_FORMAT = new Intl.NumberFormat('zh-CN');
@@ -18,11 +19,12 @@ interface GeneralPageProps {
   settings: AppSettings;
   jobTotal: number;
   canReadImageText: boolean;
+  defaultRelayUrl: string | null;
   onChange: SettingsChange;
 }
 
-/** 通用：防重复、多行扫码等待、打印记录保留、开机自启、文字识别速度。软件更新和日志在「关于」。 */
-export function GeneralPage({ settings, jobTotal, canReadImageText, onChange }: GeneralPageProps) {
+/** 通用：防重复、多行扫码等待、打印记录保留、开机自启、文字识别速度、手机扫码中转地址。软件更新和日志在「关于」。 */
+export function GeneralPage({ settings, jobTotal, canReadImageText, defaultRelayUrl, onChange }: GeneralPageProps) {
   return (
     <div className="config-page">
       <section className="config-card" aria-label="扫码与打印">
@@ -70,6 +72,13 @@ export function GeneralPage({ settings, jobTotal, canReadImageText, onChange }: 
             />
           </SettingRow>
         )}
+      </section>
+      <section className="config-card" aria-label="手机扫码">
+        <RelayUrlSetting
+          relayUrl={settings.mobileRelayUrl}
+          defaultRelayUrl={defaultRelayUrl}
+          onChangeRelayUrl={async (mobileRelayUrl) => (await onChange({ mobileRelayUrl })) !== null}
+        />
       </section>
     </div>
   );

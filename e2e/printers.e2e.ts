@@ -65,18 +65,16 @@ test('prints each paper on the printer assigned to it and records printer and pa
     ['面单机B', '100x180'],
     ['标签机A', '60x40'],
   ]);
-  await page.getByRole('tab', { name: '打印记录' }).click();
   await expect(page.locator('.job-row__meta')).toContainText(['面单机B · 100×180 二联面单', '标签机A · 60×40 标签']);
 });
 
-test('summarises the assigned printers in the title bar and opens the printers panel', async ({ electronApp }) => {
+test('summarises the assigned printers in the title bar and opens the printers page', async ({ electronApp }) => {
   const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   await assign(page, { '60x40': '标签机A', '100x180': '面单机B' });
   const chip = page.locator('.printer-chip');
   await expect(chip).toHaveText('打印机 2 台就绪');
-  await page.getByRole('tab', { name: '打印记录' }).click();
   await chip.click();
-  await expect(page.getByRole('tab', { name: '打印机' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('打印机');
 });
 
 test('prefers the printer the template names over the paper assignment', async ({ electronApp }) => {
@@ -101,13 +99,13 @@ test('does not print or record when no printer holds the paper, and prints once 
   expect(await fakePrints(app)).toEqual([]);
   expect((await callApi(page, 'listJobs', { limit: 10 })).jobs).toEqual([]);
 
-  // 状态条的「去指定打印机」切到右侧的打印机页。
-  await page.getByRole('tab', { name: '打印记录' }).click();
+  // 状态条的「去指定打印机」打开配置中心的「打印机」页。
   await page.getByRole('button', { name: '去指定打印机' }).click();
-  await expect(page.getByRole('tab', { name: '打印机' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('打印机');
 
-  // 指定好打印机后按 F2 直接重打这一张，不用再扫。
-  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x180': '面单机B' } });
+  // 指定好打印机、回到工作台后按 F2 直接重打这一张，不用再扫（配置中心里永远不打印）。
+  await page.getByLabel('100×180 二联面单 用哪台打印机').selectOption('面单机B');
+  await page.getByRole('button', { name: '返回工作台' }).click();
   await page.keyboard.press('F2');
   await expect.poll(async () => (await fakePrints(app)).map((print) => print.printerName)).toEqual(['面单机B']);
 });
@@ -128,6 +126,7 @@ test('assigns a paper from the printers panel, following the suggestion from the
   const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   await useWaybillTemplate(page);
   await assign(page, { '60x40': '标签机A' });
+  await openConfig(page, '打印机');
 
   const panel = page.getByRole('region', { name: '纸张和打印机' });
   const waybillRow = panel.locator('.paper-row', { hasText: '100×180 二联面单' });
@@ -147,6 +146,7 @@ test('assigns a paper from the printers panel, following the suggestion from the
 test('keeps showing an assigned printer that is not on this computer', async ({ electronApp }) => {
   const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   await assign(page, { '60x40': '旧打印机' });
+  await openConfig(page, '打印机');
   const select = page.getByLabel('60×40 标签 用哪台打印机');
   await expect(select).toHaveValue('旧打印机');
   await expect(select.locator('option:checked')).toHaveText('旧打印机（这台电脑上没有）');
@@ -156,6 +156,7 @@ test('keeps showing an assigned printer that is not on this computer', async ({ 
 test('warns only on a printer whose driver paper differs from the paper it holds', async ({ electronApp }) => {
   const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   await assign(page, { '60x40': '面单机C' });
+  await openConfig(page, '打印机');
   await expect(page.locator('.printer-row', { hasText: '面单机C' }).locator('.paper-warning')).toContainText(
     '驱动默认纸张是 100×180mm，不是 60×40mm',
   );
@@ -191,17 +192,16 @@ test('chooses the paper and printer of a template in the editor', async ({ elect
   expect(saved).toMatchObject({ paper: { widthMm: 88, heightMm: 55 }, printer: '面单机C' });
 });
 
-// 在打印机页分配之后，不用重新载入：示例预览和这一张的状态都按新的分配更新。
-test('updates the preview printer right after a paper is assigned in the panel', async ({ electronApp }) => {
+// 在打印机页分配之后，不用重新扫：回到工作台，这一张的状态已经按新的分配更新。
+test('updates the scan right after a paper is assigned on the printers page', async ({ electronApp }) => {
   const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   await callApi(page, 'updateSettings', { autoPrint: false });
   await page.reload();
-  const usage = page.locator('.preview-toolbar__usage');
-  await expect(usage).toContainText('打印机：还没有');
 
   await scan(page, LABEL_CODE);
   await expect(page.locator('.status-strip__title')).toHaveText('没有可用的打印机');
+  await page.getByRole('button', { name: '去指定打印机' }).click();
   await page.getByLabel('60×40 标签 用哪台打印机').selectOption('标签机A');
-  await expect(usage).toContainText('打印机：标签机A');
+  await page.getByRole('button', { name: '返回工作台' }).click();
   await expect(page.locator('.status-strip__title')).toHaveText('待打印');
 });

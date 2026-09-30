@@ -23,7 +23,7 @@ interface ConfigCenterProps {
   sink: ScanSink;
   /** 接收框用密码框还是普通输入框（Windows 上用密码框关掉输入法，见 lib/scan-field.ts）。 */
   scanFieldType: ScanFieldType;
-  /** 在没有测试框的页面扫了码的次数：每变一次「配置中不打印」闪两下。 */
+  /** 在没有测试框的页面扫了码的次数：大于 0 时显示「配置中不打印」，每变一次闪两下。 */
   pillFlashes: number;
   onNavigate: (page: ConfigPage) => void;
   onClose: () => void;
@@ -76,10 +76,15 @@ export function ConfigCenter({
             pageLabel(page)
           )}
         </h1>
-        {/* 换 key 重新挂载，闪烁动画才会每次都从头播放。 */}
-        <span key={pillFlashes} className={`config-pill${pillFlashes > 0 ? ' config-pill--flash' : ''}`}>
-          配置中不打印
-        </span>
+        {/*
+          只在这里扫了码之后出现（每一页都挂着就是噪音）；换 key 重新挂载，闪烁动画才会每次都从头播放。
+          离开配置中心就收起（use-config-center.ts）。
+        */}
+        {pillFlashes > 0 && (
+          <span key={pillFlashes} className="config-pill config-pill--flash" role="status">
+            配置中不打印
+          </span>
+        )}
         <input
           ref={sink.sinkRef}
           type={scanFieldType}

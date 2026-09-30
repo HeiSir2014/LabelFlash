@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { AppSettings } from '../../../../shared/settings';
 import type { VoiceCue } from '../../../../shared/voice';
 import type { ConfigPage } from '../../lib/app-view';
@@ -6,7 +7,6 @@ import { AboutPage, type AboutPageProps } from './pages/AboutPage';
 import { GeneralPage } from './pages/GeneralPage';
 import { LocalApiPage } from './pages/LocalApiPage';
 import { LookupTablesPage, type LookupTablesPageProps } from './pages/LookupTablesPage';
-import { MobilePage, type MobilePageProps } from './pages/MobilePage';
 import { NotePresetsPage } from './pages/NotePresetsPage';
 import { RulesPage, type RulesPageProps } from './pages/RulesPage';
 import { SecretsPage, type SecretsPageProps } from './pages/SecretsPage';
@@ -19,6 +19,8 @@ export interface GeneralPageExtras {
   jobTotal: number;
   /** 这台电脑能识别标签图上的字：不能时（macOS 这一版）不显示文字识别的设置。 */
   canReadImageText: boolean;
+  /** 安装包自带的手机扫码中转地址；自己构建的安装包可能没有。 */
+  defaultRelayUrl: string | null;
 }
 
 interface ConfigPagesProps {
@@ -29,7 +31,8 @@ interface ConfigPagesProps {
   lookup: LookupTablesPageProps;
   secrets: SecretsPageProps;
   webhooks: Omit<WebhooksPageProps, 'webhooks' | 'onChange' | 'onOpenPage'>;
-  mobile: Pick<MobilePageProps, 'defaultRelayUrl' | 'statusText'>;
+  /** 打印机页：纸张分配和本机打印机（components/PrinterList）。 */
+  printers: ReactNode;
   localApi: LocalApiModel;
   general: GeneralPageExtras;
   about: AboutPageProps;
@@ -48,7 +51,7 @@ export function ConfigPages({
   lookup,
   secrets,
   webhooks,
-  mobile,
+  printers,
   localApi,
   general,
   about,
@@ -59,6 +62,15 @@ export function ConfigPages({
   switch (page) {
     case 'templates':
       return <TemplatesPage {...templates} />;
+    case 'printers':
+      // 和其他配置页一样放在白底卡片上：打印机清单原来在工作台右侧的白底栏里，缺打印机的红字在灰底上对比度不够。
+      return (
+        <div className="config-page">
+          <section className="config-card printers-card" aria-label="打印机">
+            {printers}
+          </section>
+        </div>
+      );
     case 'notes':
       return (
         <NotePresetsPage
@@ -79,14 +91,6 @@ export function ConfigPages({
           webhooks={settings.webhooks}
           onChange={async (next) => (await onChange({ webhooks: next })) !== null}
           onOpenPage={onOpenPage}
-        />
-      );
-    case 'mobile':
-      return (
-        <MobilePage
-          {...mobile}
-          relayUrl={settings.mobileRelayUrl}
-          onChangeRelayUrl={async (mobileRelayUrl) => (await onChange({ mobileRelayUrl })) !== null}
         />
       );
     case 'localApi':

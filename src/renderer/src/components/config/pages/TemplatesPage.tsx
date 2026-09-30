@@ -2,9 +2,8 @@ import { useId } from 'react';
 import { isBuiltInTemplateId, type LabelTemplate } from '../../../../../core/templates/template-model';
 import type { PrinterInfo } from '../../../../../core/types';
 import { DEFAULT_PAPER } from '../../../../../shared/label-paper';
-import { formatPaperName } from '../../../../../shared/paper-sizes';
 import { FIELD_NAME_LIST_ID } from '../../../lib/field-names';
-import { describeTemplatePrinter } from '../../../lib/printer-assignment';
+import { describeTemplateUse } from '../../../lib/printer-assignment';
 import type { TemplatePreview } from '../../../view-models/use-template-preview';
 import { DeleteButton } from '../../ConfirmButton';
 import { LabelPreview } from '../../LabelPreview';
@@ -80,9 +79,8 @@ function ListView({
   const custom = templates.filter((template) => !isBuiltInTemplateId(template.id));
   const names = printers.map((printer) => printer.name);
   const displayName = (name: string) => printers.find((printer) => printer.name === name)?.displayName ?? name;
-  // 每一行写上纸张和实际会用的打印机：纸张分配改了，这里跟着变。
-  const describeUse = (template: LabelTemplate) =>
-    `${formatPaperName(template.paper)} · ${describeTemplatePrinter(template, paperPrinters, names, displayName)}`;
+  // 只在和默认不同时写纸张和打印机（见 describeTemplateUse）；纸张分配改了，这里跟着变。
+  const describeUse = (template: LabelTemplate) => describeTemplateUse(template, paperPrinters, names, displayName);
   const groupProps = { selectedId: selected?.id ?? null, activeId, onSelect, describeUse };
 
   return (
@@ -130,7 +128,7 @@ interface TemplateGroupProps {
   activeId: string | null;
   onSelect: (id: string) => void;
   /** 纸张和实际会用的打印机，例如「100×180 二联面单 · 面单机B」。 */
-  describeUse: (template: LabelTemplate) => string;
+  describeUse: (template: LabelTemplate) => string | null;
 }
 
 /** 一组模板：点选即预览（按下状态表示正在预览的那一套）。 */
@@ -155,7 +153,9 @@ function TemplateGroup({ label, items, empty, selectedId, activeId, onSelect, de
               >
                 <span className="template-item__text">
                   <span className="template-item__name">{template.name}</span>
-                  <span className="template-item__use">{describeUse(template)}</span>
+                  {describeUse(template) !== null && (
+                    <span className="template-item__use">{describeUse(template)}</span>
+                  )}
                 </span>
                 {template.id === activeId && <span className="badge">使用中</span>}
               </button>

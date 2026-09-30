@@ -250,10 +250,10 @@ const ITEMS: Item[] = [
     id: 'V02',
     title: '工作台 · 已扫码（样衣码，规则指定了模板）',
     points:
-      '工具条显示「规则：横杠三段（编码-颜色-尺码） · 模板：样衣标准（二维码在左）（规则指定）」；预览为样衣标准模板',
+      '工具条：模板下拉框显示「样衣标准（二维码在左）」并锁住，旁边「规则指定」，右侧只写「规则：横杠三段（编码-颜色-尺码）」；预览为样衣标准模板；空闲时底部状态条不说话',
     setup: async ({ page }) => {
       await scan(page, 'CL5640-TK-图片色-XL');
-      await expect(page.locator('.preview-toolbar__usage')).toContainText('规则指定');
+      await expect(page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
     },
   },
   {
@@ -268,12 +268,12 @@ const ITEMS: Item[] = [
   },
   {
     id: 'V04',
-    title: '工作台 · 打印记录标签',
-    points: '列表、搜索框、分页与现在一致，无横向滚动',
+    title: '工作台 · 打印记录',
+    points: '右侧只有打印记录（没有标签页头）：列表、搜索框、分页与现在一致，无横向滚动',
     setup: async ({ page }) => {
       await addJobs(page, HISTORY_SAMPLE_JOBS);
       await page.reload();
-      await page.getByRole('tab', { name: '打印记录' }).click();
+      await expect(page.locator('.job-row').first()).toBeVisible();
     },
   },
   {
@@ -306,7 +306,7 @@ const ITEMS: Item[] = [
   {
     id: 'V06',
     title: '配置中心 · 框架',
-    points: '导航分组、当前项样式、页头三段对齐；「配置中不打印」胶囊可见；工作台不可聚焦',
+    points: '导航分组、当前项样式、页头对齐（「配置中不打印」只在扫码后出现）；工作台不可聚焦',
     setup: async ({ page, notes }) => {
       await openConfig(page, '通用');
       const inert = await page.locator('.workspace[inert]').count();
@@ -781,7 +781,7 @@ const ITEMS: Item[] = [
       }
       // 先扫一张不用查询的样衣码，作为「上一张预览」。
       await scan(ctx.page, 'CL5640-TK-图片色-XL');
-      await expect(ctx.page.locator('.preview-toolbar__usage')).toContainText('规则指定');
+      await expect(ctx.page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
     },
   },
   {
@@ -936,14 +936,14 @@ const ITEMS: Item[] = [
   },
   {
     id: 'V33',
-    title: '配置中心 · 手机扫码',
-    points: '中转地址输入框和「恢复默认」一行；说明文字不截断；格式不对时的提示；当前状态',
+    title: '通用 · 手机扫码中转地址',
+    points: '「通用」里「手机扫码」卡片：中转地址输入框和「恢复默认」一行；说明文字不截断；格式不对时的提示',
     shots: [
       {
         label: '默认',
         prepare: async ({ page }) => {
           if ((await page.getByLabel('中转地址').count()) === 0) {
-            await openConfig(page, '手机扫码');
+            await openConfig(page, '通用');
           }
           await page.getByLabel('中转地址').fill('');
           await blurActiveElement(page);
@@ -1044,7 +1044,7 @@ const ITEMS: Item[] = [
   },
   {
     id: 'V35',
-    title: '打印机页 · 纸张分配',
+    title: '配置中心 · 打印机',
     points:
       '顶部「纸张 → 打印机」表每种纸一行，下拉框完整显示打印机名；没有可用打印机的纸标红，旁边有「建议：…」按钮；下面每台打印机显示状态（缺纸的红点和「缺纸」）、「负责：…」、驱动纸张（对不上时的提醒和「打开打印首选项」）；没负责纸张的打印机只显示驱动纸张；标题栏胶囊显示出问题的那一台',
     launch: { fakePrinters: PAPER_PRINTERS },
@@ -1053,6 +1053,7 @@ const ITEMS: Item[] = [
       await saveCopyOnPaper(page, '顺丰面单', { widthMm: 100, heightMm: 150 }, '面单机B');
       await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A' } });
       await page.reload();
+      await openConfig(page, '打印机');
       await expect(page.locator('.paper-row')).toHaveCount(3);
       await expect(page.locator('.printer-chip')).toHaveText('面单机B（缺纸）');
     },
@@ -1061,7 +1062,7 @@ const ITEMS: Item[] = [
     id: 'V36',
     title: '模板编辑器 · 纸张和打印机',
     points:
-      '「基本」区的纸张尺寸下拉框（预设名带适用的快递）、自定义时的宽和高两个输入框、打印机下拉框（「按纸张分配（当前是 …）」、指定的打印机不在这台电脑上时标明）；换纸张后右侧预览的软尺跟着变；模板列表每行下面是纸张和实际会用的打印机',
+      '「基本」区的纸张尺寸下拉框（预设名带适用的快递）、自定义时的宽和高两个输入框、打印机下拉框（「按纸张分配（当前是 …）」、指定的打印机不在这台电脑上时标明）；换纸张后右侧预览的软尺跟着变；模板列表只在纸张不是默认、或模板自己指定了打印机时，才在名字下面写纸张和实际会用的打印机',
     launch: { fakePrinters: PAPER_PRINTERS },
     setup: async ({ page }) => {
       await saveCopyOnPaper(page, '旧电脑的面单', { widthMm: 100, heightMm: 180 }, '旧电脑上的打印机');
@@ -1104,8 +1105,7 @@ const ITEMS: Item[] = [
   {
     id: 'V37',
     title: '非 60×40 的预览',
-    points:
-      '50×30、100×100 两种纸：软尺刻度是实际毫米数，标签框比例正确；二维码和字号放得下，没有被裁掉；工具条显示打印机',
+    points: '50×30、100×100 两种纸：软尺刻度是实际毫米数，标签框比例正确；二维码和字号放得下，没有被裁掉',
     launch: { fakePrinters: PAPER_PRINTERS },
     shots: [
       {
@@ -1116,8 +1116,8 @@ const ITEMS: Item[] = [
           await page.reload();
           // 只有「整段内容」规则认得：用当前模板（规则没指定模板）。
           await scan(page, '订单 A20260929001 小标签');
-          // 等扫码结果（示例内容的工具条也写着这个模板）：「规则：」只在扫码之后出现。
-          await expect(page.locator('.preview-toolbar__usage')).toContainText('规则：原样打印 · 模板：小标签');
+          // 等扫码结果：「规则：」只在扫码之后出现。
+          await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：原样打印');
           await expect(page.locator('.ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 50 /);
         },
       },
@@ -1128,7 +1128,7 @@ const ITEMS: Item[] = [
           await callApi(page, 'updateSettings', { activeTemplateId: id, autoPrint: false, paperPrinters: {} });
           await page.reload();
           await scan(page, '订单 A20260929001 箱唛');
-          await expect(page.locator('.preview-toolbar__usage')).toContainText('规则：原样打印 · 模板：箱唛');
+          await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：原样打印');
           await expect(page.locator('.ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 100 /);
         },
       },

@@ -136,7 +136,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
   - 不能自动更新（Squirrel.Mac 要校验签名），程序里不检查更新，「关于」提示到发布页下载。有了证书之后再做签名、公证和自动更新。
 - **自动更新**：只有 Windows 版。electron-updater 从 GitHub Releases 下载，支持 blockmap 差分下载。启动时是否检查、所有更新行为都在 `src/main/update-settings.ts` 里显式设置。
 - **发版步骤**：
-  1. 改 `package.json` 的 `version`，经 PR 合进 `master`。
+  1. 改 `package.json` 的 `version`，在 `CHANGELOG.md` 写这个版本大概做了什么（发布作业拿它当 GitHub Release 的说明，没写就不发布；单元测试也会检查），经 PR 合进 `master`。
   2. 在 `master` 的提交上打同名标签（例如 `v1.0.1`）并推送，CI 的 release 作业负责发布。
   3. release 作业先检查三件事，不符合就不发布：标签所在的提交在 `master` 上；标签和 `version` 一致（客户端按版本号比较，并按文件名里的版本号去找旧版的 blockmap）；设置了仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL`（官方安装包的默认中转地址，构建时注入，代码里不写域名）。
   4. Release 先建成草稿，Windows 和 macOS 各自上传，核对 Windows 安装包、blockmap、`latest.yml` 和 macOS 的 pkg 四个文件都在，才公开。

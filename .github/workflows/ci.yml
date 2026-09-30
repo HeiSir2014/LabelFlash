@@ -129,11 +129,18 @@ jobs:
             echo "::error::仓库的 Actions 变量 LABELFLASH_DEFAULT_RELAY_URL 没有设置，官方安装包会没有默认中转地址。"
             exit 1
           fi
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # 发布说明取自 CHANGELOG.md 里这个版本的一节；没写就不发布。
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        run: bun scripts/release/changelog.ts "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/release-notes.md"
       - name: Create the release as a draft
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "${GITHUB_REF_NAME#v}" --notes "CDL-云签速印 ${GITHUB_REF_NAME#v}"
+        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/release-notes.md"
 
   release-windows:
     needs: release-draft

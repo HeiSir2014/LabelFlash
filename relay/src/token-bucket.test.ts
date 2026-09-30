@@ -26,6 +26,13 @@ describe('TokenBucket', () => {
     expect(bucket.take()).toBe(true);
   });
 
+  test('takes several tokens at once and refuses when fewer are left', () => {
+    const bucket = new TokenBucket(5, 10, new FakeClock());
+    expect(bucket.take(6)).toBe(true);
+    expect(bucket.take(6)).toBe(false);
+    expect(bucket.take(4)).toBe(true);
+  });
+
   test('never holds more than the burst', () => {
     const clock = new FakeClock();
     const bucket = new TokenBucket(5, 3, clock);

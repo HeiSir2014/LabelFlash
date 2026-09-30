@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { ImageRequest } from '../../../src/shared/mobile-protocol';
+import { type ImageRequest, MAX_IMAGE_SIDE } from '../../../src/shared/mobile-protocol';
 import { type CodeCorners, cropLabel, cropLayout, type PixelImage, squareToQuad } from './label-crop';
 
 const REQUEST: ImageRequest = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 20 };
@@ -32,9 +32,10 @@ describe('cropLayout', () => {
 
   test('scales down to the side limit', () => {
     const layout = cropLayout({ ...REQUEST, pixelsPerCode: 400 });
-    expect(layout.width).toBe(1024);
-    expect(layout.height).toBeCloseTo(683, 0);
-    expect(layout.code.size).toBeCloseTo(1024 / 6, 5);
+    // 区域宽 6 个、高 4 个二维码边长：按宽度缩到上限。
+    expect(layout.width).toBe(MAX_IMAGE_SIDE);
+    expect(layout.height).toBeCloseTo((MAX_IMAGE_SIDE * 4) / 6, 0);
+    expect(layout.code.size).toBeCloseTo(MAX_IMAGE_SIDE / 6, 5);
   });
 });
 

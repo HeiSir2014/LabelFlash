@@ -243,6 +243,19 @@ describe('enrich: text on the label image', () => {
     expect(result.traces).toHaveLength(1);
   });
 
+  // 模拟评估里读错（打出错的货架号）的多半是没把握的读法：低于门槛当作没认出，手机上提示重扫或手动输入。
+  test('does not use a value the OCR was not sure about, and says what it read', async () => {
+    const { deps } = createDeps();
+    deps.readImageText = async () => [{ ...region('E-113-409-55', 200, 290), score: 0.82 }];
+    const result = await run([shelfStep()], deps, WITH_IMAGE);
+    expect(result.blocked).toEqual({
+      stepIndex: 0,
+      detail: '没认出货架号：读到「E-113-409-55」，但把握只有 82%',
+      reason: 'TEXT_NOT_FOUND',
+      field: '货架号',
+    });
+  });
+
   test('prints with an empty field when the step allows it', async () => {
     const result = await run([shelfStep({ pattern: 'Z-\\d+', whenMissing: 'empty' })], createDeps().deps, WITH_IMAGE);
     expect(result.blocked).toBeNull();

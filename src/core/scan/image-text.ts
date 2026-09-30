@@ -119,7 +119,20 @@ export interface ImageTextQuery {
 }
 
 /**
- * 按查找的先后（见 searchOrder），取第一段能匹配正则的文字里匹配的部分；都不匹配返回 null。
+ * 识别置信度门槛：取值的那一段文字低于它就当作没认出（手机提示重扫或手动输入）。
+ * 模拟评估（scripts/ocr/eval-shelf-number.ts，1200 张）里，门槛 0.9 把读错（打出错的货架号）从 1.3% 降到 0.6%，
+ * 读对只少 0.2 个百分点；0.95 读错 0.3%，但读对少 1 个百分点，重扫太多。
+ */
+export const IMAGE_TEXT_MIN_SCORE = 0.9;
+
+export interface ImageTextMatch {
+  value: string;
+  /** 取值的那一段文字的识别置信度（0–1）。 */
+  score: number;
+}
+
+/**
+ * 按查找的先后（见 searchOrder），取第一段能匹配正则的文字里匹配的部分和那一段的置信度；都不匹配返回 null。
  * 正则由调用方注入的 `runRegex` 在隔离环境里执行（有超时），核心层不直接执行来路不明的正则。
  */
 export function findImageText(
@@ -127,12 +140,12 @@ export function findImageText(
   code: CodeSquare,
   query: ImageTextQuery,
   runRegex: RegexRunner,
-): string | null {
+): ImageTextMatch | null {
   const wrapped = wrapImageTextPattern(query.pattern);
   for (const region of searchOrder(regions, code, query.preferredArea)) {
     const match = runRegex(wrapped, query.flags, normalizeImageText(region.text))?.[MATCH_GROUP];
     if (match !== undefined && match !== '') {
-      return match;
+      return { value: match, score: region.score };
     }
   }
   return null;

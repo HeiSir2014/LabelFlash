@@ -4,6 +4,7 @@
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};
 
+use ort::ep;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::TensorRef;
@@ -52,6 +53,10 @@ impl OrtBackend {
         let session = Session::builder()
             .map_err(|error| fail(error.to_string()))?
             .with_optimization_level(GraphOptimizationLevel::All)
+            .map_err(|error| fail(error.to_string()))?
+            // 不用 CPU 内存池（arena）：每张图大小不同，内存池按见过的最大尺寸留着内存不还，
+            // 识别一张要多占一百多 MB（实测峰值 253 MB → 131 MB），速度几乎不变。
+            .with_execution_providers([ep::CPU::default().with_arena_allocator(false).build()])
             .map_err(|error| fail(error.to_string()))?
             .with_intra_threads(options.intra_threads)
             .map_err(|error| fail(error.to_string()))?

@@ -136,6 +136,22 @@ export function visibleVideoRect(element: Size, video: Size): Rect {
   return { x: (video.width - width) / 2, y: (video.height - height) / 2, width, height };
 }
 
+/** 取帧时的缩放：area 缩到最长边不超过 maxEdge（已经够小就不放大）。 */
+export function frameScale(area: Size, maxEdge: number): number {
+  return Math.min(1, maxEdge / Math.max(area.width, area.height));
+}
+
+/**
+ * 解码画面里的点 → 整个画面快照里的点。解码读的是看得见的那块（area）缩小后的画面；
+ * 截标签图用的是同一时刻整个画面的快照（按 snapshotScale 缩放），更清楚，也包括取景框外拍到的部分。
+ */
+export function decodedToFramePoint(point: Point, area: Rect, decodeScale: number, snapshotScale: number): Point {
+  return {
+    x: (area.x + point.x / decodeScale) * snapshotScale,
+    y: (area.y + point.y / decodeScale) * snapshotScale,
+  };
+}
+
 /** 点在取景元素上的位置（像素）→ 视频画面里的归一化坐标（左上角 0,0，右下角 1,1）。 */
 export function tapToVideoPoint(tap: Point, element: Size, video: Size): Point {
   const visible = visibleVideoRect(element, video);

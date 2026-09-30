@@ -6,7 +6,9 @@
 import {
   type CameraCapabilities,
   type CameraConstraintSet,
+  decodedToFramePoint,
   focusAtConstraints,
+  frameScale,
   hasTorch,
   type Lens,
   lensZooms,
@@ -16,10 +18,21 @@ import {
   startupConstraints,
 } from './camera-features';
 
-/** 取帧时把画面缩到最长边不超过这个值：再大解码更慢，识别率也不会更高。 */
+/** 解码时把画面缩到最长边不超过这个值：再大解码更慢，识别码的成功率也不会更高。 */
 const MAX_FRAME_EDGE_PX = 1280;
-/** 想要的画面尺寸：够看清一维码的细条，又不会让手机发烫。 */
-const IDEAL_VIDEO_SIZE: Size = { width: 1280, height: 720 };
+/**
+ * 想要的画面尺寸：1080p。解码照样缩到 1280 以内，速度不变；截标签图（货架号识别）用原尺寸的画面，
+ * 同样的距离字的像素多一半。模拟评估（scripts/ocr/eval-shelf-number.ts）里读对的比例从 93% 到 96%。
+ */
+const IDEAL_VIDEO_SIZE: Size = { width: 1920, height: 1080 };
+/** 截标签图用的整帧快照最长边：比 1080p 更大的画面（4K）缩到这里，够用又不占太多内存。 */
+const MAX_SNAPSHOT_EDGE_PX = 1920;
+
+/** 截标签图用的画面：同一时刻整个画面的快照，和把解码画面里的点换到它上面的办法。 */
+export interface FrameSnapshot {
+  image: ImageData;
+  fromDecoded(point: Point): Point;
+}
 
 /** phone-controller 用到的摄像头能力；测试里换成假的。 */
 export interface CameraPort {
@@ -35,10 +48,13 @@ export interface CameraPort {
   focusAt(point: Point): Promise<void>;
   /** 设置失败时抛错，调用方据此决定手电筒按钮的状态。 */
   setTorch(on: boolean): Promise<void>;
-  /** 画面里 area 这一块（视频像素坐标）；还没有画面时返回 null。 */
-  grab(area: Rect): ImageData | null;
-  /** 最近一次 grab 的画面（一份拷贝）：解码交给 worker 的那份已经转走，截标签图从这里取。没有时为 null。 */
-  snapshot(): ImageData | null;
+  /**
+   * 画面里 area 这一块（视频像素坐标，缩到解码用的大小）；还没有画面时返回 null。
+   * keepFrame：同时留下同一时刻整个画面的快照（原尺寸），电脑要标签图时才要，平时不花这份功夫。
+   */
+  grab(area: Rect, keepFrame: boolean): ImageData | null;
+  /** 最近一次 grab 留下的整帧快照：解码交给 worker 的那份已经转走，截标签图从这里取。没有时为 null。 */
+  snapshot(): FrameSnapshot | null;
   /** 当前焦段；摄像头没开，或这台设备只有一种变焦（不能切换）时为 null。 */
   readonly currentLens: Lens | null;
   /** 切换焦段；设备拒绝时抛错，焦段不变。重新打开摄像头时沿用选好的焦段。 */
@@ -50,6 +66,10 @@ export class Camera implements CameraPort {
   private stream: MediaStream | null = null;
   private capabilities: CameraCapabilities = {};
   private readonly canvas = document.createElement('canvas');
+  /** 整帧快照：只画不读，截标签图时才读像素（读像素是最贵的一步）。 */
+  private readonly frameCanvas = document.createElement('canvas');
+  /** 最近一次留下快照时，解码画面和快照的对应关系。 */
+  private kept: { area: Rect; decodeScale: number; snapshotScale: number } | null = null;
   private wakeLock: WakeLockSentinel | null = null;
   /** 选好的焦段：切到后台再回来、重新打开摄像头时沿用。 */
   private lens: Lens = 'near';
@@ -166,19 +186,33 @@ export class Camera implements CameraPort {
     await track.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
   }
 
-  grab(area: Rect): ImageData | null {
-    if (!this.stream || !this.frameSize) {
+  grab(area: Rect, keepFrame: boolean): ImageData | null {
+    const frame = this.frameSize;
+    if (!this.stream || !frame) {
       return null;
     }
-    return drawToImageData(this.canvas, this.video, area);
+    const image = drawToImageData(this.canvas, this.video, area);
+    this.kept = null;
+    if (keepFrame) {
+      const snapshotScale = frameScale(frame, MAX_SNAPSHOT_EDGE_PX);
+      this.frameCanvas.width = Math.max(1, Math.round(frame.width * snapshotScale));
+      this.frameCanvas.height = Math.max(1, Math.round(frame.height * snapshotScale));
+      this.frameCanvas.getContext('2d')?.drawImage(this.video, 0, 0, this.frameCanvas.width, this.frameCanvas.height);
+      this.kept = { area, decodeScale: frameScale(area, MAX_FRAME_EDGE_PX), snapshotScale };
+    }
+    return image;
   }
 
-  snapshot(): ImageData | null {
-    const context = this.canvas.getContext('2d', { willReadFrequently: true });
-    if (!context || this.canvas.width === 0 || this.canvas.height === 0) {
+  snapshot(): FrameSnapshot | null {
+    const kept = this.kept;
+    const context = this.frameCanvas.getContext('2d', { willReadFrequently: true });
+    if (!kept || !context) {
       return null;
     }
-    return context.getImageData(0, 0, this.canvas.width, this.canvas.height);
+    return {
+      image: context.getImageData(0, 0, this.frameCanvas.width, this.frameCanvas.height),
+      fromDecoded: (point) => decodedToFramePoint(point, kept.area, kept.decodeScale, kept.snapshotScale),
+    };
   }
 
   private release(): void {
@@ -186,6 +220,7 @@ export class Camera implements CameraPort {
       stopTracks(this.stream);
     }
     this.stream = null;
+    this.kept = null;
     this.capabilities = {};
     this.video.srcObject = null;
     void this.wakeLock?.release().catch(() => {});
@@ -258,7 +293,7 @@ function supportsPointsOfInterest(): boolean {
 }
 
 function drawToImageData(canvas: HTMLCanvasElement, source: CanvasImageSource, area: Rect): ImageData {
-  const scale = Math.min(1, MAX_FRAME_EDGE_PX / Math.max(area.width, area.height));
+  const scale = frameScale(area, MAX_FRAME_EDGE_PX);
   canvas.width = Math.max(1, Math.round(area.width * scale));
   canvas.height = Math.max(1, Math.round(area.height * scale));
   const context = canvas.getContext('2d', { willReadFrequently: true });

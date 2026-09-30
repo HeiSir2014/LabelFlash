@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { MAX_PENDING_JOBS, MAX_REQUEST_RAW_LENGTH, type PhonePrintResult } from '../../../src/shared/mobile-protocol';
 import { FakeTimers } from '../../../src/shared/testing/fake-socket';
-import type { CameraPort } from './camera';
+import type { CameraPort, FrameSnapshot } from './camera';
 import { DOUBLE_TAP_MS, type Lens, type Point, type Rect, type Size } from './camera-features';
 import type { Decoded, DecoderPort } from './decoder';
 import type { CodeCorners, PixelImage } from './label-crop';
@@ -57,8 +57,12 @@ class FakeCamera implements CameraPort {
   stops = 0;
   torchFails = false;
   grabbed: Rect[] = [];
-  /** 最近一帧的像素（截标签图用）；snapshots 记下取了几次。 */
+  /** 每次取帧时要不要同时留下整个画面（电脑要标签图时才要）。 */
+  keptFrames: boolean[] = [];
+  /** 最近一帧整个画面的像素（截标签图用）；snapshots 记下取了几次。 */
   frameImage: PixelImage | null = null;
+  /** 解码画面里的点在整个画面快照里的位置；默认两者一样大。 */
+  fromDecoded: (point: Point) => Point = (point) => point;
   snapshots = 0;
   focused: Point[] = [];
   private pendingStart: ((started: boolean) => void) | null = null;
@@ -105,14 +109,15 @@ class FakeCamera implements CameraPort {
     return this.torchFails ? Promise.reject(new Error('OverconstrainedError')) : Promise.resolve();
   }
 
-  grab(area: Rect): ImageData | null {
+  grab(area: Rect, keepFrame: boolean): ImageData | null {
     this.grabbed.push(area);
+    this.keptFrames.push(keepFrame);
     return {} as ImageData;
   }
 
-  snapshot(): ImageData | null {
+  snapshot(): FrameSnapshot | null {
     this.snapshots += 1;
-    return this.frameImage as ImageData | null;
+    return this.frameImage === null ? null : { image: this.frameImage as ImageData, fromDecoded: this.fromDecoded };
   }
 
   /** 摄像头开着时报告当前焦段；null 表示这台设备不能切换。 */
@@ -197,6 +202,8 @@ let visibilityListener: (() => void) | null;
 let submitted: { raw: string; force: boolean }[];
 let extras: JobExtras[];
 let jpeg: string | null;
+/** 交给 JPEG 编码的截图。 */
+let encoded: PixelImage[];
 let controller: PhoneController;
 let nextJob: number;
 
@@ -218,7 +225,10 @@ function createController(hasLink = true): PhoneController {
       decoder,
       view,
       readPhoto: async () => ({}) as ImageData,
-      encodeJpeg: async () => jpeg,
+      encodeJpeg: async (image) => {
+        encoded.push(image);
+        return jpeg;
+      },
       vibrate: (pattern) => vibrations.push(pattern),
       sound,
       isVisible: () => visible,
@@ -270,6 +280,7 @@ beforeEach(() => {
   submitted = [];
   extras = [];
   jpeg = '/9j/fake';
+  encoded = [];
   nextJob = 0;
   controller = createController();
 });
@@ -555,6 +566,20 @@ describe('PhoneController: scanning', () => {
   });
 });
 
+function imageWithDarkSquare(size: number, from: number, to: number): PixelImage {
+  const data = new Uint8ClampedArray(size * size * 4).fill(255);
+  for (let y = from; y < to; y += 1) {
+    for (let x = from; x < to; x += 1) {
+      data.fill(0, (y * size + x) * 4, (y * size + x) * 4 + 3);
+    }
+  }
+  return { data, width: size, height: size };
+}
+
+function redAt(image: PixelImage | undefined, x: number, y: number): number | undefined {
+  return image?.data[(y * image.width + x) * 4];
+}
+
 describe('PhoneController: the label image', () => {
   const REQUEST = { area: { left: -2.5, top: -1.5, right: 3.5, bottom: 2.5 }, pixelsPerCode: 20 };
   const CORNERS: CodeCorners = {
@@ -578,6 +603,25 @@ describe('PhoneController: the label image', () => {
     expect(submitted).toEqual([{ raw: RAW, force: false }]);
     expect(extras).toEqual([{ image: { jpeg: '/9j/fake', code: { x: 50, y: 30, size: 20 } }, fields: [] }]);
     expect(camera.snapshots).toBe(1);
+  });
+
+  test('keeps the whole frame for cropping only while the desktop asks for label images', async () => {
+    await scanning();
+    await frame(null);
+    expect(camera.keptFrames.at(-1)).toBe(false);
+    controller.dispatch({ type: 'printer', printer: '热敏标签机', image: REQUEST });
+    await frame(null);
+    expect(camera.keptFrames.at(-1)).toBe(true);
+  });
+
+  test('crops from the whole-frame snapshot, with the decoded corners mapped onto it', async () => {
+    await scanningWithImages();
+    // 快照是解码画面的两倍：二维码在快照里占 20..60，那里是黑的，别处是白的。
+    camera.fromDecoded = ({ x, y }) => ({ x: x * 2, y: y * 2 });
+    camera.frameImage = imageWithDarkSquare(80, 20, 60);
+    await frame(RAW);
+    // 截图里二维码在 (50, 30)、边长 20：离左上角四分之一处，换算过就落在黑块里，没换算会落在白处。
+    expect(redAt(encoded[0], 55, 35)).toBe(0);
   });
 
   test('does not crop when the desktop did not ask', async () => {

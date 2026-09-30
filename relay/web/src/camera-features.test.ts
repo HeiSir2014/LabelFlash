@@ -3,8 +3,10 @@ import {
   type CameraCapabilities,
   DOUBLE_TAP_MS,
   DOUBLE_TAP_SLOP_PX,
+  decodedToFramePoint,
   FAR_ZOOM,
   focusAtConstraints,
+  frameScale,
   hasTorch,
   isDoubleTap,
   lensZooms,
@@ -181,5 +183,31 @@ describe('tapToVideoPoint', () => {
   test('stays within the frame', () => {
     const point = tapToVideoPoint({ x: -20, y: 999 }, { width: 200, height: 200 }, { width: 720, height: 720 });
     expect(point).toEqual({ x: 0, y: 1 });
+  });
+});
+
+describe('frameScale', () => {
+  test('keeps frames that already fit and shrinks larger ones to the longest edge', () => {
+    expect(frameScale({ width: 1280, height: 720 }, 1280)).toBe(1);
+    expect(frameScale({ width: 1920, height: 1080 }, 1280)).toBeCloseTo(2 / 3);
+    expect(frameScale({ width: 1080, height: 1920 }, 1920)).toBe(1);
+  });
+});
+
+describe('decodedToFramePoint', () => {
+  // 竖屏：只看得见画面中间 1080×1440 这一块，解码时缩到 960×1280（×1280/1440）；快照是整个画面。
+  const area = { x: 0, y: 240, width: 1080, height: 1440 };
+  const decodeScale = 1280 / 1440;
+
+  test('maps a point in the shrunken visible area back into the whole frame', () => {
+    const point = decodedToFramePoint({ x: 480, y: 640 }, area, decodeScale, 1);
+    expect(point.x).toBeCloseTo(540);
+    expect(point.y).toBeCloseTo(960);
+  });
+
+  test('applies the snapshot scale when the whole frame is shrunk too', () => {
+    const point = decodedToFramePoint({ x: 480, y: 640 }, area, decodeScale, 0.5);
+    expect(point.x).toBeCloseTo(270);
+    expect(point.y).toBeCloseTo(480);
   });
 });

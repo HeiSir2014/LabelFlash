@@ -1,7 +1,6 @@
 import type { AppSettings } from '../../../../shared/settings';
 import type { VoiceCue } from '../../../../shared/voice';
 import type { ConfigPage } from '../../lib/app-view';
-import type { UpdateView } from '../../lib/update-text';
 import type { LocalApiModel } from '../../view-models/use-local-api';
 import { AboutPage, type AboutPageProps } from './pages/AboutPage';
 import { GeneralPage } from './pages/GeneralPage';
@@ -20,9 +19,6 @@ export interface GeneralPageExtras {
   jobTotal: number;
   /** 这台电脑能识别标签图上的字：不能时（macOS 这一版）不显示文字识别的设置。 */
   canReadImageText: boolean;
-  update: UpdateView;
-  onCheckForUpdates: () => void;
-  onOpenLogFolder: () => void;
 }
 
 interface ConfigPagesProps {

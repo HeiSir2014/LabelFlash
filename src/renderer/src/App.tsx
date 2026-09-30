@@ -440,11 +440,15 @@ export function App() {
             general={{
               jobTotal: jobLog.total,
               canReadImageText: appInfo?.canReadImageText ?? true,
+            }}
+            about={{
+              appInfo,
+              shopQr: config.shopQr,
               update: updateView,
+              onOpenShop: openShop,
               onCheckForUpdates: updates.check,
               onOpenLogFolder: openLogFolder,
             }}
-            about={{ appInfo, shopQr: config.shopQr, onOpenShop: openShop }}
             onChange={changeSettings}
             onPreviewVoice={feedback.preview}
             onOpenPage={appView.open}

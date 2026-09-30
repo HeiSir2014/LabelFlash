@@ -6,7 +6,6 @@ import {
   MAX_DEDUP_WINDOW_SECONDS,
   SCAN_LINE_GAP_RANGE,
 } from '../../../../../shared/settings';
-import type { UpdateView } from '../../../lib/update-text';
 import { ConfirmButton } from '../../ConfirmButton';
 import { Segmented, Switch } from '../../form-controls';
 import { SettingRow } from '../SettingRow';
@@ -19,22 +18,11 @@ interface GeneralPageProps {
   settings: AppSettings;
   jobTotal: number;
   canReadImageText: boolean;
-  update: UpdateView;
   onChange: SettingsChange;
-  onCheckForUpdates: () => void;
-  onOpenLogFolder: () => void;
 }
 
-/** 通用：防重复、多行扫码等待、打印记录保留、开机自启、文字识别速度、软件更新、日志。 */
-export function GeneralPage({
-  settings,
-  jobTotal,
-  canReadImageText,
-  update,
-  onChange,
-  onCheckForUpdates,
-  onOpenLogFolder,
-}: GeneralPageProps) {
+/** 通用：防重复、多行扫码等待、打印记录保留、开机自启、文字识别速度。软件更新和日志在「关于」。 */
+export function GeneralPage({ settings, jobTotal, canReadImageText, onChange }: GeneralPageProps) {
   return (
     <div className="config-page">
       <section className="config-card" aria-label="扫码与打印">
@@ -82,26 +70,6 @@ export function GeneralPage({
             />
           </SettingRow>
         )}
-      </section>
-      <section className="config-card" aria-label="软件">
-        <SettingRow label="软件更新" hint="新版本在后台下载，下载好后标题栏出现「重启更新」">
-          <div className="setting-row__inline">
-            <span role="status">{update.text}</span>
-            <button
-              type="button"
-              className="button button--small"
-              onClick={onCheckForUpdates}
-              disabled={!update.canCheck}
-            >
-              检查更新
-            </button>
-          </div>
-        </SettingRow>
-        <SettingRow label="日志" hint="打印失败或程序出错时，当天的日志里有详细原因，保留 14 天">
-          <button type="button" className="button button--small" onClick={onOpenLogFolder}>
-            打开日志目录
-          </button>
-        </SettingRow>
       </section>
     </div>
   );

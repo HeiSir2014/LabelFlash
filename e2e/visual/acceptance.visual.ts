@@ -627,7 +627,14 @@ const ITEMS: Item[] = [
           page.getByRole('navigation', { name: '配置' }).getByRole('button', { name: '通用' }).focus(),
       },
       { label: '焦点在数字输入框', prepare: async ({ page }) => page.getByLabel('防重复打印').focus() },
-      { label: '焦点在按钮', prepare: async ({ page }) => page.getByRole('button', { name: '打开日志目录' }).focus() },
+      {
+        label: '焦点在按钮',
+        prepare: async ({ page }) => {
+          // 日志在「关于」里。
+          await openConfig(page, '关于');
+          await page.getByRole('button', { name: '打开日志目录' }).focus();
+        },
+      },
     ],
   },
   {
@@ -702,16 +709,17 @@ const ITEMS: Item[] = [
   },
   {
     id: 'V27',
-    title: '通用页',
-    points: '各行控件对齐；调小记录上限时的确认条；更新状态文字与「检查更新」',
+    title: '通用页 / 关于页的更新',
+    points: '各行控件对齐；调小记录上限时的确认条；「关于」里的更新状态文字与「检查更新」',
     setup: async ({ page, window, notes }) => {
       await addJobs(page, HISTORY_LIMIT_RANGE.min + EXTRA_JOBS_OVER_LIMIT);
       await page.reload();
-      await openConfig(page, '通用');
-      // 开发版不检查更新：页面读到初始状态之后，再模拟一次「已是最新版本」。
+      // 软件更新在「关于」里。开发版不检查更新：页面读到初始状态之后，再模拟一次「已是最新版本」。
+      await openConfig(page, '关于');
       await expect(page.getByText('开发版不检查更新')).toBeVisible();
       await pushUpdateStatus(window, { state: 'up-to-date', checkedAt: Date.now() });
       await expect(page.getByText(/已是最新版本/)).toBeVisible();
+      await openConfig(page, '通用');
       const limit = page.getByLabel('打印记录保留');
       await limit.fill(String(HISTORY_LIMIT_RANGE.min));
       await limit.press('Enter');

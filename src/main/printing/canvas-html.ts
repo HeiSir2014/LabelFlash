@@ -1,8 +1,14 @@
 import { type LaidCanvasContent, type LaidCanvasElement, layoutCanvas } from '../../core/templates/canvas-layout';
-import type { CanvasBarcode, CanvasImage, CanvasQr, CanvasTemplate } from '../../core/templates/canvas-model';
+import {
+  type CanvasBarcode,
+  type CanvasImage,
+  type CanvasQr,
+  type CanvasTemplate,
+  snapBorderDots,
+} from '../../core/templates/canvas-model';
 import { decodeGray, fitContain, monoBmp, resizeGray, toMono } from '../../core/templates/mono-image';
 import { LINE_HEIGHT } from '../../core/templates/text-fit';
-import { CELL_PADDING_MM } from '../../core/templates/waybill-layout';
+import { textWidthMm } from '../../core/templates/waybill-layout';
 import type { LabelJob } from '../../core/types';
 import type { RenderWarnings } from '../../shared/render-warnings';
 import {
@@ -17,21 +23,25 @@ import {
 } from './barcode';
 import { escapeHtml, mm } from './html-text';
 import { DEFAULT_PRINTER_DPI, dotMm, planQr } from './qr-code';
+// 号码和条码的间隙、虚线的样式：和面单共用同一份常量，两份 HTML 才不会悄悄画出不一样的间距。
+import { BARCODE_TEXT_GAP_MM, DASH_GAP_MM, DASH_MM } from './waybill-html';
 
-/** 号码和条码之间的空隙（mm），和面单一致。 */
-const BARCODE_TEXT_GAP_MM = 0.4;
-/** 虚线：一段 1.2mm、空 0.8mm，和面单一致。 */
-const DASH_MM = 1.2;
-const DASH_GAP_MM = 0.8;
+/** 自由设计的二维码外，至少留 2 个模块的空白：和条码两侧的静区一个道理，给扫码设备留出辨认边界的余地。 */
+const CANVAS_QR_QUIET_ZONE_MODULES = 2;
 
 export interface RenderedCanvas extends RenderWarnings {
   html: string;
+  /** 条码库给的原始错误（英文，按码制加前缀），写日志用，不进 issues（那是给操作员看的中文）、不在预览里显示。 */
+  diagnostics: string[];
 }
 
 interface Findings {
   barcodeOmitted: boolean;
   qrOmitted: boolean;
   issues: string[];
+  diagnostics: string[];
+  /** 排版之后、画 HTML 时才发现的截断（例如条码号码比框宽）：和 layoutCanvas 的 overflowCount 加在一起。 */
+  overflowCount: number;
 }
 
 /**
@@ -45,7 +55,13 @@ export function renderCanvasHtml(
   const { template } = job;
   const dot = dotMm(dpi);
   const layout = layoutCanvas(template, { scan: job.scan, printedAt: new Date(job.printedAt), dotMm: dot });
-  const findings: Findings = { barcodeOmitted: false, qrOmitted: false, issues: [...layout.issues] };
+  const findings: Findings = {
+    barcodeOmitted: false,
+    qrOmitted: false,
+    issues: [...layout.issues],
+    diagnostics: [],
+    overflowCount: 0,
+  };
   const body = layout.elements.map((element) => elementHtml(element, dot, dpi, findings)).join('');
   const { widthMm, heightMm } = template.paper;
   const html = `<!doctype html>
@@ -64,7 +80,7 @@ export function renderCanvasHtml(
   .text--middle { justify-content: center; }
   .text--top { justify-content: flex-start; }
   .line { white-space: pre; overflow: hidden; line-height: ${LINE_HEIGHT}; }
-  .code { position: absolute; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
   .code svg { display: block; }
   .dots { position: absolute; display: block; }
   .code__text { white-space: pre; line-height: ${LINE_HEIGHT}; font-weight: 700; text-align: center; }
@@ -76,8 +92,9 @@ export function renderCanvasHtml(
     html,
     qrOmitted: findings.qrOmitted,
     barcodeOmitted: findings.barcodeOmitted,
-    overflowCells: layout.overflowCount,
+    overflowCells: layout.overflowCount + findings.overflowCount,
     issues: findings.issues,
+    diagnostics: findings.diagnostics,
   };
 }
 
@@ -151,12 +168,16 @@ function barcodeHtml(
 ): string {
   const omit = (reason: string) => {
     findings.barcodeOmitted = true;
-    findings.issues.push(`条码「${name}」${reason}，这张不印条码`);
+    findings.issues.push(`条码「${name}」不印：${reason}`);
     return '';
   };
   const result = encodeBarcode(element.symbology, value);
   if (!result.ok) {
-    return omit(`：${result.reason}`);
+    // detail 是 bwip-js 的原始英文错误，写诊断日志用；issues 里的中文 reason 已经够操作员看了，不重复堆原始信息。
+    if (result.detail !== undefined) {
+      findings.diagnostics.push(`${element.symbology}: ${result.detail}`);
+    }
+    return omit(result.reason);
   }
   const widthDots = Math.round(frame.width / dot);
   const heightDots = Math.round(frame.height / dot);
@@ -166,7 +187,7 @@ function barcodeHtml(
     const across = moduleDotsFor(widthDots, columns + 2 * quiet, dot, CANVAS_MAX_MODULE_MM);
     const down = moduleDotsFor(heightDots, rows * rowScale + 2 * quiet, dot, CANVAS_MAX_MODULE_MM);
     if (across === null || down === null) {
-      return omit('放不下（框太小）');
+      return omit('框太小');
     }
     const moduleDots = Math.min(across, down);
     const width = columns * moduleDots;
@@ -178,7 +199,7 @@ function barcodeHtml(
   const modules = widths.reduce((sum, width) => sum + width, 0);
   const moduleDots = moduleDotsFor(widthDots, modules + 2 * QUIET_ZONE_MODULES, dot, CANVAS_MAX_MODULE_MM);
   if (moduleDots === null) {
-    return omit('放不下（框不够宽）');
+    return omit('框不够宽');
   }
   const textBlockMm = element.showText ? element.textSizeMm * LINE_HEIGHT + BARCODE_TEXT_GAP_MM : 0;
   const barHeightMm = frame.height - textBlockMm;
@@ -187,10 +208,17 @@ function barcodeHtml(
   }
   const barsDots = modules * moduleDots;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${modules} 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:${mm(barsDots * dot)};height:${mm(barHeightMm)}"><path d="${linearBarsPath(widths, false, heights, offsets)}"/></svg>`;
-  const text = element.showText
-    ? `<div class="code__text" style="font-size:${mm(element.textSizeMm)};margin-top:${mm(BARCODE_TEXT_GAP_MM)}">${escapeHtml(value)}</div>`
-    : '';
-  // 起点落在整数个点上（见面单 barcodeSvg 的说明）；号码在条码下方居中。
+  let text = '';
+  if (element.showText) {
+    text = `<div class="code__text" style="font-size:${mm(element.textSizeMm)};margin-top:${mm(BARCODE_TEXT_GAP_MM)}">${escapeHtml(value)}</div>`;
+    // 号码比条码的整个框还宽时，外层 .frame 会把超出的部分裁掉（frame 设了 overflow:hidden）——
+    // 这确实是「已截断」，不是猜测，所以在这里报出来，并算进截断数（和面单的号码截断一个道理）。
+    if (textWidthMm(value, element.textSizeMm) > frame.width) {
+      findings.overflowCount += 1;
+      findings.issues.push(`条码「${name}」下面的号码放不下，已截断`);
+    }
+  }
+  // 起点落在整数个点上（见面单 barcodeSvg 的说明）；.code 是 flex 列、居中对齐，号码比条码宽时两边对称溢出。
   return `<div class="code" style="left:${mm(Math.floor((widthDots - barsDots) / 2) * dot)};top:0;width:${mm(barsDots * dot)}">${svg}${text}</div>`;
 }
 
@@ -202,7 +230,13 @@ function qrHtml(
   dpi: number,
   findings: Findings,
 ): string {
-  const plan = planQr(value, element.errorCorrection, Math.min(frame.width, frame.height), dpi);
+  const plan = planQr(
+    value,
+    element.errorCorrection,
+    Math.min(frame.width, frame.height),
+    dpi,
+    CANVAS_QR_QUIET_ZONE_MODULES,
+  );
   if (plan === null) {
     findings.qrOmitted = true;
     findings.issues.push(`二维码「${element.name}」内容太长、框太小，这张不印二维码`);
@@ -241,13 +275,8 @@ function lineHtml(dashed: boolean, frame: { width: number; height: number }): st
   return `<div style="width:100%;height:100%;background:${fill}"></div>`;
 }
 
-/** 边框粗细取整到点（至少 1 个点）：不取整的话细边框会时有时无。 */
-function snapBorder(borderMm: number, dot: number): number {
-  return borderMm <= 0 ? 0 : Math.max(1, Math.round(borderMm / dot)) * dot;
-}
-
 function rectHtml(content: Extract<LaidCanvasContent, { kind: 'rect' }>, dot: number): string {
-  const border = snapBorder(content.borderMm, dot);
+  const border = snapBorderDots(content.borderMm, dot) * dot;
   const style = [
     'width:100%',
     'height:100%',
@@ -265,7 +294,11 @@ function tableHtml(
   frame: { width: number; height: number },
   dot: number,
 ): string {
-  const border = snapBorder(content.borderMm, dot);
+  // content.borderMm 在排版时已经按点取整过（layoutCanvas 的 layoutTable，和这里用的是同一条 snapBorderDots 规则），
+  // 这里不重新取整、不用 CELL_PADDING_MM 重新算内边距，直接用排版给的值：两边分两次各算一遍，早晚会对不上。
+  const borderDots = snapBorderDots(content.borderMm, dot);
+  const border = borderDots * dot;
+  const { paddingMm } = content;
   const parts: string[] = [];
   let top = 0;
   content.rows.forEach((rowHeight, row) => {
@@ -273,18 +306,22 @@ function tableHtml(
     content.columns.forEach((columnWidth, column) => {
       const cell = content.cells[row]?.[column];
       if (cell && cell.lines.length > 0) {
+        const width = Math.max(0, columnWidth - 2 * paddingMm.x);
+        const height = Math.max(0, rowHeight - 2 * paddingMm.y);
         parts.push(
-          `<div class="text text--middle" style="position:absolute;left:${mm(left + CELL_PADDING_MM.x)};top:${mm(top + CELL_PADDING_MM.y)};width:${mm(columnWidth - 2 * CELL_PADDING_MM.x)};height:${mm(rowHeight - 2 * CELL_PADDING_MM.y)};text-align:${cell.align}">${linesHtml(cell.lines)}</div>`,
+          `<div class="text text--middle" style="position:absolute;left:${mm(left + paddingMm.x)};top:${mm(top + paddingMm.y)};width:${mm(width)};height:${mm(height)};text-align:${cell.align}">${linesHtml(cell.lines)}</div>`,
         );
       }
       left += columnWidth;
     });
     top += rowHeight;
   });
-  if (border > 0) {
-    // 外框画在框内侧；内部格线以格子边界为中心，和面单的线一样。
+  if (borderDots > 0) {
+    // 外框画在框内侧；内部格线以格子边界为中心，和面单的线一样。半宽用整数个点算（不是毫米除法再取整），
+    // 偶数个点时才能正好居中，不会因为浮点误差多偏一点点。
+    const halfDots = Math.floor(borderDots / 2);
+    const half = halfDots * dot;
     parts.push(`<div style="position:absolute;inset:0;border:${mm(border)} solid #000"></div>`);
-    const half = Math.floor(border / dot / 2) * dot;
     let y = 0;
     for (const rowHeight of content.rows.slice(0, -1)) {
       y += rowHeight;

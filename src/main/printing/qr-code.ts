@@ -39,12 +39,18 @@ export interface QrPlan {
 /**
  * 从模板要求的容错等级开始，逐级降低，找第一个能以「每模块不小于最小点数」放进方框的等级；
  * 降到 L 仍放不下时返回 null（不印二维码，宁缺毋滥：印出来扫不了更误事）。
+ *
+ * quietZoneModules：方框里除了二维码本身，两侧各要留的空白模块数（默认 0，和原来的行为一致——
+ * 标签、面单的二维码旁边本来就有别的文字、留白，不需要这里再额外让）。方框必须放得下
+ * 「二维码 + 两侧静区」，不是放得下二维码就行，否则紧挨着方框边缘的二维码，边上没有辨认用的空白，
+ * 扫码设备找不准二维码的边界。返回的 sizeMm 仍然只是二维码本身的边长，不含静区。
  */
 export function planQr(
   text: string,
   preferred: QrErrorLevel,
   boxMm: number,
   dpi: number = DEFAULT_PRINTER_DPI,
+  quietZoneModules = 0,
 ): QrPlan | null {
   const dot = dotMm(dpi);
   const limits = moduleDotLimits(dpi);
@@ -55,7 +61,8 @@ export function planQr(
     if (!modules) {
       continue;
     }
-    const moduleDots = Math.min(limits.max, Math.floor(boxDots / modules.size));
+    const totalModules = modules.size + 2 * quietZoneModules;
+    const moduleDots = Math.min(limits.max, Math.floor(boxDots / totalModules));
     if (moduleDots >= limits.min) {
       return {
         svg: modulesToSvg(modules),

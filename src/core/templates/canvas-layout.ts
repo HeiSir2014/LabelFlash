@@ -9,6 +9,7 @@ import {
   type CanvasTemplate,
   type CanvasText,
   type Rotation,
+  snapBorderDots,
 } from './canvas-model';
 import { expandVariables } from './note-text';
 import type { TextAlign } from './template-model';
@@ -46,7 +47,10 @@ export type LaidCanvasContent =
       /** 行高、列宽（mm），取整到打印点，加起来正好是框的高、宽。 */
       rows: number[];
       columns: number[];
+      /** 已经按点取整（见 snapBorderDots）：画 HTML 时直接用，不要再重新取整，否则和下面内边距用的边框宽不一致。 */
       borderMm: number;
+      /** 排版时实际用的内边距（mm）：至少是面单格子的内边距，边框更粗时让到边框那么宽，和画 HTML 用的是同一个值。 */
+      paddingMm: { x: number; y: number };
       cells: { lines: TextLine[]; align: TextAlign }[][];
     };
 
@@ -214,8 +218,10 @@ function layoutTable(
 ): LaidResult {
   const rows = snapSizes(resolveSizes(element.rowsMm, frame.height), frame.height, context.dotMm);
   const columns = snapSizes(resolveSizes(element.columnsMm, frame.width), frame.width, context.dotMm);
-  // 边框取整到点（和线、格线一样），内边距至少让到边框那么宽，不然粗边框会压到文字上。
-  const borderMm = Math.round(element.borderMm / context.dotMm) * context.dotMm;
+  // 边框取整到点（和矩形、线一样的规则，见 snapBorderDots），内边距至少让到边框那么宽，不然粗边框会压到文字上。
+  // 画 HTML 时要用这里算出来的 borderMm、paddingX/Y，不能各自再取整一遍——否则两边用的边框宽不一样，
+  // 排版时留的内边距和实际画出来的边框就对不上。
+  const borderMm = snapBorderDots(element.borderMm, context.dotMm) * context.dotMm;
   const paddingX = Math.max(TABLE_CELL_PADDING_MM.x, borderMm);
   const paddingY = Math.max(TABLE_CELL_PADDING_MM.y, borderMm);
   let overflow = false;
@@ -242,7 +248,7 @@ function layoutTable(
     }),
   );
   return {
-    content: { kind: 'table', rows, columns, borderMm: element.borderMm, cells },
+    content: { kind: 'table', rows, columns, borderMm, paddingMm: { x: paddingX, y: paddingY }, cells },
     overflow,
     issue: null,
   };

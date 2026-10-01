@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { BARCODE_TYPES, barcodeType, CANVAS_ELEMENT_KINDS, newCanvasElement } from './canvas-model';
+import { BARCODE_TYPES, barcodeType, CANVAS_ELEMENT_KINDS, newCanvasElement, snapBorderDots } from './canvas-model';
+
+const DOT = 25.4 / 203;
 
 describe('canvas model', () => {
   test('lists the ten common barcode types first', () => {
@@ -32,5 +34,21 @@ describe('canvas model', () => {
       expect(element.x + element.width).toBeLessThanOrEqual(60);
       expect(element.y + element.height).toBeLessThanOrEqual(40);
     }
+  });
+
+  describe('snapBorderDots', () => {
+    test('has no border at zero or less', () => {
+      expect(snapBorderDots(0, DOT)).toBe(0);
+      expect(snapBorderDots(-1, DOT)).toBe(0);
+    });
+
+    test('keeps at least one dot for any positive border, even one far thinner than a dot', () => {
+      // 0.01mm 在 203dpi（一点约 0.125mm）上四舍五入会降到 0 点：边框必须至少给 1 个点，不能时有时无。
+      expect(snapBorderDots(0.01, DOT)).toBe(1);
+    });
+
+    test('rounds an ordinary border to the nearest whole dot', () => {
+      expect(snapBorderDots(2, DOT)).toBe(Math.round(2 / DOT));
+    });
   });
 });

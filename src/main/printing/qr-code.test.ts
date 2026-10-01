@@ -40,6 +40,35 @@ describe('planQr', () => {
   });
 });
 
+describe('planQr with a quiet zone', () => {
+  test('counts the quiet zone against the box so the modules shrink to leave room for it', () => {
+    const withoutQuietZone = planQr('A001', 'M', BOX_MM);
+    const withQuietZone = planQr('A001', 'M', BOX_MM, DEFAULT_PRINTER_DPI, 2);
+    if (!withoutQuietZone || !withQuietZone) throw new Error('expected both plans');
+    expect(withQuietZone.moduleCount).toBe(withoutQuietZone.moduleCount);
+    // 静区占去的点数不能再用来放大模块：留了静区的模块数不能比没留的大。
+    expect(withQuietZone.moduleDots).toBeLessThanOrEqual(withoutQuietZone.moduleDots);
+    const total = (withQuietZone.moduleCount + 2 * 2) * withQuietZone.moduleDots;
+    const boxDots = Math.floor(BOX_MM / dotMm(DEFAULT_PRINTER_DPI) + 1e-9);
+    expect(total).toBeLessThanOrEqual(boxDots);
+  });
+
+  test('gives up when the quiet zone alone would not leave room for a scannable module', () => {
+    // 方框刚好够二维码本身按最小模块宽放下：没有静区时放得下，要静区就放不下了。
+    const moduleCount = planQr('A001', 'M', BOX_MM)?.moduleCount;
+    if (moduleCount === undefined) throw new Error('expected a module count');
+    const tightBoxMm = moduleCount * MIN_MODULE_DOTS * dotMm(DEFAULT_PRINTER_DPI);
+    expect(planQr('A001', 'M', tightBoxMm)).not.toBeNull();
+    expect(planQr('A001', 'M', tightBoxMm, DEFAULT_PRINTER_DPI, MIN_MODULE_DOTS)).toBeNull();
+  });
+
+  test('defaults to no quiet zone, same as before the parameter existed', () => {
+    expect(planQr('A001', 'M', BOX_MM, DEFAULT_PRINTER_DPI)).toEqual(
+      planQr('A001', 'M', BOX_MM, DEFAULT_PRINTER_DPI, 0),
+    );
+  });
+});
+
 describe('planQr on other resolutions', () => {
   test('aligns modules to the dots of a 300dpi printer', () => {
     const plan = planQr('CL5640-TK-图片色-XL', 'M', 20, 300);

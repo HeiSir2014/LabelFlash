@@ -14,9 +14,25 @@ describe('renderWarningTexts', () => {
     ]);
   });
 
-  test('lists the checks of a canvas template after the other warnings', () => {
+  test('shows only the per-element checks of a canvas template, not the generic texts', () => {
+    // 自由设计模板：issues 已经逐条写清楚是哪个元素、怎么了；qrOmitted/barcodeOmitted/overflowCells
+    // 这类笼统文案这时反而可能对不上号（例如下面这条其实是条码的问题，不是二维码），不重复显示。
     expect(
-      renderWarningTexts({ ...NO_RENDER_WARNINGS, overflowCells: 1, issues: ['条码「商品码」：位数不对'] }),
-    ).toEqual(['有 1 格内容放不下，已截断：加大这一格或调小字号', '条码「商品码」：位数不对']);
+      renderWarningTexts({
+        qrOmitted: true,
+        barcodeOmitted: false,
+        overflowCells: 1,
+        issues: ['条码「商品码」不印：EAN-13（商品条码）：位数不对'],
+      }),
+    ).toEqual(['条码「商品码」不印：EAN-13（商品条码）：位数不对']);
+  });
+
+  test('shows every per-element check when there is more than one', () => {
+    expect(
+      renderWarningTexts({
+        ...NO_RENDER_WARNINGS,
+        issues: ['「字段 A」靠近纸边（离纸边不到 1.5mm），可能打不全', '条码「商品码」不印：框不够宽'],
+      }),
+    ).toEqual(['「字段 A」靠近纸边（离纸边不到 1.5mm），可能打不全', '条码「商品码」不印：框不够宽']);
   });
 });

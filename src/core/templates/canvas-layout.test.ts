@@ -216,6 +216,26 @@ describe('layoutCanvas', () => {
     expect(issues).toContain('表格「表格B」有格子放不下，已截断：加大行高、列宽或调小字号');
   });
 
+  test('snaps the table border to whole dots and returns the padding used for fitting', () => {
+    // 0.05mm 在 203dpi（一点约 0.125mm）上不到半个点：取整时至少给 1 个点，不能降到 0（时有时无）。
+    const table = { ...newCanvasElement('table', 'tb', PAPER), x: 5, y: 5, width: 30, height: 10, borderMm: 0.05 };
+    const [laid] = layout([table]).elements;
+    if (laid?.content.kind !== 'table') throw new Error('expected a table');
+    expect(laid.content.borderMm).toBeCloseTo(DOT);
+    // 边框比面单格子的默认内边距还细，内边距保持默认，不会被细边框顶大。
+    expect(laid.content.paddingMm).toEqual({ x: 0.8, y: 0.5 });
+  });
+
+  test('widens the table padding to the snapped border when the border is thicker than the default padding', () => {
+    const table = { ...newCanvasElement('table', 'tb', PAPER), x: 5, y: 5, width: 30, height: 10, borderMm: 2 };
+    const [laid] = layout([table]).elements;
+    if (laid?.content.kind !== 'table') throw new Error('expected a table');
+    const snappedBorder = Math.round(2 / DOT) * DOT;
+    expect(laid.content.borderMm).toBeCloseTo(snappedBorder);
+    expect(laid.content.paddingMm.x).toBeCloseTo(snappedBorder);
+    expect(laid.content.paddingMm.y).toBeCloseTo(snappedBorder);
+  });
+
   test('keeps a table with many thin rows and a thick border from producing a negative content box', () => {
     const table = {
       ...newCanvasElement('table', 'tb', PAPER),

@@ -385,7 +385,13 @@ function renderPreview(result: PreviewResult, { template, isBound }: PrintTempla
       paper: null,
     };
   }
-  const { html, ...warnings } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() }, dpi);
+  // diagnostics 是条码库的原始英文错误，写打印日志用；预览每次扫码、每次改模板都会重新渲染一次，
+  // 这里只取界面要显示的 warnings，diagnostics 留在原地不传给界面（渲染器收不到，也就不会在预览上露出来）。
+  const {
+    html,
+    diagnostics: _diagnostics,
+    ...warnings
+  } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() }, dpi);
   return {
     result,
     html,

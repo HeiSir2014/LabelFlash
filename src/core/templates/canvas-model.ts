@@ -207,6 +207,15 @@ export function barcodeType(id: string): BarcodeType | null {
   return BARCODE_TYPES.find((type) => type.id === id) ?? null;
 }
 
+/**
+ * 边框粗细按点取整（返回点数，不是毫米）：0 或更小没有边框；大于 0 时至少取 1 个点，
+ * 否则很细的边框四舍五入会降到 0 点，打出来时有时无。排版（表格要靠它算内边距）和画 HTML（矩形、表格的边框）
+ * 必须用同一条规则取整，否则排版时留的内边距和实际画出来的边框宽度对不上，文字会被边框压到。
+ */
+export function snapBorderDots(borderMm: number, dotMm: number): number {
+  return borderMm <= 0 ? 0 : Math.max(1, Math.round(borderMm / dotMm));
+}
+
 /** 新元素的默认大小（mm）：放在纸的左上角安全区内，编辑器再挪到中间。 */
 const NEW_ELEMENT_SIZE_MM: Readonly<Record<CanvasElementKind, { width: number; height: number }>> = {
   text: { width: 30, height: 6 },

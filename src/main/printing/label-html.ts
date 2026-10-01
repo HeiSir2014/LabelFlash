@@ -32,6 +32,8 @@ const MAX_LINES = { bottom: 3, noteBeside: 3, noteBottom: 2 } as const;
 /** 标签 HTML 和生成时发现的问题（标签模板只会有「二维码放不下」）。 */
 export interface RenderedLabel extends RenderWarnings {
   html: string;
+  /** 条码库给的原始错误（英文，写日志用，不给用户看）：标签模板没有条码，一直是空数组。 */
+  diagnostics: string[];
 }
 
 interface Paragraph {
@@ -59,7 +61,7 @@ export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI
   if (template.kind === 'waybill') {
     return renderWaybillHtml({ ...job, template }, dpi);
   }
-  return { ...NO_RENDER_WARNINGS, ...renderQrLabel({ ...job, template }, dpi) };
+  return { ...NO_RENDER_WARNINGS, diagnostics: [], ...renderQrLabel({ ...job, template }, dpi) };
 }
 
 function renderQrLabel(

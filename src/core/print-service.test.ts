@@ -447,6 +447,55 @@ describe('PrintService.printTest', () => {
   });
 });
 
+describe('PrintService.printSample', () => {
+  const draft: LabelTemplate = { ...PICK_TEMPLATE, id: 'custom:draft' };
+
+  test('prints the draft with the enriched scan, without recording it or holding the dedup window', async () => {
+    const { service, adapter, store, useEnrich } = createHarness();
+    useEnrich(withShelf);
+    expect((await service.printSample(RAW, draft)).status).toBe('printed');
+    expect((await service.printSample(RAW, draft)).status).toBe('printed');
+    expect(adapter.printed.map((job) => job.templateId)).toEqual(['custom:draft', 'custom:draft']);
+    expect(adapter.printed[0]?.fields.at(-1)).toEqual({ name: '货架号', value: 'A-01' });
+    expect(store.listRecent(10)).toEqual([]);
+    expect((await service.submit(request())).status).toBe('printed');
+  });
+
+  test('reports content it cannot recognise', async () => {
+    const { service, adapter } = createHarness();
+    expect(await service.printSample('   ', draft)).toEqual({ status: 'invalid', reason: 'INVALID_CONTENT' });
+    expect(adapter.printed).toEqual([]);
+  });
+
+  test('does not print when the paper of the draft has no printer', async () => {
+    const { service, adapter, useChoice } = createHarness();
+    useChoice({ printerName: null, reason: 'unassigned', paperKey: '60x40', missingPrinter: null });
+    expect(await service.printSample(RAW, draft)).toEqual({
+      status: 'no-printer',
+      paperKey: '60x40',
+      missingPrinter: null,
+    });
+    expect(adapter.printed).toEqual([]);
+  });
+
+  test('stops like a real print when a blocking lookup fails', async () => {
+    const { service, adapter, useEnrich } = createHarness();
+    useEnrich(lookupFails);
+    expect(await service.printSample(RAW, draft)).toEqual({
+      status: 'failed',
+      reason: 'LOOKUP_FAILED',
+      detail: '查询超时',
+    });
+    expect(adapter.printed).toEqual([]);
+  });
+
+  test('reports printer failures', async () => {
+    const { service, adapter } = createHarness();
+    adapter.failNext(new PrintError('PRINTER_NOT_FOUND'));
+    expect(await service.printSample(RAW, draft)).toEqual({ status: 'failed', reason: 'PRINTER_NOT_FOUND' });
+  });
+});
+
 describe('PrintService printer choice', () => {
   test('prints on the printer chosen for the template and records it with the paper and template', async () => {
     const { service, adapter, store, useChoice } = createHarness();

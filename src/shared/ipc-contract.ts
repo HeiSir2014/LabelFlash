@@ -22,6 +22,7 @@ export const IpcChannel = {
   Preview: 'label:preview',
   PreviewTemplate: 'label:preview-template',
   Print: 'label:print',
+  PrintSample: 'label:print-sample',
   PrintTest: 'printer:test',
   ListPrinters: 'printer:list',
   PrinterStatus: 'printer:status',
@@ -147,6 +148,8 @@ export interface LabelFlashApi {
   print(raw: string, options: PrintOptions): Promise<PrintResult>;
   /** 测试页按 paperKey（这台打印机负责的纸，例如 100x180）的尺寸打印。 */
   printTest(printerName: string, paperKey: string): Promise<PrintResult>;
+  /** 模板页「打印一张试试」：按预览内容打印没保存的草稿；不写打印记录、不占防重复窗口。 */
+  printSample(raw: string, template: LabelTemplate): Promise<PrintResult>;
   listPrinters(): Promise<PrinterInfo[]>;
   printerStatus(printerName: string): Promise<PrinterReadiness | null>;
   /** 驱动默认纸张和 paperKey（这台打印机应该装的纸）是否一致；驱动资料短时缓存，打开打印首选项后重新读取。 */

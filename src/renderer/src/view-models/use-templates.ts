@@ -3,6 +3,7 @@ import { isBuiltInTemplateId, type LabelTemplate } from '../../../core/templates
 import type { AppSettings } from '../../../shared/settings';
 import { deepEqual } from '../lib/deep-equal';
 import { notices, reportError } from '../lib/notices';
+import { describeSamplePrint } from '../lib/status-text';
 
 interface TemplatesOptions {
   activeTemplateId: string | null;
@@ -111,6 +112,22 @@ export function useTemplates({
     }
   }, [draft, load, activeTemplateId, onActiveTemplateChanged]);
 
+  /** 「打印一张试试」：按预览内容打印草稿，结果用提示条说。 */
+  const printSample = useCallback(
+    async (raw: string) => {
+      if (!draft) {
+        return;
+      }
+      try {
+        const notice = describeSamplePrint(await window.api.printSample(raw, draft), Date.now());
+        notices.push(notice.tone, notice.message);
+      } catch (error) {
+        reportError('打印一张试试', error);
+      }
+    },
+    [draft],
+  );
+
   const remove = useCallback(
     async (id: string) => {
       try {
@@ -140,6 +157,7 @@ export function useTemplates({
     startEdit,
     changeDraft: setDraft,
     saveDraft,
+    printSample,
     cancelEdit: () => setDraft(null),
     remove,
   };

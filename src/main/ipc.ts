@@ -212,6 +212,13 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.Print, (raw, options) =>
     deps.service.submit({ raw: requireRaw(raw), ...requirePrintOptions(options) }),
   );
+  // 「打印一张试试」：草稿和预览一样先校验（不可信的输入），再按预览内容打一张。
+  handle(IpcChannel.PrintSample, (raw, template) =>
+    deps.service.printSample(
+      requireRaw(raw),
+      sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, GENERIC_TEMPLATE),
+    ),
+  );
   // 打印机名不在这里核对：找不到时由适配器返回 PRINTER_NOT_FOUND，和正式打印一样显示在界面上。
   handle(IpcChannel.PrintTest, (printerName, key) =>
     deps.service.printTest(requireString(printerName, 'printerName'), paperOf(requirePaperKey(key))),

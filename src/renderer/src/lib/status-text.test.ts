@@ -5,7 +5,9 @@ import { NO_RENDER_WARNINGS } from '../../../shared/render-warnings';
 import {
   describeJobMeta,
   describeJobStatus,
+  describeNoPrinter,
   describeResult,
+  describeSamplePrint,
   describeScan,
   describeSource,
   formatAgo,
@@ -323,5 +325,29 @@ describe('describeJobStatus', () => {
 describe('describeSource', () => {
   test('names jobs submitted through the local api', () => {
     expect(describeSource('api')).toBe('本机接口');
+  });
+});
+
+describe('describeSamplePrint', () => {
+  test('says the sample was sent, with the first fields', () => {
+    expect(describeSamplePrint({ status: 'printed', jobId: 'sample', scan: SCAN }, NOW)).toEqual({
+      tone: 'info',
+      message: '已发送打印：CL5640-TK · 图片色 · XL',
+    });
+  });
+
+  test('says which paper has no printer', () => {
+    const view = describeNoPrinter('60x40', null);
+    expect(describeSamplePrint({ status: 'no-printer', paperKey: '60x40', missingPrinter: null }, NOW)).toEqual({
+      tone: 'warning',
+      message: `${view.title}：${view.detail}`,
+    });
+  });
+
+  test('reports a printer failure as an error', () => {
+    expect(describeSamplePrint({ status: 'failed', reason: 'PRINTER_NOT_FOUND' }, NOW)).toEqual({
+      tone: 'error',
+      message: '找不到打印机：系统里找不到这台打印机，刷新打印机列表后重新选择',
+    });
   });
 });

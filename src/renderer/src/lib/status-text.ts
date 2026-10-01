@@ -15,6 +15,7 @@ import { formatPaperName, parsePaperKey } from '../../../shared/paper-sizes';
 import { PRINT_TIMEOUT_SECONDS } from '../../../shared/print-timing';
 import { VOICE_CUE_TEXT } from '../../../shared/voice';
 import type { ConfigPage } from './app-view';
+import type { NoticeTone } from './notices';
 
 /** 防重复窗口的说法和手机扫码页共用一份（见 src/shared/duration-text.ts）。 */
 export { formatWindow };
@@ -203,6 +204,13 @@ export function describeNoPrinter(paperKey: string, missingPrinter: string | nul
         : `模板指定的 ${missingPrinter} 不在这台电脑上，${paper} 也还没有打印机`,
     link: { page: 'printers', label: '去指定打印机' },
   };
+}
+
+/** 「打印一张试试」的结果：用提示条说，用词和状态条一致（成功是「已发送打印」，不说「打印成功」）。 */
+export function describeSamplePrint(result: PrintResult, now: number): { tone: NoticeTone; message: string } {
+  const view = describeResult(result, now);
+  const tone: NoticeTone = view.tone === 'success' ? 'info' : view.tone;
+  return { tone, message: view.detail === '' ? view.title : `${view.title}：${view.detail}` };
 }
 
 export const IPC_ERROR_VIEW: FeedbackStatusView = {

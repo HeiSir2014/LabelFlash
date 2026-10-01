@@ -320,6 +320,37 @@ export class PrintService {
     }
   }
 
+  /**
+   * 模板页「打印一张试试」：按预览内容和正在编辑的草稿打一张，看实际出纸的效果。
+   * 和预览一样识别、加工（看到的就是打出来的），加工步骤设为拦下的查询失败时和正式打印一样不打；
+   * 按草稿的纸张和打印机设置选打印机。不占防重复窗口、不写打印记录：这是在调模板，不是业务打印。
+   */
+  async printSample(raw: string, template: LabelTemplate): Promise<PrintResult> {
+    const preview = await this.preview(raw);
+    if (preview.status !== 'ok') {
+      return preview;
+    }
+    if (preview.lookupFailure !== null) {
+      return { status: 'failed', reason: 'LOOKUP_FAILED', detail: preview.lookupFailure };
+    }
+    const choice = await this.deps.choosePrinter(template);
+    if (choice.printerName === null) {
+      return { status: 'no-printer', paperKey: choice.paperKey, missingPrinter: choice.missingPrinter };
+    }
+    const printerName = choice.printerName;
+    const { scan } = preview;
+    try {
+      await this.deps.queue.enqueue(printerName, (signal) =>
+        this.deps.adapter.print(printerName, this.createJob(scan, template), signal),
+      );
+      // 不写记录，没有记录编号：和测试页一样给一个固定的说明性编号。
+      return { status: 'printed', jobId: 'sample', scan };
+    } catch (error) {
+      console.error('[PrintService] sample print failed', error);
+      return failed(toPrintFailure(error));
+    }
+  }
+
   /** 超时说明结果不确定（可能已出纸或仍在排队）：按已打印处理，避免重扫出第二张；确认没出纸再强制补打。 */
   private settleFailedReservation(raw: string, failure: PrintFailure): void {
     if (failure.reason === 'PRINT_TIMEOUT') {

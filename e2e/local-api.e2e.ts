@@ -165,6 +165,38 @@ test('prints a courier waybill with a built-in waybill template', async ({ elect
   ]);
 });
 
+// 自由设计模板：本机接口列出它用到的字段，按这些字段打到装着 60×40 的那台。
+test('prints a canvas template through the local API', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x180': '面单机B' } });
+  const base = await apiBase(page);
+  const headers = await createKey(page);
+  const template = 'templates/builtin-canvas-tag';
+  const listed = (await (await fetch(`${base}/v1/templates`, { headers })).json()) as {
+    templates: { name: string; fieldsMode: string; fieldNames: string[] }[];
+  };
+  expect(listed.templates.find((item) => item.name === template)).toMatchObject({
+    fieldsMode: 'PICKED',
+    fieldNames: ['编码', '颜色', '尺码', '货架号'],
+  });
+
+  const fields = [
+    { name: '编码', value: 'CL5640-TK' },
+    { name: '颜色', value: '图片色' },
+    { name: '尺码', value: 'XL' },
+  ];
+  const created = await fetch(`${base}/v1/printJobs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ template, fields, content: 'CL5640-TK-图片色-XL' }),
+  });
+  expect(created.status).toBe(200);
+  await waitAllSent(base, headers, 1);
+  expect(await fakePrints(app)).toEqual([
+    { printerName: '标签机A', raw: 'CL5640-TK-图片色-XL', paper: '60x40', templateId: 'builtin:canvas-tag' },
+  ]);
+});
+
 test('prints a batch of 300 labels on two papers, each printer in submission order', async ({ electronApp }) => {
   const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
   const waybill = await createWaybillTemplate(page);

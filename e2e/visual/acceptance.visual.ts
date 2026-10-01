@@ -43,7 +43,7 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的 V01–V43）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 视觉验收（设计文档 §8.2 的 V01–V44）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
  * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
@@ -1212,6 +1212,17 @@ const ITEMS: Item[] = [
     '德邦二联',
     '对照平台德邦模板：4×2 路由格的竖线在 25、50、75mm，横线在 15、29、43、65.3、72.1、88.3、99.8、120、130mm；打印时间和末端码之间竖线在 71mm；存根竖线在 70mm；156mm 处「已验视」',
   ),
+  {
+    id: 'V44',
+    title: '模板 · 自由设计 · 吊牌示例',
+    points:
+      '编码大字、颜色尺码表格（格线对齐、字在格内）、Code128 和号码、二维码、分隔线、货架号和日期都在纸内，没有被裁',
+    setup: async ({ page }) => {
+      await scan(page, 'CL5640-TK-图片色-XL');
+      await openConfig(page, '模板');
+      await page.locator('.template-item', { hasText: '吊牌（自由设计示例）' }).click();
+    },
+  },
 ];
 
 /**

@@ -93,12 +93,20 @@ export const WAYBILL_LIMITS = {
   children: 12,
   /** 格子最小 1mm：再小放不下任何内容，也看不清线。 */
   minSizeMm: 1,
+  /** 1.5mm 是热敏纸上还认得出汉字的下限；14mm 够印大头笔的三段码。 */
   fontSizeMm: { min: 1.5, max: 14 },
+  /** 一格最多几段：内置模板最多 3 段（收件人、电话、地址），留一段余量。 */
   paragraphs: 4,
+  /** 一段的模板文字（含变量）：最长的地址段不到 100 字。 */
   paragraphLength: 200,
+  /** 条码、二维码的内容模板：运单号、网址带变量也用不了这么长。 */
   valueLength: 200,
+  /** 线宽：0.2mm 以下热敏纸上时断时续，1mm 以上就是黑条了。 */
   lineWidthMm: { min: 0.2, max: 1 },
+  /** 四边留白：面单纸本身有边，留 10mm 已经很宽。 */
   marginMm: { min: 0, max: 10 },
+  /** 条码下方号码的默认字号。 */
+  barcodeTextSizeMm: 3,
 } as const;
 
 export function isSplit(body: WaybillBody): body is { split: SplitDirection; children: WaybillNode[] } {

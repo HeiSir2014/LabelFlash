@@ -80,11 +80,12 @@ describe('sanitizeTemplate for waybills', () => {
     });
     const result = sanitizeWaybill({
       kind: 'waybill',
-      root: { body: { split: 'rows', children: [cell('集包地'), cell('{坏}'), cell(3)] } },
+      root: { body: { split: 'rows', children: [cell('集包地'), cell('{坏}'), cell(3), cell(' Order No ')] } },
     });
+    // 编辑器里输入时不去空格（字段名中间可以有空格），首尾的空格在这里去掉。
     expect(
       result.root.body.children.map((child) => ('content' in child.body ? child.body.content : null)),
-    ).toMatchObject([{ showIf: '集包地' }, { showIf: '' }, { showIf: '' }]);
+    ).toMatchObject([{ showIf: '集包地' }, { showIf: '' }, { showIf: '' }, { showIf: 'Order No' }]);
   });
 
   test('turns unknown content into an empty cell', () => {

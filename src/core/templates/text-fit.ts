@@ -39,7 +39,10 @@ const SAFETY_FACTOR = 1.03;
 const DEFAULT_WIDTH_EM = 1.01;
 
 export const LINE_HEIGHT = 1.2;
-const FONT_SIZE_STEP_PER_MM = 10;
+/** 字号按 0.1mm 一档取：再细肉眼分不出，也让每次排版的结果稳定。标签和面单共用。 */
+export const FONT_SIZE_STEP_PER_MM = 10;
+/** 浮点比较的容差：0.1 × 3 之类的小数误差不能让「正好放得下」变成「放不下」。 */
+export const FLOAT_EPSILON = 1e-9;
 
 export function charWidthEm(char: string): number {
   const code = char.charCodeAt(0);
@@ -87,7 +90,7 @@ export function textHeightMm(text: string, fontSizeMm: number, widthMm: number):
 
 /** 缩小后的字号向下取到 0.1mm（向上取会让文本再次超出），不低于最小字号。 */
 export function roundDownFontSizeMm(fontSizeMm: number): number {
-  const rounded = Math.floor(fontSizeMm * FONT_SIZE_STEP_PER_MM + 1e-9) / FONT_SIZE_STEP_PER_MM;
+  const rounded = Math.floor(fontSizeMm * FONT_SIZE_STEP_PER_MM + FLOAT_EPSILON) / FONT_SIZE_STEP_PER_MM;
   return Math.max(TEMPLATE_LIMITS.fontSizeMm.min, rounded);
 }
 
@@ -98,7 +101,7 @@ export function roundDownFontSizeMm(fontSizeMm: number): number {
 export function largestFitting(maxFontSizeMm: number, fits: (fontSizeMm: number) => boolean): number {
   const toSteps = (mm: number) => Math.round(mm * FONT_SIZE_STEP_PER_MM);
   let low = toSteps(TEMPLATE_LIMITS.fontSizeMm.min);
-  let high = Math.max(low, Math.floor(maxFontSizeMm * FONT_SIZE_STEP_PER_MM + 1e-9));
+  let high = Math.max(low, Math.floor(maxFontSizeMm * FONT_SIZE_STEP_PER_MM + FLOAT_EPSILON));
   if (fits(high / FONT_SIZE_STEP_PER_MM)) {
     return high / FONT_SIZE_STEP_PER_MM;
   }

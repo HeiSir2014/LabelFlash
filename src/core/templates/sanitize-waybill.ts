@@ -96,15 +96,15 @@ export function sanitizeContent(value: unknown): WaybillContent {
         align: pick(input['align'], TEXT_ALIGNS, 'left'),
         valign: pick(input['valign'], VERTICAL_ALIGNS, 'middle'),
         inverse: bool(input['inverse'], false),
-        // 字段名不合法（或没填）就当作总是显示。
-        showIf: typeof input['showIf'] === 'string' && isValidFieldName(input['showIf']) ? input['showIf'] : '',
+        // 字段名不合法（或没填）就当作总是显示；首尾空格去掉（编辑器输入时不去，字段名中间可以有空格）。
+        showIf: sanitizeShowIf(input['showIf']),
       };
     case 'barcode':
       return {
         kind: 'barcode',
         value: sanitizeText(input['value'], valueLength, '{运单号}'),
         showText: bool(input['showText'], true),
-        textSizeMm: clamp(input['textSizeMm'], fontSizeMm.min, fontSizeMm.max, 3),
+        textSizeMm: clamp(input['textSizeMm'], fontSizeMm.min, fontSizeMm.max, WAYBILL_LIMITS.barcodeTextSizeMm),
         vertical: bool(input['vertical'], false),
       };
     case 'qr':
@@ -127,6 +127,11 @@ function sanitizeParagraph(value: unknown): WaybillParagraph {
 
 function asLoose(value: unknown): Loose {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Loose) : {};
+}
+
+function sanitizeShowIf(value: unknown): string {
+  const field = typeof value === 'string' ? value.trim() : '';
+  return isValidFieldName(field) ? field : '';
 }
 
 function bool(value: unknown, fallback: boolean): boolean {

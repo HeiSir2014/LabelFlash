@@ -242,6 +242,14 @@ describe('fitParagraphs', () => {
     expect(fitted.overflow).toBe(false);
   });
 
+  // 折行只能折到一个字一行：一个字都比格子宽时要先缩小，还放不下就说截断了，不能悄悄被格子边缘裁掉。
+  test('shrinks a wrapping paragraph whose single characters are wider than the cell', () => {
+    const shrunk = fitParagraphs([paragraph('收件')], textWidthMm('收', 4) * 0.8, 20);
+    expect(shrunk.lines[0]?.fontSizeMm).toBeLessThan(4);
+    expect(shrunk.overflow).toBe(false);
+    expect(fitParagraphs([paragraph('收件')], 1, 20).overflow).toBe(true);
+  });
+
   test('shrinks every paragraph of the cell together', () => {
     const fitted = fitParagraphs([paragraph('第一段'), paragraph('第二段')], 40, 4 * LINE_HEIGHT * 2 * 0.8);
     expect(new Set(fitted.lines.map((line) => line.fontSizeMm)).size).toBe(1);

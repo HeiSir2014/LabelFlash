@@ -1,7 +1,7 @@
 import type { ScanResult } from '../scan/scan-result';
 import { expandVariables, NOTE_VARIABLES, variableNames } from './note-text';
 import type { TextAlign } from './template-model';
-import { estimateTextWidthEm, LINE_HEIGHT } from './text-fit';
+import { estimateTextWidthEm, FLOAT_EPSILON, FONT_SIZE_STEP_PER_MM, LINE_HEIGHT } from './text-fit';
 import {
   isSplit,
   type SplitDirection,
@@ -31,8 +31,8 @@ const LINE_WIDTH_SLACK = 0.02;
 const MIN_LINE_MM = 0.25;
 /** 放不下时字号最多缩到原来的 60%，再小就截断：远看还认得出是哪一行。 */
 export const MIN_TEXT_SCALE = 0.6;
+/** 每次缩小原字号的 5%：60%–100% 之间试 9 档，档距小到看不出跳变。 */
 const SCALE_STEP = 0.05;
-const FONT_SIZE_STEP_PER_MM = 10;
 const ELLIPSIS = '…';
 
 export interface Rect {
@@ -252,9 +252,9 @@ export function fitParagraphs(paragraphs: readonly WaybillParagraph[], widthMm: 
   if (paragraphs.length === 0) {
     return { lines: [], overflow: false };
   }
-  for (let scale = 1; scale >= MIN_TEXT_SCALE - 1e-9; scale -= SCALE_STEP) {
+  for (let scale = 1; scale >= MIN_TEXT_SCALE - FLOAT_EPSILON; scale -= SCALE_STEP) {
     const attempt = linesAt(paragraphs, widthMm, scale);
-    if (attempt.fitsWidth && blockHeightMm(attempt.lines) <= heightMm + 1e-9) {
+    if (attempt.fitsWidth && blockHeightMm(attempt.lines) <= heightMm + FLOAT_EPSILON) {
       return { lines: attempt.lines, overflow: false };
     }
   }
@@ -272,12 +272,16 @@ function linesAt(paragraphs: readonly WaybillParagraph[], widthMm: number, scale
     const fontSizeMm = scaledSize(paragraph.fontSizeMm, scale);
     if (paragraph.wrap) {
       for (const text of wrapText(paragraph.text, widthMm, fontSizeMm)) {
+        // 折到一个字一行还比格子宽（格子很窄）：这个字号放不下。
+        if (textWidthMm(text, fontSizeMm) > widthMm + FLOAT_EPSILON) {
+          fitsWidth = false;
+        }
         lines.push({ text, fontSizeMm, bold: paragraph.bold });
       }
       continue;
     }
     const text = paragraph.text.replace(/\s*\n\s*/g, ' ');
-    if (textWidthMm(text, fontSizeMm) > widthMm + 1e-9) {
+    if (textWidthMm(text, fontSizeMm) > widthMm + FLOAT_EPSILON) {
       fitsWidth = false;
     }
     lines.push({ text, fontSizeMm, bold: paragraph.bold });
@@ -290,7 +294,7 @@ function scaledSize(fontSizeMm: number, scale: number): number {
   if (scale >= 1) {
     return fontSizeMm;
   }
-  const rounded = Math.floor(fontSizeMm * scale * FONT_SIZE_STEP_PER_MM + 1e-9) / FONT_SIZE_STEP_PER_MM;
+  const rounded = Math.floor(fontSizeMm * scale * FONT_SIZE_STEP_PER_MM + FLOAT_EPSILON) / FONT_SIZE_STEP_PER_MM;
   return Math.max(WAYBILL_LIMITS.fontSizeMm.min, rounded);
 }
 
@@ -301,13 +305,13 @@ function clampLines(lines: readonly TextLine[], widthMm: number, heightMm: numbe
   for (const line of lines) {
     const height = line.fontSizeMm * LINE_HEIGHT;
     // 第一行无论如何都留着：格子比一行还矮时，被格子边缘裁掉一点也比整格空白好认。
-    if (kept.length > 0 && used + height > heightMm + 1e-9) {
+    if (kept.length > 0 && used + height > heightMm + FLOAT_EPSILON) {
       overflow = true;
       break;
     }
-    const tooWide = textWidthMm(line.text, line.fontSizeMm) > widthMm + 1e-9;
+    const tooWide = textWidthMm(line.text, line.fontSizeMm) > widthMm + FLOAT_EPSILON;
     kept.push(tooWide ? { ...line, text: ellipsize(line.text, line.fontSizeMm, widthMm) } : line);
-    overflow ||= tooWide || used + height > heightMm + 1e-9;
+    overflow ||= tooWide || used + height > heightMm + FLOAT_EPSILON;
     used += height;
   }
   const last = kept.at(-1);
@@ -353,7 +357,7 @@ export function wrapText(text: string, widthMm: number, fontSizeMm: number): str
       line = '';
     };
     for (const token of segment.match(TOKEN_PATTERN) ?? []) {
-      if (textWidthMm(line + token, fontSizeMm) <= widthMm + 1e-9) {
+      if (textWidthMm(line + token, fontSizeMm) <= widthMm + FLOAT_EPSILON) {
         line += token;
         continue;
       }
@@ -361,12 +365,12 @@ export function wrapText(text: string, widthMm: number, fontSizeMm: number): str
       if (/^\s+$/.test(token)) {
         continue;
       }
-      if (textWidthMm(token, fontSizeMm) <= widthMm + 1e-9) {
+      if (textWidthMm(token, fontSizeMm) <= widthMm + FLOAT_EPSILON) {
         line = token;
         continue;
       }
       for (const char of token) {
-        if (line !== '' && textWidthMm(line + char, fontSizeMm) > widthMm + 1e-9) {
+        if (line !== '' && textWidthMm(line + char, fontSizeMm) > widthMm + FLOAT_EPSILON) {
           push();
         }
         line += char;

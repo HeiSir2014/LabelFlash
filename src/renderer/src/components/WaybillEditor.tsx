@@ -390,7 +390,7 @@ function TextContentEditor({
         maxLength={RULE_LIMITS.fieldNameLength}
         placeholder="字段名，例如 集包地；留空总是显示"
         list={FIELD_NAME_LIST_ID}
-        onChange={(showIf) => onChange({ ...content, showIf: showIf.trim() })}
+        onChange={(showIf) => onChange({ ...content, showIf })}
       />
       <p className="form-hint">
         用 {'{字段名}'}{' '}

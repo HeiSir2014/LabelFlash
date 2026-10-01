@@ -16,7 +16,8 @@ const INLINE = { arrangement: 'inline', uniform: false } as const;
 
 describe('estimateTextWidthEm', () => {
   test('counts CJK as full width and narrow Latin glyphs as narrower than digits and capitals', () => {
-    expect(estimateTextWidthEm('图片色')).toBe(3);
+    // 汉字按 1.01 个字宽：苹方实测 1.004。
+    expect(estimateTextWidthEm('图片色')).toBeCloseTo(3.03);
     expect(estimateTextWidthEm('i')).toBeLessThan(estimateTextWidthEm('0'));
     expect(estimateTextWidthEm('0')).toBeLessThan(estimateTextWidthEm('C'));
     expect(estimateTextWidthEm('C')).toBeLessThan(estimateTextWidthEm('W'));
@@ -56,9 +57,9 @@ describe('estimateTextWidthEm', () => {
 
 describe('countLines', () => {
   test('breaks between any two characters, like word-break: break-all', () => {
-    // 每行 10em：10 个汉字正好一行，第 11 个换行。
-    expect(countLines('汉'.repeat(10), 1, 10)).toBe(1);
-    expect(countLines('汉'.repeat(11), 1, 10)).toBe(2);
+    // 每行 10.1em：10 个汉字（每个 1.01em）正好一行，第 11 个换行。
+    expect(countLines('汉'.repeat(10), 1, 10.1)).toBe(1);
+    expect(countLines('汉'.repeat(11), 1, 10.1)).toBe(2);
   });
 
   test('counts every explicit line, blank ones included', () => {
@@ -133,7 +134,7 @@ describe('fitRowFontSizes', () => {
 
   test('gives every row the same size when asked to', () => {
     const rows = [
-      { prefix: '订单号：', value: 'A20260928-001', fontSizeMm: 3 },
+      { prefix: '订单号：', value: 'A2026-0001', fontSizeMm: 3 },
       { prefix: '款号：', value: 'CL5640', fontSizeMm: 3 },
     ];
     const [first, second] = fitRowFontSizes(rows, SIDE_WIDTH_MM, SIDE_HEIGHT_MM, { ...INLINE, uniform: true });

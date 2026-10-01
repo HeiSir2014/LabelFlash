@@ -169,3 +169,48 @@ describe('migration 5', () => {
     db.close();
   });
 });
+
+describe('migration 6', () => {
+  test('keeps every row and accepts batch jobs with their batch, row and copy', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, MIGRATIONS.slice(0, 5));
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, fields, caller) VALUES ('a', 1, 'CL5640', 'P', 'api', 'printed', 0, '[]', 'key:k1')",
+    ).run();
+    migrate(db);
+    expect({ ...db.prepare("SELECT seq, source, caller, batch_id FROM jobs WHERE id = 'a'").get() }).toEqual({
+      seq: 1,
+      source: 'api',
+      caller: 'key:k1',
+      batch_id: null,
+    });
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, batch_id, batch_row, batch_copy) VALUES ('b', 2, 'CL5887', 'P', 'batch', 'printed', 0, '20261002-143501-a1b2', 3, 1)",
+    ).run();
+    expect(db.prepare("SELECT seq FROM jobs WHERE id = 'b'").get()?.['seq']).toBe(2);
+    const hits = db.prepare('SELECT rowid FROM jobs_search WHERE jobs_search MATCH \'"5887"\'').all();
+    expect(hits.map((row) => row['rowid'])).toEqual([2]);
+    db.close();
+  });
+
+  test('refuses a batch id without its row and copy', () => {
+    const db = openDatabase(':memory:');
+    const insert = db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, batch_id) VALUES ('c', 3, 'X', 'P', 'batch', 'printed', 0, '20261002-143501-a1b2')",
+    );
+    expect(() => insert.run()).toThrow();
+    db.close();
+  });
+
+  // 后续子项目（PDF 打印、局域网共享、远程打印）要用到的来源：先占住取值，列由各自的迁移再加。
+  test('accepts the sources reserved for later sub-projects', () => {
+    const db = openDatabase(':memory:');
+    for (const source of ['pdf', 'ipp', 'remote']) {
+      db.prepare(
+        'INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES (?, 1, ?, ?, ?, ?, 0)',
+      ).run(source, source, 'P', source, 'printed');
+    }
+    expect(db.prepare('SELECT COUNT(*) AS n FROM jobs').get()?.['n']).toBe(3);
+    db.close();
+  });
+});

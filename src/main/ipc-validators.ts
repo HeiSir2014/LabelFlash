@@ -1,3 +1,4 @@
+import { BATCH_ID_PATTERN } from '../core/batch/batch-model';
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
@@ -144,6 +145,7 @@ export function requireJobQuery(value: unknown): JobQuery {
   const limit = query['limit'];
   const search = query['search'];
   const before = query['before'];
+  const batchId = query['batchId'];
   if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > MAX_JOB_PAGE_SIZE) {
     throw new TypeError('Invalid job query limit');
   }
@@ -153,7 +155,10 @@ export function requireJobQuery(value: unknown): JobQuery {
   if (before !== undefined && (typeof before !== 'number' || !Number.isInteger(before))) {
     throw new TypeError('Invalid job query cursor');
   }
-  return { limit, search, before };
+  if (batchId !== undefined && (typeof batchId !== 'string' || !BATCH_ID_PATTERN.test(batchId))) {
+    throw new TypeError('Invalid job query batch');
+  }
+  return { limit, search, before, batchId };
 }
 
 /** 程序密钥的编号：生成时用的 UUID。 */

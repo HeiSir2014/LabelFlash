@@ -119,6 +119,11 @@ const SOURCE_LABELS: Record<PrintSource, string> = {
   history: '记录重打',
   mobile: '手机',
   api: '本机接口',
+  batch: '批量',
+  // pdf / ipp / remote：PDF 打印、局域网共享、远程打印三个后续子项目预留的来源，先写好标签。
+  pdf: 'PDF',
+  ipp: '局域网共享',
+  remote: '远程',
 };
 
 export function formatAgo(at: number, now: number): string {

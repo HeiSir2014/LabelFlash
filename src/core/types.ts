@@ -4,9 +4,20 @@ import type { ScanImage } from './scan/image-text';
 import type { ScanField, ScanResult } from './scan/scan-result';
 import type { LabelTemplate } from './templates/template-model';
 
-/** desktop = 扫码枪，history = 从打印记录重打，mobile = 手机，api = 本机接口。 */
-export const PRINT_SOURCES = ['desktop', 'history', 'mobile', 'api'] as const;
+/**
+ * desktop = 扫码枪，history = 从打印记录重打，mobile = 手机，api = 本机接口，batch = 批量打印，
+ * pdf / ipp / remote 是后续子项目（PDF 打印、局域网共享打印、远程打印）预留的取值：
+ * 先占住数据库的 CHECK 约束和这个联合类型，各自的列和流程由那几个子项目的迁移再加。
+ */
+export const PRINT_SOURCES = ['desktop', 'history', 'mobile', 'api', 'batch', 'pdf', 'ipp', 'remote'] as const;
 export type PrintSource = (typeof PRINT_SOURCES)[number];
+
+/** 批量打印的一张：哪一批、第几行（从 1 数，不含表头）、这一行的第几份。 */
+export interface BatchRef {
+  id: string;
+  row: number;
+  copy: number;
+}
 
 /** 打印请求不带打印机：主进程按模板决定（见 printing/resolve-printer.ts）。 */
 export interface PrintRequest {
@@ -20,6 +31,8 @@ export interface PrintRequest {
   images?: readonly ScanImage[];
   /** 手机上手动输入的字段（例如没认出时补的货架号）：图中文字识别直接用它。 */
   manualFields?: Readonly<Record<string, string>>;
+  /** 批量打印的一张（含从打印记录重打批量打的）；其他入口没有。 */
+  batch?: BatchRef;
 }
 
 export const PRINT_FAILURE_REASONS = [
@@ -111,6 +124,8 @@ export interface JobRecord {
   fields?: ScanField[];
   /** 谁提交的：本机接口为 key:<密钥编号> 或 origin:<网站>；其他来源暂时没有。 */
   caller?: string;
+  /** 批量打印的一张：批次号、行号、份号；其他来源没有。 */
+  batch?: BatchRef;
 }
 
 export interface Clock {

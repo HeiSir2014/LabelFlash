@@ -27,6 +27,9 @@ function rowCount(db: DatabaseSync): unknown {
   return db.prepare('SELECT COUNT(*) AS n FROM jobs').get()?.['n'];
 }
 
+const BATCH = '20261002-143501-a1b2';
+const OTHER_BATCH = '20261002-150000-0000';
+
 describe('SqliteJobStore', () => {
   let db: DatabaseSync;
 
@@ -198,6 +201,38 @@ describe('SqliteJobStore', () => {
     db.prepare(`UPDATE jobs SET fields = '[{"name":"a","value":"1"},{"name":2}]' WHERE id = 'job-2'`).run();
     expect(store.get('job-1')?.fields).toBeUndefined();
     expect(store.get('job-2')?.fields).toEqual([{ name: 'a', value: '1' }]);
+  });
+
+  test('keeps the batch of a job and pages through one batch', () => {
+    const store = new SqliteJobStore(db, 100);
+    store.append(job(1, { source: 'batch', batch: { id: BATCH, row: 1, copy: 1 } }));
+    store.append(job(2));
+    store.append(job(3, { source: 'batch', batch: { id: BATCH, row: 2, copy: 1 } }));
+    store.append(job(4, { source: 'batch', batch: { id: OTHER_BATCH, row: 1, copy: 1 } }));
+    const page = store.listPage({ limit: 10, batchId: BATCH });
+    expect(ids(page.jobs)).toEqual(['job-3', 'job-1']);
+    expect(page.jobs[0]?.batch).toEqual({ id: BATCH, row: 2, copy: 1 });
+    expect(ids(store.listPage({ limit: 10, batchId: BATCH, search: 'CL3' }).jobs)).toEqual(['job-3']);
+  });
+
+  test('leaves batch prints out of the recent prints', () => {
+    const store = new SqliteJobStore(db, 100);
+    store.append(job(1, { source: 'batch', batch: { id: BATCH, row: 1, copy: 1 } }));
+    expect(store.listLastPrinted(0)).toEqual([]);
+  });
+
+  test('lists the latest failed label of each row and copy in a batch', () => {
+    const store = new SqliteJobStore(db, 100);
+    const label = (row: number, copy: number) => ({ id: BATCH, row, copy });
+    const failedAs = { source: 'batch', status: 'failed', failureReason: 'PRINT_ERROR' } as const;
+    store.append(job(1, { ...failedAs, batch: label(1, 1) }));
+    store.append(job(2, { ...failedAs, batch: label(1, 2) }));
+    store.append(job(3, { source: 'batch', batch: label(2, 1) }));
+    // 第 1 行第 1 份重打成功了：不再算失败。
+    store.append(job(4, { source: 'batch', batch: label(1, 1) }));
+    store.append(job(5, { ...failedAs, failureReason: 'PRINT_TIMEOUT', batch: label(3, 1) }));
+    expect(ids(store.listBatchFailures(BATCH, null))).toEqual(['job-2', 'job-5']);
+    expect(ids(store.listBatchFailures(BATCH, 3))).toEqual(['job-5']);
   });
 });
 

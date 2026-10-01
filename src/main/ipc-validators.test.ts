@@ -75,6 +75,8 @@ describe('ipc validators', () => {
     expect(() => requireJobQuery({ limit: 501 })).toThrow(TypeError);
     expect(() => requireJobQuery({ limit: 10, before: 1.5 })).toThrow(TypeError);
     expect(() => requireJobQuery({ limit: 10, search: 3 })).toThrow(TypeError);
+    expect(requireJobQuery({ limit: 10, batchId: '20261002-143501-a1b2' }).batchId).toBe('20261002-143501-a1b2');
+    expect(() => requireJobQuery({ limit: 10, batchId: 'x' })).toThrow('Invalid job query batch');
   });
 
   test('requirePaperKey accepts width x height keys only, in their normal form', () => {

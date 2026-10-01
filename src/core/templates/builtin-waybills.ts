@@ -274,6 +274,53 @@ export const SF_TWO_PART: WaybillTemplate = waybill('waybill-sf-180', '顺丰二
   ]),
 });
 
+/** 顺丰 100×150 的版面左边留 2mm、右边留 4mm：平台模板的虚线从 2mm 画到 96mm。 */
+const SF_150_MARGINS: WaybillMargins = { top: 0, right: 4, bottom: 0, left: 2 };
+
+/**
+ * 顺丰 100×150：顺丰自己的面单纸。从上往下：标识与时效、运单条码、目的地代码、城市代码 / 出港码 / 产品类型、
+ * 收件人（右边二维码）、寄件人、进港码与托寄物，下面是商家自定义区；分隔线都是虚线（照平台模板）。
+ */
+export const SF_150: WaybillTemplate = waybill('waybill-sf-150', '顺丰 100×150', 150, 100, {
+  marginsMm: SF_150_MARGINS,
+  lineWidthMm: LINE_WIDTH_MM,
+  root: root([
+    columns(
+      12,
+      [
+        text(28, [p('顺丰速运', 6, { bold: true })], { align: 'center', rule: 'none' }),
+        text(48, [p('{日期} {时间}', 2.6)], { align: 'center', rule: 'none' }),
+        text(18, [p('{时效}', 3.6, { bold: true })], { align: 'center', inverse: true }),
+      ],
+      { rule: 'dashed' },
+    ),
+    barcode(23, { textSizeMm: 3.4, rule: 'dashed' }),
+    text(10, [p('{目的地代码}', 8, { bold: true })], { align: 'center', rule: 'dashed' }),
+    columns(
+      10,
+      [
+        text(25, [p('{城市代码}', 5, { bold: true })], { rule: 'none' }),
+        text(44, [p('{出港码}', 5, { bold: true })], { align: 'center', rule: 'none' }),
+        text(25, [p('{产品类型}', 4, { bold: true })], { align: 'right' }),
+      ],
+      { rule: 'dashed' },
+    ),
+    columns(26, [mark(6, '收', 4.5), receiver(58, 4, 3.4, { rule: 'dashed' }), qr(30)], { rule: 'dashed' }),
+    columns(6.5, [mark(6, '寄', 3.6), text(88, [p('{寄件人}  {寄件电话}  {寄件地址}', 2.6, { wrap: true })])], {
+      rule: 'dashed',
+    }),
+    columns(
+      10.5,
+      [
+        text(26, [p('{进港码}', 5, { bold: true })], { rule: 'none' }),
+        text(68, [p('托寄物：{托寄物}', 2.8, { wrap: true }), p('备注：{备注}', 2.6, { wrap: true })]),
+      ],
+      { rule: 'dashed' },
+    ),
+    customArea(),
+  ]),
+});
+
 /** 德邦的路由格：一列是一个站点，上面站点名、下面编码。 */
 function route(index: number, rule: RuleStyle = 'solid'): WaybillNode {
   return rows(
@@ -324,6 +371,7 @@ export const BUILT_IN_WAYBILLS: readonly WaybillTemplate[] = [
   PLATFORM_ONE_PART,
   PLATFORM_TWO_PART,
   SF_TWO_PART,
+  SF_150,
   DEPPON_TWO_PART,
 ];
 
@@ -347,6 +395,9 @@ export const WAYBILL_SAMPLE_FIELDS: readonly ScanField[] = [
   { name: '时效', value: '次日达' },
   { name: '目的地代码', value: '571WA-010' },
   { name: '代收货款', value: '' },
+  { name: '城市代码', value: '571' },
+  { name: '出港码', value: 'A01' },
+  { name: '进港码', value: 'W08' },
   { name: '付款方式', value: '寄付月结' },
   { name: '声明价值', value: '500 元' },
   { name: '托寄物', value: '服装 3 件' },

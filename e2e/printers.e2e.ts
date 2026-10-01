@@ -130,8 +130,9 @@ test('assigns a paper from the printers panel, following the suggestion from the
 
   const panel = page.getByRole('region', { name: '纸张和打印机' });
   const waybillRow = panel.locator('.paper-row', { hasText: '100×180 二联面单' });
-  // 60×40、内置一联面单的 76×130、这里的 100×180：内置面单没在用，它的纸列出来但不标红。
-  await expect(panel.locator('.paper-row')).toHaveCount(3);
+  // 60×40、内置面单的 76×130 和 100×150、这里的 100×180：内置面单没在用，它们的纸列出来但不标红。
+  await expect(panel.locator('.paper-row')).toHaveCount(4);
+  await expect(panel.locator('.paper-row', { hasText: '100×150' })).not.toHaveClass(/paper-row--missing/);
   await expect(panel.locator('.paper-row', { hasText: '76×130 一联面单' })).not.toHaveClass(/paper-row--missing/);
   await expect(waybillRow).toHaveClass(/paper-row--missing/);
   // 面单机B、面单机C 的驱动纸张都是 100×180：建议列表里第一台还没分配的。

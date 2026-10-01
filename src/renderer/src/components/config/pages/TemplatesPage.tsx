@@ -2,12 +2,14 @@ import { useId } from 'react';
 import { isBuiltInTemplateId, type LabelTemplate } from '../../../../../core/templates/template-model';
 import type { PrinterInfo } from '../../../../../core/types';
 import { DEFAULT_PAPER } from '../../../../../shared/label-paper';
+import { NO_RENDER_WARNINGS } from '../../../../../shared/render-warnings';
 import { FIELD_NAME_LIST_ID } from '../../../lib/field-names';
 import { describeTemplateUse } from '../../../lib/printer-assignment';
 import type { TemplatePreview } from '../../../view-models/use-template-preview';
 import { DeleteButton } from '../../ConfirmButton';
 import { LabelPreview } from '../../LabelPreview';
 import { TemplateEditor } from '../../TemplateEditor';
+import { WaybillEditor } from '../../WaybillEditor';
 
 /** 模板页的标签比工作台的更大：这里就是看效果的地方。 */
 const MAX_PREVIEW_SCALE = 3;
@@ -96,10 +98,10 @@ function ListView({
         />
       </div>
       <section className="template-stage" aria-label="模板预览">
-        <SampleInput sample={sample} />
+        <PreviewSource template={selected} sample={sample} />
         <LabelPreview
           html={preview?.html ?? null}
-          qrOmitted={preview?.qrOmitted ?? false}
+          warnings={preview?.warnings ?? NO_RENDER_WARNINGS}
           feedKey={preview?.templateId ?? 'none'}
           maxScale={MAX_PREVIEW_SCALE}
           paper={preview?.paper ?? selected?.paper ?? DEFAULT_PAPER}
@@ -214,19 +216,29 @@ function EditView({
   return (
     <div className="template-editing">
       <div className="template-editing__form">
-        <TemplateEditor
-          key={draft.id}
-          draft={draft}
-          onChange={onDraftChange}
-          printers={printers}
-          paperPrinters={paperPrinters}
-        />
+        {draft.kind === 'label' ? (
+          <TemplateEditor
+            key={draft.id}
+            draft={draft}
+            onChange={onDraftChange}
+            printers={printers}
+            paperPrinters={paperPrinters}
+          />
+        ) : (
+          <WaybillEditor
+            key={draft.id}
+            draft={draft}
+            onChange={onDraftChange}
+            printers={printers}
+            paperPrinters={paperPrinters}
+          />
+        )}
       </div>
       <section className="template-editing__preview" aria-label="模板预览">
-        <SampleInput sample={sample} />
+        <PreviewSource template={draft} sample={sample} />
         <LabelPreview
           html={preview?.html ?? null}
-          qrOmitted={preview?.qrOmitted ?? false}
+          warnings={preview?.warnings ?? NO_RENDER_WARNINGS}
           feedKey={preview?.templateId ?? 'none'}
           maxScale={MAX_PREVIEW_SCALE}
           paper={preview?.paper ?? draft.paper}
@@ -244,6 +256,21 @@ function EditView({
       </div>
     </div>
   );
+}
+
+/**
+ * 预览用什么内容：标签模板用「预览内容」（扫码内容）；面单模板要的是订单系统发来的字段，
+ * 扫码内容填不出来，固定用示例面单数据，这里只说明一句。
+ */
+function PreviewSource({ template, sample }: { template: LabelTemplate | null; sample: SampleContent }) {
+  if (template?.kind === 'waybill') {
+    return (
+      <p className="sample-input sample-input--note">
+        用示例面单数据预览；实际打印时，字段由订单系统经本机接口发来（见「本机接口」页的接入说明）。
+      </p>
+    );
+  }
+  return <SampleInput sample={sample} />;
 }
 
 /** 「预览内容」：默认是最近一次扫码的内容；多行内容照原样保留，所以用 textarea。 */

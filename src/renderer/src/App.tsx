@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
 import type { JobRecord } from '../../core/types';
 import { describePrintersSummary } from '../../shared/printer-summary';
+import { NO_RENDER_WARNINGS } from '../../shared/render-warnings';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
 import { ConfigCenter } from './components/config/ConfigCenter';
@@ -200,7 +201,7 @@ export function App() {
       ? null
       : {
           html: samplePreview?.html ?? null,
-          qrOmitted: samplePreview?.qrOmitted ?? false,
+          warnings: samplePreview?.warnings ?? NO_RENDER_WARNINGS,
           feedKey: samplePreview?.templateId ?? effectiveTemplate.id,
           // 和正在显示的标签内容用同一份结果的纸张，换模板时框和内容一起变。
           paper: samplePreview?.paper ?? effectiveTemplate.paper,

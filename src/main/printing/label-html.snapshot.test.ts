@@ -18,7 +18,7 @@ const PRINTED_AT = new Date(2026, 8, 29, 9, 5).getTime();
 
 // 支持多种纸张以后，60×40 的每个内置模板必须和现在一字不差：操作员天天在打的标签不能变。
 describe('60x40 label HTML stays the same', () => {
-  for (const template of BUILT_IN_TEMPLATES) {
+  for (const template of BUILT_IN_TEMPLATES.filter((item) => item.kind === 'label')) {
     test(template.name, () => {
       expect(renderLabelHtml({ scan: SCAN, template, printedAt: PRINTED_AT }).html).toMatchSnapshot();
     });

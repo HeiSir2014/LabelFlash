@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../../core/scan/scan-result';
 import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from '../../core/templates/builtin-templates';
-import { type FieldSlot, type LabelTemplate, maxQrSizeMm } from '../../core/templates/template-model';
+import { type FieldSlot, maxQrSizeMm, type QrLabelTemplate } from '../../core/templates/template-model';
 import type { LabelJob } from '../../core/types';
 import type { PaperSize } from '../../shared/paper-sizes';
 import { escapeHtml, renderLabelHtml } from './label-html';
@@ -27,17 +27,20 @@ const KEY_VALUE: ScanResult = {
 };
 const PRINTED_AT = new Date(2026, 8, 28, 9, 5).getTime();
 
-function render(template: LabelTemplate = STANDARD_TEMPLATE, scan = GARMENT): string {
+/** 内置的标签模板（不含面单）。 */
+const LABEL_TEMPLATES = BUILT_IN_TEMPLATES.flatMap((template) => (template.kind === 'label' ? [template] : []));
+
+function render(template: QrLabelTemplate = STANDARD_TEMPLATE, scan = GARMENT): string {
   return renderLabelHtml({ scan, template, printedAt: PRINTED_AT }).html;
 }
 
-function withChanges(changes: (template: LabelTemplate) => void, base = STANDARD_TEMPLATE): LabelTemplate {
+function withChanges(changes: (template: QrLabelTemplate) => void, base = STANDARD_TEMPLATE): QrLabelTemplate {
   const template = structuredClone(base);
   changes(template);
   return template;
 }
 
-function slot(template: LabelTemplate, field: string): FieldSlot {
+function slot(template: QrLabelTemplate, field: string): FieldSlot {
   const found = template.fieldsArea.slots.find((candidate) => candidate.field === field);
   if (!found) throw new Error(`slot ${field} missing`);
   return found;
@@ -84,7 +87,7 @@ describe('renderLabelHtml', () => {
   });
 
   test('stacks the name above the value when arranged vertically', () => {
-    const stacked = BUILT_IN_TEMPLATES.find((t) => t.fieldsArea.arrangement === 'stacked');
+    const stacked = LABEL_TEMPLATES.find((t) => t.fieldsArea.arrangement === 'stacked');
     if (!stacked) throw new Error('stacked template missing');
     const html = render(stacked, KEY_VALUE);
     expect(html).toContain('class="fields fields--stacked"');
@@ -158,7 +161,7 @@ describe('renderLabelHtml', () => {
   });
 
   test('mirrors the layout when the QR code is on the right', () => {
-    const qrRight = BUILT_IN_TEMPLATES.find((t) => t.layout === 'qr-right');
+    const qrRight = LABEL_TEMPLATES.find((t) => t.layout === 'qr-right');
     if (!qrRight) throw new Error('qr-right template missing');
     expect(render(qrRight)).toContain('class="layout-qr-right"');
   });

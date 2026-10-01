@@ -12,6 +12,7 @@ import { recognize } from './scan/recognize';
 import type { ScanRule } from './scan/rule-model';
 import type { ScanResult } from './scan/scan-result';
 import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from './templates/builtin-templates';
+import { PLATFORM_TWO_PART } from './templates/builtin-waybills';
 import type { LabelTemplate } from './templates/template-model';
 import { FAKE_CLOCK_START, FakeClock } from './testing/fake-clock';
 import { FakePrinterAdapter } from './testing/fake-printer-adapter';
@@ -405,6 +406,14 @@ describe('PrintService.printTest', () => {
     expect(await service.printTest(PRINTER, DEFAULT_PAPER)).toMatchObject({
       scan: { raw: TEST_RAW, fields: [{ value: TEST_RAW }] },
     });
+    expect(adapter.printed.at(-1)?.templateId).toBe(GENERIC_TEMPLATE.id);
+  });
+
+  // 测试内容填不出面单：规则绑的是面单模板时按通用标签打，纸张仍是这台打印机的。
+  test('prints a generic label on the printer paper when the bound template is a waybill', async () => {
+    const { service, useTemplate, adapter } = createHarness();
+    useTemplate(PLATFORM_TWO_PART);
+    await service.printTest(PRINTER, PLATFORM_TWO_PART.paper);
     expect(adapter.printed.at(-1)?.templateId).toBe(GENERIC_TEMPLATE.id);
   });
 

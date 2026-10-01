@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../scan/scan-result';
 import { GENERIC_TEMPLATE, STANDARD_TEMPLATE } from './builtin-templates';
 import { bottomText, resolveFields, resolveQrText } from './label-content';
-import { type LabelTemplate, TEMPLATE_LIMITS } from './template-model';
+import { type QrLabelTemplate, TEMPLATE_LIMITS } from './template-model';
 
 const GARMENT: ScanResult = {
   raw: 'CL5640-TK-图片色-XL',
@@ -35,11 +35,11 @@ const MULTI_LINE: ScanResult = {
 
 const PRINTED_AT = new Date(2026, 8, 28, 9, 5);
 
-function resolveFieldRows(template: LabelTemplate, scan: ScanResult) {
+function resolveFieldRows(template: QrLabelTemplate, scan: ScanResult) {
   return resolveFields(template, scan).rows;
 }
 
-function withQr(content: LabelTemplate['qr']['content']): LabelTemplate {
+function withQr(content: QrLabelTemplate['qr']['content']): QrLabelTemplate {
   return { ...GENERIC_TEMPLATE, qr: { ...GENERIC_TEMPLATE.qr, content } };
 }
 
@@ -58,7 +58,7 @@ describe('resolveFieldRows', () => {
   });
 
   test('hides the names when the template says so', () => {
-    const template: LabelTemplate = {
+    const template: QrLabelTemplate = {
       ...GENERIC_TEMPLATE,
       fieldsArea: { ...GENERIC_TEMPLATE.fieldsArea, all: { ...GENERIC_TEMPLATE.fieldsArea.all, showNames: false } },
     };
@@ -89,7 +89,7 @@ describe('resolveFieldRows', () => {
   });
 
   test('joins each name with the separator of the template', () => {
-    const template: LabelTemplate = {
+    const template: QrLabelTemplate = {
       ...GENERIC_TEMPLATE,
       fieldsArea: { ...GENERIC_TEMPLATE.fieldsArea, all: { ...GENERIC_TEMPLATE.fieldsArea.all, separator: ':' } },
     };

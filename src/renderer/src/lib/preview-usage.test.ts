@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../../../core/scan/scan-result';
 import type { LabelPreview } from '../../../shared/ipc-contract';
+import { NO_RENDER_WARNINGS } from '../../../shared/render-warnings';
 import { describePreviewUsage } from './preview-usage';
 
 const SCAN: ScanResult = {
@@ -23,7 +24,7 @@ function preview(overrides: Partial<LabelPreview> = {}): LabelPreview {
     templateId: 'builtin:standard',
     templateName: '样衣标准（二维码在左）',
     isTemplateBound: true,
-    qrOmitted: false,
+    warnings: NO_RENDER_WARNINGS,
     paper: { widthMm: 60, heightMm: 40 },
     ...overrides,
   };

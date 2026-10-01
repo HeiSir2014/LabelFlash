@@ -1,10 +1,12 @@
 import { DEFAULT_PAPER } from '../../shared/label-paper';
+import { BUILT_IN_WAYBILLS } from './builtin-waybills';
 import {
   BUILT_IN_TEMPLATE_PREFIX,
   type FieldSlot,
   type FieldsArea,
   type LabelTemplate,
   type NoteConfig,
+  type QrLabelTemplate,
 } from './template-model';
 
 function slot(field: string, prefix: string, fontSizeMm: number): FieldSlot {
@@ -47,7 +49,8 @@ function garmentFields(prefixes: GarmentSlots, sizes: [number, number, number, n
 }
 
 /** 通用：二维码在左，右侧列出识别到的全部字段，底部完整内容。新装软件的默认模板。 */
-export const GENERIC_TEMPLATE: LabelTemplate = {
+export const GENERIC_TEMPLATE: QrLabelTemplate = {
+  kind: 'label',
   id: `${BUILT_IN_TEMPLATE_PREFIX}generic`,
   name: '通用（二维码在左）',
   paper: { ...DEFAULT_PAPER },
@@ -63,7 +66,8 @@ export const GENERIC_TEMPLATE: LabelTemplate = {
 };
 
 /** 样衣标准：复刻原标签（二维码在左，编码 / 颜色 / 尺码三行，底部完整编码）。默认绑定「横杠三段」规则。 */
-export const STANDARD_TEMPLATE: LabelTemplate = {
+export const STANDARD_TEMPLATE: QrLabelTemplate = {
+  kind: 'label',
   id: `${BUILT_IN_TEMPLATE_PREFIX}standard`,
   name: '样衣标准（二维码在左）',
   paper: { ...DEFAULT_PAPER },
@@ -78,7 +82,10 @@ export const STANDARD_TEMPLATE: LabelTemplate = {
   note: note(),
 };
 
-/** 内置模板都是 60×40mm、不指定打印机，只读；要修改先复制成自定义模板（复制后可以换纸张）。 */
+/**
+ * 内置模板不指定打印机，只读；要修改先复制成自定义模板（复制后可以换纸张）。
+ * 标签模板都是 60×40mm，面单模板按各自的面单纸（见 builtin-waybills.ts）。
+ */
 export const BUILT_IN_TEMPLATES: readonly LabelTemplate[] = [
   GENERIC_TEMPLATE,
   {
@@ -132,6 +139,7 @@ export const BUILT_IN_TEMPLATES: readonly LabelTemplate[] = [
     fieldsArea: garmentFields(NO_PREFIX, [3.8, 3.4, 3.8, 3.8]),
     bottom: { visible: true, fontSizeMm: 2.8, bold: false },
   },
+  ...BUILT_IN_WAYBILLS,
 ];
 
 export const DEFAULT_TEMPLATE_ID = GENERIC_TEMPLATE.id;

@@ -11,7 +11,9 @@ import {
 import { fieldsScan, type PrintService } from '../core/print-service';
 import type { PrinterChoice } from '../core/printing/resolve-printer';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
+import type { ScanResult } from '../core/scan/scan-result';
 import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
+import { WAYBILL_SAMPLE_FIELDS } from '../core/templates/builtin-waybills';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
 import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
@@ -27,6 +29,7 @@ import {
 } from '../shared/ipc-contract';
 import { DEFAULT_PAPER } from '../shared/label-paper';
 import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
+import { NO_RENDER_WARNINGS } from '../shared/render-warnings';
 import type { AppSettings } from '../shared/settings';
 import type { LocalApi } from './api/local-api';
 import { logFailures } from './ipc-errors';
@@ -68,6 +71,11 @@ import type { AppUpdater } from './updater';
 import type { VoiceClips } from './voice/voice-clips';
 
 const DRAFT_TEMPLATE_ID = `${CUSTOM_TEMPLATE_PREFIX}draft`;
+
+/** 预览面单模板用的示例数据（内容就叫「示例面单」，打印记录里不会出现：预览不打印）。 */
+function waybillSampleScan(): ScanResult {
+  return fieldsScan('示例面单', [...WAYBILL_SAMPLE_FIELDS]);
+}
 /** 打印记录编号是 UUID（36 个字符）；留出余量，挡住异常长的参数。 */
 const MAX_JOB_ID_LENGTH = 64;
 
@@ -183,8 +191,14 @@ export function registerIpc(deps: IpcDeps): void {
     const fallback = printTemplateFor(result).template;
     const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, fallback);
     // 模板页指定了要看的模板，不是规则选的；打印机也按这个模板重新决定（示例内容本来绑的是别的模板）。
+    // 面单要的是订单系统发来的字段，扫码内容填不出来：用示例面单数据预览。
+    const printer = await deps.choosePrinter(draft);
     const forDraft: PreviewResult =
-      result.status === 'ok' ? { ...result, printer: await deps.choosePrinter(draft) } : result;
+      draft.kind === 'waybill'
+        ? { status: 'ok', scan: waybillSampleScan(), recent: null, lookupFailure: null, printer }
+        : result.status === 'ok'
+          ? { ...result, printer }
+          : result;
     return renderPreview(forDraft, { template: draft, isBound: false }, await dpiFor(forDraft));
   });
   handle(IpcChannel.Print, (raw, options) =>
@@ -359,18 +373,21 @@ function renderPreview(result: PreviewResult, { template, isBound }: PrintTempla
       templateId: null,
       templateName: null,
       isTemplateBound: false,
-      qrOmitted: false,
+      warnings: NO_RENDER_WARNINGS,
       paper: null,
     };
   }
-  const { html, qrOmitted } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() }, dpi);
+  const { html, qrOmitted, barcodeOmitted, overflowCells } = renderLabelHtml(
+    { scan: result.scan, template, printedAt: Date.now() },
+    dpi,
+  );
   return {
     result,
     html,
     templateId: template.id,
     templateName: template.name,
     isTemplateBound: isBound,
-    qrOmitted,
+    warnings: { qrOmitted, barcodeOmitted, overflowCells },
     paper: template.paper,
   };
 }

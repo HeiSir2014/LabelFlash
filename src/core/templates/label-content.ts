@@ -1,6 +1,6 @@
 import { fieldValue, type ScanResult } from '../scan/scan-result';
 import { expandNoteText } from './note-text';
-import { type LabelTemplate, TEMPLATE_LIMITS, type TextStyle } from './template-model';
+import { type QrLabelTemplate, TEMPLATE_LIMITS, type TextStyle } from './template-model';
 
 /** 字段区的一行：前缀一列、值一列。值可能有多行。 */
 export interface FieldRow {
@@ -21,7 +21,7 @@ export interface ResolvedFields {
  * 二维码旁要显示的字段行。
  * 「指定字段」只显示本次识别到的字段；一个都没识别到时按「全部字段」显示，标签不会空白。
  */
-export function resolveFields(template: LabelTemplate, scan: ScanResult): ResolvedFields {
+export function resolveFields(template: QrLabelTemplate, scan: ScanResult): ResolvedFields {
   const { mode, slots } = template.fieldsArea;
   if (mode === 'pick') {
     const rows = slots.flatMap((slot) => {
@@ -36,7 +36,7 @@ export function resolveFields(template: LabelTemplate, scan: ScanResult): Resolv
 }
 
 /** 按识别顺序列出全部字段，最多 6 行；放不下时最后一行写「…等 N 项」。 */
-function allFieldRows(template: LabelTemplate, scan: ScanResult): FieldRow[] {
+function allFieldRows(template: QrLabelTemplate, scan: ScanResult): FieldRow[] {
   const { all } = template.fieldsArea;
   const style: TextStyle = { fontSizeMm: all.fontSizeMm, bold: all.bold };
   // 空值（例如查找表没查到）不占一行。
@@ -56,7 +56,7 @@ function allFieldRows(template: LabelTemplate, scan: ScanResult): FieldRow[] {
 }
 
 /** 二维码内容；字段没识别到、文本展开后为空时，退回原始内容。 */
-export function resolveQrText(template: LabelTemplate, scan: ScanResult, printedAt: Date): string {
+export function resolveQrText(template: QrLabelTemplate, scan: ScanResult, printedAt: Date): string {
   const { content } = template.qr;
   switch (content.kind) {
     case 'raw':

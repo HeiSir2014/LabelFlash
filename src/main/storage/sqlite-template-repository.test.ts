@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { STANDARD_TEMPLATE } from '../../core/templates/builtin-templates';
 import { maxQrSizeMm } from '../../core/templates/template-model';
 import { FakeClock } from '../../core/testing/fake-clock';
+import { labelOf } from '../../core/testing/templates';
 import { openDatabase } from './database';
 import { SqliteTemplateRepository } from './sqlite-template-repository';
 
@@ -48,7 +49,7 @@ describe('SqliteTemplateRepository', () => {
     const [only] = repository.listCustom();
     expect(repository.listCustom()).toHaveLength(1);
     expect(only?.name).toBe('旧版');
-    expect(only?.qr.sizeMm).toBe(maxQrSizeMm(STANDARD_TEMPLATE.paper, STANDARD_TEMPLATE.paddingMm));
+    expect(labelOf(only).qr.sizeMm).toBe(maxQrSizeMm(STANDARD_TEMPLATE.paper, STANDARD_TEMPLATE.paddingMm));
   });
 
   test('keeps the paper and printer of a template', () => {

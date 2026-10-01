@@ -7,6 +7,7 @@ import type { PrinterChoice } from './printing/resolve-printer';
 import { type EnrichContext, type EnrichResult, NO_ENRICH_CONTEXT } from './scan/enrich';
 import { MAX_RAW_LENGTH, normalizeRaw } from './scan/normalize-raw';
 import type { ScanField, ScanResult } from './scan/scan-result';
+import { GENERIC_TEMPLATE } from './templates/builtin-templates';
 import { type LabelTemplate, withPaper } from './templates/template-model';
 import type {
   Clock,
@@ -219,7 +220,9 @@ export class PrintService {
    */
   async printTest(printerName: string, paper: PaperSize): Promise<PrintResult> {
     const scan = this.deps.recognize(TEST_RAW) ?? TEST_FALLBACK_SCAN;
-    const template = withPaper(this.deps.resolveTemplate(scan), paper);
+    // 测试内容填不出面单（面单要订单系统的字段）：规则绑的是面单模板时，按通用标签打。
+    const resolved = this.deps.resolveTemplate(scan);
+    const template = withPaper(resolved.kind === 'waybill' ? GENERIC_TEMPLATE : resolved, paper);
     try {
       await this.deps.queue.enqueue(printerName, (signal) =>
         this.deps.adapter.print(printerName, this.createJob(scan, template), signal),

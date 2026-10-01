@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { STANDARD_TEMPLATE } from '../templates/builtin-templates';
-import type { LabelTemplate } from '../templates/template-model';
+import { DEPPON_TWO_PART, PLATFORM_TWO_PART } from '../templates/builtin-waybills';
+import type { QrLabelTemplate } from '../templates/template-model';
 import { templateFields } from './template-fields';
 
 const SLOT = { prefix: '', fontSizeMm: 3, bold: false };
 
-function withParts(parts: Partial<LabelTemplate>): LabelTemplate {
+function withParts(parts: Partial<QrLabelTemplate>): QrLabelTemplate {
   return { ...STANDARD_TEMPLATE, ...parts };
 }
 
@@ -42,5 +43,19 @@ describe('templateFields', () => {
       note: { ...STANDARD_TEMPLATE.note, visible: false, text: '{货架号}' },
     });
     expect(templateFields(template)).toEqual({ mode: 'ALL', names: ['订单号'] });
+  });
+
+  test('lists every variable a waybill uses, top to bottom, without the fixed ones', () => {
+    const { mode, names } = templateFields(PLATFORM_TWO_PART);
+    expect(mode).toBe('PICKED');
+    expect(names.slice(0, 5)).toEqual(['快递公司', '产品类型', '三段码', '集包编码', '集包地']);
+    expect(names).toContain('运单号');
+    expect(names).toContain('二维码');
+    expect(names).not.toContain('日期');
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  test('lists the Deppon routing fields', () => {
+    expect(templateFields(DEPPON_TWO_PART).names).toEqual(expect.arrayContaining(['路由站1', '路由码4', '末端码']));
   });
 });

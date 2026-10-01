@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../scan/scan-result';
 import { InMemoryTemplateRepository } from '../testing/in-memory-repositories';
+import { labelOf } from '../testing/templates';
 import { BUILT_IN_TEMPLATES, DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from './builtin-templates';
 import { expandNoteText } from './note-text';
 import { sanitizeTemplate } from './sanitize-template';
@@ -33,10 +34,15 @@ function createCatalog() {
   return { repository, catalog };
 }
 
+/** 这些用例都是标签模板：结果收窄成标签模板再断言。 */
+function sanitizeLabel(...args: Parameters<typeof sanitizeTemplate>) {
+  return labelOf(sanitizeTemplate(...args));
+}
+
 describe('built-in templates', () => {
   test('are all valid and unchanged by sanitizing', () => {
     for (const template of BUILT_IN_TEMPLATES) {
-      expect(sanitizeTemplate(template, template.id, STANDARD_TEMPLATE)).toEqual(template);
+      expect(sanitizeTemplate(template, template.id, template)).toEqual(template);
     }
   });
 
@@ -56,7 +62,9 @@ describe('built-in templates', () => {
 
   // 内置规则都会从手机拍的标签上读货架号：每个挑字段的内置模板都要显示它（没读到时这一行不显示）。
   test('every built-in template that picks fields shows the shelf number', () => {
-    for (const template of BUILT_IN_TEMPLATES.filter((item) => item.fieldsArea.mode === 'pick')) {
+    for (const template of BUILT_IN_TEMPLATES.flatMap((item) =>
+      item.kind === 'label' && item.fieldsArea.mode === 'pick' ? [item] : [],
+    )) {
       expect(template.fieldsArea.slots.map((slot) => slot.field)).toContain('货架号');
     }
   });
@@ -64,7 +72,7 @@ describe('built-in templates', () => {
 
 describe('sanitizeTemplate', () => {
   test('falls back field by field and always uses the given id', () => {
-    const result = sanitizeTemplate(
+    const result = sanitizeLabel(
       { id: 'evil', name: '我的模板', layout: 'nope', qr: { sizeMm: 'x' } },
       'custom:1',
       STANDARD_TEMPLATE,
@@ -76,7 +84,7 @@ describe('sanitizeTemplate', () => {
   });
 
   test('clamps padding, QR and font sizes to the allowed ranges', () => {
-    const result = sanitizeTemplate(
+    const result = sanitizeLabel(
       {
         paddingMm: 50,
         qr: { sizeMm: 500 },
@@ -104,32 +112,32 @@ describe('sanitizeTemplate', () => {
       { field: '颜色' },
       ...Array.from({ length: 10 }, (_, index) => ({ field: `字段${index}` })),
     ];
-    const result = sanitizeTemplate({ fieldsArea: { mode: 'pick', slots } }, 'custom:1', STANDARD_TEMPLATE);
+    const result = sanitizeLabel({ fieldsArea: { mode: 'pick', slots } }, 'custom:1', STANDARD_TEMPLATE);
     expect(result.fieldsArea.slots).toHaveLength(TEMPLATE_LIMITS.slots);
     expect(result.fieldsArea.slots.slice(0, 2).map((slot) => slot.field)).toEqual(['颜色', '字段0']);
   });
 
   test('accepts both arrangements and keeps the separator on one line', () => {
-    const result = sanitizeTemplate(
+    const result = sanitizeLabel(
       { fieldsArea: { arrangement: 'stacked', all: { separator: ':\n' } } },
       'custom:1',
       GENERIC_TEMPLATE,
     );
     expect(result.fieldsArea.arrangement).toBe('stacked');
     expect(result.fieldsArea.all.separator).toBe(':');
-    const unknown = sanitizeTemplate({ fieldsArea: { arrangement: 'diagonal' } }, 'custom:1', GENERIC_TEMPLATE);
+    const unknown = sanitizeLabel({ fieldsArea: { arrangement: 'diagonal' } }, 'custom:1', GENERIC_TEMPLATE);
     expect(unknown.fieldsArea.arrangement).toBe(GENERIC_TEMPLATE.fieldsArea.arrangement);
   });
 
   test('keeps the existing picked fields when the input is not a list', () => {
-    const result = sanitizeTemplate({ fieldsArea: { mode: 'all', slots: 'x' } }, 'custom:1', STANDARD_TEMPLATE);
+    const result = sanitizeLabel({ fieldsArea: { mode: 'all', slots: 'x' } }, 'custom:1', STANDARD_TEMPLATE);
     expect(result.fieldsArea.mode).toBe('all');
     expect(result.fieldsArea.slots).toEqual(STANDARD_TEMPLATE.fieldsArea.slots);
   });
 
   test('accepts every QR content source and rejects a malformed one', () => {
     const sanitizeQr = (content: unknown) =>
-      sanitizeTemplate({ qr: { content } }, 'custom:1', STANDARD_TEMPLATE).qr.content;
+      sanitizeLabel({ qr: { content } }, 'custom:1', STANDARD_TEMPLATE).qr.content;
     expect(sanitizeQr({ kind: 'field', field: '订单号' })).toEqual({ kind: 'field', field: '订单号' });
     expect(sanitizeQr({ kind: 'text', text: 'https://example.com/{订单号}' })).toEqual({
       kind: 'text',
@@ -140,18 +148,18 @@ describe('sanitizeTemplate', () => {
   });
 
   test('strips control characters but keeps line breaks in notes', () => {
-    const result = sanitizeTemplate({ note: { text: '第一行\n第二\u0007行' } }, 'custom:1', STANDARD_TEMPLATE);
+    const result = sanitizeLabel({ note: { text: '第一行\n第二\u0007行' } }, 'custom:1', STANDARD_TEMPLATE);
     expect(result.note.text).toBe('第一行\n第二行');
   });
 
   test('truncates long text', () => {
-    const result = sanitizeTemplate({ note: { text: 'x'.repeat(1_000) } }, 'custom:1', STANDARD_TEMPLATE);
+    const result = sanitizeLabel({ note: { text: 'x'.repeat(1_000) } }, 'custom:1', STANDARD_TEMPLATE);
     expect(result.note.text).toHaveLength(TEMPLATE_LIMITS.noteLength);
   });
 
   test('keeps the fallback name when the new one is blank', () => {
-    expect(sanitizeTemplate({ name: '' }, 'custom:1', STANDARD_TEMPLATE).name).toBe(STANDARD_TEMPLATE.name);
-    expect(sanitizeTemplate({ name: '   ' }, 'custom:1', STANDARD_TEMPLATE).name).toBe(STANDARD_TEMPLATE.name);
+    expect(sanitizeLabel({ name: '' }, 'custom:1', STANDARD_TEMPLATE).name).toBe(STANDARD_TEMPLATE.name);
+    expect(sanitizeLabel({ name: '   ' }, 'custom:1', STANDARD_TEMPLATE).name).toBe(STANDARD_TEMPLATE.name);
   });
 });
 
@@ -187,7 +195,7 @@ describe('TemplateCatalog', () => {
 
   test('duplicate creates an editable custom copy', () => {
     const { catalog, repository } = createCatalog();
-    const copy = catalog.duplicate(STANDARD_TEMPLATE.id);
+    const copy = labelOf(catalog.duplicate(STANDARD_TEMPLATE.id));
     expect(copy.id).toBe(`${CUSTOM_TEMPLATE_PREFIX}t1`);
     expect(copy.name).toBe(`${STANDARD_TEMPLATE.name} 副本`);
     expect(repository.saved.get(copy.id)).toEqual(copy);
@@ -199,8 +207,8 @@ describe('TemplateCatalog', () => {
 
   test('save sanitizes and persists a custom template', () => {
     const { catalog } = createCatalog();
-    const copy = catalog.duplicate(STANDARD_TEMPLATE.id);
-    const saved = catalog.save(copy.id, { ...copy, note: { ...copy.note, visible: true, text: '样衣间' } });
+    const copy = labelOf(catalog.duplicate(STANDARD_TEMPLATE.id));
+    const saved = labelOf(catalog.save(copy.id, { ...copy, note: { ...copy.note, visible: true, text: '样衣间' } }));
     expect(saved.note).toMatchObject({ visible: true, text: '样衣间' });
     expect(catalog.get(copy.id)).toEqual(saved);
   });
@@ -228,13 +236,13 @@ describe('template paper and printer', () => {
 
   test('an old template without paper is 60x40 with no printer of its own', () => {
     const { paper: _paper, printer: _printer, ...old } = fallback;
-    const template = sanitizeTemplate(old, 'custom:old', fallback);
+    const template = sanitizeLabel(old, 'custom:old', fallback);
     expect(template.paper).toEqual({ widthMm: 60, heightMm: 40 });
     expect(template.printer).toBeNull();
   });
 
   test('keeps a waybill paper and a named printer', () => {
-    const template = sanitizeTemplate(
+    const template = sanitizeLabel(
       { ...fallback, paper: { widthMm: 100, heightMm: 180 }, printer: '面单机B' },
       'custom:waybill',
       fallback,
@@ -244,12 +252,12 @@ describe('template paper and printer', () => {
   });
 
   test('treats a blank or oversized printer name as no printer', () => {
-    expect(sanitizeTemplate({ ...fallback, printer: '  ' }, 'custom:a', fallback).printer).toBeNull();
-    expect(sanitizeTemplate({ ...fallback, printer: 'x'.repeat(257) }, 'custom:a', fallback).printer).toBeNull();
+    expect(sanitizeLabel({ ...fallback, printer: '  ' }, 'custom:a', fallback).printer).toBeNull();
+    expect(sanitizeLabel({ ...fallback, printer: 'x'.repeat(257) }, 'custom:a', fallback).printer).toBeNull();
   });
 
   test('limits the QR code to the short side of the paper', () => {
-    const small = sanitizeTemplate(
+    const small = sanitizeLabel(
       { ...fallback, paper: { widthMm: 40, heightMm: 30 }, qr: { ...fallback.qr, sizeMm: 36 } },
       'custom:small',
       fallback,

@@ -5,6 +5,7 @@ import type { ScanResult } from '../core/scan/scan-result';
 import { GENERIC_TEMPLATE, STANDARD_TEMPLATE } from '../core/templates/builtin-templates';
 import { TemplateCatalog } from '../core/templates/template-catalog';
 import { InMemoryRuleRepository, InMemoryTemplateRepository } from '../core/testing/in-memory-repositories';
+import { labelOf } from '../core/testing/templates';
 import { DEFAULT_SETTINGS } from '../shared/settings';
 import { activeRules, resolvePrintTemplate } from './print-template';
 
@@ -60,7 +61,7 @@ describe('resolvePrintTemplate', () => {
 
   test('applies the note chosen on the main screen', () => {
     const settings = { ...DEFAULT_SETTINGS, noteOverride: { kind: 'text', text: '返修' } as const };
-    expect(resolvePrintTemplate(createTemplates(), settings, null).template.note).toMatchObject({
+    expect(labelOf(resolvePrintTemplate(createTemplates(), settings, null).template).note).toMatchObject({
       visible: true,
       text: '返修',
     });

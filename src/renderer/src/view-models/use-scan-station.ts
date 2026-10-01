@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { PrintResult } from '../../../core/types';
 import type { LabelPreview, RendererPrintSource } from '../../../shared/ipc-contract';
+import { NO_RENDER_WARNINGS } from '../../../shared/render-warnings';
 import type { FeedbackEvent, PrintMode } from '../lib/feedback-cues';
 import { reportError } from '../lib/notices';
 import { QueryIndicator } from '../lib/query-indicator';
@@ -13,7 +14,7 @@ const NO_PREVIEW: LabelPreview = {
   templateId: null,
   templateName: null,
   isTemplateBound: false,
-  qrOmitted: false,
+  warnings: NO_RENDER_WARNINGS,
   paper: null,
 };
 /** 识别超过这么久（通常是查找表或接口查询）才显示「正在查询」，快的扫码不闪一下。 */

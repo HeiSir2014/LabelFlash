@@ -1,6 +1,9 @@
 import { DEFAULT_PAPER } from '../../shared/label-paper';
 import { sanitizePaper } from '../../shared/paper-sizes';
 import { isValidFieldName } from '../scan/rule-model';
+import { STANDARD_TEMPLATE } from './builtin-templates';
+import { PLATFORM_TWO_PART } from './builtin-waybills';
+import { sanitizeWaybillLayout } from './sanitize-waybill';
 import {
   type BottomLine,
   FIELD_ARRANGEMENTS,
@@ -14,6 +17,7 @@ import {
   QR_ERROR_LEVELS,
   QR_LAYOUTS,
   type QrContent,
+  type QrLabelTemplate,
   TEMPLATE_LIMITS,
   TEXT_ALIGNS,
   type TextStyle,
@@ -26,21 +30,48 @@ const DEFAULT_SLOT_STYLE: TextStyle = { fontSizeMm: 3.2, bold: true };
 
 /**
  * 把不可信的输入（IPC、数据库）收敛成合法模板：缺失或类型错误的字段取 fallback，数值夹到允许范围。
- * id 永远取调用方给定的值，不信任输入里的 id。
+ * id 永远取调用方给定的值，不信任输入里的 id。模板的类型（kind）跟着输入走：旧模板没有 kind，按标签模板读；
+ * 输入和 fallback 不是同一类时，版式部分的默认值取这一类的内置模板。
  */
-export function sanitizeTemplate(value: unknown, id: string, fallback: LabelTemplate): LabelTemplate {
+export function sanitizeTemplate(
+  value: unknown,
+  id: string,
+  fallback: LabelTemplate,
+  labelFallback: QrLabelTemplate = STANDARD_TEMPLATE,
+): LabelTemplate {
   const input = asLoose(value);
-  const qrInput = asLoose(input['qr']);
-  const { paddingMm, qrSizeMm, nameLength } = TEMPLATE_LIMITS;
+  const kind = input['kind'] === 'waybill' ? 'waybill' : 'label';
   // 旧模板（1.0.x）没有纸张字段：按 60×40 读出。
   const paper = sanitizePaper(input['paper'], fallback.paper ?? DEFAULT_PAPER);
-  const padding = clamp(input['paddingMm'], paddingMm.min, paddingMm.max, fallback.paddingMm);
-  return {
+  const base = {
     id,
     // 名称只用于列表显示：全空白等于没填，保留原名。
-    name: sanitizeText(input['name'], nameLength, fallback.name).trim() || fallback.name,
+    name: sanitizeText(input['name'], TEMPLATE_LIMITS.nameLength, fallback.name).trim() || fallback.name,
     paper,
     printer: sanitizePrinterName(input['printer']),
+  };
+  if (kind === 'waybill') {
+    const layoutFallback = fallback.kind === 'waybill' ? fallback : PLATFORM_TWO_PART;
+    return { kind, ...base, ...sanitizeWaybillLayout(input, layoutFallback) };
+  }
+  return sanitizeLabel(input, base, fallback.kind === 'label' ? fallback : labelFallback);
+}
+
+function sanitizeLabel(
+  input: Loose,
+  base: Omit<
+    QrLabelTemplate,
+    'kind' | 'paddingMm' | 'layout' | 'sideAlign' | 'bottomAlign' | 'qr' | 'fieldsArea' | 'bottom' | 'note'
+  >,
+  fallback: QrLabelTemplate,
+): QrLabelTemplate {
+  const qrInput = asLoose(input['qr']);
+  const { paddingMm, qrSizeMm } = TEMPLATE_LIMITS;
+  const { paper } = base;
+  const padding = clamp(input['paddingMm'], paddingMm.min, paddingMm.max, fallback.paddingMm);
+  return {
+    kind: 'label',
+    ...base,
     paddingMm: padding,
     layout: pick(input['layout'], QR_LAYOUTS, fallback.layout),
     sideAlign: pick(input['sideAlign'], TEXT_ALIGNS, fallback.sideAlign),

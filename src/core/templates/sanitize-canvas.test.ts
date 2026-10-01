@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { GENERIC_TEMPLATE } from './builtin-templates';
 import type { CanvasTemplate } from './canvas-model';
 import { newCanvasElement } from './canvas-model';
-import { sanitizeCanvasElements } from './sanitize-canvas';
+import { MAX_IMAGE_BASE64_LENGTH, sanitizeCanvasElements } from './sanitize-canvas';
 import { sanitizeTemplate } from './sanitize-template';
 
 const PAPER = { widthMm: 60, heightMm: 40 };
@@ -101,6 +101,12 @@ describe('sanitizeCanvasElements', () => {
     const pixelsWithWhitespace = '/\n/\t8 =';
     const [image] = sanitize([{ kind: 'image', pixels: pixelsWithWhitespace, pixelWidth: 2, pixelHeight: 1 }]);
     expect(image).toMatchObject({ kind: 'image', pixels: '//8=' });
+  });
+
+  test('rejects a pixel string longer than the base64 limit before stripping whitespace', () => {
+    // 前面一大段空白超过长度上限，真正的内容在最后；如果先去空白再判断长度，这张图会被接受，暴露不了问题。
+    const tooLong = `${' '.repeat(MAX_IMAGE_BASE64_LENGTH + 1)}/w==`;
+    expect(sanitize([{ kind: 'image', pixels: tooLong, pixelWidth: 1, pixelHeight: 1 }])).toEqual([]);
   });
 
   test('drops an image whose side exceeds the pixel limit', () => {
@@ -212,6 +218,28 @@ describe('sanitizeTemplate for canvas templates', () => {
     };
     const result = sanitizeTemplate({ kind: 'canvas', name: '新' }, 'custom:c2', fallbackTemplate);
     expect(result.kind === 'canvas' && result.elements).toEqual(fallbackTemplate.elements);
+  });
+
+  test('re-sanitizes the previous elements against the new paper when elements is missing', () => {
+    const widePaper = { widthMm: 60, heightMm: 40 };
+    const narrowPaper = { widthMm: 30, heightMm: 40 };
+    const wideRect = { ...newCanvasElement('rect', 'wide-rect', widePaper), x: 50, width: 10 };
+    const fallbackTemplate: CanvasTemplate = {
+      kind: 'canvas',
+      id: 'x',
+      name: '旧',
+      paper: widePaper,
+      printer: null,
+      elements: [wideRect],
+    };
+    const result = sanitizeTemplate({ kind: 'canvas', name: '新', paper: narrowPaper }, 'custom:c3', fallbackTemplate);
+    if (result.kind !== 'canvas') throw new Error('expected a canvas template');
+    const [rect] = result.elements;
+    expect(rect).toBeDefined();
+    // 没放进新的 30mm 纸里，而是被重新收边：不能继续停在旧纸的 50mm 处。
+    expect((rect?.x ?? 0) + (rect?.width ?? 0)).toBeLessThanOrEqual(narrowPaper.widthMm);
+    // 不是把 fallback 的数组原样给出去。
+    expect(result.elements).not.toBe(fallbackTemplate.elements);
   });
 
   test('reads an unknown kind as a label template', () => {

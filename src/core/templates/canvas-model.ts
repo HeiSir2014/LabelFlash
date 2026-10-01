@@ -103,7 +103,7 @@ export interface CanvasTableCell {
 }
 
 /** 表格新格子的默认样式：新建表格、校验时缺了字段都用它，只在这一处写一次，不会和 `newCanvasElement` 的默认值走散。 */
-export const DEFAULT_TABLE_CELL: CanvasTableCell = { text: '', fontSizeMm: 2.8, bold: false, align: 'left' };
+export const DEFAULT_TABLE_CELL: Readonly<CanvasTableCell> = { text: '', fontSizeMm: 2.8, bold: false, align: 'left' };
 
 /** 图片默认怎么转黑白、阈值多少：新建图片、校验时缺了字段都用它。 */
 export const DEFAULT_IMAGE_MODE: ImageMode = 'threshold';

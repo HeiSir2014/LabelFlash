@@ -56,12 +56,15 @@ export function sanitizeTemplate(
     return { kind, ...base, ...sanitizeWaybillLayout(input, layoutFallback) };
   }
   if (kind === 'canvas') {
-    // 元素列表缺失或类型不对时，和其他字段一样回退到 fallback 本身的值，不是清空成没有元素。
-    const elements =
-      !Array.isArray(input['elements']) && fallback.kind === 'canvas'
+    // 元素列表缺失或类型不对时，和其他字段一样回退到 fallback 本身的值；但纸张可能换小了，
+    // 仍要经 sanitizeCanvasElements 按新纸张重新收边，不能把 fallback 的元素原样搬过来（旧元素可能落在新纸外），
+    // 也不能直接共享 fallback 的数组引用。
+    const source = Array.isArray(input['elements'])
+      ? input['elements']
+      : fallback.kind === 'canvas'
         ? fallback.elements
-        : sanitizeCanvasElements(input['elements'], paper);
-    return { kind, ...base, elements };
+        : [];
+    return { kind, ...base, elements: sanitizeCanvasElements(source, paper) };
   }
   return sanitizeLabel(input, base, fallback.kind === 'label' ? fallback : labelFallback);
 }

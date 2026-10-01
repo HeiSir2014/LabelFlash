@@ -104,10 +104,12 @@ export type LabelTemplate = QrLabelTemplate | WaybillTemplate | CanvasTemplate;
 export type TemplateKind = LabelTemplate['kind'];
 
 /**
- * 和 TemplateKind 对应的清单，sanitizeTemplate 校验输入的 kind 时用它。`satisfies` 保证数组里的每一项都在
- * TemplateKind 里（加了新的模板种类却忘了同步会在这行报错）。
+ * 和 TemplateKind 对应的清单，sanitizeTemplate 校验输入的 kind 时用它。穷尽检查靠 TEMPLATE_KIND_SET：
+ * 它是 `Record<TemplateKind, true>`，TemplateKind 多一个或少一个取值，这一行都会报类型错误
+ * （只用 `satisfies readonly TemplateKind[]` 查数组只能挡多写，挡不住漏写）。
  */
-export const TEMPLATE_KINDS = ['label', 'waybill', 'canvas'] as const satisfies readonly TemplateKind[];
+const TEMPLATE_KIND_SET = { label: true, waybill: true, canvas: true } satisfies Record<TemplateKind, true>;
+export const TEMPLATE_KINDS: readonly TemplateKind[] = Object.keys(TEMPLATE_KIND_SET) as TemplateKind[];
 
 export const TEMPLATE_LIMITS = {
   paddingMm: { min: 0, max: 6 },

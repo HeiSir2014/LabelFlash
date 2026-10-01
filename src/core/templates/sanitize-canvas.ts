@@ -31,8 +31,11 @@ const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
  */
 const IMAGE_BASE64_WHITESPACE_ALLOWANCE = 64 * 1024;
 
-/** base64 文本长度上限：按最大允许的图片字节数经 base64 膨胀（4/3 倍，向上取整到 4 的倍数）反推，再加上空白容忍。 */
-const MAX_IMAGE_BASE64_LENGTH = Math.ceil(CANVAS_LIMITS.imageBytes / 3) * 4 + IMAGE_BASE64_WHITESPACE_ALLOWANCE;
+/**
+ * base64 文本长度上限：按最大允许的图片字节数经 base64 膨胀（4/3 倍，向上取整到 4 的倍数）反推，再加上空白容忍。
+ * 导出给测试用，不用在测试里重新算一遍同样的公式。
+ */
+export const MAX_IMAGE_BASE64_LENGTH = Math.ceil(CANVAS_LIMITS.imageBytes / 3) * 4 + IMAGE_BASE64_WHITESPACE_ALLOWANCE;
 
 /**
  * 不可信的元素列表 → 合法元素：认不出的类型、像素对不上的图片直接丢掉，其余每一项缺了或不对就取这一类的默认值；

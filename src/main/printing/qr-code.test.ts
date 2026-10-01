@@ -41,14 +41,18 @@ describe('planQr', () => {
 });
 
 describe('planQr with a quiet zone', () => {
+  // 这里的静区模块数只是一个测试用的值，和 MIN_MODULE_DOTS（模块最小点数）没有关系——两者凑巧都是 2，
+  // 用一个独立命名的常量，不让读的人以为这两套限制是同一回事。
+  const QUIET_ZONE_MODULES = 2;
+
   test('counts the quiet zone against the box so the modules shrink to leave room for it', () => {
     const withoutQuietZone = planQr('A001', 'M', BOX_MM);
-    const withQuietZone = planQr('A001', 'M', BOX_MM, DEFAULT_PRINTER_DPI, 2);
+    const withQuietZone = planQr('A001', 'M', BOX_MM, DEFAULT_PRINTER_DPI, QUIET_ZONE_MODULES);
     if (!withoutQuietZone || !withQuietZone) throw new Error('expected both plans');
     expect(withQuietZone.moduleCount).toBe(withoutQuietZone.moduleCount);
     // 静区占去的点数不能再用来放大模块：留了静区的模块数不能比没留的大。
     expect(withQuietZone.moduleDots).toBeLessThanOrEqual(withoutQuietZone.moduleDots);
-    const total = (withQuietZone.moduleCount + 2 * 2) * withQuietZone.moduleDots;
+    const total = (withQuietZone.moduleCount + 2 * QUIET_ZONE_MODULES) * withQuietZone.moduleDots;
     const boxDots = Math.floor(BOX_MM / dotMm(DEFAULT_PRINTER_DPI) + 1e-9);
     expect(total).toBeLessThanOrEqual(boxDots);
   });
@@ -59,7 +63,7 @@ describe('planQr with a quiet zone', () => {
     if (moduleCount === undefined) throw new Error('expected a module count');
     const tightBoxMm = moduleCount * MIN_MODULE_DOTS * dotMm(DEFAULT_PRINTER_DPI);
     expect(planQr('A001', 'M', tightBoxMm)).not.toBeNull();
-    expect(planQr('A001', 'M', tightBoxMm, DEFAULT_PRINTER_DPI, MIN_MODULE_DOTS)).toBeNull();
+    expect(planQr('A001', 'M', tightBoxMm, DEFAULT_PRINTER_DPI, QUIET_ZONE_MODULES)).toBeNull();
   });
 
   test('defaults to no quiet zone, same as before the parameter existed', () => {

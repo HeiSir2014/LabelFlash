@@ -13,7 +13,7 @@ import type { LabelJob } from '../../core/types';
 import { NO_RENDER_WARNINGS, type RenderWarnings } from '../../shared/render-warnings';
 import { linearBarsPath, MIN_BAR_HEIGHT_MM, moduleDotsFor, QUIET_ZONE_MODULES, WAYBILL_MAX_MODULE_MM } from './barcode';
 import { encodeCode128 } from './code128';
-import { escapeHtml, mm } from './html-text';
+import { BARCODE_TEXT_GAP_MM, DASH_GAP_MM, DASH_MM, escapeHtml, mm } from './html-text';
 import { DEFAULT_PRINTER_DPI, dotMm, planQr } from './qr-code';
 
 /**
@@ -21,17 +21,12 @@ import { DEFAULT_PRINTER_DPI, dotMm, planQr } from './qr-code';
  * 浏览器只负责照着画（打印窗口不运行脚本）。预览和打印共用这一份。
  */
 
-/** 号码和条码之间的空隙（mm）：面单、自由设计共用，不能各写一份各改各的，两边会慢慢对不上。 */
-export const BARCODE_TEXT_GAP_MM = 0.4;
 /** 条码下的号码稍微拉开字距，数字更好认。 */
 const BARCODE_TEXT_LETTER_SPACING_EM = 0.04;
 /** 二维码按 M 级容错：面单二维码内容短，M 级足够；放不下时 planQr 逐级降低。 */
 const QR_ERROR_LEVEL = 'M';
 /** 反白的黑底比格子四边各缩进这么多：上下相邻的两个黑块之间留出白缝，不连成一片。 */
 const INVERSE_INSET_MM = 0.4;
-/** 虚线：一段 1.2mm、空 0.8mm。面单、自由设计共用。 */
-export const DASH_MM = 1.2;
-export const DASH_GAP_MM = 0.8;
 
 export interface RenderedWaybill extends RenderWarnings {
   html: string;

@@ -159,7 +159,7 @@ describe('renderCanvasHtml', () => {
       element('qr', { name: '二维码A', value: '很长的内容'.repeat(200), width: 5, height: 5 }),
     ]);
     expect(qrOmitted).toBe(true);
-    expect(issues).toContain('二维码「二维码A」内容太长、框太小，这张不印二维码');
+    expect(issues).toContain('二维码「二维码A」不印：内容太长、框太小');
     expect(html).not.toContain('<path');
   });
 
@@ -208,6 +208,26 @@ describe('renderCanvasHtml', () => {
     ]);
     expect(overflowCells).toBeGreaterThan(0);
     expect(issues).toContain('条码「长号」下面的号码放不下，已截断');
+  });
+
+  test('reports a barcode number at about 99% of its frame width as truncated', () => {
+    // 13 位数字按字宽表估算约 39.66mm，40mm 的框取整到打印点后约 40.04mm：号码比框窄，但窄不过 2%
+    // 的余量（LINE_WIDTH_SLACK）——号码总是加粗显示，字宽表却是按不加粗估的，这 2% 正是用来兜住
+    // 这类估算误差，不加这道折扣就会把印不全的号码当成印得下。
+    const { issues, overflowCells } = render([
+      element('barcode', {
+        name: '号码',
+        symbology: 'code128',
+        value: '{商品码}',
+        textSizeMm: 4.8,
+        width: 40,
+        height: 25,
+        x: 0,
+        y: 0,
+      }),
+    ]);
+    expect(overflowCells).toBeGreaterThan(0);
+    expect(issues).toContain('条码「号码」下面的号码放不下，已截断');
   });
 
   test('leaves at least two quiet-zone modules on each side of a canvas QR code', () => {
@@ -283,7 +303,7 @@ describe('renderCanvasHtml', () => {
     const { html, issues } = render([
       element('image', { name: '图片A', pixels: 'AA==', pixelWidth: 2, pixelHeight: 2 }),
     ]);
-    expect(issues).toContain('图片「图片A」的数据坏了，这张不印这张图');
+    expect(issues).toContain('图片「图片A」不印：数据坏了');
     expect(html).not.toContain('<img');
   });
 

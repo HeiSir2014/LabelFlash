@@ -8,7 +8,7 @@ import {
 } from '../../core/templates/canvas-model';
 import { decodeGray, fitContain, monoBmp, resizeGray, toMono } from '../../core/templates/mono-image';
 import { LINE_HEIGHT } from '../../core/templates/text-fit';
-import { textWidthMm } from '../../core/templates/waybill-layout';
+import { LINE_WIDTH_SLACK, textWidthMm } from '../../core/templates/waybill-layout';
 import type { LabelJob } from '../../core/types';
 import type { RenderWarnings } from '../../shared/render-warnings';
 import {
@@ -21,10 +21,8 @@ import {
   moduleDotsFor,
   QUIET_ZONE_MODULES,
 } from './barcode';
-import { escapeHtml, mm } from './html-text';
+import { BARCODE_TEXT_GAP_MM, DASH_GAP_MM, DASH_MM, escapeHtml, mm } from './html-text';
 import { DEFAULT_PRINTER_DPI, dotMm, planQr } from './qr-code';
-// 号码和条码的间隙、虚线的样式：和面单共用同一份常量，两份 HTML 才不会悄悄画出不一样的间距。
-import { BARCODE_TEXT_GAP_MM, DASH_GAP_MM, DASH_MM } from './waybill-html';
 
 /** 自由设计的二维码外，至少留 2 个模块的空白：和条码两侧的静区一个道理，给扫码设备留出辨认边界的余地。 */
 const CANVAS_QR_QUIET_ZONE_MODULES = 2;
@@ -213,7 +211,9 @@ function barcodeHtml(
     text = `<div class="code__text" style="font-size:${mm(element.textSizeMm)};margin-top:${mm(BARCODE_TEXT_GAP_MM)}">${escapeHtml(value)}</div>`;
     // 号码比条码的整个框还宽时，外层 .frame 会把超出的部分裁掉（frame 设了 overflow:hidden）——
     // 这确实是「已截断」，不是猜测，所以在这里报出来，并算进截断数（和面单的号码截断一个道理）。
-    if (textWidthMm(value, element.textSizeMm) > frame.width) {
+    // frame.width 打 LINE_WIDTH_SLACK 的折扣：textWidthMm 是按未加粗的字宽表估算的，号码却总是加粗显示
+    // （.code__text 的 font-weight: 700），加粗的字更宽，这 2% 的余量和面单折行用的是同一条规则。
+    if (textWidthMm(value, element.textSizeMm) > frame.width * (1 - LINE_WIDTH_SLACK)) {
       findings.overflowCount += 1;
       findings.issues.push(`条码「${name}」下面的号码放不下，已截断`);
     }
@@ -239,7 +239,7 @@ function qrHtml(
   );
   if (plan === null) {
     findings.qrOmitted = true;
-    findings.issues.push(`二维码「${element.name}」内容太长、框太小，这张不印二维码`);
+    findings.issues.push(`二维码「${element.name}」不印：内容太长、框太小`);
     return '';
   }
   const sizeDots = plan.moduleCount * plan.moduleDots;
@@ -256,7 +256,7 @@ function imageHtml(
 ): string {
   const gray = decodeGray(element.pixels, element.pixelWidth, element.pixelHeight);
   if (gray === null) {
-    findings.issues.push(`图片「${element.name}」的数据坏了，这张不印这张图`);
+    findings.issues.push(`图片「${element.name}」不印：数据坏了`);
     return '';
   }
   const box = fitContain(gray.width, gray.height, Math.round(frame.width / dot), Math.round(frame.height / dot));
@@ -294,10 +294,10 @@ function tableHtml(
   frame: { width: number; height: number },
   dot: number,
 ): string {
-  // content.borderMm 在排版时已经按点取整过（layoutCanvas 的 layoutTable，和这里用的是同一条 snapBorderDots 规则），
-  // 这里不重新取整、不用 CELL_PADDING_MM 重新算内边距，直接用排版给的值：两边分两次各算一遍，早晚会对不上。
-  const borderDots = snapBorderDots(content.borderMm, dot);
-  const border = borderDots * dot;
+  // content.borderMm 在排版时已经按点取整过（layoutCanvas 的 layoutTable，用的是 snapBorderDots），
+  // 这里直接拿来用、不重新调用 snapBorderDots，也不用 CELL_PADDING_MM 重新算内边距：两边各自算一遍，早晚会对不上。
+  const border = content.borderMm;
+  const borderDots = Math.round(border / dot);
   const { paddingMm } = content;
   const parts: string[] = [];
   let top = 0;

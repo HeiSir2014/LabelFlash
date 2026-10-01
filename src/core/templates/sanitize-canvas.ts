@@ -7,6 +7,9 @@ import {
   type CanvasElementBase,
   type CanvasElementKind,
   type CanvasTableCell,
+  DEFAULT_IMAGE_MODE,
+  DEFAULT_IMAGE_THRESHOLD,
+  DEFAULT_TABLE_CELL,
   IMAGE_MODES,
   newCanvasElement,
   ROTATIONS,
@@ -20,6 +23,16 @@ import { VERTICAL_ALIGNS } from './waybill-model';
 const ELEMENT_ID_PATTERN = /^[\w-]{1,32}$/;
 /** base64 只允许这些字符（去掉换行后）。 */
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * base64 文本里允许的空白字符数量的宽裕上限：标准换行是每 76 个字符一个，最坏情况下约等于正文长度 / 76；
+ * 给固定的 64 KiB 容忍已经远超这个比例，不用真的按比例算。超过这个长度在替换空白之前就拒绝，
+ * 不给不可信输入一个「构造超大字符串让 replace 白跑」的机会。
+ */
+const IMAGE_BASE64_WHITESPACE_ALLOWANCE = 64 * 1024;
+
+/** base64 文本长度上限：按最大允许的图片字节数经 base64 膨胀（4/3 倍，向上取整到 4 的倍数）反推，再加上空白容忍。 */
+const MAX_IMAGE_BASE64_LENGTH = Math.ceil(CANVAS_LIMITS.imageBytes / 3) * 4 + IMAGE_BASE64_WHITESPACE_ALLOWANCE;
 
 /**
  * 不可信的元素列表 → 合法元素：认不出的类型、像素对不上的图片直接丢掉，其余每一项缺了或不对就取这一类的默认值；
@@ -140,23 +153,27 @@ function sanitizeBase(input: Loose, fallback: CanvasElementBase, paper: PaperSiz
   };
 }
 
+/** 像素边长：正整数，且不超过 imageSidePixels（防止宽 1、高一百万这种畸形输入）。 */
+function isPixelSide(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= CANVAS_LIMITS.imageSidePixels;
+}
+
 function sanitizeImage(input: Loose, base: CanvasElementBase): CanvasElement | null {
   const width = input['pixelWidth'];
   const height = input['pixelHeight'];
-  const pixels = typeof input['pixels'] === 'string' ? input['pixels'].replace(/\s/g, '') : '';
-  const side = CANVAS_LIMITS.imageSidePixels;
-  if (
-    !Number.isInteger(width) ||
-    !Number.isInteger(height) ||
-    (width as number) < 1 ||
-    (height as number) < 1 ||
-    (width as number) > side ||
-    (height as number) > side ||
-    !BASE64_PATTERN.test(pixels)
-  ) {
+  if (!isPixelSide(width) || !isPixelSide(height)) {
     return null;
   }
-  const bytes = (width as number) * (height as number);
+  const rawPixels = input['pixels'];
+  // 先按长度拒绝，再去掉空白：不可信输入传一个几百 MB 的字符串时，不花时间去拷贝、替换它。
+  if (typeof rawPixels !== 'string' || rawPixels.length > MAX_IMAGE_BASE64_LENGTH) {
+    return null;
+  }
+  const pixels = rawPixels.replace(/\s/g, '');
+  if (!BASE64_PATTERN.test(pixels)) {
+    return null;
+  }
+  const bytes = width * height;
   if (bytes > CANVAS_LIMITS.imageBytes || base64ByteLength(pixels) !== bytes) {
     return null;
   }
@@ -164,10 +181,10 @@ function sanitizeImage(input: Loose, base: CanvasElementBase): CanvasElement | n
     ...base,
     kind: 'image',
     pixels,
-    pixelWidth: width as number,
-    pixelHeight: height as number,
-    mode: pick(input['mode'], IMAGE_MODES, 'threshold'),
-    threshold: Math.round(clamp(input['threshold'], 0, 255, 128)),
+    pixelWidth: width,
+    pixelHeight: height,
+    mode: pick(input['mode'], IMAGE_MODES, DEFAULT_IMAGE_MODE),
+    threshold: Math.round(clamp(input['threshold'], 0, 255, DEFAULT_IMAGE_THRESHOLD)),
   };
 }
 
@@ -178,8 +195,10 @@ function base64ByteLength(base64: string): number {
 }
 
 function sanitizeTable(input: Loose, base: CanvasElementBase, borderFallback: number): CanvasElement {
-  const rowsMm = sanitizeSizes(input['rowsMm'], CANVAS_LIMITS.tableRows, [base.height]);
-  const columnsMm = sanitizeSizes(input['columnsMm'], CANVAS_LIMITS.tableColumns, [base.width]);
+  // 行高夹到元素高度以内、列宽夹到元素宽度以内：既防止 1.7e308 这类畸形输入累加成 Infinity，
+  // 也保证单独一行/一列不会比整个表格元素还大。
+  const rowsMm = sanitizeSizes(input['rowsMm'], CANVAS_LIMITS.tableRows, base.height, [base.height]);
+  const columnsMm = sanitizeSizes(input['columnsMm'], CANVAS_LIMITS.tableColumns, base.width, [base.width]);
   const rowsInput = Array.isArray(input['cells']) ? input['cells'] : [];
   const cells: CanvasTableCell[][] = rowsMm.map((_, row) => {
     const rowInput = Array.isArray(rowsInput[row]) ? (rowsInput[row] as unknown[]) : [];
@@ -195,14 +214,12 @@ function sanitizeTable(input: Loose, base: CanvasElementBase, borderFallback: nu
   };
 }
 
-/** 行高、列宽：非负的数，至少一项，最多 limit 项；最后一项排版时按剩下的算，这里不管。 */
-function sanitizeSizes(value: unknown, limit: number, fallback: number[]): number[] {
+/** 行高、列宽：夹到 [0, max] 内，至少一项，最多 limit 项；最后一项排版时按剩下的算，这里不管。 */
+function sanitizeSizes(value: unknown, limit: number, max: number, fallback: number[]): number[] {
   if (!Array.isArray(value)) {
     return fallback;
   }
-  const sizes = value
-    .slice(0, limit)
-    .map((size) => (typeof size === 'number' && Number.isFinite(size) && size >= 0 ? size : 0));
+  const sizes = value.slice(0, limit).map((size) => clamp(size, 0, max, 0));
   return sizes.length > 0 ? sizes : fallback;
 }
 
@@ -210,9 +227,9 @@ function sanitizeCell(value: unknown): CanvasTableCell {
   const input = asLoose(value);
   const { fontSizeMm } = CANVAS_LIMITS;
   return {
-    text: sanitizeText(input['text'], CANVAS_LIMITS.textLength, ''),
-    fontSizeMm: clamp(input['fontSizeMm'], fontSizeMm.min, fontSizeMm.max, 2.8),
-    bold: bool(input['bold'], false),
-    align: pick(input['align'], TEXT_ALIGNS, 'left'),
+    text: sanitizeText(input['text'], CANVAS_LIMITS.textLength, DEFAULT_TABLE_CELL.text),
+    fontSizeMm: clamp(input['fontSizeMm'], fontSizeMm.min, fontSizeMm.max, DEFAULT_TABLE_CELL.fontSizeMm),
+    bold: bool(input['bold'], DEFAULT_TABLE_CELL.bold),
+    align: pick(input['align'], TEXT_ALIGNS, DEFAULT_TABLE_CELL.align),
   };
 }

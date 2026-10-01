@@ -20,6 +20,7 @@ import {
   QR_LAYOUTS,
   type QrContent,
   type QrLabelTemplate,
+  TEMPLATE_KINDS,
   TEMPLATE_LIMITS,
   TEXT_ALIGNS,
   type TextStyle,
@@ -40,7 +41,7 @@ export function sanitizeTemplate(
   labelFallback: QrLabelTemplate = GENERIC_TEMPLATE,
 ): LabelTemplate {
   const input = asLoose(value);
-  const kind = pick(input['kind'], ['label', 'waybill', 'canvas'] as const, 'label');
+  const kind = pick(input['kind'], TEMPLATE_KINDS, 'label');
   // 旧模板（1.0.x）没有纸张字段：按 60×40 读出。
   const paper = sanitizePaper(input['paper'], fallback.paper ?? DEFAULT_PAPER);
   const base = {
@@ -55,7 +56,12 @@ export function sanitizeTemplate(
     return { kind, ...base, ...sanitizeWaybillLayout(input, layoutFallback) };
   }
   if (kind === 'canvas') {
-    return { kind, ...base, elements: sanitizeCanvasElements(input['elements'], paper) };
+    // 元素列表缺失或类型不对时，和其他字段一样回退到 fallback 本身的值，不是清空成没有元素。
+    const elements =
+      !Array.isArray(input['elements']) && fallback.kind === 'canvas'
+        ? fallback.elements
+        : sanitizeCanvasElements(input['elements'], paper);
+    return { kind, ...base, elements };
   }
   return sanitizeLabel(input, base, fallback.kind === 'label' ? fallback : labelFallback);
 }

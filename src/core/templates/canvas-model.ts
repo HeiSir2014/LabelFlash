@@ -102,6 +102,13 @@ export interface CanvasTableCell {
   align: TextAlign;
 }
 
+/** 表格新格子的默认样式：新建表格、校验时缺了字段都用它，只在这一处写一次，不会和 `newCanvasElement` 的默认值走散。 */
+export const DEFAULT_TABLE_CELL: CanvasTableCell = { text: '', fontSizeMm: 2.8, bold: false, align: 'left' };
+
+/** 图片默认怎么转黑白、阈值多少：新建图片、校验时缺了字段都用它。 */
+export const DEFAULT_IMAGE_MODE: ImageMode = 'threshold';
+export const DEFAULT_IMAGE_THRESHOLD = 128;
+
 export interface CanvasTable extends CanvasElementBase {
   kind: 'table';
   /** 行高（mm），最后一行占剩下的。 */
@@ -256,7 +263,15 @@ export function newCanvasElement(kind: CanvasElementKind, id: string, paper: Pap
       return { ...base, kind, value: '{完整内容}', errorCorrection: 'M' };
     case 'image':
       // 1×1 的白点：插入图片时编辑器换成真正的像素。
-      return { ...base, kind, pixels: '/w==', pixelWidth: 1, pixelHeight: 1, mode: 'threshold', threshold: 128 };
+      return {
+        ...base,
+        kind,
+        pixels: '/w==',
+        pixelWidth: 1,
+        pixelHeight: 1,
+        mode: DEFAULT_IMAGE_MODE,
+        threshold: DEFAULT_IMAGE_THRESHOLD,
+      };
     case 'line':
       return { ...base, kind, dashed: false };
     case 'rect':
@@ -277,5 +292,5 @@ export function newCanvasElement(kind: CanvasElementKind, id: string, paper: Pap
 }
 
 function cell(text: string, bold: boolean): CanvasTableCell {
-  return { text, fontSizeMm: 2.8, bold, align: 'left' };
+  return { ...DEFAULT_TABLE_CELL, text, bold };
 }

@@ -103,6 +103,12 @@ export interface QrLabelTemplate extends TemplateBase {
 export type LabelTemplate = QrLabelTemplate | WaybillTemplate | CanvasTemplate;
 export type TemplateKind = LabelTemplate['kind'];
 
+/**
+ * 和 TemplateKind 对应的清单，sanitizeTemplate 校验输入的 kind 时用它。`satisfies` 保证数组里的每一项都在
+ * TemplateKind 里（加了新的模板种类却忘了同步会在这行报错）。
+ */
+export const TEMPLATE_KINDS = ['label', 'waybill', 'canvas'] as const satisfies readonly TemplateKind[];
+
 export const TEMPLATE_LIMITS = {
   paddingMm: { min: 0, max: 6 },
   /** 上限按纸张算，见 maxQrSizeMm。 */

@@ -113,6 +113,7 @@ export function CanvasStage({
             onPointerMove={handlers.onPointerMove}
             onPointerUp={handlers.onPointerUp}
             onPointerCancel={handlers.onPointerCancel}
+            onLostPointerCapture={handlers.onLostPointerCapture}
             onDoubleClick={() => {
               // 指针被覆盖层捕获，双击事件落在覆盖层上：按刚才点选的元素判断是不是文字。
               if (single?.kind === 'text') {

@@ -442,8 +442,12 @@ function ImageProperties({
   const hasPicture = element.pixelWidth > 1 || element.pixelHeight > 1;
   const onFile = async (file: File) => {
     setIsReading(true);
-    const picked = await importImage(file, element, elements);
-    setIsReading(false);
+    let picked: Awaited<ReturnType<typeof importImage>>;
+    try {
+      picked = await importImage(file, element.id, elements);
+    } finally {
+      setIsReading(false);
+    }
     if (picked !== null) {
       onChange(
         {

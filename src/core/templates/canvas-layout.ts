@@ -12,11 +12,10 @@ import {
 } from './canvas-model';
 import { expandVariables } from './note-text';
 import type { TextAlign } from './template-model';
-import { FLOAT_EPSILON } from './text-fit';
 import {
   CELL_PADDING_MM,
   expandParagraph,
-  fitParagraphs,
+  fitParagraphsInBox,
   type Rect,
   resolveSizes,
   type TextLine,
@@ -65,7 +64,7 @@ export interface CanvasLayout {
   elements: LaidCanvasElement[];
   /** 打印前检查：给人看的中文，每条指出是哪个元素。 */
   issues: string[];
-  /** 文字缩到最小仍放不下、被截断的元素数。 */
+  /** 文字或表格被截断的元素数。 */
   overflowCount: number;
 }
 
@@ -83,7 +82,11 @@ export function layoutCanvas(template: CanvasTemplate, context: CanvasLayoutCont
     const laid = layoutContent(element, frame, context);
     if (laid.overflow) {
       overflowCount += 1;
-      issues.push(`文字「${element.name}」放不下，已截断：加大文字框或调小字号`);
+      issues.push(
+        element.kind === 'table'
+          ? `表格「${element.name}」有格子放不下，已截断：加大行高、列宽或调小字号`
+          : `文字「${element.name}」放不下，已截断：加大文字框或调小字号`,
+      );
     }
     if (laid.issue !== null) {
       issues.push(laid.issue);
@@ -91,7 +94,7 @@ export function layoutCanvas(template: CanvasTemplate, context: CanvasLayoutCont
     if (laid.content === null) {
       continue;
     }
-    if (isNearEdge(rect, template.paper.widthMm, template.paper.heightMm)) {
+    if (isNearEdge(rect, template.paper.widthMm, template.paper.heightMm, context.dotMm)) {
       issues.push(`「${element.name}」靠近纸边（离纸边不到 ${CANVAS_LIMITS.safeMarginMm}mm），可能打不全`);
     }
     elements.push({ rect, frame, rotation: element.rotation, name: element.name, content: laid.content });
@@ -108,8 +111,10 @@ function snapRect(element: CanvasElement, dot: number): Rect {
   return { x: left * dot, y: top * dot, width: (right - left) * dot, height: (bottom - top) * dot };
 }
 
-function isNearEdge(rect: Rect, paperWidth: number, paperHeight: number): boolean {
-  const margin = CANVAS_LIMITS.safeMarginMm - FLOAT_EPSILON;
+function isNearEdge(rect: Rect, paperWidth: number, paperHeight: number, dotMm: number): boolean {
+  // 位置大小已经取整到点：紧贴安全线摆放的框，取整后最多往外挪半个点。这半个点的余量不算「靠近纸边」，
+  // 否则摆在安全线正上的元素会被无端误报。
+  const margin = CANVAS_LIMITS.safeMarginMm - dotMm / 2;
   return (
     rect.x < margin ||
     rect.y < margin ||
@@ -135,13 +140,18 @@ function layoutContent(
       return layoutText(element, frame, context);
     case 'barcode':
     case 'qr': {
-      const value = expandVariables(element.value, context.scan, context.printedAt, (text) => text, 'empty').trim();
-      if (value === '') {
+      // 只用去空白后的内容判断「有没有东西可印」；真正编码的内容不trim——条码、二维码里的前后空格
+      // 可能是条码本身的一部分（例如定长码用空格占位），不能悄悄改掉用户配的内容。
+      const expanded = expandVariables(element.value, context.scan, context.printedAt, (text) => text, 'empty');
+      if (expanded.trim() === '') {
         const label = element.kind === 'barcode' ? '条码' : '二维码';
         return { content: null, overflow: false, issue: `${label}「${element.name}」这一张没有内容，不印` };
       }
       return {
-        content: element.kind === 'barcode' ? { kind: 'barcode', element, value } : { kind: 'qr', element, value },
+        content:
+          element.kind === 'barcode'
+            ? { kind: 'barcode', element, value: expanded }
+            : { kind: 'qr', element, value: expanded },
         overflow: false,
         issue: null,
       };
@@ -166,15 +176,24 @@ function layoutText(
   frame: { width: number; height: number },
   context: CanvasLayoutContext,
 ): LaidResult {
-  const paragraphs = element.text
+  // 只过滤「这一行的字段全空」（expandParagraph 返回 null）的行；用户自己打的空行（例如拿空行分段）照常保留，
+  // 哪怕排出来中间有一行是空的。全部展开完一行不剩，或者剩下的全是空白，才算这一张没内容。
+  // 注：fit 是「wrap」时，折行用的 wrapText（面单也用这份）会把空白行悄悄吞掉，这是共用逻辑的既有行为，
+  // 这里不改；只有默认的「shrink」（不折行）能保留空行。
+  const lines = element.text
     .split('\n')
     .map((line) => expandParagraph(line, context))
-    .filter((line): line is string => line !== null && line.trim() !== '')
-    .map((line) => ({ text: line, fontSizeMm: element.fontSizeMm, bold: element.bold, wrap: element.fit === 'wrap' }));
-  if (paragraphs.length === 0) {
+    .filter((line): line is string => line !== null);
+  if (lines.length === 0 || lines.every((line) => line.trim() === '')) {
     return { content: null, overflow: false, issue: null };
   }
-  const fitted = fitParagraphs(paragraphs, frame.width, frame.height);
+  const paragraphs = lines.map((line) => ({
+    text: line,
+    fontSizeMm: element.fontSizeMm,
+    bold: element.bold,
+    wrap: element.fit === 'wrap',
+  }));
+  const fitted = fitParagraphsInBox(paragraphs, frame.width, frame.height);
   return {
     content: {
       kind: 'text',
@@ -195,20 +214,28 @@ function layoutTable(
 ): LaidResult {
   const rows = snapSizes(resolveSizes(element.rowsMm, frame.height), frame.height, context.dotMm);
   const columns = snapSizes(resolveSizes(element.columnsMm, frame.width), frame.width, context.dotMm);
+  // 边框取整到点（和线、格线一样），内边距至少让到边框那么宽，不然粗边框会压到文字上。
+  const borderMm = Math.round(element.borderMm / context.dotMm) * context.dotMm;
+  const paddingX = Math.max(TABLE_CELL_PADDING_MM.x, borderMm);
+  const paddingY = Math.max(TABLE_CELL_PADDING_MM.y, borderMm);
   let overflow = false;
   const cells = rows.map((rowHeight, row) =>
     columns.map((columnWidth, column) => {
       const cell = element.cells[row]?.[column];
+      // 表格的格子不套用「这一行字段全空就不印」的规则：表头「名称」「尺码」这类固定文字要留着，
+      // 只有这一格本身展开出来是空的才留白，不会因为某个字段没值就整行、整列消失。
       const text = cell
         ? expandVariables(cell.text, context.scan, context.printedAt, (value) => value, 'empty').trim()
         : '';
       if (!cell || text === '') {
         return { lines: [], align: cell?.align ?? 'left' };
       }
-      const fitted = fitParagraphs(
+      // 格子很小、边框很粗时内边距可能比格子还大：content box 不能是负数，宁可挤在一起也不能让
+      // 折行算出 Infinity 行再往下走奇怪的分支。
+      const fitted = fitParagraphsInBox(
         [{ text, fontSizeMm: cell.fontSizeMm, bold: cell.bold, wrap: true }],
-        columnWidth - 2 * TABLE_CELL_PADDING_MM.x,
-        rowHeight - 2 * TABLE_CELL_PADDING_MM.y,
+        Math.max(0, columnWidth - 2 * paddingX),
+        Math.max(0, rowHeight - 2 * paddingY),
       );
       overflow ||= fitted.overflow;
       return { lines: fitted.lines, align: cell.align };

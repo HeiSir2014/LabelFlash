@@ -239,7 +239,7 @@ function fieldText(name: string, context: Pick<LayoutContext, 'scan'>): string {
   return context.scan.fields.find((field) => field.name === name)?.value ?? '';
 }
 
-interface FittedText {
+export interface FittedText {
   lines: TextLine[];
   overflow: boolean;
 }
@@ -259,6 +259,19 @@ export function fitParagraphs(paragraphs: readonly WaybillParagraph[], widthMm: 
     }
   }
   return clampLines(linesAt(paragraphs, widthMm, MIN_TEXT_SCALE).lines, widthMm, heightMm);
+}
+
+/**
+ * 和 fitParagraphs 一样，但宽度先打 LINE_WIDTH_SLACK 的折扣：字宽表是估算的，小字号下
+ * macOS 渲染的实际行宽比估算宽一点（CI 实测偏宽 0.8%），不留余量会被格子或框的边缘裁掉。
+ * 画布模板的文字框、表格格子复用这份折扣，不用各自再定义一遍。
+ */
+export function fitParagraphsInBox(
+  paragraphs: readonly WaybillParagraph[],
+  widthMm: number,
+  heightMm: number,
+): FittedText {
+  return fitParagraphs(paragraphs, widthMm * (1 - LINE_WIDTH_SLACK), heightMm);
 }
 
 export function blockHeightMm(lines: readonly TextLine[]): number {

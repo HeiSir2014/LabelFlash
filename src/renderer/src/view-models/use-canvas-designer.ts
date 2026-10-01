@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CANVAS_LIMITS,
   type CanvasElement,
@@ -18,6 +18,7 @@ import {
   moveBy,
   type Point,
   pasteElements,
+  replaceElement,
   sendToBack,
 } from '../lib/canvas-edit';
 import {
@@ -33,6 +34,7 @@ import type { DesignerCommand } from '../lib/canvas-view';
 import { deepEqual } from '../lib/deep-equal';
 import { megabytes } from '../lib/gray-image';
 import { notices } from '../lib/notices';
+import { useImageImport } from './use-image-import';
 
 /** 缩放：「适合窗口」随窗口大小变，或者固定的倍数。 */
 export type ZoomSetting = 'fit' | number;
@@ -63,6 +65,8 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
   const [zoom, setZoom] = useState<ZoomSetting>('fit');
   const [showGrid, setShowGrid] = useState(true);
   const [snap, setSnap] = useState(true);
+  const [importingImageIds, setImportingImageIds] = useState<ReadonlySet<string>>(new Set());
+  const importImagePixels = useImageImport();
 
   // 撤销、删除之后，选中的元素可能已经不在了：只留还在的。
   const liveSelection = useMemo(
@@ -71,16 +75,27 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
   );
   const movableCount = draft.elements.filter((element) => liveSelection.includes(element.id) && !element.locked).length;
 
+  // 选图片要跨一次 await（解码、缩放可能要几百毫秒），这期间草稿可能已经变了——其它属性被改，
+  // 甚至这个元素被删掉。commit 不能拿 await 之前闭包里的旧草稿当「改之前的样子」，必须用解码完成
+  // 那一刻最新的草稿；按惯例用 ref 跟住，在 useEffect 里更新（不在渲染过程中改 ref）。
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
   /**
    * 每一次修改都经过这里：先记下改之前的样子（撤销用），再交给草稿；没有变化的不记。
    * mergeKey 非空时（同一个输入框连续打字、同一组元素连续按方向键）和上一步相同就合并成一步；
    * 焦点离开正在连续输入的文字框时要调用 endMerge，不然焦点挪回来接着打字会被并进失焦前的那一步。
+   * 「改之前的样子」读 draftRef 而不是闭包参数 draft：两者在同步调用里总是一致，但 importImage
+   * 这类跨 await 的调用只有读 ref 才能拿到最新的，不会把 await 期间的改动当没发生过。
    */
   const commit = (next: CanvasTemplate, mergeKey: string | null = null) => {
-    if (deepEqual(next, draft)) {
+    const before = draftRef.current;
+    if (deepEqual(next, before)) {
       return;
     }
-    setHistory((current) => record(current, draft, mergeKey));
+    setHistory((currentHistory) => record(currentHistory, before, mergeKey));
     onChange(next);
   };
   /** 结束当前的合并：属性栏（Task 14）的文字框失焦时调用。 */
@@ -136,6 +151,38 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
   const nudge = (dx: number, dy: number) =>
     commit(moveBy(draft, liveSelection, dx, dy), `nudge:${liveSelection.join(',')}`);
 
+  /**
+   * 给一个图片元素选文件：解码交给 use-image-import（sandbox 的页面里做，主进程从不解码图片文件）。
+   * 解码期间（可能几百毫秒）用 draftRef 读最新草稿去核对图片总量、去合并结果——不用调用这一刻闭包里的
+   * 旧草稿，不然这期间如果删掉了这个元素，解码完成后会把它凭空加回来；如果改了别的属性，会被悄悄覆盖掉。
+   * 不记合并键：换一张图是一次性的操作，不该和下一次换图或别的编辑并成一步撤销。
+   */
+  const importImage = async (id: string, file: File) => {
+    setImportingImageIds((ids) => new Set(ids).add(id));
+    try {
+      const picked = await importImagePixels(file, id, draftRef.current.elements);
+      if (picked === null) {
+        return;
+      }
+      const current = draftRef.current;
+      const target = current.elements.find((element) => element.id === id);
+      if (target === undefined || target.kind !== 'image') {
+        return;
+      }
+      commit(replaceElement(current, { ...target, ...picked }));
+    } finally {
+      setImportingImageIds((ids) => {
+        if (!ids.has(id)) {
+          return ids;
+        }
+        const next = new Set(ids);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+  const isImportingImage = (id: string) => importingImageIds.has(id);
+
   /** 画布上的按键：用掉了返回 true（调用方拦下这个按键）；没用掉（没选中时的方向键、Esc）返回 false。 */
   const runCommand = (command: DesignerCommand): boolean => {
     const hasSelection = liveSelection.length > 0;
@@ -180,6 +227,8 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
     copy,
     paste,
     remove,
+    importImage,
+    isImportingImage,
     align: (alignment: Alignment) => commit(alignElements(draft, liveSelection, alignment)),
     distribute: (axis: DistributeAxis) => commit(distributeElements(draft, liveSelection, axis)),
     toFront: () => commit(bringToFront(draft, liveSelection)),

@@ -340,8 +340,12 @@ test('clears the lost-scan notice once the operator clicks into the scan box', a
   const input = page.locator('.scan-bar__input');
   // 输入法开着时一串扫码枪那样快的按键、没有结尾的回车：拼不回来，不提交，提醒操作员。
   await input.evaluate((element: HTMLInputElement) => {
-    for (const code of ['KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE']) {
-      element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Process', code, bubbles: true, cancelable: true }));
+    // 先建好再派发：事件的 timeStamp 是创建的时间，见下一个用例的说明。
+    const events = ['KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE'].map(
+      (code) => new KeyboardEvent('keydown', { key: 'Process', code, bubbles: true, cancelable: true }),
+    );
+    for (const event of events) {
+      element.dispatchEvent(event);
     }
   });
   const notice = page.locator('.scan-bar__ime');
@@ -367,10 +371,15 @@ test('rebuilds a scan that the input method intercepted from the physical keys',
       ['KeyM', true],
       ['Enter', false],
     ];
-    for (const [code, shiftKey] of keys) {
-      element.dispatchEvent(
+    // 先建好全部事件再逐个派发：事件的 timeStamp 是创建的时间。边建边派发的话，CI 机器忙时处理第一个键
+    // （要重绘）比扫码枪的按键间隔还久，下一个键就像隔了很久才按，第一个字被当成另一串（2026-10-01 macOS CI 出现过）。
+    // 真扫码枪的事件带的是系统收到按键的时间，不受处理快慢影响。
+    const events = keys.map(
+      ([code, shiftKey]) =>
         new KeyboardEvent('keydown', { key: 'Process', code, shiftKey, bubbles: true, cancelable: true }),
-      );
+    );
+    for (const event of events) {
+      element.dispatchEvent(event);
     }
     // 输入法随后把组出来的错字交给框（实测：数字被吞掉）。
     element.value = 'CL-M';

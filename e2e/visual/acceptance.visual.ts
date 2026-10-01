@@ -1033,10 +1033,12 @@ const ITEMS: Item[] = [
           const input = page.locator('.scan-bar__input');
           // 输入法开着时扫码枪飞快地按了一串键，没有结尾的回车：拼不回来，不提交，提醒操作员。
           await input.evaluate((element: HTMLInputElement) => {
-            for (const code of ['KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE']) {
-              element.dispatchEvent(
-                new KeyboardEvent('keydown', { key: 'Process', code, bubbles: true, cancelable: true }),
-              );
+            // 先建好再派发：事件的 timeStamp 是创建的时间，边建边派发时 CI 忙起来会被当成几串（见 app.e2e.ts）。
+            const events = ['KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE'].map(
+              (code) => new KeyboardEvent('keydown', { key: 'Process', code, bubbles: true, cancelable: true }),
+            );
+            for (const event of events) {
+              element.dispatchEvent(event);
             }
           });
           await expect(page.locator('.scan-bar__ime')).toBeVisible();

@@ -1958,10 +1958,11 @@ describe('renderCanvasHtml', () => {
     expect(html).toMatch(/transform:translate\([\d.]+mm,0mm\) rotate\(90deg\)/);
   });
 
-  test('draws an image as black dots', () => {
+  test('draws an image as a 1-bit bitmap, one pixel per printer dot', () => {
     // 2×1：左黑右白。
     const { html } = render([element('image', { pixels: 'AP8=', pixelWidth: 2, pixelHeight: 1, width: 10, height: 5 })]);
-    expect(html).toMatch(/<path d="M0 0h\d+v\d+H0z/);
+    expect(html).toContain('src="data:image/bmp;base64,');
+    expect(html).toContain('image-rendering:pixelated');
   });
 
   test('draws a filled rectangle and a dashed line', () => {
@@ -1999,7 +2000,7 @@ Expected: FAIL，`Cannot find module './canvas-html'`。
 // src/main/printing/canvas-html.ts
 import type { CanvasBarcode, CanvasImage, CanvasQr, CanvasTemplate } from '../../core/templates/canvas-model';
 import { type LaidCanvasContent, type LaidCanvasElement, layoutCanvas } from '../../core/templates/canvas-layout';
-import { decodeGray, fitContain, monoPath, resizeGray, toMono } from '../../core/templates/mono-image';
+import { decodeGray, fitContain, monoBmp, resizeGray, toMono } from '../../core/templates/mono-image';
 import { LINE_HEIGHT } from '../../core/templates/text-fit';
 import { CELL_PADDING_MM } from '../../core/templates/waybill-layout';
 import type { LabelJob } from '../../core/types';
@@ -2065,6 +2066,7 @@ export function renderCanvasHtml(
   .line { white-space: pre; overflow: hidden; line-height: ${LINE_HEIGHT}; }
   .code { position: absolute; }
   .code svg { display: block; }
+  .dots { position: absolute; display: block; }
   .code__text { white-space: pre; line-height: ${LINE_HEIGHT}; font-weight: 700; text-align: center; }
 </style>
 </head>
@@ -2222,7 +2224,8 @@ function imageHtml(element: CanvasImage, frame: { width: number; height: number 
   const mono = toMono(resizeGray(gray, box.width, box.height), element.mode, element.threshold);
   const left = Math.floor((Math.round(frame.width / dot) - box.width) / 2) * dot;
   const top = Math.floor((Math.round(frame.height / dot) - box.height) / 2) * dot;
-  return `<div class="code" style="left:${mm(left)};top:${mm(top)}"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${box.width} ${box.height}" shape-rendering="crispEdges" style="width:${mm(box.width * dot)};height:${mm(box.height * dot)}"><path d="${monoPath(mono, box.width, box.height)}"/></svg></div>`;
+  // 1 位 BMP：大小有上限（约 宽×高/8 字节），抖动的照片画成 SVG 路径会到几 MB。每个像素正好一个打印点，pixelated 不做插值。
+  return `<img class="dots" alt="" src="data:image/bmp;base64,${monoBmp(mono, box.width, box.height)}" style="left:${mm(left)};top:${mm(top)};width:${mm(box.width * dot)};height:${mm(box.height * dot)};image-rendering:pixelated" />`;
 }
 
 function lineHtml(dashed: boolean, frame: { width: number; height: number }): string {

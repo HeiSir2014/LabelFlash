@@ -65,6 +65,12 @@ interface JobTarget {
 
 const NO_TARGET: JobTarget = { printerName: '', paper: null, templateId: null };
 
+/**
+ * 最多记住多少个码上一次的打印机和模板：一个班次扫几百张，防重复窗口（最长一天）内够用；
+ * 超出时忘掉最早的，那张再重复时按识别结果选。
+ */
+const MAX_REMEMBERED_TARGETS = 2_000;
+
 /** 按模板打印的几种入口在这几处不同。 */
 interface LabelOptions {
   /** 扫码内容的防重复窗口：扫码枪、手机要；本机接口靠调用方的 requestId，不用它。 */
@@ -100,6 +106,9 @@ type Recognition = { ok: true; scan: ScanResult } | { ok: false; result: Extract
 
 /** 所有入口（扫码枪、记录重打、手机扫码、本机接口）的唯一业务入口。 */
 export class PrintService {
+  /** 每个码上一次实际用的打印机和模板，重复的一张照着记（见 duplicateTarget）。 */
+  private readonly recentTargets = new Map<string, JobTarget>();
+
   constructor(private readonly deps: PrintServiceDeps) {}
 
   /** 启动时从打印记录回放门限状态，重启后窗口仍然有效。 */
@@ -170,24 +179,37 @@ export class PrintService {
       ? this.deps.guard.tryReserve(raw, request.force === true)
       : ({ ok: true } as const);
     if (!reservation.ok) {
-      // 重复的一张不加工：记录里写按识别结果会用的模板和打印机。
-      const planned = await this.plan(templateFor(recognized), options);
-      if (planned.target === null) {
-        return planned.noPrinter;
-      }
       const duplicate: RecordedResult = {
         status: 'duplicate',
         recent: reservation.recent,
         windowMs: this.deps.guard.windowMs,
       };
-      return this.finish(id, request, planned.target, raw, duplicate, recognized);
+      return this.finish(
+        id,
+        request,
+        await this.duplicateTarget(recognized, templateFor, options),
+        raw,
+        duplicate,
+        recognized,
+      );
     }
-    const context: EnrichContext = { images: request.images ?? [], manualFields: request.manualFields ?? {} };
-    const enriched = options.enrich
-      ? await this.enrich(recognized, context)
-      : { scan: recognized, traces: [], blocked: null };
-    const template = templateFor(enriched.scan);
-    const planned = await this.plan(template, options);
+    let template: LabelTemplate;
+    let enriched: EnrichResult;
+    let planned: Awaited<ReturnType<PrintService['plan']>>;
+    try {
+      const context: EnrichContext = { images: request.images ?? [], manualFields: request.manualFields ?? {} };
+      enriched = options.enrich
+        ? await this.enrich(recognized, context)
+        : { scan: recognized, traces: [], blocked: null };
+      template = templateFor(enriched.scan);
+      planned = await this.plan(template, options);
+    } catch (error) {
+      // 读模板（自定义模板在数据库里）出错时也要放开窗口，不然这个码之后一直算「正在打印」，强制补打也打不了。
+      if (options.dedup) {
+        this.deps.guard.release(raw);
+      }
+      throw error;
+    }
     // 没有打印机时和 1.0.x 没选打印机一样：不打印、不写记录、放开防重复窗口，指定好打印机后可以直接重打。
     if (planned.target === null) {
       if (options.dedup) {
@@ -196,6 +218,9 @@ export class PrintService {
       return planned.noPrinter;
     }
     const { target } = planned;
+    if (options.dedup) {
+      this.rememberTarget(raw, target);
+    }
     if (enriched.blocked) {
       this.deps.guard.release(raw);
       const { reason, detail, field } = enriched.blocked;
@@ -222,6 +247,36 @@ export class PrintService {
   }
 
   /** 这个模板打到哪台打印机；没有打印机时给出 no-printer 结果。 */
+  /**
+   * 重复的一张记在哪台打印机、哪个模板名下：用这个码上一次实际用的。重复的不加工，按识别结果重新选的话，
+   * 靠加工补出的字段换的模板就选错了（甚至说「没有打印机」）。没记下（上一张还在加工）时按识别结果选，
+   * 再选不出打印机就不写打印机——它就是一张重复，不该提示去分配打印机。
+   */
+  private async duplicateTarget(
+    recognized: ScanResult,
+    templateFor: (scan: ScanResult) => LabelTemplate,
+    options: LabelOptions,
+  ): Promise<JobTarget> {
+    const remembered = this.recentTargets.get(recognized.raw);
+    if (remembered) {
+      return remembered;
+    }
+    const planned = await this.plan(templateFor(recognized), options);
+    return planned.target ?? NO_TARGET;
+  }
+
+  private rememberTarget(raw: string, target: JobTarget): void {
+    // 重新插入放到最后：超过上限时删掉最早的那个。
+    this.recentTargets.delete(raw);
+    this.recentTargets.set(raw, target);
+    if (this.recentTargets.size > MAX_REMEMBERED_TARGETS) {
+      const oldest = this.recentTargets.keys().next().value;
+      if (oldest !== undefined) {
+        this.recentTargets.delete(oldest);
+      }
+    }
+  }
+
   private async plan(
     template: LabelTemplate,
     options: LabelOptions,

@@ -10,7 +10,7 @@ import type { EnrichContext, EnrichResult } from './scan/enrich';
 import { MAX_RAW_LENGTH } from './scan/normalize-raw';
 import { recognize } from './scan/recognize';
 import type { ScanRule } from './scan/rule-model';
-import type { ScanResult } from './scan/scan-result';
+import { fieldValue, type ScanResult } from './scan/scan-result';
 import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE } from './templates/builtin-templates';
 import { PLATFORM_TWO_PART } from './templates/builtin-waybills';
 import type { LabelTemplate } from './templates/template-model';
@@ -51,6 +51,8 @@ function createHarness(store = new InMemoryJobStore()) {
   });
   let nextId = 0;
   let choice: PrinterChoice = { printerName: PRINTER, reason: 'paper' };
+  let resolveTemplate = (_scan: ScanResult): LabelTemplate => template;
+  let choosePrinter = async (_template: LabelTemplate): Promise<PrinterChoice> => choice;
   const service = new PrintService({
     adapter,
     store,
@@ -62,11 +64,18 @@ function createHarness(store = new InMemoryJobStore()) {
     enrich: (scan, context) => enrichScan(scan, context),
     resolveTemplate: (scan) => {
       templateRequests.push(scan);
-      return template;
+      return resolveTemplate(scan);
     },
     onRecorded: (job, scan) => recorded.push({ job, scan }),
-    choosePrinter: async () => choice,
+    choosePrinter: (chosen) => choosePrinter(chosen),
   });
+  /** 按字段换模板、按纸张找打印机：模板和打印机随扫码内容变的用例用。 */
+  const useResolveTemplate = (next: (scan: ScanResult) => LabelTemplate) => {
+    resolveTemplate = next;
+  };
+  const useChoosePrinter = (next: (template: LabelTemplate) => Promise<PrinterChoice>) => {
+    choosePrinter = next;
+  };
   const useTemplate = (next: LabelTemplate) => {
     template = next;
   };
@@ -79,7 +88,20 @@ function createHarness(store = new InMemoryJobStore()) {
   const useChoice = (next: PrinterChoice) => {
     choice = next;
   };
-  return { clock, adapter, store, service, useTemplate, useRules, useEnrich, useChoice, templateRequests, recorded };
+  return {
+    clock,
+    adapter,
+    store,
+    service,
+    useTemplate,
+    useRules,
+    useEnrich,
+    useChoice,
+    useResolveTemplate,
+    useChoosePrinter,
+    templateRequests,
+    recorded,
+  };
 }
 
 const withShelf = async (scan: ScanResult): Promise<EnrichResult> => ({
@@ -467,6 +489,40 @@ describe('PrintService printer choice', () => {
     useEnrich(withShelf);
     await service.submit(request());
     expect(templateRequests[0]?.fields.at(-1)).toEqual({ name: '货架号', value: 'A-01' });
+  });
+
+  // 重复的一张不加工：模板要是靠加工补出的字段换的，按识别结果再选一次会选错（甚至说「没有打印机」）。
+  test('records a repeat with the template and printer the first print actually used', async () => {
+    const { service, store, useEnrich, useResolveTemplate, useChoosePrinter } = createHarness();
+    useEnrich(async (scan) => ({
+      scan: { ...scan, fields: [...scan.fields, { name: '快递公司', value: '顺丰速运' }] },
+      traces: [],
+      blocked: null,
+    }));
+    useResolveTemplate((scan) => (fieldValue(scan, '快递公司') ? PLATFORM_TWO_PART : PICK_TEMPLATE));
+    // 只有面单纸分配了打印机：按识别结果选出的 60×40 标签没有打印机。
+    useChoosePrinter(async (template) =>
+      template.id === PLATFORM_TWO_PART.id
+        ? { printerName: '面单机B', reason: 'paper' }
+        : { printerName: null, reason: 'unassigned', paperKey: '60x40', missingPrinter: null },
+    );
+    expect((await service.submit(request())).status).toBe('printed');
+    expect((await service.submit(request())).status).toBe('duplicate');
+    expect(store.listRecent(1)[0]).toMatchObject({
+      status: 'duplicate',
+      printerName: '面单机B',
+      templateId: PLATFORM_TWO_PART.id,
+    });
+  });
+
+  test('releases the dedup window when choosing the template fails', async () => {
+    const { service, useResolveTemplate } = createHarness();
+    useResolveTemplate(() => {
+      throw new Error('database is locked');
+    });
+    await expect(service.submit(request())).rejects.toThrow('database is locked');
+    useResolveTemplate(() => PICK_TEMPLATE);
+    expect((await service.submit(request())).status).toBe('printed');
   });
 
   test('previews with the template chosen from the processed scan', async () => {

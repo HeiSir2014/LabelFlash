@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test';
+import { STANDARD_TEMPLATE } from '../../../core/templates/builtin-templates';
+import { PLATFORM_TWO_PART } from '../../../core/templates/builtin-waybills';
 import {
   describeTemplatePrinter,
   describeTemplateUse,
   expectedPaperKey,
   paperRows,
   responsibilitiesOf,
+  templateUses,
   withAssignment,
 } from './printer-assignment';
 
@@ -50,6 +53,32 @@ describe('paperRows', () => {
   test('does not suggest a printer already assigned to another paper', () => {
     const rows = paperRows(TEMPLATES, { '60x40': '面单机C' }, INSTALLED, DRIVER_PAPER);
     expect(rows.find((row) => row.key === '100x180')?.suggestion).toBeNull();
+  });
+});
+
+describe('optional templates', () => {
+  test('lists the paper of an optional template without flagging it', () => {
+    const optional = { name: '内置面单', paper: { widthMm: 100, heightMm: 180 }, printer: null, optional: true };
+    const rows = paperRows([optional], {}, INSTALLED, {});
+    expect(rows).toEqual([
+      { key: '100x180', name: '100×180 二联面单', printer: null, suggestion: null, isMissing: false, isCovered: true },
+    ]);
+  });
+
+  test('treats built-in waybills as optional until they are active or bound to a rule', () => {
+    const waybill = PLATFORM_TWO_PART;
+    const optional = (activeId: string | null, boundId: string | null) =>
+      templateUses([waybill, STANDARD_TEMPLATE], activeId, [
+        { id: 'builtin:raw', enabled: true, templateId: boundId },
+      ]).map((use) => use.optional);
+    expect(optional(null, null)).toEqual([true, false]);
+    expect(optional(waybill.id, null)).toEqual([false, false]);
+    expect(optional(null, waybill.id)).toEqual([false, false]);
+  });
+
+  test('never treats a custom waybill as optional', () => {
+    const copy = { ...PLATFORM_TWO_PART, id: 'custom:w1' };
+    expect(templateUses([copy], null, [])[0]?.optional).toBe(false);
   });
 });
 

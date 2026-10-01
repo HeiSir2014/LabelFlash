@@ -1,6 +1,6 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`built-in waybill HTML stays the same 平台标准一联（中通 / 圆通 / 申通 / 韵达 / 极兔） 1`] = `
+exports[`built-in waybill HTML stays the same 平台标准一联（通达系） 1`] = `
 "<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -31,7 +31,7 @@ exports[`built-in waybill HTML stays the same 平台标准一联（中通 / 圆�
 </html>"
 `;
 
-exports[`built-in waybill HTML stays the same 平台标准二联（中通 / 圆通 / 申通 / 韵达 / 极兔） 1`] = `
+exports[`built-in waybill HTML stays the same 平台标准二联（通达系） 1`] = `
 "<!doctype html>
 <html lang="zh-CN">
 <head>

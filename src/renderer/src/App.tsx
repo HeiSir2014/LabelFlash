@@ -23,7 +23,13 @@ import { describeMobileButton, describeMobileOverlay } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
 import { describePreviewUsage } from './lib/preview-usage';
-import { expectedPaperKey, paperRows, responsibilitiesOf, withAssignment } from './lib/printer-assignment';
+import {
+  expectedPaperKey,
+  paperRows,
+  responsibilitiesOf,
+  templateUses,
+  withAssignment,
+} from './lib/printer-assignment';
 import { reprintMode } from './lib/reprint';
 import { scanFieldType } from './lib/scan-field';
 import { isWorkbenchActive } from './lib/scan-routing';
@@ -141,7 +147,7 @@ export function App() {
     }
   };
   const paperRowsView = paperRows(
-    templates.templates,
+    templateUses(templates.templates, settings?.activeTemplateId ?? null, settings?.ruleSettings ?? []),
     paperPrinters,
     knownNames,
     Object.fromEntries(

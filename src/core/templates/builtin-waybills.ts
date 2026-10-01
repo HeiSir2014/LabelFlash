@@ -144,93 +144,81 @@ function waybill(
 
 type WaybillBase = Pick<WaybillTemplate, 'kind' | 'id' | 'name' | 'paper' | 'printer'>;
 
-/** 平台标准二联 100×180：中通、圆通、申通、韵达、极兔共用（版面宽 98mm）。 */
-export const PLATFORM_TWO_PART: WaybillTemplate = waybill(
-  'waybill-platform-180',
-  '平台标准二联（中通 / 圆通 / 申通 / 韵达 / 极兔）',
-  180,
-  100,
-  {
-    marginsMm: WIDE_MARGINS,
-    lineWidthMm: LINE_WIDTH_MM,
-    root: root([
-      columns(15, [
-        text(40, [p('{快递公司}', 7, { bold: true })], { align: 'center', rule: 'none' }),
-        gap(30, { rule: 'none' }),
-        text(28, [p('{产品类型}', 4, { bold: true })], { align: 'center', inverse: true }),
-      ]),
-      columns(15, [
-        text(79, [p('{三段码}', 11, { bold: true })], { align: 'center', rule: 'dashed' }),
-        text(19, [p('{集包编码}', 4.5, { bold: true, wrap: true })], { align: 'center' }),
-      ]),
-      columns(10, [mark(9, '集', 5), text(89, [p('{集包地}', 6, { bold: true })])]),
-      columns(15, [mark(9, '收', 5.5), receiver(89, 4, 3.4)]),
-      columns(12, [mark(9, '寄', 5), sender(89, 3, 2.8)]),
-      barcode(22, { textSizeMm: 3.2 }),
-      columns(
-        19,
-        [
-          printTime(19),
-          rows(60, [
-            text(13, [p('{物品}', 2.8, { wrap: true }), p('{备注}', 2.6, { wrap: true })], {
-              valign: 'top',
-              rule: 'none',
-            }),
-            text(0, [p('签收栏', 2.6)], { align: 'right' }),
-          ]),
-          qr(19),
-        ],
-        { rule: 'none' },
-      ),
-      // 切点（110mm）前后不画线：纸本身在这里撕开。
-      gap(2, { rule: 'none' }),
-      columns(10, [
-        text(30, [p('{快递公司}', 4.5, { bold: true })], { align: 'center', rule: 'none' }),
-        barcode(68, { showText: false }),
-      ]),
-      columns(10, [
-        mark(8, '收', 4),
-        text(60, [p('{收件人}  {收件电话}', 2.5, { bold: true }), p('{收件地址}', 2.4, { wrap: true })]),
-        mark(8, '寄', 4),
-        text(22, [p('{寄件人}', 2.4), p('{寄件电话}', 2.4)]),
-      ]),
-      customArea(),
+/** 平台标准二联 100×180：中通、圆通、申通、韵达、极兔（通达系）共用（版面宽 98mm）。 */
+export const PLATFORM_TWO_PART: WaybillTemplate = waybill('waybill-platform-180', '平台标准二联（通达系）', 180, 100, {
+  marginsMm: WIDE_MARGINS,
+  lineWidthMm: LINE_WIDTH_MM,
+  root: root([
+    columns(15, [
+      text(40, [p('{快递公司}', 7, { bold: true })], { align: 'center', rule: 'none' }),
+      gap(30, { rule: 'none' }),
+      text(28, [p('{产品类型}', 4, { bold: true })], { align: 'center', inverse: true }),
     ]),
-  },
-);
-
-/** 平台标准一联 76×130：中通、圆通、申通、韵达、极兔共用（版面宽 68mm，右侧一列是竖排条码）。 */
-export const PLATFORM_ONE_PART: WaybillTemplate = waybill(
-  'waybill-platform-130',
-  '平台标准一联（中通 / 圆通 / 申通 / 韵达 / 极兔）',
-  130,
-  76,
-  {
-    marginsMm: NARROW_MARGINS,
-    lineWidthMm: LINE_WIDTH_MM,
-    root: root([
-      columns(12, [
-        text(28, [p('{快递公司}', 6, { bold: true })], { align: 'center', rule: 'none' }),
-        text(22, [p('{产品类型}', 3.4, { bold: true })], { align: 'center', inverse: true, rule: 'none' }),
-        text(18, [p('{日期}', 2.2), p('{时间}', 2.2)], { align: 'right' }),
-      ]),
-      text(9, [p('{三段码}', 7.5, { bold: true })], { align: 'center' }),
-      columns(58, [
-        rows(55, [
-          barcode(16, { textSizeMm: 2.8 }),
-          columns(6, [
-            text(20, [p('{集包编码}', 3.6, { bold: true })], { align: 'center', inverse: true }),
-            text(35, [p('{集包地}', 4, { bold: true })]),
-          ]),
-          columns(22, [mark(6, '收', 4), receiver(49, 3.4, 3)]),
-          columns(0, [mark(6, '寄', 4), sender(49, 2.6, 2.4)]),
+    columns(15, [
+      text(79, [p('{三段码}', 11, { bold: true })], { align: 'center', rule: 'dashed' }),
+      text(19, [p('{集包编码}', 4.5, { bold: true, wrap: true })], { align: 'center' }),
+    ]),
+    columns(10, [mark(9, '集', 5), text(89, [p('{集包地}', 6, { bold: true })])]),
+    columns(15, [mark(9, '收', 5.5), receiver(89, 4, 3.4)]),
+    columns(12, [mark(9, '寄', 5), sender(89, 3, 2.8)]),
+    barcode(22, { textSizeMm: 3.2 }),
+    columns(
+      19,
+      [
+        printTime(19),
+        rows(60, [
+          text(13, [p('{物品}', 2.8, { wrap: true }), p('{备注}', 2.6, { wrap: true })], {
+            valign: 'top',
+            rule: 'none',
+          }),
+          text(0, [p('签收栏', 2.6)], { align: 'right' }),
         ]),
-        barcode(13, { showText: false, vertical: true }),
-      ]),
-      customArea(),
+        qr(19),
+      ],
+      { rule: 'none' },
+    ),
+    // 切点（110mm）前后不画线：纸本身在这里撕开。
+    gap(2, { rule: 'none' }),
+    columns(10, [
+      text(30, [p('{快递公司}', 4.5, { bold: true })], { align: 'center', rule: 'none' }),
+      barcode(68, { showText: false }),
     ]),
-  },
-);
+    columns(10, [
+      mark(8, '收', 4),
+      text(60, [p('{收件人}  {收件电话}', 2.5, { bold: true }), p('{收件地址}', 2.4, { wrap: true })]),
+      mark(8, '寄', 4),
+      text(22, [p('{寄件人}', 2.4), p('{寄件电话}', 2.4)]),
+    ]),
+    customArea(),
+  ]),
+});
+
+/** 平台标准一联 76×130：中通、圆通、申通、韵达、极兔（通达系）共用（版面宽 68mm，右侧一列是竖排条码）。 */
+export const PLATFORM_ONE_PART: WaybillTemplate = waybill('waybill-platform-130', '平台标准一联（通达系）', 130, 76, {
+  marginsMm: NARROW_MARGINS,
+  lineWidthMm: LINE_WIDTH_MM,
+  root: root([
+    columns(12, [
+      text(28, [p('{快递公司}', 6, { bold: true })], { align: 'center', rule: 'none' }),
+      text(22, [p('{产品类型}', 3.4, { bold: true })], { align: 'center', inverse: true, rule: 'none' }),
+      text(18, [p('{日期}', 2.2), p('{时间}', 2.2)], { align: 'right' }),
+    ]),
+    text(9, [p('{三段码}', 7.5, { bold: true })], { align: 'center' }),
+    columns(58, [
+      rows(55, [
+        barcode(16, { textSizeMm: 2.8 }),
+        columns(6, [
+          text(20, [p('{集包编码}', 3.6, { bold: true })], { align: 'center', inverse: true }),
+          text(35, [p('{集包地}', 4, { bold: true })]),
+        ]),
+        columns(22, [mark(6, '收', 4), receiver(49, 3.4, 3)]),
+        columns(0, [mark(6, '寄', 4), sender(49, 2.6, 2.4)]),
+      ]),
+      barcode(13, { showText: false, vertical: true }),
+    ]),
+    customArea(),
+  ]),
+});
 
 /** 顺丰二联 100×180：条码在左上，右侧时效和代收货款。只给顺丰用，标识区直接印公司名。 */
 export const SF_TWO_PART: WaybillTemplate = waybill('waybill-sf-180', '顺丰二联', 180, 100, {

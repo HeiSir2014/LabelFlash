@@ -1,4 +1,6 @@
 import { type PrinterTarget, resolvePrinter } from '../../../core/printing/resolve-printer';
+import type { RuleSetting } from '../../../core/scan/rule-settings';
+import { isBuiltInTemplateId, type LabelTemplate } from '../../../core/templates/template-model';
 import type { DriverPaper } from '../../../shared/driver-paper';
 import { DEFAULT_PAPER } from '../../../shared/label-paper';
 import { formatPaperName, isSamePaper, type PaperSize, paperKey, parsePaperKey } from '../../../shared/paper-sizes';
@@ -6,6 +8,30 @@ import { formatPaperName, isSamePaper, type PaperSize, paperKey, parsePaperKey }
 /** 分配表只用到模板的这几项。 */
 export interface TemplateUse extends PrinterTarget {
   name: string;
+  /** 没有打印机也不标红：没在用的内置面单（订单系统可能根本不用它，但纸张照样列出来，要用时在这里分配）。 */
+  optional?: boolean;
+}
+
+/**
+ * 分配表要看的模板。内置面单人人都有，没设为当前模板、也没被规则指定时算「可选」：
+ * 它的纸照样列出来（订单系统经本机接口用它时在这里分配），但没有打印机不标红，不用面单的人不会看到一片红。
+ */
+export function templateUses(
+  templates: readonly LabelTemplate[],
+  activeTemplateId: string | null,
+  ruleSettings: readonly RuleSetting[],
+): TemplateUse[] {
+  const bound = new Set(ruleSettings.flatMap((setting) => (setting.templateId ? [setting.templateId] : [])));
+  return templates.map((template) => ({
+    name: template.name,
+    paper: template.paper,
+    printer: template.printer,
+    optional:
+      template.kind === 'waybill' &&
+      isBuiltInTemplateId(template.id) &&
+      template.id !== activeTemplateId &&
+      !bound.has(template.id),
+  }));
 }
 
 export interface PaperRow {
@@ -51,7 +77,7 @@ export function paperRows(
   ]);
   return [...papers].map(([key, paper]) => {
     const printer = paperPrinters[key] ?? null;
-    const users = templates.filter((template) => paperKey(template.paper) === key);
+    const users = templates.filter((template) => paperKey(template.paper) === key && !template.optional);
     const isCovered = users.every(
       (template) => resolvePrinter(template, paperPrinters, installed).printerName !== null,
     );

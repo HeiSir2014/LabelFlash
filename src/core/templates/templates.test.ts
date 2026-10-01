@@ -5,7 +5,7 @@ import { labelOf, PICK_TEMPLATE } from '../testing/templates';
 import { BUILT_IN_TEMPLATES, currentTemplateId, DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE } from './builtin-templates';
 import { expandNoteText } from './note-text';
 import { sanitizeTemplate } from './sanitize-template';
-import { TemplateCatalog, TemplateError } from './template-catalog';
+import { NEW_CANVAS_TEMPLATE_NAME, TemplateCatalog, TemplateError } from './template-catalog';
 import {
   CUSTOM_TEMPLATE_PREFIX,
   fullTextWidthMm,
@@ -234,6 +234,20 @@ describe('TemplateCatalog', () => {
     expect(repository.saved.get(copy.id)).toEqual(copy);
     copy.fieldsArea.all.separator = 'changed';
     expect(GENERIC_TEMPLATE.fieldsArea.all.separator).toBe('：');
+  });
+
+  test('createCanvas saves an empty canvas template on the default paper', () => {
+    const { catalog, repository } = createCatalog();
+    const created = catalog.createCanvas();
+    expect(created).toEqual({
+      kind: 'canvas',
+      id: `${CUSTOM_TEMPLATE_PREFIX}t1`,
+      name: NEW_CANVAS_TEMPLATE_NAME,
+      paper: { widthMm: 60, heightMm: 40 },
+      printer: null,
+      elements: [],
+    });
+    expect(repository.saved.get(created.id)).toEqual(created);
   });
 
   test('save sanitizes and persists a custom template', () => {

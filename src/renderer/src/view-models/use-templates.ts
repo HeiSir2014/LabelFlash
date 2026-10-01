@@ -72,6 +72,18 @@ export function useTemplates({
     [load],
   );
 
+  /** 新建空白的自由设计模板：选中它，直接进设计器。 */
+  const createCanvas = useCallback(async () => {
+    try {
+      const created = await window.api.createCanvasTemplate();
+      await load();
+      setSelectedId(created.id);
+      setDraft(structuredClone(created));
+    } catch (error) {
+      reportError('新建自由设计模板', error);
+    }
+  }, [load]);
+
   const startEdit = useCallback(
     (id: string) => {
       const template = templates.find((candidate) => candidate.id === id);
@@ -124,6 +136,7 @@ export function useTemplates({
     select: setSelectedId,
     activate,
     duplicate,
+    createCanvas,
     startEdit,
     changeDraft: setDraft,
     saveDraft,

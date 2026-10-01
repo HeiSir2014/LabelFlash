@@ -27,6 +27,7 @@ const api: LabelFlashApi = {
   updateSettings: (patch) => ipcRenderer.invoke(IpcChannel.UpdateSettings, patch),
   listTemplates: () => ipcRenderer.invoke(IpcChannel.ListTemplates),
   duplicateTemplate: (sourceId) => ipcRenderer.invoke(IpcChannel.DuplicateTemplate, sourceId),
+  createCanvasTemplate: () => ipcRenderer.invoke(IpcChannel.CreateCanvasTemplate),
   saveTemplate: (template) => ipcRenderer.invoke(IpcChannel.SaveTemplate, template),
   deleteTemplate: (id) => ipcRenderer.invoke(IpcChannel.DeleteTemplate, id),
   listRules: () => ipcRenderer.invoke(IpcChannel.ListRules),

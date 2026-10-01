@@ -6,6 +6,7 @@ import { NO_RENDER_WARNINGS } from '../../../../../shared/render-warnings';
 import { FIELD_NAME_LIST_ID } from '../../../lib/field-names';
 import { describeTemplateUse } from '../../../lib/printer-assignment';
 import type { TemplatePreview } from '../../../view-models/use-template-preview';
+import { CanvasBasics } from '../../CanvasBasics';
 import { DeleteButton } from '../../ConfirmButton';
 import { LabelPreview } from '../../LabelPreview';
 import { TemplateEditor } from '../../TemplateEditor';
@@ -232,8 +233,15 @@ function EditView({
             printers={printers}
             paperPrinters={paperPrinters}
           />
-        ) : // 自由设计模板的编辑器在 1b（Task 11）加入，这里先不渲染表单。
-        null}
+        ) : (
+          <CanvasBasics
+            key={draft.id}
+            draft={draft}
+            onChange={onDraftChange}
+            printers={printers}
+            paperPrinters={paperPrinters}
+          />
+        )}
       </div>
       <section className="template-editing__preview" aria-label="模板预览">
         <PreviewSource template={draft} sample={sample} />

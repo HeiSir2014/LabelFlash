@@ -118,7 +118,7 @@ function printTime(sizeMm: number, options: CellOptions = {}): WaybillNode {
  */
 function customArea(
   inspectionAtMm: number | null,
-  paragraphs: WaybillParagraph[] = [p('{自定义区}', 2.8, { wrap: true })],
+  paragraphs: WaybillParagraph[] = [SHELF_NUMBER_PARAGRAPH, p('{自定义区}', 2.8, { wrap: true })],
 ): WaybillNode {
   if (inspectionAtMm === null) {
     return text(0, paragraphs, { valign: 'top' });
@@ -132,6 +132,12 @@ function customArea(
 
 /** 「已验视」这一格的高度（mm）：官方模板里是 4mm 左右。 */
 const INSPECTION_HEIGHT_MM = 4;
+
+/**
+ * 货架号：内置规则都会从手机拍的标签上读货架号，内置模板都带上它，用户不用自己配。
+ * 读到就印在商家自定义区最前面（拣货时一眼看到）；没读到（扫码枪、本机接口没有图）整段不印。
+ */
+const SHELF_NUMBER_PARAGRAPH = p('货架号：{货架号}', 4, { bold: true });
 
 function root(children: WaybillNode[]): WaybillTemplate['root'] {
   return { sizeMm: 0, ruleAfter: 'none', body: { split: 'rows', children: fill(children) } };
@@ -261,7 +267,12 @@ export const PLATFORM_ONE_PART: WaybillTemplate = waybill('waybill-platform-130'
       barcode(0, { showText: false, vertical: true }),
     ]),
     // 自定义区从 79mm 开始：先印商品（大字）和订单号，官方在 103mm 印「已验视」。
-    customArea(24, [p('{物品}', 4, { wrap: true }), p('{自定义区}', 2.8, { wrap: true }), p('订单号：{订单号}', 2.6)]),
+    customArea(24, [
+      SHELF_NUMBER_PARAGRAPH,
+      p('{物品}', 4, { wrap: true }),
+      p('{自定义区}', 2.8, { wrap: true }),
+      p('订单号：{订单号}', 2.6),
+    ]),
   ]),
 });
 
@@ -481,6 +492,7 @@ export const WAYBILL_SAMPLE_FIELDS: readonly ScanField[] = [
   { name: '路由码4', value: '07' },
   { name: '末端码', value: 'A12-07' },
   { name: '自定义区', value: '订单 SO20261001-0007  连衣裙（黑 / M）×1、半身裙（白 / S）×2' },
+  { name: '货架号', value: 'A-1-2-3' },
 ];
 
 /** 内置面单用到的字段名（编辑器「插入字段」的候选、接入说明的字段表）。 */

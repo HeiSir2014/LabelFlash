@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { BUILT_IN_WAYBILLS } from '../src/core/templates/builtin-waybills';
+import { estimateTextWidthEm } from '../src/core/templates/text-fit';
 import {
   blurActiveElement,
   callApi,
@@ -574,4 +575,44 @@ test('lays out every built-in waybill so that no line is clipped with the system
     }, html);
     expect({ template: template.name, clipped }).toEqual({ template: template.name, clipped: [] });
   }
+});
+
+// 字宽表（text-fit.ts）是按 Windows 的微软雅黑量的：在每个平台上用标签、面单同一套字体逐个字符量一遍，
+// 表里的估算不能比实际窄（窄了字会被格子边缘裁掉）。失败时列出估窄的字和实测宽度，照着补表。
+test('never estimates a character narrower than the system font draws it', async ({ electronApp }) => {
+  const { app } = await electronApp.launch();
+  const chars = [
+    ...Array.from({ length: 95 }, (_, index) => String.fromCharCode(32 + index)),
+    ...'×…—–·°¥中，。：（）',
+  ];
+  const measured = await app.evaluate(async ({ BrowserWindow }, list) => {
+    const window = new BrowserWindow({ show: false });
+    try {
+      await window.loadURL('data:text/html;charset=utf-8,<body></body>');
+      return (await window.webContents.executeJavaScript(`(() => {
+        const span = document.createElement('span');
+        span.style.cssText = 'font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; font-size: 100px; white-space: pre';
+        document.body.append(span);
+        const result = {};
+        for (const char of ${JSON.stringify(list)}) {
+          const widths = [400, 700].map((weight) => {
+            span.style.fontWeight = String(weight);
+            span.textContent = char.repeat(20);
+            return span.getBoundingClientRect().width / 2000;
+          });
+          result[char] = Math.max(...widths);
+        }
+        return result;
+      })()`)) as Record<string, number>;
+    } finally {
+      window.destroy();
+    }
+  }, chars);
+  const narrow = Object.entries(measured)
+    .filter(([char, width]) => estimateTextWidthEm(char) < width)
+    .map(
+      ([char, width]) =>
+        `${JSON.stringify(char)} 实测 ${width.toFixed(3)} 估算 ${estimateTextWidthEm(char).toFixed(3)}`,
+    );
+  expect(narrow).toEqual([]);
 });

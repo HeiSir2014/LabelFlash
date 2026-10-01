@@ -78,9 +78,12 @@ interface RawMatrix {
   width: number;
 }
 
-/** bwip-js 的 raw()：同步，出错时抛出。返回值按 bwip-js 的文档收窄成两种形状之一。 */
-function rawEncode(bcid: string, text: string): RawLinear | RawMatrix {
-  const raw = bwipjs.raw({ bcid, text }) as unknown;
+/**
+ * bwip-js 的 raw() 返回值按文档应该是两种形状之一；形状不对说明我们这边的假设错了（库升级、
+ * 新码制的输出和预期不一样……），是我们自己的 bug，不是用户内容的问题，直接抛出去，不要吞掉。
+ * 调用方要在 bwipjs.raw() 的 try/catch 之外调用这个函数，这个 throw 才不会被当成内容错误接住。
+ */
+function narrowRaw(raw: unknown, bcid: string): RawLinear | RawMatrix {
   const first = Array.isArray(raw) ? (raw[0] as unknown) : null;
   if (typeof first === 'object' && first !== null) {
     if ('sbs' in first) {
@@ -93,19 +96,7 @@ function rawEncode(bcid: string, text: string): RawLinear | RawMatrix {
   throw new Error(`bwip-js returned an unexpected shape for ${bcid}`);
 }
 
-/**
- * bwip-js 内容不合规矩时抛的错误，消息以 `bwipp.` 开头（例如 `bwipp.ean13badLength#6878: ...`）；
- * 二维码塞进孤立的 UTF-16 代理项时抛的是 URIError，没有 `bwipp.` 前缀，同样算内容错误。
- * 这两种之外的异常（例如我们自己在 rawEncode 里抛的「unexpected shape」）是真的 bug，原样往上抛，不能当成用户的内容问题吞掉。
- */
-function isContentError(error: unknown): boolean {
-  if (error instanceof URIError) {
-    return true;
-  }
-  return error instanceof Error && error.message.startsWith('bwipp.');
-}
-
-/** 编码；内容不合这种码制（位数、校验位、字符）时给出中文原因，不抛出；真的 bug 原样抛出。 */
+/** 编码；内容不合这种码制（位数、校验位、字符，或是 bwip-js 对这份内容干脆处理不了）时给出中文原因，不抛出；真的 bug 原样抛出。 */
 export function encodeBarcode(symbology: string, text: string): BarcodeResult {
   const type = barcodeType(symbology);
   if (type === null) {
@@ -115,27 +106,28 @@ export function encodeBarcode(symbology: string, text: string): BarcodeResult {
     return { ok: false, reason: '内容是空的' };
   }
   if (text.length > MAX_BARCODE_TEXT_LENGTH) {
-    return { ok: false, reason: '内容太长，这种条码放不下' };
+    return { ok: false, reason: `${type.label}：内容太长，这种条码放不下` };
   }
   // 一维码只接可打印 ASCII：Code 128 之类塞中文会走扩展模式，编出来的条码扫出来是乱码（面单的编码器本就只收 ASCII）。
   // 二维码（Data Matrix、PDF417……）本就是按 UTF-8 编的，不限制。
   if (type.dimensions === 1 && !PRINTABLE_ASCII.test(text)) {
-    return { ok: false, reason: '有这种条码不能编的字' };
+    return { ok: false, reason: `${type.label}：有这种条码不能编的字` };
   }
-  let raw: RawLinear | RawMatrix;
+  // 只把 bwipjs.raw() 这一行圈进 try/catch：它是第三方库在处理不可信的外部内容，任何异常都当成「这份内容编不出来」，
+  // 不管消息长什么样（bwip-js 对某些查不到规则的内容会直接抛 TypeError，不走它自己「bwipp.」前缀的错误体系）。
+  // 下面的形状收窄、行列整除检查是我们自己对「正常输出该是什么样」的假设，放在 try/catch 外面，假设错了就是 bug，原样抛出。
+  let output: unknown;
   try {
-    raw = rawEncode(symbology, text);
+    output = bwipjs.raw({ bcid: symbology, text });
   } catch (error) {
-    if (!isContentError(error)) {
-      throw error;
-    }
-    return explain(error);
+    return explain(error, type.label);
   }
+  const raw = narrowRaw(output, symbology);
   if ('sbs' in raw) {
     if (!raw.sbs.every((width) => Number.isInteger(width) && width >= 0)) {
       // 邮政四态码（POSTNET、USPS 智能邮件码……）按 PostScript 点给小数条宽，不取整到打印点；
       // 它们已经不在 BARCODE_TYPES 里了，这道检查是防着以后又加进一个输出小数条宽的码制。
-      return { ok: false, reason: '这种条码的模块宽不是整数，打印不出' };
+      return { ok: false, reason: `${type.label}：这种条码的模块宽不是整数，打印不出` };
     }
     const tallest = Math.max(...raw.bhs.map((height, index) => height + (raw.bbs[index] ?? 0)));
     return {
@@ -167,31 +159,35 @@ export function encodeBarcode(symbology: string, text: string): BarcodeResult {
 }
 
 /**
- * 按 bwip-js 的错误码（消息形如 `bwipp.<code>#<行号>: ……`）给中文原因，`detail` 留原始英文消息写日志用。
- * 没有错误码的（孤立的 UTF-16 代理项，URIError）当成坏字符处理。
+ * bwipjs.raw() 抛出的异常都当成内容问题：按它的错误码（消息形如 `bwipp.<code>#<行号>: ……`）给中文原因，
+ * `detail` 留原始英文消息写日志用。孤立的 UTF-16 代理项抛的是 URIError，当成坏字符；
+ * 其余没有 `bwipp.` 错误码的异常（例如某些内容让 bwip-js 自己内部抛出 TypeError，不走它的错误体系）给通用的「内容不对」。
  */
-function explain(error: unknown): { ok: false; reason: string; detail: string } {
+function explain(error: unknown, label: string): { ok: false; reason: string; detail: string } {
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof URIError) {
+    return { ok: false, reason: `${label}：有这种条码不能编的字`, detail: message };
+  }
   const code = /^bwipp\.(\w+)#/.exec(message)?.[1] ?? '';
   if (code === '') {
-    return { ok: false, reason: '有这种条码不能编的字', detail: message };
+    return { ok: false, reason: `${label}：内容不对`, detail: message };
   }
   if (/Length$/i.test(code) || /badLength|tooLong|tooShort/i.test(code)) {
-    return { ok: false, reason: '位数不对', detail: message };
+    return { ok: false, reason: `${label}：位数不对`, detail: message };
   }
   if (/NoValidSymbol/.test(code)) {
-    return { ok: false, reason: '内容太长，这种条码放不下', detail: message };
+    return { ok: false, reason: `${label}：内容太长，这种条码放不下`, detail: message };
   }
   if (/^GS1/.test(code)) {
-    return { ok: false, reason: '要写成 GS1 格式，例如 (01)06901234567892', detail: message };
+    return { ok: false, reason: `${label}：要写成 GS1 格式，例如 (01)06901234567892`, detail: message };
   }
   if (/badCheck/i.test(code)) {
-    return { ok: false, reason: '校验位不对', detail: message };
+    return { ok: false, reason: `${label}：校验位不对`, detail: message };
   }
   if (/badChar|Character|invalid/i.test(code)) {
-    return { ok: false, reason: '有这种条码不能编的字', detail: message };
+    return { ok: false, reason: `${label}：有这种条码不能编的字`, detail: message };
   }
-  return { ok: false, reason: '内容不对', detail: message };
+  return { ok: false, reason: `${label}：内容不对`, detail: message };
 }
 
 /** 二维码制的静区。 */
@@ -209,9 +205,11 @@ export function moduleDotsFor(
   dot: number,
   maxModuleMm: number,
 ): number | null {
-  // 用 ceil 而不是 round：MIN_MODULE_MM / dot 在浮点下可能把本该正好是整数的比值算成比它小一点点
-  // （例如 204dpi 上数学上是 2，算出来是 1.9999999999…），round 会降到 2、比 MIN_MODULE_MM 窄一丝；
-  // ceil 配合极小的容差（FLOAT_EPSILON）只在确实达到下一整数时才进位，不会把下限悄悄下压。
+  // 用 ceil 而不是 round：MIN_MODULE_MM / dot 只要比某个整数大一点（哪怕只大 0.01），round 也会降到那个整数，
+  // 而那点和整数的点数一样宽（没有多那一点），实际宽度就比 MIN_MODULE_MM 窄了（例如 204dpi 上比值约 2.0079，
+  // round 得 2，但 2 个点只有 0.249mm）；换成 ceil 才能保证点数折算出来的宽度总是不小于 MIN_MODULE_MM。
+  // 减去的 FLOAT_EPSILON 只是去掉浮点除法在「比值数学上正好是整数」时的噪声（例如 203.2dpi），
+  // 不是为了纠正上面这种本来就该进位的情况。
   const minDots = Math.max(1, Math.ceil(MIN_MODULE_MM / dot - FLOAT_EPSILON));
   const maxDots = Math.max(minDots, Math.round(maxModuleMm / dot));
   const dots = Math.min(maxDots, Math.floor(lengthDots / totalModules));

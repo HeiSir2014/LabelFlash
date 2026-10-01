@@ -55,6 +55,18 @@ describe('encodeBarcode', () => {
     expect(result.code.widths.every((width) => Number.isInteger(width) && width >= 0)).toBe(true);
   });
 
+  test('turns any failure inside bwip-js into a content failure instead of throwing', () => {
+    // bwip-js 4.11.4 对 DataBar Expanded 的 '1'、'A'、'-' 这类内容不走它自己「bwipp.」前缀的错误体系，
+    // 而是直接抛 TypeError（undefined is not an object ('_1V.length')）——这是它处理不可信内容时的真实行为，
+    // 不是我们能控制的，必须当成「这份内容编不出来」而不是让它一路抛出去砸穿标签预览、打印。
+    for (const text of ['1', 'A', '-']) {
+      const result = encodeBarcode('databarexpanded', text);
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected failure');
+      expect(result.reason).toBe('GS1 DataBar Expanded：内容不对');
+    }
+  });
+
   test('rejects an unknown barcode type', () => {
     expect(encodeBarcode('nope', '1')).toEqual({ ok: false, reason: '不认识的条码类型：nope' });
   });
@@ -65,11 +77,11 @@ describe('encodeBarcode', () => {
 
   test('rejects content longer than the label can hold', () => {
     const text = 'A'.repeat(MAX_BARCODE_TEXT_LENGTH + 1);
-    expect(encodeBarcode('code128', text)).toEqual({ ok: false, reason: '内容太长，这种条码放不下' });
+    expect(encodeBarcode('code128', text)).toEqual({ ok: false, reason: 'Code 128：内容太长，这种条码放不下' });
   });
 
   test('rejects non-ASCII content for a 1D symbology but accepts it for a 2D one', () => {
-    expect(encodeBarcode('code128', '中')).toEqual({ ok: false, reason: '有这种条码不能编的字' });
+    expect(encodeBarcode('code128', '中')).toEqual({ ok: false, reason: 'Code 128：有这种条码不能编的字' });
     const result = encodeBarcode('datamatrix', '中');
     expect(result.ok).toBe(true);
   });
@@ -78,7 +90,7 @@ describe('encodeBarcode', () => {
     const result = encodeBarcode('datamatrix', '\uD800');
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected failure');
-    expect(result.reason).toBe('有这种条码不能编的字');
+    expect(result.reason).toBe('Data Matrix：有这种条码不能编的字');
   });
 
   describe('explains bwip-js content errors in Chinese, by error code', () => {
@@ -87,7 +99,7 @@ describe('encodeBarcode', () => {
       const result = encodeBarcode('itf14', '123');
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('expected failure');
-      expect(result.reason).toBe('位数不对');
+      expect(result.reason).toBe('ITF-14（箱码）：位数不对');
       expect(result.detail).toContain('itf14badLength');
     });
 
@@ -97,7 +109,7 @@ describe('encodeBarcode', () => {
       const result = encodeBarcode('azteccode', 'ÿ'.repeat(999));
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('expected failure');
-      expect(result.reason).toBe('内容太长，这种条码放不下');
+      expect(result.reason).toBe('Aztec：内容太长，这种条码放不下');
       expect(result.detail).toContain('aztecNoValidSymbol');
     });
 
@@ -105,7 +117,7 @@ describe('encodeBarcode', () => {
       const result = encodeBarcode('gs1-128', '0106901234567892');
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('expected failure');
-      expect(result.reason).toBe('要写成 GS1 格式，例如 (01)06901234567892');
+      expect(result.reason).toBe('GS1-128：要写成 GS1 格式，例如 (01)06901234567892');
       expect(result.detail).toContain('GS1');
     });
 
@@ -113,7 +125,7 @@ describe('encodeBarcode', () => {
       const result = encodeBarcode('ean13', 'ABCDEFGHIJKL');
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('expected failure');
-      expect(result.reason).toBe('有这种条码不能编的字');
+      expect(result.reason).toBe('EAN-13（商品条码）：有这种条码不能编的字');
       expect(result.detail).toContain('ean13badCharacter');
     });
 
@@ -121,7 +133,7 @@ describe('encodeBarcode', () => {
       const result = encodeBarcode('ean13', '5901234123458');
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('expected failure');
-      expect(result.reason).toBe('校验位不对');
+      expect(result.reason).toBe('EAN-13（商品条码）：校验位不对');
       expect(result.detail).toContain('ean13badCheckDigit');
     });
   });
@@ -143,9 +155,9 @@ describe('drawing', () => {
     expect(moduleDotsFor(10_000, 10, 0.125, 0.625)).toBe(5);
   });
 
-  test('does not undershoot the minimum module width from floating-point drift', () => {
-    // 204dpi：MIN_MODULE_MM / dot 数学上正好是 2，但浮点算出来是 1.9999999999999998，
-    // 用 round 会降到 2（2 个点只有 0.249mm，比 0.25mm 还窄），必须用 ceil 配合容差退到 3。
+  test('rounds the minimum up instead of to the nearest dot', () => {
+    // 204dpi：MIN_MODULE_MM / dot ≈ 2.0079（比 2 大一点，不是浮点误差，是这个 DPI 本来就要比 2 个点多一些）。
+    // 用 round 会降到 2，但 2 个点只有 0.249mm，比 0.25mm 还窄；ceil 才能保证点数折算出来的宽度够。
     const dot204 = 25.4 / 204;
     expect(moduleDotsFor(2, 1, dot204, WAYBILL_MAX_MODULE_MM)).toBeNull();
     expect(moduleDotsFor(3, 1, dot204, WAYBILL_MAX_MODULE_MM)).toBe(3);

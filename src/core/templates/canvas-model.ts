@@ -161,7 +161,11 @@ export interface BarcodeType {
   common: boolean;
 }
 
-/** 码制清单：常用的 10 种在前，其余按一维、二维分组。加一种码制只需在这里加一行（bwip-js 支持即可）。 */
+/**
+ * 码制清单：常用的 10 种在前，其余按一维、二维分组。加一种码制只需在这里加一行（bwip-js 支持即可）。
+ * 不列邮政四态码（POSTNET、USPS 智能邮件码、Royal Mail、澳大利亚邮政码、日本邮政码、KIX）：
+ * 它们的条宽是 PostScript 点算出来的小数（例如 1.44、1.872），不能取整到打印点，画出来会宽窄不一、扫不出。
+ */
 export const BARCODE_TYPES: readonly BarcodeType[] = [
   { id: 'code128', label: 'Code 128', dimensions: 1, common: true },
   { id: 'ean13', label: 'EAN-13（商品条码）', dimensions: 1, common: true },
@@ -187,12 +191,6 @@ export const BARCODE_TYPES: readonly BarcodeType[] = [
   { id: 'databaromni', label: 'GS1 DataBar', dimensions: 1, common: false },
   { id: 'databarlimited', label: 'GS1 DataBar Limited', dimensions: 1, common: false },
   { id: 'databarexpanded', label: 'GS1 DataBar Expanded', dimensions: 1, common: false },
-  { id: 'postnet', label: 'POSTNET', dimensions: 1, common: false },
-  { id: 'onecode', label: 'USPS 智能邮件码', dimensions: 1, common: false },
-  { id: 'royalmail', label: 'Royal Mail 四态码', dimensions: 1, common: false },
-  { id: 'auspost', label: '澳大利亚邮政码', dimensions: 1, common: false },
-  { id: 'japanpost', label: '日本邮政码', dimensions: 1, common: false },
-  { id: 'kix', label: 'KIX', dimensions: 1, common: false },
   { id: 'datamatrix', label: 'Data Matrix', dimensions: 2, common: false },
   { id: 'gs1datamatrix', label: 'GS1 Data Matrix', dimensions: 2, common: false },
   { id: 'pdf417', label: 'PDF417', dimensions: 2, common: false },

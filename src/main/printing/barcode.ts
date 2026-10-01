@@ -1,5 +1,6 @@
 import bwipjs from 'bwip-js';
 import { barcodeType } from '../../core/templates/canvas-model';
+import { FLOAT_EPSILON } from '../../core/templates/text-fit';
 
 /**
  * 条码：编码交给 bwip-js（只要条空宽度或点阵），画法自己来：每个模块取整数个打印点，路径坐标以模块为单位，
@@ -16,9 +17,22 @@ export const WAYBILL_MAX_MODULE_MM = 0.625;
 export const CANVAS_MAX_MODULE_MM = 1;
 /** 条码最矮 4mm：再矮手持扫码枪的扫描线不好对准，放不下就不印并提示。 */
 export const MIN_BAR_HEIGHT_MM = 4;
+/** 条码内容最长 1000 字：标签本来就放不下更长的内容，而且 bwip-js 编码超长的 Aztec 之类会卡顿近 1 秒。 */
+export const MAX_BARCODE_TEXT_LENGTH = 1000;
 
-/** 二维码制的静区（模块数）：Data Matrix 1、PDF417 2，其余按 1（标准里写 0 的也留 1，和相邻的线分开）。 */
-const MATRIX_QUIET_ZONE_MODULES: Readonly<Record<string, number>> = { pdf417: 2, pdf417compact: 2 };
+/** 一维条码只收可打印 ASCII（0x20–0x7E）：中文、重音字母等要靠扩展模式编码，扫码枪读出来是乱码。 */
+const PRINTABLE_ASCII = /^[\x20-\x7E]*$/;
+
+/**
+ * 二维码制的静区（模块数）：PDF417、紧凑 PDF417 按 AIM 标准至少 2 个模块；汉信码（GB/T 21049）、DotCode（AIM）
+ * 按各自标准至少 3 倍模块宽（3X）；Data Matrix 1，其余按 1（标准里写 0 的也留 1，和相邻的线分开）。
+ */
+const MATRIX_QUIET_ZONE_MODULES: Readonly<Record<string, number>> = {
+  pdf417: 2,
+  pdf417compact: 2,
+  hanxin: 3,
+  dotcode: 3,
+};
 const DEFAULT_MATRIX_QUIET_ZONE_MODULES = 1;
 
 export interface LinearCode {
@@ -41,7 +55,14 @@ export interface MatrixCode {
   rowScale: number;
 }
 
-export type BarcodeResult = { ok: true; code: LinearCode | MatrixCode } | { ok: false; reason: string };
+export type BarcodeResult =
+  | { ok: true; code: LinearCode | MatrixCode }
+  | {
+      ok: false;
+      reason: string;
+      /** 原始错误，写日志用，不给用户看。 */
+      detail?: string;
+    };
 
 interface RawLinear {
   sbs: number[];
@@ -72,19 +93,50 @@ function rawEncode(bcid: string, text: string): RawLinear | RawMatrix {
   throw new Error(`bwip-js returned an unexpected shape for ${bcid}`);
 }
 
-/** 编码；内容不合这种码制（位数、校验位、字符）时给出中文原因，不抛出。 */
+/**
+ * bwip-js 内容不合规矩时抛的错误，消息以 `bwipp.` 开头（例如 `bwipp.ean13badLength#6878: ...`）；
+ * 二维码塞进孤立的 UTF-16 代理项时抛的是 URIError，没有 `bwipp.` 前缀，同样算内容错误。
+ * 这两种之外的异常（例如我们自己在 rawEncode 里抛的「unexpected shape」）是真的 bug，原样往上抛，不能当成用户的内容问题吞掉。
+ */
+function isContentError(error: unknown): boolean {
+  if (error instanceof URIError) {
+    return true;
+  }
+  return error instanceof Error && error.message.startsWith('bwipp.');
+}
+
+/** 编码；内容不合这种码制（位数、校验位、字符）时给出中文原因，不抛出；真的 bug 原样抛出。 */
 export function encodeBarcode(symbology: string, text: string): BarcodeResult {
   const type = barcodeType(symbology);
   if (type === null) {
     return { ok: false, reason: `不认识的条码类型：${symbology}` };
   }
+  if (text === '') {
+    return { ok: false, reason: '内容是空的' };
+  }
+  if (text.length > MAX_BARCODE_TEXT_LENGTH) {
+    return { ok: false, reason: '内容太长，这种条码放不下' };
+  }
+  // 一维码只接可打印 ASCII：Code 128 之类塞中文会走扩展模式，编出来的条码扫出来是乱码（面单的编码器本就只收 ASCII）。
+  // 二维码（Data Matrix、PDF417……）本就是按 UTF-8 编的，不限制。
+  if (type.dimensions === 1 && !PRINTABLE_ASCII.test(text)) {
+    return { ok: false, reason: '有这种条码不能编的字' };
+  }
   let raw: RawLinear | RawMatrix;
   try {
     raw = rawEncode(symbology, text);
   } catch (error) {
-    return { ok: false, reason: `内容不符合 ${type.label} 的要求：${explain(error)}` };
+    if (!isContentError(error)) {
+      throw error;
+    }
+    return explain(error);
   }
   if ('sbs' in raw) {
+    if (!raw.sbs.every((width) => Number.isInteger(width) && width >= 0)) {
+      // 邮政四态码（POSTNET、USPS 智能邮件码……）按 PostScript 点给小数条宽，不取整到打印点；
+      // 它们已经不在 BARCODE_TYPES 里了，这道检查是防着以后又加进一个输出小数条宽的码制。
+      return { ok: false, reason: '这种条码的模块宽不是整数，打印不出' };
+    }
     const tallest = Math.max(...raw.bhs.map((height, index) => height + (raw.bbs[index] ?? 0)));
     return {
       ok: true,
@@ -97,25 +149,49 @@ export function encodeBarcode(symbology: string, text: string): BarcodeResult {
     };
   }
   // pixs 里只有不重复的行（PDF417 7 行 × 103 列）；pixy 是把每行的高度（几个模块）算进去之后的行数（7 × 3 = 21）。
-  // 实测（bwip-js 4.11.4）：PDF417 一行 3 个模块高、Micro PDF417 2 个、Data Matrix 1 个。
-  const rows = Math.max(1, Math.round(raw.pixs.length / raw.pixx));
-  const rowScale = Math.max(1, Math.round(raw.pixy / rows));
+  // 实测（bwip-js 4.11.4）：PDF417 一行 3 个模块高、Micro PDF417 2 个、Data Matrix 1 个。两个都应该整除，
+  // 除不尽说明 bwip-js 的输出和预期的形状不一样，是 bug，不是内容问题，直接抛出去。
+  const rows = raw.pixs.length / raw.pixx;
+  if (!Number.isInteger(rows)) {
+    throw new Error(
+      `bwip-js returned pixs (${raw.pixs.length}) that is not a multiple of pixx (${raw.pixx}) for ${symbology}`,
+    );
+  }
+  const rowScale = raw.pixy / rows;
+  if (!Number.isInteger(rowScale)) {
+    throw new Error(
+      `bwip-js returned pixy (${raw.pixy}) that is not a multiple of the row count (${rows}) for ${symbology}`,
+    );
+  }
   return { ok: true, code: { dimensions: 2, cells: raw.pixs, columns: raw.pixx, rows, rowScale } };
 }
 
-/** bwip-js 的错误信息是英文的「bwipp.ean13badLength#4372: EAN-13 must be 12 or 13 digits」：按错误码说中文。 */
-function explain(error: unknown): string {
+/**
+ * 按 bwip-js 的错误码（消息形如 `bwipp.<code>#<行号>: ……`）给中文原因，`detail` 留原始英文消息写日志用。
+ * 没有错误码的（孤立的 UTF-16 代理项，URIError）当成坏字符处理。
+ */
+function explain(error: unknown): { ok: false; reason: string; detail: string } {
   const message = error instanceof Error ? error.message : String(error);
-  if (/badLength|tooLong|tooShort/i.test(message)) {
-    return '位数不对';
+  const code = /^bwipp\.(\w+)#/.exec(message)?.[1] ?? '';
+  if (code === '') {
+    return { ok: false, reason: '有这种条码不能编的字', detail: message };
   }
-  if (/badCheck/i.test(message)) {
-    return '校验位不对';
+  if (/Length$/i.test(code) || /badLength|tooLong|tooShort/i.test(code)) {
+    return { ok: false, reason: '位数不对', detail: message };
   }
-  if (/badChar|invalid/i.test(message)) {
-    return '有这种条码不能编的字';
+  if (/NoValidSymbol/.test(code)) {
+    return { ok: false, reason: '内容太长，这种条码放不下', detail: message };
   }
-  return '内容不对';
+  if (/^GS1/.test(code)) {
+    return { ok: false, reason: '要写成 GS1 格式，例如 (01)06901234567892', detail: message };
+  }
+  if (/badCheck/i.test(code)) {
+    return { ok: false, reason: '校验位不对', detail: message };
+  }
+  if (/badChar|Character|invalid/i.test(code)) {
+    return { ok: false, reason: '有这种条码不能编的字', detail: message };
+  }
+  return { ok: false, reason: '内容不对', detail: message };
 }
 
 /** 二维码制的静区。 */
@@ -133,7 +209,10 @@ export function moduleDotsFor(
   dot: number,
   maxModuleMm: number,
 ): number | null {
-  const minDots = Math.max(1, Math.round(MIN_MODULE_MM / dot));
+  // 用 ceil 而不是 round：MIN_MODULE_MM / dot 在浮点下可能把本该正好是整数的比值算成比它小一点点
+  // （例如 204dpi 上数学上是 2，算出来是 1.9999999999…），round 会降到 2、比 MIN_MODULE_MM 窄一丝；
+  // ceil 配合极小的容差（FLOAT_EPSILON）只在确实达到下一整数时才进位，不会把下限悄悄下压。
+  const minDots = Math.max(1, Math.ceil(MIN_MODULE_MM / dot - FLOAT_EPSILON));
   const maxDots = Math.max(minDots, Math.round(maxModuleMm / dot));
   const dots = Math.min(maxDots, Math.floor(lengthDots / totalModules));
   return dots < minDots ? null : dots;
@@ -142,6 +221,8 @@ export function moduleDotsFor(
 /**
  * 一维条码的路径，坐标以模块为单位：横排时条沿 x 排开、高度占 viewBox 的 1；竖排时转 90°（条纹横着走）。
  * heights、offsets 不给时每根条满高（面单的 Code128 就是这样，输出和原来逐字相同）。
+ * 竖排（vertical）目前只给面单的 Code 128 用，这种条总是满高；heights、offsets 是给横排、条高不一的码制用的
+ * （目前没有码制同时用到两者），不要假设竖排能配合变高的条一起用。
  */
 export function linearBarsPath(
   widths: readonly number[],

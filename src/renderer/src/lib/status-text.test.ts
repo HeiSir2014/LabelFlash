@@ -5,7 +5,6 @@ import { NO_RENDER_WARNINGS } from '../../../shared/render-warnings';
 import {
   describeJobMeta,
   describeJobStatus,
-  describeNoPrinter,
   describeResult,
   describeSamplePrint,
   describeScan,
@@ -336,11 +335,31 @@ describe('describeSamplePrint', () => {
     });
   });
 
-  test('says which paper has no printer', () => {
-    const view = describeNoPrinter('60x40', null);
+  test('says which paper has no printer, pointing at the printers page instead of a button the designer has', () => {
     expect(describeSamplePrint({ status: 'no-printer', paperKey: '60x40', missingPrinter: null }, NOW)).toEqual({
       tone: 'warning',
-      message: `${view.title}：${view.detail}`,
+      message: '60×40 标签 还没有打印机：在「配置 › 打印机」里给这种纸指定打印机',
+    });
+  });
+
+  test('says the printer may already have printed instead of pointing at "强制补打"', () => {
+    expect(describeSamplePrint({ status: 'failed', reason: 'PRINT_TIMEOUT' }, NOW)).toEqual({
+      tone: 'error',
+      message: '打印机没有响应，可能已经出纸；确认后再点「打印一张试试」',
+    });
+  });
+
+  test('keeps the not-ready reason and points back at the sample button instead of "重试打印"', () => {
+    expect(describeSamplePrint({ status: 'failed', reason: 'PRINTER_NOT_READY', detail: '打印机离线' }, NOW)).toEqual({
+      tone: 'error',
+      message: '打印机离线，处理好后再点「打印一张试试」',
+    });
+  });
+
+  test('keeps the lookup-failure reason and points back at the sample button instead of "重试打印"', () => {
+    expect(describeSamplePrint({ status: 'failed', reason: 'LOOKUP_FAILED', detail: '查询超时' }, NOW)).toEqual({
+      tone: 'error',
+      message: '查询超时，处理好后再点「打印一张试试」',
     });
   });
 

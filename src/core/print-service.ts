@@ -330,6 +330,9 @@ export class PrintService {
     if (preview.status !== 'ok') {
       return preview;
     }
+    // preview() 固定传 NO_ENRICH_CONTEXT（没有图、没有手动字段）：图中文字识别这一步只会被跳过（skip），
+    // 不会拦下（block），所以这里只可能是 HTTP 查询失败，blocked.reason 不会是 TEXT_NOT_FOUND
+    // （见 scan/enrich.ts 的 imageText：context.images.length === 0 时直接 skip，不产生 blocked）。
     if (preview.lookupFailure !== null) {
       return { status: 'failed', reason: 'LOOKUP_FAILED', detail: preview.lookupFailure };
     }
@@ -343,6 +346,8 @@ export class PrintService {
       await this.deps.queue.enqueue(printerName, (signal) =>
         this.deps.adapter.print(printerName, this.createJob(scan, template), signal),
       );
+      // 调试用：只记打到哪、什么纸、什么模板种类，不记标签内容（内容可能是顾客信息）。
+      console.info(`[PrintService] sample printed on ${printerName} (${paperKey(template.paper)}, ${template.kind})`);
       // 不写记录，没有记录编号：和测试页一样给一个固定的说明性编号。
       return { status: 'printed', jobId: 'sample', scan };
     } catch (error) {

@@ -494,6 +494,17 @@ describe('PrintService.printSample', () => {
     adapter.failNext(new PrintError('PRINTER_NOT_FOUND'));
     expect(await service.printSample(RAW, draft)).toEqual({ status: 'failed', reason: 'PRINTER_NOT_FOUND' });
   });
+
+  // 预览时按扫码结果决定的模板（这里是 PICK_TEMPLATE）和设计器正在编的草稿是两码事：
+  // 选打印机要按草稿，不能按预览内部重新识别出的模板选。
+  test('chooses the printer for the draft template, not the one the scan would resolve to', async () => {
+    const { service, adapter, useChoosePrinter } = createHarness();
+    useChoosePrinter(async (chosenTemplate) =>
+      chosenTemplate.id === draft.id ? { printerName: 'A', reason: 'template' } : { printerName: 'B', reason: 'paper' },
+    );
+    expect((await service.printSample(RAW, draft)).status).toBe('printed');
+    expect(adapter.printed[0]?.printerName).toBe('A');
+  });
 });
 
 describe('PrintService printer choice', () => {

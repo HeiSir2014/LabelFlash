@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { emptyHistory, HISTORY_LIMIT, type History, record, redo, type Stepped, undo } from './canvas-history';
+import {
+  emptyHistory,
+  endMerge,
+  HISTORY_LIMIT,
+  type History,
+  record,
+  redo,
+  type Stepped,
+  undo,
+} from './canvas-history';
 
 /** 撤销 / 重做应当有结果：没有时让用例失败，而不是带着 null 往下走。 */
 function must<T>(stepped: Stepped<T> | null): Stepped<T> {
@@ -52,5 +61,38 @@ describe('canvas history', () => {
     }
     expect(history.past).toHaveLength(HISTORY_LIMIT);
     expect(history.past[0]).toBe(50);
+  });
+
+  test('redoing after many undos stays within the history limit', () => {
+    let history = emptyHistory<number>();
+    for (let step = 0; step < HISTORY_LIMIT + 50; step += 1) {
+      history = record(history, step);
+    }
+    let present = HISTORY_LIMIT + 50;
+    for (let stepped = undo(history, present); stepped !== null; stepped = undo(history, present)) {
+      history = stepped.history;
+      present = stepped.present;
+    }
+    expect(history.future).toHaveLength(HISTORY_LIMIT);
+    expect(present).toBe(50);
+  });
+
+  test('starts a new step after a redo even with the same key', () => {
+    const history = record(record(emptyHistory<string>(), '', 'e1:text'), 'a', 'e1:text');
+    const back = must(undo(history, 'ab'));
+    const forward = must(redo(back.history, back.present));
+    expect(forward.history.mergeKey).toBeNull();
+    expect(record(forward.history, forward.present, 'e1:text').past).toEqual(['', 'ab']);
+  });
+
+  test('endMerge clears the merge key so the next change does not merge with it', () => {
+    const history = record(emptyHistory<string>(), '', 'e1:text');
+    const ended = endMerge(history);
+    expect(record(ended, 'a', 'e1:text').past).toEqual(['', 'a']);
+  });
+
+  test('endMerge leaves a history without a pending merge unchanged', () => {
+    const history = emptyHistory<string>();
+    expect(endMerge(history)).toBe(history);
   });
 });

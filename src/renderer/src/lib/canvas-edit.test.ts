@@ -74,6 +74,10 @@ describe('clampBox', () => {
     const template = { ...canvas(rect('a', 50, 30, 10, 5)), paper: { widthMm: 40, heightMm: 30 } };
     expect(boxes(clampAll(template))).toEqual([{ id: 'a', x: 30, y: 25, width: 10, height: 5 }]);
   });
+
+  test('caps an element that is larger than the paper itself', () => {
+    expect(clampBox({ x: 5, y: 5, width: 100, height: 100 }, PAPER)).toEqual({ x: 0, y: 0, width: 60, height: 40 });
+  });
 });
 
 describe('moveBy', () => {
@@ -108,6 +112,13 @@ describe('resizeBox', () => {
     expect(resizeBox(start, 'w', 30, 0, PAPER)).toEqual({ x: 29.75, y: 10, width: 0.25, height: 10 });
     expect(resizeBox(start, 'e', 100, 0, PAPER)).toEqual({ x: 10, y: 10, width: 50, height: 10 });
     expect(resizeBox(start, 'n', 0, -50, PAPER)).toEqual({ x: 10, y: 0, width: 20, height: 20 });
+  });
+
+  test('resizes from the ne, sw and s handles, and stops dragging n past the bottom', () => {
+    expect(resizeBox(start, 'ne', -5, -3, PAPER)).toEqual({ x: 10, y: 7, width: 15, height: 13 });
+    expect(resizeBox(start, 'sw', 5, -5, PAPER)).toEqual({ x: 15, y: 10, width: 15, height: 5 });
+    expect(resizeBox(start, 's', 0, 10, PAPER)).toEqual({ x: 10, y: 10, width: 20, height: 20 });
+    expect(resizeBox(start, 'n', 0, 50, PAPER)).toEqual({ x: 10, y: 19.75, width: 20, height: 0.25 });
   });
 });
 
@@ -147,6 +158,17 @@ describe('rotateElement', () => {
       y: 0,
       width: 6,
       height: 30,
+    });
+  });
+
+  test('keeps the box when turning from 90 to 270 (still a half turn)', () => {
+    const template = canvas({ ...rect('a', 27, 5, 6, 30), rotation: 90 });
+    expect(rotateElement(template, 'a', 270).elements[0]).toMatchObject({
+      x: 27,
+      y: 5,
+      width: 6,
+      height: 30,
+      rotation: 270,
     });
   });
 });
@@ -194,6 +216,11 @@ describe('adding elements', () => {
       `${'x'.repeat(CANVAS_LIMITS.nameLength - 2)} 2`,
     );
   });
+
+  test('keeps a meaningful trailing number instead of mistaking it for a copy suffix', () => {
+    const named = [{ ...rect('a', 0, 0, 1, 1), name: '尺码 38' }];
+    expect(uniqueName('尺码 38', named)).toBe('尺码 38 2');
+  });
 });
 
 describe('deleteElements and toggleId', () => {
@@ -239,6 +266,13 @@ describe('distributeElements', () => {
     const template = canvas(rect('a', 0, 0, 10, 5), rect('b', 30, 0, 10, 5));
     expect(distributeElements(template, ['a', 'b'], 'horizontal')).toBe(template);
   });
+
+  test('distributes by centres when the elements overlap, keeping their order', () => {
+    const overlapping = canvas(rect('a', 0, 0, 10, 5), rect('b', 5, 0, 10, 5), rect('c', 12, 0, 10, 5));
+    expect(boxes(distributeElements(overlapping, ['a', 'b', 'c'], 'horizontal')).map((box) => box.x)).toEqual([
+      0, 6, 12,
+    ]);
+  });
 });
 
 describe('layer order', () => {
@@ -280,6 +314,27 @@ describe('copy and paste', () => {
     );
     expect(pasteElements(almostFull, copyElements(almostFull, ['r0', 'r1'])).ids).toHaveLength(1);
   });
+
+  test('keeps the spacing of a pasted group when it lands at the paper edge', () => {
+    // 这组贴着纸的右边：单独把每个元素往回收会挤掉间距（旧 bug：a 挪到 42、b 被收回到 50，叠在一起）。
+    const atEdge = canvas(rect('a', 40, 10, 10, 5), rect('b', 50, 10, 10, 5));
+    const pasted = pasteElements(atEdge, copyElements(atEdge, ['a', 'b']));
+    expect(boxes(pasted.template).slice(2)).toEqual([
+      { id: 'e1', x: 40, y: 12, width: 10, height: 5 },
+      { id: 'e2', x: 50, y: 12, width: 10, height: 5 },
+    ]);
+  });
+
+  test('skips a pasted image that would push the template over the image budget, and counts it', () => {
+    function image(id: string, bytes: number): CanvasElement {
+      return { ...newCanvasElement('image', id, PAPER), pixelWidth: bytes, pixelHeight: 1 } as CanvasElement;
+    }
+    const template = canvas(image('a', CANVAS_LIMITS.templateImageBytes - 150));
+    const clip = [image('b', 100), image('c', 100)];
+    const pasted = pasteElements(template, clip);
+    expect(pasted.ids).toHaveLength(1);
+    expect(pasted.skippedImages).toBe(1);
+  });
 });
 
 describe('marquee selection', () => {
@@ -290,5 +345,37 @@ describe('marquee selection', () => {
 
   test('builds the rectangle from two corners in any order', () => {
     expect(rectFromPoints({ x: 20, y: 5 }, { x: 10, y: 15 })).toEqual({ x: 10, y: 5, width: 10, height: 10 });
+  });
+
+  test('does not select an element that only touches the rectangle at the edge', () => {
+    const template = canvas(rect('a', 10, 10, 10, 5));
+    expect(elementsInRect(template, { x: 20, y: 10, width: 10, height: 5 })).toEqual([]);
+  });
+});
+
+/** 递归冻结，用来确认编辑函数不会改动传进去的对象（它们应当只读输入、返回新的结构）。 */
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const key of Object.values(value as Record<string, unknown>)) {
+      deepFreeze(key);
+    }
+  }
+  return value;
+}
+
+describe('inputs stay untouched', () => {
+  test('editing functions do not mutate the template or clipboard they are given', () => {
+    const template = deepFreeze(canvas(rect('a', 10, 10, 10, 5), rect('b', 30, 20, 10, 5)));
+    expect(() => moveBy(template, ['a', 'b'], 5, 5)).not.toThrow();
+    expect(() => rotateElement(template, 'a', 90)).not.toThrow();
+    expect(() => addElement(template, 'text')).not.toThrow();
+    expect(() => deleteElements(template, ['a'])).not.toThrow();
+    expect(() => alignElements(template, ['a', 'b'], 'left')).not.toThrow();
+    expect(() => distributeElements(template, ['a', 'b'], 'horizontal')).not.toThrow();
+    expect(() => bringToFront(template, ['a'])).not.toThrow();
+    expect(() => elementsInRect(template, { x: 0, y: 0, width: 60, height: 40 })).not.toThrow();
+    const clip = deepFreeze(copyElements(template, ['a']));
+    expect(() => pasteElements(template, clip)).not.toThrow();
   });
 });

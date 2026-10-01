@@ -32,6 +32,11 @@ export interface Point {
 export interface Added {
   template: CanvasTemplate;
   ids: string[];
+  /**
+   * 因为会把模板的图片总量推过 `CANVAS_LIMITS.templateImageBytes` 而被跳过的图片个数；
+   * 界面据此给出提示（「有 N 张图片超出图片总量上限，未粘贴」）。`addElement` 不会跳图片，恒为 0。
+   */
+  skippedImages: number;
 }
 
 /** 0.01mm：比打印点（203dpi 约 0.125mm）细得多；再细的小数存进模板没有意义，数字框里还会出现 12.300000001。 */
@@ -141,6 +146,7 @@ export function moveBy(template: CanvasTemplate, ids: readonly string[], dx: num
 
 /** 选框的 8 个控制点：四个角和四条边的中点。 */
 export const RESIZE_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
+/** `RESIZE_HANDLES` 里的一个：两个字母是角，一个字母是边的中点。 */
 export type ResizeHandle = (typeof RESIZE_HANDLES)[number];
 
 /** 拖控制点改框：只动这个控制点所在的边，对边不动；不小于最小尺寸、不出纸。 */
@@ -217,7 +223,10 @@ export function uniqueName(name: string, elements: readonly CanvasElement[]): st
   if (!used.has(name)) {
     return name;
   }
-  const base = name.replace(NAME_NUMBER_PATTERN, '');
+  // 末尾的数字只在它本身就是一轮编号时才去掉：比如「文字 2」的「 2」，因为「文字」也在用，说明这是重编号；
+  // 不然这串数字是名字本身的内容（比如「尺码 38」），原样当 base，不能把 38 丢掉变成「尺码 2」。
+  const stripped = name.replace(NAME_NUMBER_PATTERN, '');
+  const base = stripped !== name && used.has(stripped) ? stripped : name;
   const numbered = (number: number) => {
     const suffix = ` ${number}`;
     return `${base.slice(0, CANVAS_LIMITS.nameLength - suffix.length)}${suffix}`;
@@ -242,7 +251,7 @@ export function addElement(template: CanvasTemplate, kind: CanvasElementKind, ce
     template.paper,
   );
   const element = withBox({ ...created, name: uniqueName(created.name, template.elements) }, box);
-  return { template: { ...template, elements: [...template.elements, element] }, ids: [id] };
+  return { template: { ...template, elements: [...template.elements, element] }, ids: [id], skippedImages: 0 };
 }
 
 /** 删掉选中的（锁定的留着）；没有能删的原样返回。 */
@@ -251,7 +260,9 @@ export function deleteElements(template: CanvasTemplate, ids: readonly string[])
   return kept.length === template.elements.length ? template : { ...template, elements: kept };
 }
 
+/** 对齐方式，和属性栏的分段按钮一一对应。 */
 export const ALIGNMENTS = ['left', 'center', 'right', 'top', 'middle', 'bottom'] as const;
+/** `ALIGNMENTS` 里的一种。 */
 export type Alignment = (typeof ALIGNMENTS)[number];
 
 /** 安全区：纸边往里 1.5mm（再往外，打印前检查会提示「靠近纸边」）。 */
@@ -297,6 +308,7 @@ export function alignElements(template: CanvasTemplate, ids: readonly string[], 
   };
 }
 
+/** 等距的方向：横向按 x 排一行，纵向按 y 排一列。 */
 export type DistributeAxis = 'horizontal' | 'vertical';
 
 /** 「等距」至少要三个：两个之间的空隙本来就只有一个。 */
@@ -320,10 +332,19 @@ export function distributeElements(
   const span = startOf(last) + sizeOf(last) - startOf(first);
   const gap = (span - moving.reduce((sum, element) => sum + sizeOf(element), 0)) / (moving.length - 1);
   const positions = new Map<string, number>();
-  let cursor = startOf(first);
-  for (const element of moving) {
-    positions.set(element.id, cursor);
-    cursor += sizeOf(element) + gap;
+  if (gap < 0) {
+    // 元素本身比首尾之间的空间还宽，按边对齐已经没有空隙可分：改成按中心点等距，至少顺序不乱、间距均匀。
+    const centerOf = (box: Box) => startOf(box) + sizeOf(box) / 2;
+    const centerStep = (centerOf(last) - centerOf(first)) / (moving.length - 1);
+    moving.forEach((element, index) => {
+      positions.set(element.id, centerOf(first) + centerStep * index - sizeOf(element) / 2);
+    });
+  } else {
+    let cursor = startOf(first);
+    for (const element of moving) {
+      positions.set(element.id, cursor);
+      cursor += sizeOf(element) + gap;
+    }
   }
   return {
     ...template,
@@ -360,16 +381,44 @@ export function copyElements(template: CanvasTemplate, ids: readonly string[]): 
   return template.elements.filter((element) => ids.includes(element.id)).map((element) => structuredClone(element));
 }
 
-/** 粘贴：换新 id、名字加编号、错开 offsetMm 再收进纸内、不带锁定；超出元素上限的部分不贴（调用方提示）。 */
+/** 一组元素里，图片的灰度像素总字节数（粗略的「总量」口径，和 sanitize-canvas 一致：宽 × 高，一像素一字节）。 */
+function imageBytesOf(elements: readonly CanvasElement[]): number {
+  return elements.reduce(
+    (sum, element) => (element.kind === 'image' ? sum + element.pixelWidth * element.pixelHeight : sum),
+    0,
+  );
+}
+
+/**
+ * 粘贴：换新 id、名字加编号、不带锁定；整组按同一个偏移错开（和 `moveBy` 一样，偏移先收进「整组都还在纸上」
+ * 以内），不会像逐个收边那样把组里的间距挤没。超出元素上限的部分不贴；图片会把模板的图片总量推过
+ * `CANVAS_LIMITS.templateImageBytes` 时也不贴，算进 `skippedImages`，调用方据此提示用户。
+ */
 export function pasteElements(
   template: CanvasTemplate,
   clip: readonly CanvasElement[],
   offsetMm: number = PASTE_OFFSET_MM,
 ): Added {
+  const { paper } = template;
   const room = Math.max(0, CANVAS_LIMITS.elements - template.elements.length);
+  const bounds = boundsOf(clip);
+  const offsetX =
+    bounds === null ? offsetMm : Math.min(paper.widthMm - bounds.x - bounds.width, Math.max(-bounds.x, offsetMm));
+  const offsetY =
+    bounds === null ? offsetMm : Math.min(paper.heightMm - bounds.y - bounds.height, Math.max(-bounds.y, offsetMm));
   const elements = [...template.elements];
   const ids: string[] = [];
+  let imageBytes = imageBytesOf(elements);
+  let skippedImages = 0;
   for (const source of clip.slice(0, room)) {
+    if (source.kind === 'image') {
+      const bytes = source.pixelWidth * source.pixelHeight;
+      if (imageBytes + bytes > CANVAS_LIMITS.templateImageBytes) {
+        skippedImages += 1;
+        continue;
+      }
+      imageBytes += bytes;
+    }
     const id = newElementId(elements);
     const copy: CanvasElement = {
       ...structuredClone(source),
@@ -377,11 +426,11 @@ export function pasteElements(
       name: uniqueName(source.name, elements),
       locked: false,
     };
-    const box = clampBox({ ...boxOf(source), x: source.x + offsetMm, y: source.y + offsetMm }, template.paper);
+    const box = clampBox({ ...boxOf(source), x: source.x + offsetX, y: source.y + offsetY }, paper);
     elements.push(withBox(copy, box));
     ids.push(id);
   }
-  return { template: { ...template, elements }, ids };
+  return { template: { ...template, elements }, ids, skippedImages };
 }
 
 /** 两个角（任意顺序）围成的框：框选用。 */

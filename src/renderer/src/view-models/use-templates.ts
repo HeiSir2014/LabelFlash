@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isBuiltInTemplateId, type LabelTemplate } from '../../../core/templates/template-model';
 import type { AppSettings } from '../../../shared/settings';
 import { deepEqual } from '../lib/deep-equal';
@@ -25,6 +25,10 @@ export function useTemplates({
   const [templates, setTemplates] = useState<LabelTemplate[]>([]);
   const [draft, setDraft] = useState<LabelTemplate | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isPrintingSample, setIsPrintingSample] = useState(false);
+  // 守着「打印一张试试」：用 ref 而不是只看 state，state 的更新要等下一次渲染才生效，
+  // 同一个事件循环里的第二次点击读到的还是旧值，光靠 state 挡不住几乎同时的两次点击。
+  const isPrintingSampleRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -112,17 +116,25 @@ export function useTemplates({
     }
   }, [draft, load, activeTemplateId, onActiveTemplateChanged]);
 
-  /** 「打印一张试试」：按预览内容打印草稿，结果用提示条说。 */
+  /**
+   * 「打印一张试试」：按预览内容打印草稿，结果用提示条说。
+   * 在调模板时连点按钮会打出好几张一样的草稿，所以打印未完成前，再点一下什么也不做。
+   */
   const printSample = useCallback(
     async (raw: string) => {
-      if (!draft) {
+      if (!draft || isPrintingSampleRef.current) {
         return;
       }
+      isPrintingSampleRef.current = true;
+      setIsPrintingSample(true);
       try {
         const notice = describeSamplePrint(await window.api.printSample(raw, draft), Date.now());
         notices.push(notice.tone, notice.message);
       } catch (error) {
         reportError('打印一张试试', error);
+      } finally {
+        isPrintingSampleRef.current = false;
+        setIsPrintingSample(false);
       }
     },
     [draft],
@@ -158,6 +170,7 @@ export function useTemplates({
     changeDraft: setDraft,
     saveDraft,
     printSample,
+    isPrintingSample,
     cancelEdit: () => setDraft(null),
     remove,
   };

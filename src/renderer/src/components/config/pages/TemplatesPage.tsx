@@ -259,14 +259,15 @@ function EditView({
 }
 
 /**
- * 预览用什么内容：标签模板用「预览内容」（扫码内容）；面单模板要的是订单系统发来的字段，
- * 扫码内容填不出来，固定用示例面单数据，这里只说明一句。
+ * 预览用什么内容：标签模板用「预览内容」（扫码内容）；面单模板要的是收件人、运单号这些字段，
+ * 单凭扫码内容填不出来，设计时固定用示例面单数据，这里说明实际打印时字段从哪来。
  */
 function PreviewSource({ template, sample }: { template: LabelTemplate | null; sample: SampleContent }) {
   if (template?.kind === 'waybill') {
     return (
       <p className="sample-input sample-input--note">
-        用示例面单数据预览；实际打印时，字段由订单系统经本机接口发来（见「本机接口」页的接入说明）。
+        用示例面单数据预览。实际打印时，字段由订单系统经本机接口发来，或者扫码后由识别规则的加工步骤（例如 HTTP
+        查询订单）补出来。
       </p>
     );
   }

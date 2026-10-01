@@ -164,7 +164,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 
 | 文档 | 内容 |
 |---|---|
-| `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心、手机扫码打印、多台打印机与多种纸张、本机接口 |
+| `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心、手机扫码打印、多台打印机与多种纸张、本机接口、快递面单模板 |
 | `docs/superpowers/plans/` | 实施计划 |
 | `docs/local-api.md` | 给第三方的本机接口接入说明（含 JavaScript、Python、C#、Java 示例） |
 | `docs/roadmap.md` | 路线图 |

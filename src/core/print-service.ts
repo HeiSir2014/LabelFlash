@@ -7,6 +7,7 @@ import type { PrinterChoice } from './printing/resolve-printer';
 import { type EnrichContext, type EnrichResult, NO_ENRICH_CONTEXT } from './scan/enrich';
 import { MAX_RAW_LENGTH, normalizeRaw } from './scan/normalize-raw';
 import type { ScanField, ScanResult } from './scan/scan-result';
+import { GENERIC_TEMPLATE } from './templates/builtin-templates';
 import { type LabelTemplate, withPaper } from './templates/template-model';
 import type {
   Clock,
@@ -41,7 +42,10 @@ export interface PrintServiceDeps {
   recognize: (raw: string) => ScanResult | null;
   /** 执行命中规则的加工步骤。 */
   enrich: (scan: ScanResult, context: EnrichContext) => Promise<EnrichResult>;
-  /** 本次识别结果用的模板（规则绑定的模板或当前模板）；每次打印时读取，切换模板立即生效。 */
+  /**
+   * 这一张用的模板（按字段换模板 → 规则绑定的模板 → 当前模板）；传入的是加工之后的结果，
+   * 每次打印时读取，切换模板立即生效。
+   */
   resolveTemplate: (scan: ScanResult) => LabelTemplate;
   /**
    * 这个模板用哪台打印机（模板指定 → 纸张分配，见 printing/resolve-printer.ts）；每次打印都重新决定，
@@ -60,6 +64,12 @@ interface JobTarget {
 }
 
 const NO_TARGET: JobTarget = { printerName: '', paper: null, templateId: null };
+
+/**
+ * 最多记住多少个码上一次的打印机和模板：一个班次扫几百张，防重复窗口（最长一天）内够用；
+ * 超出时忘掉最早的，那张再重复时按识别结果选。
+ */
+const MAX_REMEMBERED_TARGETS = 2_000;
 
 /** 按模板打印的几种入口在这几处不同。 */
 interface LabelOptions {
@@ -96,6 +106,9 @@ type Recognition = { ok: true; scan: ScanResult } | { ok: false; result: Extract
 
 /** 所有入口（扫码枪、记录重打、手机扫码、本机接口）的唯一业务入口。 */
 export class PrintService {
+  /** 每个码上一次实际用的打印机和模板，重复的一张照着记（见 duplicateTarget）。 */
+  private readonly recentTargets = new Map<string, JobTarget>();
+
   constructor(private readonly deps: PrintServiceDeps) {}
 
   /** 启动时从打印记录回放门限状态，重启后窗口仍然有效。 */
@@ -112,9 +125,10 @@ export class PrintService {
     if (!recognition.ok) {
       return recognition.result;
     }
-    const template = this.deps.resolveTemplate(recognition.scan);
     const enriched = await this.enrich(recognition.scan, NO_ENRICH_CONTEXT);
     const { scan } = enriched;
+    // 和打印一样，按加工后的字段决定模板（按字段换模板）。
+    const template = this.deps.resolveTemplate(scan);
     return {
       status: 'ok',
       scan,
@@ -131,8 +145,7 @@ export class PrintService {
       const truncated = request.raw.trim().slice(0, MAX_RAW_LENGTH);
       return this.finish(id, request, NO_TARGET, truncated, recognition.result, null);
     }
-    // 模板只看命中的规则，和加工步骤补的字段无关：在加工之前就能决定打印机。
-    return this.printLabel(id, request, recognition.scan, this.deps.resolveTemplate(recognition.scan), SCAN_OPTIONS);
+    return this.printLabel(id, request, recognition.scan, this.deps.resolveTemplate, SCAN_OPTIONS);
   }
 
   /** 按给定的模板和字段打印一张：不识别、不加工、不用扫码的防重复窗口。 */
@@ -142,34 +155,24 @@ export class PrintService {
     if (input.caller !== null) {
       request.caller = input.caller;
     }
-    return this.printLabel(this.deps.createId(), request, scan, input.template, {
+    return this.printLabel(this.deps.createId(), request, scan, () => input.template, {
       dedup: false,
       enrich: false,
       printerName: input.printerName,
     });
   }
 
-  /** 按模板决定打印机 → 防重复 → 加工 → 排队打印 → 写记录（后两步之外的由 options 决定）。 */
+  /**
+   * 防重复 → 加工 → 按加工后的字段决定模板和打印机 → 排队打印 → 写记录（防重复和加工由 options 决定）。
+   * 模板在加工之后才定：「按字段换模板」可以用加工步骤补出来的字段（例如 HTTP 查询回来的快递公司）。
+   */
   private async printLabel(
     id: string,
     request: PrintRequest,
     recognized: ScanResult,
-    template: LabelTemplate,
+    templateFor: (scan: ScanResult) => LabelTemplate,
     options: LabelOptions,
   ): Promise<PrintResult> {
-    const choice: PrinterChoice =
-      options.printerName === null
-        ? await this.deps.choosePrinter(template)
-        : { printerName: options.printerName, reason: 'template' };
-    // 没有打印机时和 1.0.x 没选打印机一样：不打印、不写记录、不占防重复窗口，指定好打印机后可以直接重打。
-    if (choice.printerName === null) {
-      return { status: 'no-printer', paperKey: choice.paperKey, missingPrinter: choice.missingPrinter };
-    }
-    const target: JobTarget = {
-      printerName: choice.printerName,
-      paper: paperKey(template.paper),
-      templateId: template.id,
-    };
     const { raw } = recognized;
     // 先占住防重复窗口再加工：HTTP 查询要花时间，扫码枪连按的第二下必须在这里就被拦下。
     const reservation = options.dedup
@@ -181,12 +184,43 @@ export class PrintService {
         recent: reservation.recent,
         windowMs: this.deps.guard.windowMs,
       };
-      return this.finish(id, request, target, raw, duplicate, recognized);
+      return this.finish(
+        id,
+        request,
+        await this.duplicateTarget(recognized, templateFor, options),
+        raw,
+        duplicate,
+        recognized,
+      );
     }
-    const context: EnrichContext = { images: request.images ?? [], manualFields: request.manualFields ?? {} };
-    const enriched = options.enrich
-      ? await this.enrich(recognized, context)
-      : { scan: recognized, traces: [], blocked: null };
+    let template: LabelTemplate;
+    let enriched: EnrichResult;
+    let planned: Awaited<ReturnType<PrintService['plan']>>;
+    try {
+      const context: EnrichContext = { images: request.images ?? [], manualFields: request.manualFields ?? {} };
+      enriched = options.enrich
+        ? await this.enrich(recognized, context)
+        : { scan: recognized, traces: [], blocked: null };
+      template = templateFor(enriched.scan);
+      planned = await this.plan(template, options);
+    } catch (error) {
+      // 读模板（自定义模板在数据库里）出错时也要放开窗口，不然这个码之后一直算「正在打印」，强制补打也打不了。
+      if (options.dedup) {
+        this.deps.guard.release(raw);
+      }
+      throw error;
+    }
+    // 没有打印机时和 1.0.x 没选打印机一样：不打印、不写记录、放开防重复窗口，指定好打印机后可以直接重打。
+    if (planned.target === null) {
+      if (options.dedup) {
+        this.deps.guard.release(raw);
+      }
+      return planned.noPrinter;
+    }
+    const { target } = planned;
+    if (options.dedup) {
+      this.rememberTarget(raw, target);
+    }
     if (enriched.blocked) {
       this.deps.guard.release(raw);
       const { reason, detail, field } = enriched.blocked;
@@ -212,6 +246,59 @@ export class PrintService {
     return this.finish(id, request, target, scan.raw, { status: 'printed', jobId: id, scan }, scan);
   }
 
+  /** 这个模板打到哪台打印机；没有打印机时给出 no-printer 结果。 */
+  /**
+   * 重复的一张记在哪台打印机、哪个模板名下：用这个码上一次实际用的。重复的不加工，按识别结果重新选的话，
+   * 靠加工补出的字段换的模板就选错了（甚至说「没有打印机」）。没记下（上一张还在加工）时按识别结果选，
+   * 再选不出打印机就不写打印机——它就是一张重复，不该提示去分配打印机。
+   */
+  private async duplicateTarget(
+    recognized: ScanResult,
+    templateFor: (scan: ScanResult) => LabelTemplate,
+    options: LabelOptions,
+  ): Promise<JobTarget> {
+    const remembered = this.recentTargets.get(recognized.raw);
+    if (remembered) {
+      return remembered;
+    }
+    const planned = await this.plan(templateFor(recognized), options);
+    return planned.target ?? NO_TARGET;
+  }
+
+  private rememberTarget(raw: string, target: JobTarget): void {
+    // 重新插入放到最后：超过上限时删掉最早的那个。
+    this.recentTargets.delete(raw);
+    this.recentTargets.set(raw, target);
+    if (this.recentTargets.size > MAX_REMEMBERED_TARGETS) {
+      const oldest = this.recentTargets.keys().next().value;
+      if (oldest !== undefined) {
+        this.recentTargets.delete(oldest);
+      }
+    }
+  }
+
+  private async plan(
+    template: LabelTemplate,
+    options: LabelOptions,
+  ): Promise<
+    { target: JobTarget; noPrinter: null } | { target: null; noPrinter: Extract<PrintResult, { status: 'no-printer' }> }
+  > {
+    const choice: PrinterChoice =
+      options.printerName === null
+        ? await this.deps.choosePrinter(template)
+        : { printerName: options.printerName, reason: 'template' };
+    if (choice.printerName === null) {
+      return {
+        target: null,
+        noPrinter: { status: 'no-printer', paperKey: choice.paperKey, missingPrinter: choice.missingPrinter },
+      };
+    }
+    return {
+      target: { printerName: choice.printerName, paper: paperKey(template.paper), templateId: template.id },
+      noPrinter: null,
+    };
+  }
+
   /**
    * 测试页按规则识别、按规则绑定的模板打印，但不执行加工步骤：
    * 测试页是检查打印机的，不应该因为 HTTP 接口不通而打不出来，也不该拿测试内容去查接口。
@@ -219,7 +306,9 @@ export class PrintService {
    */
   async printTest(printerName: string, paper: PaperSize): Promise<PrintResult> {
     const scan = this.deps.recognize(TEST_RAW) ?? TEST_FALLBACK_SCAN;
-    const template = withPaper(this.deps.resolveTemplate(scan), paper);
+    // 测试内容填不出面单（面单要订单系统的字段）：规则绑的是面单模板时，按通用标签打。
+    const resolved = this.deps.resolveTemplate(scan);
+    const template = withPaper(resolved.kind === 'waybill' ? GENERIC_TEMPLATE : resolved, paper);
     try {
       await this.deps.queue.enqueue(printerName, (signal) =>
         this.deps.adapter.print(printerName, this.createJob(scan, template), signal),

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { FieldViolation } from './api-error';
 import { BATCH_LIMIT, parseBatchRequest, parseCreateRequest, parseRenderRequest } from './request-schema';
 
-const VALID = { template: 'templates/builtin-standard', fields: [{ name: '订单号', value: 'A001' }] };
+const VALID = { template: 'templates/builtin-generic', fields: [{ name: '订单号', value: 'A001' }] };
 
 function violationsOf(run: () => unknown): string[] {
   try {
@@ -16,7 +16,7 @@ function violationsOf(run: () => unknown): string[] {
 describe('parseCreateRequest', () => {
   test('accepts a minimal request and fills in defaults', () => {
     expect(parseCreateRequest(VALID)).toEqual({
-      templateId: 'builtin:standard',
+      templateId: 'builtin:generic',
       fields: [{ name: '订单号', value: 'A001' }],
       content: null,
       copies: 1,

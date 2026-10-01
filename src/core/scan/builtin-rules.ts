@@ -6,6 +6,9 @@ import { BUILT_IN_RULE_PREFIX, type ScanRule } from './rule-model';
 export const DASH_THREE_RULE_ID = `${BUILT_IN_RULE_PREFIX}dash-three`;
 export const RAW_RULE_ID = `${BUILT_IN_RULE_PREFIX}raw`;
 
+/** 内置规则读出的货架号写进这个字段；标签的「全部字段」保证它印出来。 */
+export const SHELF_NUMBER_FIELD = '货架号';
+
 /**
  * 内置规则都带的一步：手机扫码时从拍下的标签上读货架号（例如 A-1-2-3），样衣间不用自己建规则。
  * 认不出时照常打印、字段留空：没有货架号的标签、扫码枪和本机接口（没有图，这一步跳过）都和以前一样打印。
@@ -13,7 +16,7 @@ export const RAW_RULE_ID = `${BUILT_IN_RULE_PREFIX}raw`;
  */
 export const SHELF_NUMBER_STEP: ImageTextStep = {
   kind: 'imageText',
-  output: '货架号',
+  output: SHELF_NUMBER_FIELD,
   pattern: SHELF_NUMBER_PATTERN,
   flags: '',
   preferredArea: null,
@@ -72,8 +75,3 @@ export const BUILT_IN_RULES: readonly ScanRule[] = [
     steps: [SHELF_NUMBER_STEP],
   },
 ];
-
-/** 内置规则默认绑定的模板：样衣标签沿用原来的标准样式，其余用当前模板。 */
-export const DEFAULT_RULE_TEMPLATE_BINDINGS: Readonly<Record<string, string>> = {
-  [DASH_THREE_RULE_ID]: 'builtin:standard',
-};

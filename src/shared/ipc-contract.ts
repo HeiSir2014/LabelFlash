@@ -10,6 +10,7 @@ import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from '
 import type { MobileStatus } from './mobile-status';
 import type { PaperSize } from './paper-sizes';
 import type { PrinterReadiness } from './printer-readiness';
+import type { RenderWarnings } from './render-warnings';
 import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
 import type { UpdateStatus } from './update-status';
@@ -110,8 +111,8 @@ export interface LabelPreview {
    * 识别不了或在模板页预览时为 false。
    */
   isTemplateBound: boolean;
-  /** 内容太长，二维码放不下被省略了。 */
-  qrOmitted: boolean;
+  /** 二维码、条码放不下或有格子被截断：预览上提示。 */
+  warnings: RenderWarnings;
   /** 这次用的模板的纸张（预览的软尺和标签框按它）；识别不了时为 null。 */
   paper: PaperSize | null;
 }

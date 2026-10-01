@@ -1,45 +1,54 @@
 import { type FieldArrangement, TEMPLATE_LIMITS } from './template-model';
 
 /**
- * 标签文字排版估算。打印窗口不运行脚本（安全要求），没法在页面里实测文字宽度，
+ * 标签、面单的文字排版估算。打印窗口不运行脚本（安全要求），没法在页面里实测文字宽度，
  * 所以在生成 HTML 前按字符类别估算字宽、逐字模拟折行，算出放得下的字号。
- * 字宽按微软雅黑 / 苹方粗体偏保守取值：宁可略小，也不能被标签边缘裁掉。
+ *
+ * 字宽按实测：2026-10-01 逐个字符量了微软雅黑（Windows）和苹方（macOS），两者取宽的，再放宽一点。
+ * 宁可估宽、字号略小，也不能估窄：估窄了字会被标签或面单格子的边缘裁掉；
+ * 也不按类别取上限，否则 L、I 这类窄字母会被当成 W 那么宽，天天打的标签无端缩小。
+ * 雅黑和苹方的数字都是等宽的，1 和 0 一样宽。
  */
 
-const EM = {
-  wide: 1,
-  upperWide: 0.92,
-  upper: 0.7,
-  lowerWide: 0.86,
-  lower: 0.56,
-  digit: 0.58,
-  narrow: 0.3,
-  dash: 0.4,
-  space: 0.32,
-  other: 0.62,
-} as const;
-
-/** 全角字符：韩文字母、CJK 及符号、韩文音节、兼容汉字、竖排与全角标点。 */
-const WIDE_CHAR_PATTERN = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
-const NARROW_CHARS = new Set([..."iIl1|.,:;!'`()[]{}/\\"]);
-const DASH_CHARS = new Set([...'-_']);
-const UPPER_WIDE_CHARS = new Set([...'MW@%']);
-const LOWER_WIDE_CHARS = new Set([...'mw']);
+/**
+ * 空格（32）到 ~（126）每个字符的宽度（em），按字符码顺序：Windows 的微软雅黑和 macOS 的苹方各自实测（常规、粗体取宽的），
+ * 两种字体再取宽的那个。苹方由 CI 的 macOS E2E 量出（「never estimates a character narrower…」那一条会列出估窄的字）。
+ */
+const ASCII_WIDTHS_EM: readonly number[] = [
+  0.337, 0.349, 0.521, 0.64, 0.617, 1.004, 0.911, 0.308, 0.39, 0.39, 0.518, 0.761, 0.286, 0.612, 0.286, 0.512, 0.617,
+  0.617, 0.617, 0.617, 0.617, 0.617, 0.617, 0.617, 0.617, 0.617, 0.286, 0.286, 0.761, 0.761, 0.761, 0.565, 1.03, 0.752,
+  0.706, 0.748, 0.792, 0.658, 0.598, 0.765, 0.821, 0.335, 0.554, 0.725, 0.608, 1.028, 0.848, 0.818, 0.657, 0.818, 0.698,
+  0.665, 0.645, 0.776, 0.715, 1.076, 0.7, 0.708, 0.65, 0.39, 0.512, 0.39, 0.761, 0.504, 0.334, 0.578, 0.666, 0.578,
+  0.665, 0.582, 0.405, 0.665, 0.646, 0.296, 0.317, 0.596, 0.296, 0.982, 0.648, 0.657, 0.666, 0.665, 0.424, 0.539, 0.414,
+  0.648, 0.577, 0.852, 0.585, 0.574, 0.514, 0.39, 0.341, 0.39, 0.761,
+];
+const FIRST_ASCII = 32;
+/** 其他常见符号的实测宽度（em）。 */
+const SYMBOL_WIDTHS_EM: Readonly<Record<string, number>> = {
+  '×': 0.761,
+  '…': 1.004,
+  '—': 1.08,
+  '–': 0.828,
+  '·': 0.504,
+  '°': 0.41,
+  '¥': 0.617,
+};
+/** 实测值再放宽 3%：不同版本的字体、渲染时的取整都可能让字略宽一点。 */
+const SAFETY_FACTOR = 1.03;
+/** 表里没有的字（汉字、全角标点、韩文和其他文字）：雅黑正好一个字宽，苹方实测 1.004 个字宽，取 1.01。 */
+const DEFAULT_WIDTH_EM = 1.01;
 
 export const LINE_HEIGHT = 1.2;
-const FONT_SIZE_STEP_PER_MM = 10;
+/** 字号按 0.1mm 一档取：再细肉眼分不出，也让每次排版的结果稳定。标签和面单共用。 */
+export const FONT_SIZE_STEP_PER_MM = 10;
+/** 浮点比较的容差：0.1 × 3 之类的小数误差不能让「正好放得下」变成「放不下」。 */
+export const FLOAT_EPSILON = 1e-9;
 
 export function charWidthEm(char: string): number {
-  if (WIDE_CHAR_PATTERN.test(char)) return EM.wide;
-  if (char === ' ') return EM.space;
-  if (NARROW_CHARS.has(char)) return EM.narrow;
-  if (DASH_CHARS.has(char)) return EM.dash;
-  if (UPPER_WIDE_CHARS.has(char)) return EM.upperWide;
-  if (LOWER_WIDE_CHARS.has(char)) return EM.lowerWide;
-  if (char >= '0' && char <= '9') return EM.digit;
-  if (char >= 'A' && char <= 'Z') return EM.upper;
-  if (char >= 'a' && char <= 'z') return EM.lower;
-  return EM.other;
+  const code = char.charCodeAt(0);
+  const ascii = char.length === 1 ? ASCII_WIDTHS_EM[code - FIRST_ASCII] : undefined;
+  const measured = ascii ?? SYMBOL_WIDTHS_EM[char];
+  return measured === undefined ? DEFAULT_WIDTH_EM : measured * SAFETY_FACTOR;
 }
 
 export function estimateTextWidthEm(text: string): number {
@@ -81,7 +90,7 @@ export function textHeightMm(text: string, fontSizeMm: number, widthMm: number):
 
 /** 缩小后的字号向下取到 0.1mm（向上取会让文本再次超出），不低于最小字号。 */
 export function roundDownFontSizeMm(fontSizeMm: number): number {
-  const rounded = Math.floor(fontSizeMm * FONT_SIZE_STEP_PER_MM + 1e-9) / FONT_SIZE_STEP_PER_MM;
+  const rounded = Math.floor(fontSizeMm * FONT_SIZE_STEP_PER_MM + FLOAT_EPSILON) / FONT_SIZE_STEP_PER_MM;
   return Math.max(TEMPLATE_LIMITS.fontSizeMm.min, rounded);
 }
 
@@ -92,7 +101,7 @@ export function roundDownFontSizeMm(fontSizeMm: number): number {
 export function largestFitting(maxFontSizeMm: number, fits: (fontSizeMm: number) => boolean): number {
   const toSteps = (mm: number) => Math.round(mm * FONT_SIZE_STEP_PER_MM);
   let low = toSteps(TEMPLATE_LIMITS.fontSizeMm.min);
-  let high = Math.max(low, Math.floor(maxFontSizeMm * FONT_SIZE_STEP_PER_MM + 1e-9));
+  let high = Math.max(low, Math.floor(maxFontSizeMm * FONT_SIZE_STEP_PER_MM + FLOAT_EPSILON));
   if (fits(high / FONT_SIZE_STEP_PER_MM)) {
     return high / FONT_SIZE_STEP_PER_MM;
   }
@@ -127,8 +136,15 @@ export interface RowFitOptions {
 
 /** 垂直排列时，前缀（字段名）行的字号相对于值的比例：字段名小一号，值更醒目。 */
 export const STACKED_PREFIX_SCALE = 0.8;
-/** 缩小到原字号的这个比例以内就能放进一行时，宁可缩小也不折行（例如订单号不从中间断开）。 */
+/** 缩小到原字号的这个比例以内就能放进一行时，宁可缩小也不折行。 */
 const ONE_LINE_MIN_RATIO = 0.75;
+/**
+ * 编码、订单号这类「码」（没有空格和汉字）断开就不好认，也没法照着输入：允许缩得更多。
+ * 二维码 24mm 时字段区只有 29mm，12 位订单号要缩到 0.74 倍，按 0.75 会断成「202609280 / 001」。
+ */
+const CODE_ONE_LINE_MIN_RATIO = 0.6;
+/** 「码」：一串字母、数字和常见符号，中间没有空白、没有汉字。 */
+const CODE_PATTERN = /^[\x21-\x7e]+$/;
 /** 横向排列时值一列至少占字段区宽度的这个比例，前缀再长也要给值留出位置。 */
 const MIN_VALUE_COLUMN_RATIO = 0.4;
 const SCALE_PRECISION = 0.01;
@@ -151,7 +167,8 @@ export function fitRowFontSizes(
   const oneLineSizes = rows.map(({ value, fontSizeMm: base }) => {
     const oneLine = fitFontSizeMm(value, base, layout.baseValueWidthMm, 1);
     const isOneLine = countLines(value, oneLine, layout.baseValueWidthMm) === 1;
-    return isOneLine && oneLine >= base * ONE_LINE_MIN_RATIO ? oneLine : base;
+    const minRatio = CODE_PATTERN.test(value) ? CODE_ONE_LINE_MIN_RATIO : ONE_LINE_MIN_RATIO;
+    return isOneLine && oneLine >= base * minRatio ? oneLine : base;
   });
   const preferred = options.uniform ? oneLineSizes.map(() => Math.min(...oneLineSizes)) : oneLineSizes;
   const sizesFor = (scale: number) => preferred.map((size) => (scale >= 1 ? size : roundDownFontSizeMm(size * scale)));

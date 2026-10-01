@@ -26,7 +26,7 @@ const templateParameter = {
   name: 'template',
   in: 'path',
   required: true,
-  description: '模板编号，例如 builtin-standard',
+  description: '模板编号，例如 builtin-generic',
   schema: { type: 'string' },
 };
 
@@ -198,7 +198,7 @@ const SCHEMAS = {
   Template: {
     type: 'object',
     properties: {
-      name: { type: 'string', examples: ['templates/builtin-standard'] },
+      name: { type: 'string', examples: ['templates/builtin-generic'] },
       displayName: { type: 'string' },
       paper,
       printer: { type: ['string', 'null'], description: '模板指定的打印机；null = 按纸张分配' },
@@ -223,7 +223,7 @@ const SCHEMAS = {
     type: 'object',
     required: ['template', 'fields'],
     properties: {
-      template: { type: 'string', examples: ['templates/builtin-standard'] },
+      template: { type: 'string', examples: ['templates/builtin-generic'] },
       fields,
       content,
       copies: { type: 'integer', minimum: 1, maximum: COPIES_LIMIT, default: 1 },

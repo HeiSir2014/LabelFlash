@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../../../core/scan/scan-result';
 import type { LabelPreview } from '../../../shared/ipc-contract';
+import { NO_RENDER_WARNINGS } from '../../../shared/render-warnings';
 import { describePreviewUsage } from './preview-usage';
 
 const SCAN: ScanResult = {
@@ -20,10 +21,10 @@ function preview(overrides: Partial<LabelPreview> = {}): LabelPreview {
       printer: { printerName: '热敏标签机', reason: 'paper' },
     },
     html: '<html></html>',
-    templateId: 'builtin:standard',
-    templateName: '样衣标准（二维码在左）',
+    templateId: 'builtin:big-qr',
+    templateName: '通用 · 大二维码 + 日期备注',
     isTemplateBound: true,
-    qrOmitted: false,
+    warnings: NO_RENDER_WARNINGS,
     paper: { widthMm: 60, heightMm: 40 },
     ...overrides,
   };
@@ -35,7 +36,7 @@ describe('describePreviewUsage', () => {
   test('shows the template the rule chose in the template box and locks it', () => {
     expect(describePreviewUsage(preview(), ACTIVE)).toEqual({
       source: '规则：横杠三段（编码-颜色-尺码）',
-      templateId: 'builtin:standard',
+      templateId: 'builtin:big-qr',
       isRuleBound: true,
     });
   });

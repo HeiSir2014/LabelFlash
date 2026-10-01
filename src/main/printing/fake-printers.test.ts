@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { STANDARD_TEMPLATE } from '../../core/templates/builtin-templates';
+import { GENERIC_TEMPLATE } from '../../core/templates/builtin-templates';
 import type { LabelJob } from '../../core/types';
 import {
   FAKE_PRINTERS_ENV,
@@ -15,7 +15,7 @@ const SPEC: FakePrinterSpec[] = [
 ];
 const JOB: LabelJob = {
   scan: { raw: 'X', ruleId: 'r', ruleName: 'r', fields: [] },
-  template: STANDARD_TEMPLATE,
+  template: GENERIC_TEMPLATE,
   printedAt: 0,
 };
 
@@ -42,7 +42,7 @@ describe('FakePrinters', () => {
     expect(await printers.readiness('标签机A')).toEqual({ ready: true });
     await printers.print('面单机B', JOB, new AbortController().signal);
     expect(printers.printed).toEqual([
-      { printerName: '面单机B', raw: 'X', paper: '60x40', templateId: STANDARD_TEMPLATE.id },
+      { printerName: '面单机B', raw: 'X', paper: '60x40', templateId: GENERIC_TEMPLATE.id },
     ]);
   });
 

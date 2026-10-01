@@ -86,7 +86,7 @@
 | Get | `GET /v1/printJobs/{printJob}` | 任务状态 |
 | List | `GET /v1/printJobs` | 任务列表，新的在前，分页 |
 
-**模板编号**：程序里的模板编号带冒号（`builtin:standard`、`custom:<uuid>`），和 AIP 自定义方法的冒号冲突。接口里把冒号换成横线（`builtin-standard`、`custom-<uuid>`），两种写法一一对应。按编号精确查找，找不到就报 `NOT_FOUND`，不退回通用模板。
+**模板编号**：程序里的模板编号带冒号（`builtin:generic`、`custom:<uuid>`），和 AIP 自定义方法的冒号冲突。接口里把冒号换成横线（`builtin-generic`、`custom-<uuid>`），两种写法一一对应。按编号精确查找，找不到就报 `NOT_FOUND`，不退回通用模板。唯一的例外是 1.3.0 去掉的样衣模板（`builtin-standard`、`builtin-plain`、`builtin-qr-right`）：换成版式相同的通用模板，对接方写死的模板名照样能打。
 
 **打印任务（PrintJob）**
 

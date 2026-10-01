@@ -125,7 +125,7 @@ describe('LocalApi', () => {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        template: 'templates/builtin-standard',
+        template: 'templates/builtin-generic',
         fields: [{ name: '订单号', value: 'A001' }],
         copies: 2,
       }),
@@ -194,7 +194,7 @@ describe('LocalApi', () => {
     new SqliteApiJobStore(harness.db).insert({
       id: 'old',
       caller: 'key:k1',
-      templateId: 'builtin:standard',
+      templateId: 'builtin:generic',
       fields: [{ name: 'a', value: '1' }],
       content: null,
       copies: 2,

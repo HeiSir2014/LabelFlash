@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../../../core/scan/scan-result';
 import type { LabelPreview } from '../../../shared/ipc-contract';
+import { NO_RENDER_WARNINGS } from '../../../shared/render-warnings';
 import {
   describeJobMeta,
   describeJobStatus,
@@ -37,10 +38,10 @@ const OK_PREVIEW: LabelPreview = {
     printer: PRINTER_CHOICE,
   },
   html: '<html></html>',
-  templateId: 'builtin:standard',
-  templateName: '样衣标准（二维码在左）',
+  templateId: 'builtin:big-qr',
+  templateName: '通用 · 大二维码 + 日期备注',
   isTemplateBound: true,
-  qrOmitted: false,
+  warnings: NO_RENDER_WARNINGS,
   paper: { widthMm: 60, heightMm: 40 },
 };
 const INVALID_PREVIEW = (reason: 'INVALID_CONTENT' | 'NO_MATCHING_RULE'): LabelPreview => ({
@@ -49,7 +50,7 @@ const INVALID_PREVIEW = (reason: 'INVALID_CONTENT' | 'NO_MATCHING_RULE'): LabelP
   templateId: null,
   templateName: null,
   isTemplateBound: false,
-  qrOmitted: false,
+  warnings: NO_RENDER_WARNINGS,
   paper: null,
 });
 

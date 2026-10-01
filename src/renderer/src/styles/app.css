@@ -2516,6 +2516,14 @@ textarea {
   resize: none;
 }
 
+/* 面单模板没有「预览内容」：只有一句说明 */
+.sample-input--note {
+  display: block;
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 13px;
+}
+
 /* 模板页 · 列表视图 */
 .templates-page {
   display: grid;
@@ -3043,4 +3051,109 @@ textarea {
   display: flex;
   flex-shrink: 0;
   gap: var(--space-2);
+}
+
+/* ── 面单编辑器：格子大纲（按层级缩进，点一项编辑它） ── */
+.waybill-outline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  list-style: none;
+}
+
+.waybill-outline__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.waybill-outline__item:hover {
+  background: var(--color-housing);
+}
+
+.waybill-outline__item[aria-pressed="true"] {
+  background: var(--color-tape-wash);
+  font-weight: 600;
+}
+
+.waybill-outline__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waybill-outline__size {
+  flex: none;
+  color: var(--color-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.waybill-node {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--color-rule);
+}
+
+.waybill-node__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* ── 识别规则卡片：按字段换模板（字段 · 比较 · 值 → 模板 · 删除，一行一条） ── */
+.template-routes {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) 0 0;
+  border: 0;
+  border-top: 1px dashed var(--color-rule);
+}
+
+/* 卡片宽度随窗口和侧栏变化：一行放不下时自动折成两行，模板下拉框和「删除」换到下一行，不撑出横向滚动条 */
+.template-routes__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.template-routes__row > .text-field {
+  flex: 1 1 6em;
+  min-width: 0;
+}
+
+.template-routes__row > .select-field:last-of-type {
+  flex: 2 1 12em;
+  min-width: 0;
+}
+
+.template-routes__arrow {
+  color: var(--color-ink-soft);
+}
+
+.template-routes__add {
+  align-self: flex-start;
 }

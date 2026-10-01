@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { DEFAULT_PAPER } from '../../../shared/label-paper';
 import { formatPaperName, type PaperSize } from '../../../shared/paper-sizes';
+import { NO_RENDER_WARNINGS, type RenderWarnings } from '../../../shared/render-warnings';
 import type { ScanView, StatusLinkTarget } from '../lib/status-text';
 import type { ScanState } from '../view-models/use-scan-station';
 import { ConfirmButton } from './ConfirmButton';
@@ -11,7 +12,7 @@ const MAX_PREVIEW_SCALE = 2.8;
 /** 不按扫码结果、而是按指定模板预览：还没扫码时用示例内容展示当前模板。 */
 export interface PreviewOverride {
   html: string | null;
-  qrOmitted: boolean;
+  warnings: RenderWarnings;
   /** 换了模板就换一个值：预览做一次出纸动画。 */
   feedKey: string;
   /** 这个模板的纸张。 */
@@ -41,7 +42,7 @@ export function PreviewStage({
 }: PreviewStageProps) {
   const { link } = view.status;
   const html = override ? override.html : (scan?.preview.html ?? null);
-  const isQrOmitted = override ? override.qrOmitted : (scan?.preview.qrOmitted ?? false);
+  const warnings = override ? override.warnings : (scan?.preview.warnings ?? NO_RENDER_WARNINGS);
   const feedKey = override ? `override-${override.feedKey}` : `scan-${scan?.seq ?? 0}`;
   const paper = override?.paper ?? scan?.preview.paper ?? DEFAULT_PAPER;
 
@@ -50,7 +51,7 @@ export function PreviewStage({
       {toolbar}
       <LabelPreview
         html={html}
-        qrOmitted={isQrOmitted}
+        warnings={warnings}
         feedKey={feedKey}
         maxScale={MAX_PREVIEW_SCALE}
         paper={paper}

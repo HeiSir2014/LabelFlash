@@ -72,7 +72,7 @@ function readJob(value: unknown, prefix: string, violations: FieldViolation[]): 
   const templateValue = input['template'];
   const templateId = typeof templateValue === 'string' ? templateIdFromName(templateValue) : null;
   if (templateId === null) {
-    violations.push({ field: `${prefix}template`, description: '模板名，例如 templates/builtin-standard' });
+    violations.push({ field: `${prefix}template`, description: '模板名，例如 templates/builtin-generic' });
   }
   const fields = readFields(input['fields'], `${prefix}fields`, violations);
   const content = readContent(input['content'], `${prefix}content`, violations);

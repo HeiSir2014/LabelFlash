@@ -4,6 +4,7 @@ import {
   type FieldArrangement,
   fullTextWidthMm,
   LAYOUT_GAP_MM,
+  type QrLabelTemplate,
   sideTextWidthMm,
   type TextAlign,
   type TextStyle,
@@ -17,15 +18,19 @@ import {
   textHeightMm,
 } from '../../core/templates/text-fit';
 import type { LabelJob } from '../../core/types';
+import type { RenderWarnings } from '../../shared/render-warnings';
+import { escapeHtml, mm } from './html-text';
 import { DEFAULT_PRINTER_DPI, planQr } from './qr-code';
+import { renderWaybillHtml } from './waybill-html';
+
+export { escapeHtml } from './html-text';
 
 /** 底部整行和备注允许占用的最多行数；超出时自动缩小字号，保证不被标签边缘裁掉。 */
 const MAX_LINES = { bottom: 3, noteBeside: 3, noteBottom: 2 } as const;
 
-export interface RenderedLabel {
+/** 标签 HTML 和生成时发现的问题（标签模板只会有「二维码放不下」）。 */
+export interface RenderedLabel extends RenderWarnings {
   html: string;
-  /** 内容太长、容错降到 L 仍然放不下能扫的二维码：这张标签不印二维码。 */
-  qrOmitted: boolean;
 }
 
 interface Paragraph {
@@ -46,6 +51,17 @@ interface FittedRow extends FieldRow {
  * 文本全部转义，样式值只来自已校验的模板。
  */
 export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI): RenderedLabel {
+  const { template } = job;
+  if (template.kind === 'waybill') {
+    return renderWaybillHtml({ ...job, template }, dpi);
+  }
+  return { ...renderQrLabel({ ...job, template }, dpi), barcodeOmitted: false, overflowCells: 0 };
+}
+
+function renderQrLabel(
+  job: LabelJob & { template: QrLabelTemplate },
+  dpi: number,
+): Pick<RenderedLabel, 'html' | 'qrOmitted'> {
   const { scan, template } = job;
   const printedAt = new Date(job.printedAt);
   const { widthMm: width, heightMm: height } = template.paper;
@@ -181,17 +197,4 @@ function paragraphHtml(className: string, paragraph: Paragraph, align: TextAlign
 
 function fontCss(style: TextStyle, fontSizeMm: number): string {
   return `font-size:${mm(fontSizeMm)};font-weight:${style.bold ? 700 : 400}`;
-}
-
-function mm(value: number): string {
-  return `${Number(value.toFixed(3))}mm`;
-}
-
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }

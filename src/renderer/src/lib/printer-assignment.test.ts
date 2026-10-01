@@ -1,15 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import { GENERIC_TEMPLATE } from '../../../core/templates/builtin-templates';
+import { PLATFORM_TWO_PART } from '../../../core/templates/builtin-waybills';
 import {
   describeTemplatePrinter,
   describeTemplateUse,
   expectedPaperKey,
   paperRows,
   responsibilitiesOf,
+  templateUses,
   withAssignment,
 } from './printer-assignment';
 
 const TEMPLATES = [
-  { name: '样衣标准', paper: { widthMm: 60, heightMm: 40 }, printer: null },
+  { name: '通用标签', paper: { widthMm: 60, heightMm: 40 }, printer: null },
   { name: '申通面单', paper: { widthMm: 100, heightMm: 180 }, printer: '面单机B' },
   { name: '极兔面单', paper: { widthMm: 100, heightMm: 180 }, printer: null },
   { name: '顺丰面单', paper: { widthMm: 100, heightMm: 150 }, printer: '面单机B' },
@@ -50,6 +53,49 @@ describe('paperRows', () => {
   test('does not suggest a printer already assigned to another paper', () => {
     const rows = paperRows(TEMPLATES, { '60x40': '面单机C' }, INSTALLED, DRIVER_PAPER);
     expect(rows.find((row) => row.key === '100x180')?.suggestion).toBeNull();
+  });
+});
+
+describe('optional templates', () => {
+  test('lists the paper of an optional template without flagging it', () => {
+    const optional = { name: '内置面单', paper: { widthMm: 100, heightMm: 180 }, printer: null, optional: true };
+    const rows = paperRows([optional], {}, INSTALLED, {});
+    expect(rows).toEqual([
+      { key: '100x180', name: '100×180 二联面单', printer: null, suggestion: null, isMissing: false, isCovered: true },
+    ]);
+  });
+
+  test('treats built-in waybills as optional until they are active or bound to a rule', () => {
+    const waybill = PLATFORM_TWO_PART;
+    const optional = (activeId: string | null, boundId: string | null) =>
+      templateUses([waybill, GENERIC_TEMPLATE], activeId, [
+        { id: 'builtin:raw', enabled: true, templateId: boundId, templateRoutes: [] },
+      ]).map((use) => use.optional);
+    expect(optional(null, null)).toEqual([true, false]);
+    expect(optional(waybill.id, null)).toEqual([false, false]);
+    expect(optional(null, waybill.id)).toEqual([false, false]);
+  });
+
+  test('counts a waybill a rule switches to by field as in use', () => {
+    const route = { field: '快递公司', match: 'contains' as const, value: '顺丰', templateId: PLATFORM_TWO_PART.id };
+    const uses = templateUses([PLATFORM_TWO_PART], null, [
+      { id: 'custom:orders', enabled: true, templateId: null, templateRoutes: [route] },
+    ]);
+    expect(uses[0]?.optional).toBe(false);
+  });
+
+  // 停用的规则打不出任何东西：它指定的面单没有打印机也不该标红。
+  test('ignores the templates of disabled rules', () => {
+    const route = { field: '快递公司', match: 'contains' as const, value: '顺丰', templateId: PLATFORM_TWO_PART.id };
+    const uses = templateUses([PLATFORM_TWO_PART], null, [
+      { id: 'custom:orders', enabled: false, templateId: PLATFORM_TWO_PART.id, templateRoutes: [route] },
+    ]);
+    expect(uses[0]?.optional).toBe(true);
+  });
+
+  test('never treats a custom waybill as optional', () => {
+    const copy = { ...PLATFORM_TWO_PART, id: 'custom:w1' };
+    expect(templateUses([copy], null, [])[0]?.optional).toBe(false);
   });
 });
 

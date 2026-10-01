@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LookupTableInfo } from '../../../core/lookup/lookup-model';
 import { isBuiltInRuleId, type RuleKind, type ScanRule } from '../../../core/scan/rule-model';
-import type { RuleSetting } from '../../../core/scan/rule-settings';
+import type { RuleSetting, TemplateRoute } from '../../../core/scan/rule-settings';
 import type { RuleListing, RuleTestResult } from '../../../shared/rule-api';
 import { deepEqual } from '../lib/deep-equal';
 import { notices, reportError } from '../lib/notices';
@@ -232,6 +232,7 @@ export function useRules({ onRulesChanged }: RulesOptions) {
     secretNames,
     setEnabled: (id: string, enabled: boolean) => void updateSetting(id, { enabled }),
     bindTemplate: (id: string, templateId: string | null) => void updateSetting(id, { templateId }),
+    setTemplateRoutes: (id: string, templateRoutes: TemplateRoute[]) => void updateSetting(id, { templateRoutes }),
     move,
     create: (kind: RuleKind) => void mutate('新建规则', () => window.api.createRule(kind)),
     duplicate: (id: string) => void mutate('复制规则', () => window.api.duplicateRule(id)),

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { FieldsPrint } from '../print-service';
-import { STANDARD_TEMPLATE } from '../templates/builtin-templates';
+import { GENERIC_TEMPLATE } from '../templates/builtin-templates';
 import { FakeClock } from '../testing/fake-clock';
 import { InMemoryApiJobStore } from '../testing/in-memory-api-job-store';
 import type { PrintResult } from '../types';
@@ -8,7 +8,7 @@ import type { PrintJobInput } from './api-model';
 import { JOB_RETENTION_MS, PrintJobService, REQUEST_ID_WINDOW_MS } from './print-job-service';
 
 const INPUT: PrintJobInput = {
-  templateId: STANDARD_TEMPLATE.id,
+  templateId: GENERIC_TEMPLATE.id,
   fields: [{ name: '订单号', value: 'A001' }],
   content: null,
   copies: 1,
@@ -37,7 +37,7 @@ function createHarness(results: PrintResult[] = []) {
     store,
     clock,
     createId: () => `pj-${++nextId}`,
-    findTemplate: (id) => (id === STANDARD_TEMPLATE.id ? STANDARD_TEMPLATE : null),
+    findTemplate: (id) => (id === GENERIC_TEMPLATE.id ? GENERIC_TEMPLATE : null),
     installedPrinters: () => {
       printerLists += 1;
       return listPrinters();
@@ -69,7 +69,7 @@ describe('PrintJobService', () => {
       source: 'api',
       caller: 'key:k1',
       printerName: null,
-      template: STANDARD_TEMPLATE,
+      template: GENERIC_TEMPLATE,
     });
   });
 

@@ -1,6 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ElectronApplication, Page } from '@playwright/test';
+import { BUILT_IN_WAYBILLS } from '../src/core/templates/builtin-waybills';
+import { estimateTextWidthEm } from '../src/core/templates/text-fit';
 import {
   blurActiveElement,
   callApi,
@@ -48,14 +50,15 @@ test('loads the UI over app:// and previews a scanned label', async ({ electronA
     '通用（二维码在左）',
   );
 
-  // 横杠三段：默认绑定样衣标准模板，只显示编码 / 颜色 / 尺码。
+  // 横杠三段：用当前模板（通用），列出编码 / 颜色 / 尺码。
   await scan(page, 'CL5640-TK-图片色-XXL');
   await expect(page.locator('.status-strip__title')).toHaveText('没有可用的打印机');
   const template = page.getByRole('combobox', { name: '模板', exact: true });
   await expect(usage).toHaveText('规则：横杠三段（编码-颜色-尺码）');
-  await expect(template.locator('option:checked')).toHaveText('样衣标准（二维码在左）');
+  await expect(template.locator('option:checked')).toHaveText('通用（二维码在左）');
   const values = page.frameLocator('.label-frame').locator('.value');
   await expect(values).toHaveText(['CL5640-TK', '图片色', 'XXL']);
+  await expect(page.frameLocator('.label-frame').locator('.prefix')).toHaveText(['编码：', '颜色：', '尺码：']);
 
   // 纯数字订单号：用当前模板（通用），字段区列出「订单号」。
   await scan(page, '202609280001');
@@ -107,15 +110,41 @@ test('tries content against the rules and previews with the template a rule is b
   await tester.fill('CL1_红_M ');
   await expect(result).toContainText('命中「新规则（分隔符拆分）」');
 
-  await page.getByLabel('「纯数字订单号」用的模板').selectOption({ label: '样衣标准（二维码在左）' });
+  await page.getByLabel('「纯数字订单号」用的模板').selectOption({ label: '通用 · 大二维码 + 日期备注' });
   await page.getByRole('button', { name: '返回工作台' }).click();
   await scan(page, '202609280001');
   // 规则指定的模板显示在下拉框里、锁住（改当前模板对这一张不起作用），旁边标「规则指定」。
   await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：纯数字订单号');
   const template = page.getByRole('combobox', { name: '模板', exact: true });
-  await expect(template.locator('option:checked')).toHaveText('样衣标准（二维码在左）');
+  await expect(template.locator('option:checked')).toHaveText('通用 · 大二维码 + 日期备注');
   await expect(template).toBeDisabled();
   await expect(page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
+});
+
+// 按字段换模板：同一条规则按字段的值换模板（例如快递公司是顺丰就用顺丰面单），纸张和打印机跟着模板走。
+test('switches the template by a field value set on the rules page', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  await openConfig(page, '识别规则');
+  const card = page.locator('.rule-card', { hasText: '原样打印' });
+  await card.getByRole('button', { name: '按字段换模板' }).click();
+  await card.getByRole('button', { name: '加一条' }).click();
+  await card.getByLabel('第 1 条的字段').fill('内容');
+  await card.getByLabel('第 1 条的值').fill('SF');
+  await card.getByLabel('第 1 条用的模板').selectOption({ label: '顺丰 100×150' });
+  await expect(card.getByRole('button', { name: '按字段换模板（1 条）' })).toBeVisible();
+  const raw = (await callApi(page, 'getSettings')).ruleSettings.find((setting) => setting.id === 'builtin:raw');
+  expect(raw?.templateRoutes).toEqual([
+    { field: '内容', match: 'contains', value: 'SF', templateId: 'builtin:waybill-sf-150' },
+  ]);
+
+  await page.getByRole('button', { name: '返回工作台' }).click();
+  const template = page.getByRole('combobox', { name: '模板', exact: true });
+  await scan(page, 'SF1234567890123');
+  await expect(template.locator('option:checked')).toHaveText('顺丰 100×150');
+  await expect(page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
+  // 不命中时用规则原来的（这里没指定，就是当前模板）。
+  await scan(page, 'hello');
+  await expect(template.locator('option:checked')).toHaveText('通用（二维码在左）');
 });
 
 test('imports a lookup table and shows its first rows', async ({ electronApp }) => {
@@ -520,4 +549,109 @@ test('previews a label on the paper of its template', async ({ electronApp }) =>
       return frame === null ? Number.POSITIVE_INFINITY : Math.abs(frame.width / frame.height - 1);
     })
     .toBeLessThan(0.02);
+});
+
+// 面单模板：用示例面单数据预览（不是扫码内容）；复制后改一格的文字，预览跟着变，保存后用于打印。
+test('previews a built-in waybill with sample data and edits a copy cell by cell', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  await openConfig(page, '模板');
+  await page.locator('.template-item', { hasText: '平台标准二联' }).click();
+  await expect(page.locator('.sample-input--note')).toContainText('示例面单数据');
+  const templatesPage = page.getByRole('main', { name: '模板' });
+  const label = templatesPage.frameLocator('.label-frame').locator('body');
+  await expect(label).toContainText('781234567890123');
+  await expect(label).toContainText('杭州转运中心');
+  await expect(templatesPage.locator('.ruler--vertical')).toHaveAttribute('viewBox', /^0 0 \S+ 180$/);
+
+  await page.getByRole('button', { name: '复制' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('编辑：');
+  const outline = page.getByRole('list', { name: '格子' });
+  await outline.getByRole('button', { name: /文字 \{集包地\}/ }).click();
+  await page.locator('.waybill-node').getByLabel('文字', { exact: true }).first().fill('集包：{集包地}');
+  await expect(label).toContainText('集包：杭州转运中心');
+  await page.getByRole('button', { name: '保存模板' }).click();
+  await expect(page.locator('.template-item', { hasText: '平台标准二联' }).last()).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(label).toContainText('集包：杭州转运中心');
+});
+
+// 面单每一行的位置和换行是按字宽表算好的：用这台电脑的系统字体真实渲染一遍，没有哪一行被格子边缘裁掉。
+// CI 在 Windows（微软雅黑）和 macOS（苹方）上都跑这一条。
+test('lays out every built-in waybill so that no line is clipped with the system fonts', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch();
+  const waybills = (await callApi(page, 'listTemplates')).filter((template) => template.kind === 'waybill');
+  expect(waybills).toHaveLength(BUILT_IN_WAYBILLS.length);
+  for (const template of waybills) {
+    const { html, warnings } = await callApi(page, 'previewTemplate', '示例', template);
+    if (html === null) throw new Error(`no preview for ${template.name}`);
+    // 排版自己报的问题（格子装不下、条码或二维码放不下）也不能有：下面只量横向有没有被裁。
+    expect({ template: template.name, warnings }).toEqual({
+      template: template.name,
+      warnings: { qrOmitted: false, barcodeOmitted: false, overflowCells: 0 },
+    });
+    // 测试自己开一个能跑脚本的隐藏窗口来量（打印窗口禁用了脚本）：用 Range 量文字本身的宽度（带小数），
+    // 比这一行的可用宽度宽就是被裁掉了。失败时写出两者和字号，方便对照字宽表。
+    const clipped = await app.evaluate(async ({ BrowserWindow }, source) => {
+      const window = new BrowserWindow({ show: false });
+      try {
+        await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(source)}`);
+        return (await window.webContents.executeJavaScript(
+          `[...document.querySelectorAll('.line, .code__text')].flatMap((line) => {
+            const range = document.createRange();
+            range.selectNodeContents(line);
+            const text = range.getBoundingClientRect().width;
+            const box = line.getBoundingClientRect().width;
+            return text > box + 0.5
+              ? [line.textContent + ' | 文字 ' + text.toFixed(2) + 'px | 可用 ' + box.toFixed(2) + 'px | 字号 ' + getComputedStyle(line).fontSize]
+              : [];
+          })`,
+        )) as string[];
+      } finally {
+        window.destroy();
+      }
+    }, html);
+    expect({ template: template.name, clipped }).toEqual({ template: template.name, clipped: [] });
+  }
+});
+
+// 字宽表（text-fit.ts）是按 Windows 的微软雅黑量的：在每个平台上用标签、面单同一套字体逐个字符量一遍，
+// 表里的估算不能比实际窄（窄了字会被格子边缘裁掉）。失败时列出估窄的字和实测宽度，照着补表。
+test('never estimates a character narrower than the system font draws it', async ({ electronApp }) => {
+  const { app } = await electronApp.launch();
+  const chars = [
+    ...Array.from({ length: 95 }, (_, index) => String.fromCharCode(32 + index)),
+    ...'×…—–·°¥中，。：（）',
+  ];
+  const measured = await app.evaluate(async ({ BrowserWindow }, list) => {
+    const window = new BrowserWindow({ show: false });
+    try {
+      await window.loadURL('data:text/html;charset=utf-8,<body></body>');
+      return (await window.webContents.executeJavaScript(`(() => {
+        const span = document.createElement('span');
+        span.style.cssText = 'font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; font-size: 100px; white-space: pre';
+        document.body.append(span);
+        const result = {};
+        for (const char of ${JSON.stringify(list)}) {
+          const widths = [400, 700].map((weight) => {
+            span.style.fontWeight = String(weight);
+            span.textContent = char.repeat(20);
+            return span.getBoundingClientRect().width / 2000;
+          });
+          result[char] = Math.max(...widths);
+        }
+        return result;
+      })()`)) as Record<string, number>;
+    } finally {
+      window.destroy();
+    }
+  }, chars);
+  const narrow = Object.entries(measured)
+    .filter(([char, width]) => estimateTextWidthEm(char) < width)
+    .map(
+      ([char, width]) =>
+        `${JSON.stringify(char)} 实测 ${width.toFixed(3)} 估算 ${estimateTextWidthEm(char).toFixed(3)}`,
+    );
+  expect(narrow).toEqual([]);
 });

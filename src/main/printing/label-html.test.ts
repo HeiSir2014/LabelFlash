@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../../core/scan/scan-result';
-import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from '../../core/templates/builtin-templates';
-import { type FieldSlot, type LabelTemplate, maxQrSizeMm } from '../../core/templates/template-model';
+import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE } from '../../core/templates/builtin-templates';
+import { type FieldSlot, maxQrSizeMm, type QrLabelTemplate } from '../../core/templates/template-model';
+import { PICK_TEMPLATE } from '../../core/testing/templates';
 import type { LabelJob } from '../../core/types';
 import type { PaperSize } from '../../shared/paper-sizes';
 import { escapeHtml, renderLabelHtml } from './label-html';
@@ -27,17 +28,20 @@ const KEY_VALUE: ScanResult = {
 };
 const PRINTED_AT = new Date(2026, 8, 28, 9, 5).getTime();
 
-function render(template: LabelTemplate = STANDARD_TEMPLATE, scan = GARMENT): string {
+/** 内置的标签模板（不含面单）。 */
+const LABEL_TEMPLATES = BUILT_IN_TEMPLATES.flatMap((template) => (template.kind === 'label' ? [template] : []));
+
+function render(template: QrLabelTemplate = PICK_TEMPLATE, scan = GARMENT): string {
   return renderLabelHtml({ scan, template, printedAt: PRINTED_AT }).html;
 }
 
-function withChanges(changes: (template: LabelTemplate) => void, base = STANDARD_TEMPLATE): LabelTemplate {
+function withChanges(changes: (template: QrLabelTemplate) => void, base = PICK_TEMPLATE): QrLabelTemplate {
   const template = structuredClone(base);
   changes(template);
   return template;
 }
 
-function slot(template: LabelTemplate, field: string): FieldSlot {
+function slot(template: QrLabelTemplate, field: string): FieldSlot {
   const found = template.fieldsArea.slots.find((candidate) => candidate.field === field);
   if (!found) throw new Error(`slot ${field} missing`);
   return found;
@@ -65,6 +69,16 @@ describe('renderLabelHtml', () => {
     expect(html).toContain('class="layout-qr-left"');
   });
 
+  // 内置规则从手机拍的标签上读出货架号：每个内置标签模板都要把它印出来，没读到时不留空行。
+  test('every built-in label template prints the shelf number only when one was read', () => {
+    const withShelf: ScanResult = { ...GARMENT, fields: [...GARMENT.fields, { name: '货架号', value: 'A-1-2-3' }] };
+    const unread: ScanResult = { ...GARMENT, fields: [...GARMENT.fields, { name: '货架号', value: '' }] };
+    for (const template of LABEL_TEMPLATES) {
+      expect(render(template, withShelf)).toContain('>A-1-2-3</span>');
+      expect(render(template, unread)).toBe(render(template, GARMENT));
+    }
+  });
+
   test('the generic template lists every recognised field with its name', () => {
     const html = render(GENERIC_TEMPLATE, KEY_VALUE);
     expect(html).toContain('>订单号：</span><span class="value"');
@@ -84,7 +98,7 @@ describe('renderLabelHtml', () => {
   });
 
   test('stacks the name above the value when arranged vertically', () => {
-    const stacked = BUILT_IN_TEMPLATES.find((t) => t.fieldsArea.arrangement === 'stacked');
+    const stacked = LABEL_TEMPLATES.find((t) => t.fieldsArea.arrangement === 'stacked');
     if (!stacked) throw new Error('stacked template missing');
     const html = render(stacked, KEY_VALUE);
     expect(html).toContain('class="fields fields--stacked"');
@@ -158,7 +172,7 @@ describe('renderLabelHtml', () => {
   });
 
   test('mirrors the layout when the QR code is on the right', () => {
-    const qrRight = BUILT_IN_TEMPLATES.find((t) => t.layout === 'qr-right');
+    const qrRight = LABEL_TEMPLATES.find((t) => t.layout === 'qr-right');
     if (!qrRight) throw new Error('qr-right template missing');
     expect(render(qrRight)).toContain('class="layout-qr-right"');
   });
@@ -174,8 +188,8 @@ describe('renderLabelHtml', () => {
         { name: '尺码', value: 'XL' },
       ],
     };
-    const bottomSize = /class="bottom-line" style="font-size:([\d.]+)mm/.exec(render(STANDARD_TEMPLATE, scan))?.[1];
-    expect(Number(bottomSize)).toBeLessThan(STANDARD_TEMPLATE.bottom.fontSizeMm);
+    const bottomSize = /class="bottom-line" style="font-size:([\d.]+)mm/.exec(render(PICK_TEMPLATE, scan))?.[1];
+    expect(Number(bottomSize)).toBeLessThan(PICK_TEMPLATE.bottom.fontSizeMm);
   });
 
   test('shrinks the field rows when they do not fit the height of the label', () => {
@@ -260,7 +274,7 @@ describe('renderLabelHtml', () => {
 
 describe('QR code', () => {
   test('encodes what the template asks for', () => {
-    const plain = renderLabelHtml({ scan: GARMENT, template: STANDARD_TEMPLATE, printedAt: PRINTED_AT });
+    const plain = renderLabelHtml({ scan: GARMENT, template: PICK_TEMPLATE, printedAt: PRINTED_AT });
     const byField = renderLabelHtml({
       scan: GARMENT,
       template: withChanges((t) => {
@@ -274,16 +288,16 @@ describe('QR code', () => {
 
   test('centres the dot-aligned code inside the box the template reserves', () => {
     const html = render();
-    expect(html).toContain(`width: ${STANDARD_TEMPLATE.qr.sizeMm}mm; height: ${STANDARD_TEMPLATE.qr.sizeMm}mm;`);
+    expect(html).toContain(`width: ${PICK_TEMPLATE.qr.sizeMm}mm; height: ${PICK_TEMPLATE.qr.sizeMm}mm;`);
     const size = Number(/class="qr__code" style="width:([\d.]+)mm/.exec(html)?.[1]);
     expect(size).toBeGreaterThan(0);
-    expect(size).toBeLessThanOrEqual(STANDARD_TEMPLATE.qr.sizeMm);
+    expect(size).toBeLessThanOrEqual(PICK_TEMPLATE.qr.sizeMm);
   });
 
   test('leaves the QR code out when even the lowest error correction cannot make it scannable', () => {
     const long = '码'.repeat(600);
     const scan: ScanResult = { ...GARMENT, raw: long, fields: [{ name: '内容', value: long }] };
-    const omitted = renderLabelHtml({ scan, template: STANDARD_TEMPLATE, printedAt: PRINTED_AT });
+    const omitted = renderLabelHtml({ scan, template: PICK_TEMPLATE, printedAt: PRINTED_AT });
     expect(omitted.qrOmitted).toBe(true);
     expect(omitted.html).not.toContain('<svg');
   });
@@ -294,7 +308,7 @@ describe('print job name', () => {
   test('titles the page with the escaped content on one line', () => {
     expect(render()).toContain('<title>CL5640-TK-图片色-XL</title>');
     const scan: ScanResult = { ...GARMENT, raw: '<b>\n第二行' };
-    expect(render(STANDARD_TEMPLATE, scan)).toContain('<title>&lt;b&gt; / 第二行</title>');
+    expect(render(PICK_TEMPLATE, scan)).toContain('<title>&lt;b&gt; / 第二行</title>');
   });
 });
 
@@ -308,11 +322,11 @@ describe('paper sizes', () => {
   const job = (paper: PaperSize): LabelJob => ({
     scan: GARMENT,
     template: {
-      ...STANDARD_TEMPLATE,
+      ...PICK_TEMPLATE,
       paper,
       qr: {
-        ...STANDARD_TEMPLATE.qr,
-        sizeMm: Math.min(STANDARD_TEMPLATE.qr.sizeMm, maxQrSizeMm(paper, STANDARD_TEMPLATE.paddingMm)),
+        ...PICK_TEMPLATE.qr,
+        sizeMm: Math.min(PICK_TEMPLATE.qr.sizeMm, maxQrSizeMm(paper, PICK_TEMPLATE.paddingMm)),
       },
     },
     printedAt: PRINTED_AT,

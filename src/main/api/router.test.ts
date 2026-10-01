@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { PrintJobService } from '../../core/api/print-job-service';
 import type { ScanField } from '../../core/scan/scan-result';
-import { BUILT_IN_TEMPLATES, STANDARD_TEMPLATE } from '../../core/templates/builtin-templates';
+import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE } from '../../core/templates/builtin-templates';
 import type { LabelTemplate } from '../../core/templates/template-model';
 import { FakeClock } from '../../core/testing/fake-clock';
 import { InMemoryApiJobStore } from '../../core/testing/in-memory-api-job-store';
@@ -12,7 +12,7 @@ const CALLER: Caller = { id: 'key:k1', label: 'ERP' };
 const OTHER: Caller = { id: 'key:k2', label: '仓库' };
 const PORT = 17631;
 const INSTANCE_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
-const VALID_REQUEST = { template: 'templates/builtin-standard', fields: [{ name: '订单号', value: 'A001' }] };
+const VALID_REQUEST = { template: 'templates/builtin-generic', fields: [{ name: '订单号', value: 'A001' }] };
 
 function createContext() {
   const rendered: Array<{ template: LabelTemplate; fields: ScanField[]; content: string }> = [];
@@ -82,14 +82,14 @@ describe('route', () => {
     const body = bodyOf<{ templates: unknown[] }>(await get(context, '/v1/templates'));
     expect(body.templates).toHaveLength(BUILT_IN_TEMPLATES.length);
     expect(body.templates).toContainEqual(
-      expect.objectContaining({ name: 'templates/builtin-standard', paper: { widthMm: 60, heightMm: 40 } }),
+      expect.objectContaining({ name: 'templates/builtin-generic', paper: { widthMm: 60, heightMm: 40 } }),
     );
   });
 
   test('gets one template and reports a missing one', async () => {
     const { context } = createContext();
-    expect(bodyOf<{ displayName: string }>(await get(context, '/v1/templates/builtin-standard')).displayName).toBe(
-      STANDARD_TEMPLATE.name,
+    expect(bodyOf<{ displayName: string }>(await get(context, '/v1/templates/builtin-generic')).displayName).toBe(
+      GENERIC_TEMPLATE.name,
     );
     expect(await get(context, '/v1/templates/custom-gone')).toMatchObject({
       status: 404,
@@ -117,7 +117,7 @@ describe('route', () => {
     const response = await post(context, '/v1/printJobs', VALID_REQUEST);
     expect(response).toMatchObject({
       status: 200,
-      body: { state: 'QUEUED', template: 'templates/builtin-standard', copies: 1, sentCopies: 0 },
+      body: { state: 'QUEUED', template: 'templates/builtin-generic', copies: 1, sentCopies: 0 },
     });
   });
 
@@ -193,9 +193,9 @@ describe('route', () => {
 
   test('renders a PDF on the template paper', async () => {
     const { context, rendered } = createContext();
-    const response = await post(context, '/v1/templates/builtin-standard:render', { fields: VALID_REQUEST.fields });
+    const response = await post(context, '/v1/templates/builtin-generic:render', { fields: VALID_REQUEST.fields });
     expect(response.contentType).toBe('application/pdf');
-    expect(rendered).toEqual([{ template: STANDARD_TEMPLATE, fields: VALID_REQUEST.fields, content: '订单号：A001' }]);
+    expect(rendered).toEqual([{ template: GENERIC_TEMPLATE, fields: VALID_REQUEST.fields, content: '订单号：A001' }]);
   });
 
   test('answers unknown paths and methods with NOT_FOUND', async () => {

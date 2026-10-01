@@ -184,99 +184,7 @@ exports[`60x40 label HTML stays the same 通用 · 大字（无二维码） 1`] 
 </html>"
 `;
 
-exports[`60x40 label HTML stays the same 样衣标准（二维码在左） 1`] = `
-"<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8" />
-<title>CL5640-TK-图片色-XL</title>
-<style>
-  @page { size: 60mm 40mm; margin: 0; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 60mm; height: 40mm; overflow: hidden; background: #fff; color: #000; }
-  body {
-    display: flex; flex-direction: column; gap: 2mm; padding: 2.5mm;
-    font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif;
-  }
-  .main { display: flex; flex: 1 1 auto; gap: 2mm; min-height: 0; }
-  .layout-qr-right .main { flex-direction: row-reverse; }
-  .qr {
-    display: flex; flex: none; align-items: center; justify-content: center;
-    width: 24mm; height: 24mm;
-  }
-  .qr__code svg { display: block; width: 100%; height: 100%; }
-  .side { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
-  .fields { display: grid; flex: 1 1 auto; align-content: space-evenly; }
-  .fields--inline { grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; }
-  .fields--stacked { grid-template-columns: minmax(0, 1fr); }
-  .prefix { white-space: nowrap; }
-  .field > span { display: block; }
-  .fields--stacked .prefix { white-space: normal; }
-  .bottom { display: flex; flex: none; flex-direction: column; }
-  p, span { line-height: 1.2; word-break: break-all; }
-  .value, .note { white-space: pre-line; }
-</style>
-</head>
-<body class="layout-qr-left">
-  <div class="main">
-    <div class="qr"><div class="qr__code" style="width:21.897mm;height:21.897mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 25" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM9 0h1v1H9zM11 0h1v1H11zM18 0h7v1H18zM0 1h1v1H0zM6 1h1v1H6zM9 1h1v1H9zM11 1h1v1H11zM13 1h1v1H13zM15 1h2v1H15zM18 1h1v1H18zM24 1h1v1H24zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM8 2h1v1H8zM13 2h1v1H13zM18 2h1v1H18zM20 2h3v1H20zM24 2h1v1H24zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM8 3h1v1H8zM10 3h2v1H10zM14 3h1v1H14zM16 3h1v1H16zM18 3h1v1H18zM20 3h3v1H20zM24 3h1v1H24zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM8 4h1v1H8zM10 4h1v1H10zM12 4h1v1H12zM14 4h2v1H14zM18 4h1v1H18zM20 4h3v1H20zM24 4h1v1H24zM0 5h1v1H0zM6 5h1v1H6zM8 5h1v1H8zM10 5h1v1H10zM14 5h1v1H14zM18 5h1v1H18zM24 5h1v1H24zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h1v1H14zM16 6h1v1H16zM18 6h7v1H18zM8 7h3v1H8zM12 7h4v1H12zM0 8h1v1H0zM2 8h5v1H2zM9 8h1v1H9zM11 8h2v1H11zM18 8h5v1H18zM0 9h1v1H0zM7 9h3v1H7zM15 9h1v1H15zM17 9h3v1H17zM22 9h1v1H22zM24 9h1v1H24zM1 10h2v1H1zM4 10h3v1H4zM8 10h2v1H8zM12 10h1v1H12zM14 10h1v1H14zM20 10h4v1H20zM2 11h2v1H2zM7 11h1v1H7zM9 11h2v1H9zM13 11h1v1H13zM16 11h6v1H16zM23 11h2v1H23zM0 12h3v1H0zM4 12h3v1H4zM12 12h1v1H12zM14 12h1v1H14zM16 12h1v1H16zM21 12h2v1H21zM24 12h1v1H24zM0 13h4v1H0zM8 13h3v1H8zM16 13h2v1H16zM19 13h2v1H19zM22 13h3v1H22zM0 14h1v1H0zM3 14h1v1H3zM5 14h2v1H5zM8 14h2v1H8zM11 14h2v1H11zM15 14h1v1H15zM24 14h1v1H24zM0 15h1v1H0zM3 15h2v1H3zM7 15h1v1H7zM10 15h2v1H10zM15 15h1v1H15zM17 15h1v1H17zM21 15h1v1H21zM23 15h1v1H23zM0 16h1v1H0zM2 16h1v1H2zM5 16h3v1H5zM9 16h1v1H9zM11 16h1v1H11zM16 16h5v1H16zM22 16h1v1H22zM24 16h1v1H24zM8 17h2v1H8zM12 17h2v1H12zM16 17h1v1H16zM20 17h3v1H20zM0 18h7v1H0zM13 18h4v1H13zM18 18h1v1H18zM20 18h3v1H20zM24 18h1v1H24zM0 19h1v1H0zM6 19h1v1H6zM8 19h1v1H8zM12 19h2v1H12zM15 19h2v1H15zM20 19h5v1H20zM0 20h1v1H0zM2 20h3v1H2zM6 20h1v1H6zM8 20h3v1H8zM12 20h1v1H12zM14 20h1v1H14zM16 20h5v1H16zM23 20h2v1H23zM0 21h1v1H0zM2 21h3v1H2zM6 21h1v1H6zM8 21h2v1H8zM15 21h1v1H15zM17 21h1v1H17zM21 21h1v1H21zM24 21h1v1H24zM0 22h1v1H0zM2 22h3v1H2zM6 22h1v1H6zM8 22h1v1H8zM11 22h2v1H11zM15 22h2v1H15zM19 22h1v1H19zM22 22h1v1H22zM24 22h1v1H24zM0 23h1v1H0zM6 23h1v1H6zM9 23h1v1H9zM11 23h1v1H11zM14 23h1v1H14zM16 23h2v1H16zM19 23h1v1H19zM21 23h2v1H21zM0 24h7v1H0zM8 24h1v1H8zM11 24h1v1H11zM19 24h4v1H19zM24 24h1v1H24z"/></svg></div></div>
-    <div class="side">
-      <div class="fields fields--inline"><span class="prefix" style="font-size:3.2mm;font-weight:700">编码：</span><span class="value" style="font-size:3.2mm;font-weight:700;text-align:left">CL5640-TK</span><span class="prefix" style="font-size:3.2mm;font-weight:700">颜色：</span><span class="value" style="font-size:3.2mm;font-weight:700;text-align:left">图片色</span><span class="prefix" style="font-size:3.2mm;font-weight:700">尺码：</span><span class="value" style="font-size:3.2mm;font-weight:700;text-align:left">XL</span></div>
-      
-    </div>
-  </div>
-  <div class="bottom"><p class="bottom-line" style="font-size:3mm;font-weight:700;text-align:left">CL5640-TK-图片色-XL</p></div>
-</body>
-</html>"
-`;
-
-exports[`60x40 label HTML stays the same 样衣 · 二维码在右 1`] = `
-"<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8" />
-<title>CL5640-TK-图片色-XL</title>
-<style>
-  @page { size: 60mm 40mm; margin: 0; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 60mm; height: 40mm; overflow: hidden; background: #fff; color: #000; }
-  body {
-    display: flex; flex-direction: column; gap: 2mm; padding: 2.5mm;
-    font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif;
-  }
-  .main { display: flex; flex: 1 1 auto; gap: 2mm; min-height: 0; }
-  .layout-qr-right .main { flex-direction: row-reverse; }
-  .qr {
-    display: flex; flex: none; align-items: center; justify-content: center;
-    width: 24mm; height: 24mm;
-  }
-  .qr__code svg { display: block; width: 100%; height: 100%; }
-  .side { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
-  .fields { display: grid; flex: 1 1 auto; align-content: space-evenly; }
-  .fields--inline { grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; }
-  .fields--stacked { grid-template-columns: minmax(0, 1fr); }
-  .prefix { white-space: nowrap; }
-  .field > span { display: block; }
-  .fields--stacked .prefix { white-space: normal; }
-  .bottom { display: flex; flex: none; flex-direction: column; }
-  p, span { line-height: 1.2; word-break: break-all; }
-  .value, .note { white-space: pre-line; }
-</style>
-</head>
-<body class="layout-qr-right">
-  <div class="main">
-    <div class="qr"><div class="qr__code" style="width:21.897mm;height:21.897mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 25" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM9 0h1v1H9zM11 0h1v1H11zM18 0h7v1H18zM0 1h1v1H0zM6 1h1v1H6zM9 1h1v1H9zM11 1h1v1H11zM13 1h1v1H13zM15 1h2v1H15zM18 1h1v1H18zM24 1h1v1H24zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM8 2h1v1H8zM13 2h1v1H13zM18 2h1v1H18zM20 2h3v1H20zM24 2h1v1H24zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM8 3h1v1H8zM10 3h2v1H10zM14 3h1v1H14zM16 3h1v1H16zM18 3h1v1H18zM20 3h3v1H20zM24 3h1v1H24zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM8 4h1v1H8zM10 4h1v1H10zM12 4h1v1H12zM14 4h2v1H14zM18 4h1v1H18zM20 4h3v1H20zM24 4h1v1H24zM0 5h1v1H0zM6 5h1v1H6zM8 5h1v1H8zM10 5h1v1H10zM14 5h1v1H14zM18 5h1v1H18zM24 5h1v1H24zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h1v1H14zM16 6h1v1H16zM18 6h7v1H18zM8 7h3v1H8zM12 7h4v1H12zM0 8h1v1H0zM2 8h5v1H2zM9 8h1v1H9zM11 8h2v1H11zM18 8h5v1H18zM0 9h1v1H0zM7 9h3v1H7zM15 9h1v1H15zM17 9h3v1H17zM22 9h1v1H22zM24 9h1v1H24zM1 10h2v1H1zM4 10h3v1H4zM8 10h2v1H8zM12 10h1v1H12zM14 10h1v1H14zM20 10h4v1H20zM2 11h2v1H2zM7 11h1v1H7zM9 11h2v1H9zM13 11h1v1H13zM16 11h6v1H16zM23 11h2v1H23zM0 12h3v1H0zM4 12h3v1H4zM12 12h1v1H12zM14 12h1v1H14zM16 12h1v1H16zM21 12h2v1H21zM24 12h1v1H24zM0 13h4v1H0zM8 13h3v1H8zM16 13h2v1H16zM19 13h2v1H19zM22 13h3v1H22zM0 14h1v1H0zM3 14h1v1H3zM5 14h2v1H5zM8 14h2v1H8zM11 14h2v1H11zM15 14h1v1H15zM24 14h1v1H24zM0 15h1v1H0zM3 15h2v1H3zM7 15h1v1H7zM10 15h2v1H10zM15 15h1v1H15zM17 15h1v1H17zM21 15h1v1H21zM23 15h1v1H23zM0 16h1v1H0zM2 16h1v1H2zM5 16h3v1H5zM9 16h1v1H9zM11 16h1v1H11zM16 16h5v1H16zM22 16h1v1H22zM24 16h1v1H24zM8 17h2v1H8zM12 17h2v1H12zM16 17h1v1H16zM20 17h3v1H20zM0 18h7v1H0zM13 18h4v1H13zM18 18h1v1H18zM20 18h3v1H20zM24 18h1v1H24zM0 19h1v1H0zM6 19h1v1H6zM8 19h1v1H8zM12 19h2v1H12zM15 19h2v1H15zM20 19h5v1H20zM0 20h1v1H0zM2 20h3v1H2zM6 20h1v1H6zM8 20h3v1H8zM12 20h1v1H12zM14 20h1v1H14zM16 20h5v1H16zM23 20h2v1H23zM0 21h1v1H0zM2 21h3v1H2zM6 21h1v1H6zM8 21h2v1H8zM15 21h1v1H15zM17 21h1v1H17zM21 21h1v1H21zM24 21h1v1H24zM0 22h1v1H0zM2 22h3v1H2zM6 22h1v1H6zM8 22h1v1H8zM11 22h2v1H11zM15 22h2v1H15zM19 22h1v1H19zM22 22h1v1H22zM24 22h1v1H24zM0 23h1v1H0zM6 23h1v1H6zM9 23h1v1H9zM11 23h1v1H11zM14 23h1v1H14zM16 23h2v1H16zM19 23h1v1H19zM21 23h2v1H21zM0 24h7v1H0zM8 24h1v1H8zM11 24h1v1H11zM19 24h4v1H19zM24 24h1v1H24z"/></svg></div></div>
-    <div class="side">
-      <div class="fields fields--inline"><span class="prefix" style="font-size:3.2mm;font-weight:700">编码：</span><span class="value" style="font-size:3.2mm;font-weight:700;text-align:left">CL5640-TK</span><span class="prefix" style="font-size:3.2mm;font-weight:700">颜色：</span><span class="value" style="font-size:3.2mm;font-weight:700;text-align:left">图片色</span><span class="prefix" style="font-size:3.2mm;font-weight:700">尺码：</span><span class="value" style="font-size:3.2mm;font-weight:700;text-align:left">XL</span></div>
-      
-    </div>
-  </div>
-  <div class="bottom"><p class="bottom-line" style="font-size:3mm;font-weight:700;text-align:left">CL5640-TK-图片色-XL</p></div>
-</body>
-</html>"
-`;
-
-exports[`60x40 label HTML stays the same 样衣 · 大二维码 + 日期备注 1`] = `
+exports[`60x40 label HTML stays the same 通用 · 大二维码 + 日期备注 1`] = `
 "<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -313,7 +221,7 @@ exports[`60x40 label HTML stays the same 样衣 · 大二维码 + 日期备注 1
   <div class="main">
     <div class="qr"><div class="qr__code" style="width:25.025mm;height:25.025mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 25" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM11 0h4v1H11zM16 0h1v1H16zM18 0h7v1H18zM0 1h1v1H0zM6 1h1v1H6zM8 1h1v1H8zM12 1h1v1H12zM14 1h1v1H14zM16 1h1v1H16zM18 1h1v1H18zM24 1h1v1H24zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM9 2h2v1H9zM16 2h1v1H16zM18 2h1v1H18zM20 2h3v1H20zM24 2h1v1H24zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM8 3h1v1H8zM12 3h1v1H12zM15 3h1v1H15zM18 3h1v1H18zM20 3h3v1H20zM24 3h1v1H24zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM8 4h1v1H8zM10 4h1v1H10zM12 4h1v1H12zM15 4h1v1H15zM18 4h1v1H18zM20 4h3v1H20zM24 4h1v1H24zM0 5h1v1H0zM6 5h1v1H6zM11 5h1v1H11zM14 5h3v1H14zM18 5h1v1H18zM24 5h1v1H24zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h1v1H14zM16 6h1v1H16zM18 6h7v1H18zM8 7h3v1H8zM12 7h1v1H12zM1 8h1v1H1zM3 8h4v1H3zM8 8h1v1H8zM11 8h1v1H11zM13 8h1v1H13zM16 8h3v1H16zM20 8h2v1H20zM23 8h1v1H23zM0 9h3v1H0zM4 9h1v1H4zM7 9h3v1H7zM14 9h1v1H14zM16 9h6v1H16zM24 9h1v1H24zM1 10h1v1H1zM4 10h8v1H4zM17 10h1v1H17zM21 10h2v1H21zM0 11h2v1H0zM3 11h3v1H3zM10 11h4v1H10zM15 11h1v1H15zM18 11h3v1H18zM22 11h1v1H22zM24 11h1v1H24zM0 12h4v1H0zM6 12h1v1H6zM13 12h1v1H13zM17 12h1v1H17zM19 12h3v1H19zM23 12h2v1H23zM0 13h1v1H0zM2 13h1v1H2zM4 13h1v1H4zM9 13h1v1H9zM12 13h6v1H12zM21 13h4v1H21zM0 14h3v1H0zM4 14h1v1H4zM6 14h1v1H6zM10 14h3v1H10zM15 14h2v1H15zM19 14h1v1H19zM22 14h1v1H22zM24 14h1v1H24zM0 15h1v1H0zM2 15h3v1H2zM8 15h1v1H8zM11 15h2v1H11zM14 15h1v1H14zM16 15h2v1H16zM20 15h1v1H20zM22 15h2v1H22zM0 16h1v1H0zM5 16h2v1H5zM9 16h1v1H9zM11 16h1v1H11zM14 16h1v1H14zM16 16h5v1H16zM22 16h3v1H22zM8 17h1v1H8zM11 17h6v1H11zM20 17h1v1H20zM23 17h1v1H23zM0 18h7v1H0zM10 18h1v1H10zM12 18h5v1H12zM18 18h1v1H18zM20 18h2v1H20zM23 18h2v1H23zM0 19h1v1H0zM6 19h1v1H6zM8 19h7v1H8zM16 19h1v1H16zM20 19h1v1H20zM22 19h3v1H22zM0 20h1v1H0zM2 20h3v1H2zM6 20h1v1H6zM8 20h1v1H8zM10 20h4v1H10zM16 20h5v1H16zM22 20h3v1H22zM0 21h1v1H0zM2 21h3v1H2zM6 21h1v1H6zM8 21h1v1H8zM10 21h1v1H10zM13 21h2v1H13zM16 21h2v1H16zM20 21h1v1H20zM22 21h1v1H22zM24 21h1v1H24zM0 22h1v1H0zM2 22h3v1H2zM6 22h1v1H6zM10 22h1v1H10zM12 22h1v1H12zM15 22h3v1H15zM19 22h2v1H19zM22 22h3v1H22zM0 23h1v1H0zM6 23h1v1H6zM8 23h1v1H8zM13 23h3v1H13zM19 23h1v1H19zM23 23h1v1H23zM0 24h7v1H0zM16 24h2v1H16zM21 24h1v1H21zM23 24h2v1H23z"/></svg></div></div>
     <div class="side">
-      <div class="fields fields--inline"><span class="prefix" style="font-size:3.4mm;font-weight:700"></span><span class="value" style="font-size:3.4mm;font-weight:700;text-align:left">CL5640-TK</span><span class="prefix" style="font-size:3mm;font-weight:700"></span><span class="value" style="font-size:3mm;font-weight:700;text-align:left">图片色</span><span class="prefix" style="font-size:3.4mm;font-weight:700"></span><span class="value" style="font-size:3.4mm;font-weight:700;text-align:left">XL</span></div>
+      <div class="fields fields--inline"><span class="prefix" style="font-size:3.4mm;font-weight:700"></span><span class="value" style="font-size:3.4mm;font-weight:700;text-align:left">CL5640-TK</span><span class="prefix" style="font-size:3.4mm;font-weight:700"></span><span class="value" style="font-size:3.4mm;font-weight:700;text-align:left">图片色</span><span class="prefix" style="font-size:3.4mm;font-weight:700"></span><span class="value" style="font-size:3.4mm;font-weight:700;text-align:left">XL</span></div>
       <p class="note" style="font-size:2.4mm;font-weight:400;text-align:left">2026-09-29</p>
     </div>
   </div>
@@ -322,7 +230,7 @@ exports[`60x40 label HTML stays the same 样衣 · 大二维码 + 日期备注 1
 </html>"
 `;
 
-exports[`60x40 label HTML stays the same 样衣 · 小二维码 + 底部备注 1`] = `
+exports[`60x40 label HTML stays the same 通用 · 小二维码 + 底部备注 1`] = `
 "<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -359,57 +267,11 @@ exports[`60x40 label HTML stays the same 样衣 · 小二维码 + 底部备注 1
   <div class="main">
     <div class="qr"><div class="qr__code" style="width:15.64mm;height:15.64mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 25" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM9 0h1v1H9zM11 0h1v1H11zM18 0h7v1H18zM0 1h1v1H0zM6 1h1v1H6zM9 1h1v1H9zM11 1h1v1H11zM13 1h1v1H13zM15 1h2v1H15zM18 1h1v1H18zM24 1h1v1H24zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM8 2h1v1H8zM13 2h1v1H13zM18 2h1v1H18zM20 2h3v1H20zM24 2h1v1H24zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM8 3h1v1H8zM10 3h2v1H10zM14 3h1v1H14zM16 3h1v1H16zM18 3h1v1H18zM20 3h3v1H20zM24 3h1v1H24zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM8 4h1v1H8zM10 4h1v1H10zM12 4h1v1H12zM14 4h2v1H14zM18 4h1v1H18zM20 4h3v1H20zM24 4h1v1H24zM0 5h1v1H0zM6 5h1v1H6zM8 5h1v1H8zM10 5h1v1H10zM14 5h1v1H14zM18 5h1v1H18zM24 5h1v1H24zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h1v1H14zM16 6h1v1H16zM18 6h7v1H18zM8 7h3v1H8zM12 7h4v1H12zM0 8h1v1H0zM2 8h5v1H2zM9 8h1v1H9zM11 8h2v1H11zM18 8h5v1H18zM0 9h1v1H0zM7 9h3v1H7zM15 9h1v1H15zM17 9h3v1H17zM22 9h1v1H22zM24 9h1v1H24zM1 10h2v1H1zM4 10h3v1H4zM8 10h2v1H8zM12 10h1v1H12zM14 10h1v1H14zM20 10h4v1H20zM2 11h2v1H2zM7 11h1v1H7zM9 11h2v1H9zM13 11h1v1H13zM16 11h6v1H16zM23 11h2v1H23zM0 12h3v1H0zM4 12h3v1H4zM12 12h1v1H12zM14 12h1v1H14zM16 12h1v1H16zM21 12h2v1H21zM24 12h1v1H24zM0 13h4v1H0zM8 13h3v1H8zM16 13h2v1H16zM19 13h2v1H19zM22 13h3v1H22zM0 14h1v1H0zM3 14h1v1H3zM5 14h2v1H5zM8 14h2v1H8zM11 14h2v1H11zM15 14h1v1H15zM24 14h1v1H24zM0 15h1v1H0zM3 15h2v1H3zM7 15h1v1H7zM10 15h2v1H10zM15 15h1v1H15zM17 15h1v1H17zM21 15h1v1H21zM23 15h1v1H23zM0 16h1v1H0zM2 16h1v1H2zM5 16h3v1H5zM9 16h1v1H9zM11 16h1v1H11zM16 16h5v1H16zM22 16h1v1H22zM24 16h1v1H24zM8 17h2v1H8zM12 17h2v1H12zM16 17h1v1H16zM20 17h3v1H20zM0 18h7v1H0zM13 18h4v1H13zM18 18h1v1H18zM20 18h3v1H20zM24 18h1v1H24zM0 19h1v1H0zM6 19h1v1H6zM8 19h1v1H8zM12 19h2v1H12zM15 19h2v1H15zM20 19h5v1H20zM0 20h1v1H0zM2 20h3v1H2zM6 20h1v1H6zM8 20h3v1H8zM12 20h1v1H12zM14 20h1v1H14zM16 20h5v1H16zM23 20h2v1H23zM0 21h1v1H0zM2 21h3v1H2zM6 21h1v1H6zM8 21h2v1H8zM15 21h1v1H15zM17 21h1v1H17zM21 21h1v1H21zM24 21h1v1H24zM0 22h1v1H0zM2 22h3v1H2zM6 22h1v1H6zM8 22h1v1H8zM11 22h2v1H11zM15 22h2v1H15zM19 22h1v1H19zM22 22h1v1H22zM24 22h1v1H24zM0 23h1v1H0zM6 23h1v1H6zM9 23h1v1H9zM11 23h1v1H11zM14 23h1v1H14zM16 23h2v1H16zM19 23h1v1H19zM21 23h2v1H21zM0 24h7v1H0zM8 24h1v1H8zM11 24h1v1H11zM19 24h4v1H19zM24 24h1v1H24z"/></svg></div></div>
     <div class="side">
-      <div class="fields fields--inline"><span class="prefix" style="font-size:3.4mm;font-weight:700">编码：</span><span class="value" style="font-size:3.4mm;font-weight:700;text-align:left">CL5640-TK</span><span class="prefix" style="font-size:3.4mm;font-weight:700">颜色：</span><span class="value" style="font-size:3.4mm;font-weight:700;text-align:left">图片色</span><span class="prefix" style="font-size:3.4mm;font-weight:700">尺码：</span><span class="value" style="font-size:3.4mm;font-weight:700;text-align:left">XL</span></div>
+      <div class="fields fields--inline"><span class="prefix" style="font-size:3mm;font-weight:700">编码：</span><span class="value" style="font-size:3mm;font-weight:700;text-align:left">CL5640-TK</span><span class="prefix" style="font-size:3mm;font-weight:700">颜色：</span><span class="value" style="font-size:3mm;font-weight:700;text-align:left">图片色</span><span class="prefix" style="font-size:3mm;font-weight:700">尺码：</span><span class="value" style="font-size:3mm;font-weight:700;text-align:left">XL</span></div>
       
     </div>
   </div>
   <div class="bottom"><p class="bottom-line" style="font-size:2.6mm;font-weight:700;text-align:left">CL5640-TK-图片色-XL</p><p class="note" style="font-size:2.4mm;font-weight:400;text-align:left">2026-09-29 09:05</p></div>
-</body>
-</html>"
-`;
-
-exports[`60x40 label HTML stays the same 样衣 · 精简（无前缀） 1`] = `
-"<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8" />
-<title>CL5640-TK-图片色-XL</title>
-<style>
-  @page { size: 60mm 40mm; margin: 0; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 60mm; height: 40mm; overflow: hidden; background: #fff; color: #000; }
-  body {
-    display: flex; flex-direction: column; gap: 2mm; padding: 2.5mm;
-    font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif;
-  }
-  .main { display: flex; flex: 1 1 auto; gap: 2mm; min-height: 0; }
-  .layout-qr-right .main { flex-direction: row-reverse; }
-  .qr {
-    display: flex; flex: none; align-items: center; justify-content: center;
-    width: 24mm; height: 24mm;
-  }
-  .qr__code svg { display: block; width: 100%; height: 100%; }
-  .side { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
-  .fields { display: grid; flex: 1 1 auto; align-content: space-evenly; }
-  .fields--inline { grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; }
-  .fields--stacked { grid-template-columns: minmax(0, 1fr); }
-  .prefix { white-space: nowrap; }
-  .field > span { display: block; }
-  .fields--stacked .prefix { white-space: normal; }
-  .bottom { display: flex; flex: none; flex-direction: column; }
-  p, span { line-height: 1.2; word-break: break-all; }
-  .value, .note { white-space: pre-line; }
-</style>
-</head>
-<body class="layout-qr-left">
-  <div class="main">
-    <div class="qr"><div class="qr__code" style="width:21.897mm;height:21.897mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 25" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM9 0h1v1H9zM11 0h1v1H11zM18 0h7v1H18zM0 1h1v1H0zM6 1h1v1H6zM9 1h1v1H9zM11 1h1v1H11zM13 1h1v1H13zM15 1h2v1H15zM18 1h1v1H18zM24 1h1v1H24zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM8 2h1v1H8zM13 2h1v1H13zM18 2h1v1H18zM20 2h3v1H20zM24 2h1v1H24zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM8 3h1v1H8zM10 3h2v1H10zM14 3h1v1H14zM16 3h1v1H16zM18 3h1v1H18zM20 3h3v1H20zM24 3h1v1H24zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM8 4h1v1H8zM10 4h1v1H10zM12 4h1v1H12zM14 4h2v1H14zM18 4h1v1H18zM20 4h3v1H20zM24 4h1v1H24zM0 5h1v1H0zM6 5h1v1H6zM8 5h1v1H8zM10 5h1v1H10zM14 5h1v1H14zM18 5h1v1H18zM24 5h1v1H24zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h1v1H14zM16 6h1v1H16zM18 6h7v1H18zM8 7h3v1H8zM12 7h4v1H12zM0 8h1v1H0zM2 8h5v1H2zM9 8h1v1H9zM11 8h2v1H11zM18 8h5v1H18zM0 9h1v1H0zM7 9h3v1H7zM15 9h1v1H15zM17 9h3v1H17zM22 9h1v1H22zM24 9h1v1H24zM1 10h2v1H1zM4 10h3v1H4zM8 10h2v1H8zM12 10h1v1H12zM14 10h1v1H14zM20 10h4v1H20zM2 11h2v1H2zM7 11h1v1H7zM9 11h2v1H9zM13 11h1v1H13zM16 11h6v1H16zM23 11h2v1H23zM0 12h3v1H0zM4 12h3v1H4zM12 12h1v1H12zM14 12h1v1H14zM16 12h1v1H16zM21 12h2v1H21zM24 12h1v1H24zM0 13h4v1H0zM8 13h3v1H8zM16 13h2v1H16zM19 13h2v1H19zM22 13h3v1H22zM0 14h1v1H0zM3 14h1v1H3zM5 14h2v1H5zM8 14h2v1H8zM11 14h2v1H11zM15 14h1v1H15zM24 14h1v1H24zM0 15h1v1H0zM3 15h2v1H3zM7 15h1v1H7zM10 15h2v1H10zM15 15h1v1H15zM17 15h1v1H17zM21 15h1v1H21zM23 15h1v1H23zM0 16h1v1H0zM2 16h1v1H2zM5 16h3v1H5zM9 16h1v1H9zM11 16h1v1H11zM16 16h5v1H16zM22 16h1v1H22zM24 16h1v1H24zM8 17h2v1H8zM12 17h2v1H12zM16 17h1v1H16zM20 17h3v1H20zM0 18h7v1H0zM13 18h4v1H13zM18 18h1v1H18zM20 18h3v1H20zM24 18h1v1H24zM0 19h1v1H0zM6 19h1v1H6zM8 19h1v1H8zM12 19h2v1H12zM15 19h2v1H15zM20 19h5v1H20zM0 20h1v1H0zM2 20h3v1H2zM6 20h1v1H6zM8 20h3v1H8zM12 20h1v1H12zM14 20h1v1H14zM16 20h5v1H16zM23 20h2v1H23zM0 21h1v1H0zM2 21h3v1H2zM6 21h1v1H6zM8 21h2v1H8zM15 21h1v1H15zM17 21h1v1H17zM21 21h1v1H21zM24 21h1v1H24zM0 22h1v1H0zM2 22h3v1H2zM6 22h1v1H6zM8 22h1v1H8zM11 22h2v1H11zM15 22h2v1H15zM19 22h1v1H19zM22 22h1v1H22zM24 22h1v1H24zM0 23h1v1H0zM6 23h1v1H6zM9 23h1v1H9zM11 23h1v1H11zM14 23h1v1H14zM16 23h2v1H16zM19 23h1v1H19zM21 23h2v1H21zM0 24h7v1H0zM8 24h1v1H8zM11 24h1v1H11zM19 24h4v1H19zM24 24h1v1H24z"/></svg></div></div>
-    <div class="side">
-      <div class="fields fields--inline"><span class="prefix" style="font-size:3.8mm;font-weight:700"></span><span class="value" style="font-size:3.8mm;font-weight:700;text-align:left">CL5640-TK</span><span class="prefix" style="font-size:3.4mm;font-weight:700"></span><span class="value" style="font-size:3.4mm;font-weight:700;text-align:left">图片色</span><span class="prefix" style="font-size:3.8mm;font-weight:700"></span><span class="value" style="font-size:3.8mm;font-weight:700;text-align:left">XL</span></div>
-      
-    </div>
-  </div>
-  <div class="bottom"><p class="bottom-line" style="font-size:2.8mm;font-weight:400;text-align:left">CL5640-TK-图片色-XL</p></div>
 </body>
 </html>"
 `;

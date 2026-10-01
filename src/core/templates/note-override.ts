@@ -9,6 +9,10 @@ export type NoteOverride = { kind: 'template' } | { kind: 'none' } | { kind: 'te
 export const DEFAULT_NOTE_OVERRIDE: NoteOverride = { kind: 'template' };
 
 export function applyNoteOverride(template: LabelTemplate, override: NoteOverride): LabelTemplate {
+  // 面单模板没有备注：每一格印什么由版式决定。
+  if (template.kind !== 'label') {
+    return template;
+  }
   switch (override.kind) {
     case 'template':
       return template;

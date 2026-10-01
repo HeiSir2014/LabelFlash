@@ -9,7 +9,7 @@ const PRINTERS: FakePrinterSpec[] = [
   { name: '面单机B', paper: { widthMm: 100, heightMm: 180, dpi: 203 }, readiness: { ready: true } },
   { name: '面单机C', paper: { widthMm: 100, heightMm: 180, dpi: 203 }, readiness: { ready: true } },
 ];
-/** 横杠三段：默认绑定「样衣标准」（60×40）。 */
+/** 横杠三段：用当前模板「通用」（60×40）。 */
 const LABEL_CODE = 'CL5640-TK-图片色-XL';
 /** 只有「整段内容」规则能识别：下面把这条规则绑到 100×180 的模板上。 */
 const WAYBILL_CODE = 'hello';
@@ -57,7 +57,7 @@ test('prints each paper on the printer assigned to it and records printer and pa
   await scan(page, WAYBILL_CODE);
   await expect.poll(async () => (await fakePrints(app)).length).toBe(2);
   expect(await fakePrints(app)).toEqual([
-    { printerName: '标签机A', raw: LABEL_CODE, paper: '60x40', templateId: 'builtin:standard' },
+    { printerName: '标签机A', raw: LABEL_CODE, paper: '60x40', templateId: 'builtin:generic' },
     { printerName: '面单机B', raw: WAYBILL_CODE, paper: '100x180', templateId: waybillId },
   ]);
   const { jobs } = await callApi(page, 'listJobs', { limit: 10 });
@@ -130,7 +130,10 @@ test('assigns a paper from the printers panel, following the suggestion from the
 
   const panel = page.getByRole('region', { name: '纸张和打印机' });
   const waybillRow = panel.locator('.paper-row', { hasText: '100×180 二联面单' });
-  await expect(panel.locator('.paper-row')).toHaveCount(2);
+  // 60×40、内置面单的 76×130 和 100×150、这里的 100×180：内置面单没在用，它们的纸列出来但不标红。
+  await expect(panel.locator('.paper-row')).toHaveCount(4);
+  await expect(panel.locator('.paper-row', { hasText: '100×150' })).not.toHaveClass(/paper-row--missing/);
+  await expect(panel.locator('.paper-row', { hasText: '76×130 一联面单' })).not.toHaveClass(/paper-row--missing/);
   await expect(waybillRow).toHaveClass(/paper-row--missing/);
   // 面单机B、面单机C 的驱动纸张都是 100×180：建议列表里第一台还没分配的。
   await waybillRow.getByRole('button', { name: '建议：面单机B' }).click();

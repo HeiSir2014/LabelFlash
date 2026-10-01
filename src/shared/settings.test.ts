@@ -34,8 +34,13 @@ describe('sanitizeSettings', () => {
       voice: { enabled: false, name: 'zh-CN-YunxiNeural', ratePercent: 30 },
       ocrModelTier: 'accurate',
       ruleSettings: [
-        { id: 'custom:a1', enabled: true, templateId: 'custom:3f2c-9a' },
-        { id: 'builtin:raw', enabled: false, templateId: null },
+        {
+          id: 'custom:a1',
+          enabled: true,
+          templateId: 'custom:3f2c-9a',
+          templateRoutes: [{ field: '快递公司', match: 'contains', value: '顺丰', templateId: 'custom:sf' }],
+        },
+        { id: 'builtin:raw', enabled: false, templateId: null, templateRoutes: [] },
       ],
       scanLineGapMs: 120,
       webhooks: [
@@ -130,6 +135,12 @@ describe('sanitizeSettings', () => {
     expect(presets).toEqual(['样衣间', 'x'.repeat(200)]);
     const many = Array.from({ length: 30 }, (_, i) => `备注${i}`);
     expect(sanitizeSettings({ notePresets: many }).notePresets).toHaveLength(MAX_NOTE_PRESETS);
+  });
+
+  test('moves a retired garment template to its generic replacement', () => {
+    expect(sanitizeSettings({ activeTemplateId: 'builtin:qr-right' }).activeTemplateId).toBe(
+      'builtin:generic-qr-right',
+    );
   });
 
   test('rejects malformed template ids', () => {

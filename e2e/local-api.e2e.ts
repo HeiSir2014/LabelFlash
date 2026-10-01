@@ -10,7 +10,7 @@ const PRINTERS: FakePrinterSpec[] = [
   { name: '标签机A', paper: { widthMm: 60, heightMm: 40, dpi: 203 }, readiness: { ready: true } },
   { name: '面单机B', paper: { widthMm: 100, heightMm: 180, dpi: 203 }, readiness: { ready: true } },
 ];
-const STANDARD = 'templates/builtin-standard';
+const GENERIC = 'templates/builtin-generic';
 const SITE = 'https://erp.example.com';
 /** 服装标签一批两三百张很常见：E2E 按这个量走一遍。 */
 const BATCH_SIZE = 300;
@@ -131,6 +131,40 @@ test('prints a job from a program, records it with its fields and reprints it fr
   expect((await fakePrints(app))[2]).toEqual(printed);
 });
 
+// 快递面单：订单系统取好号，带着字段交给内置的面单模板，打到装着面单纸的那台。
+test('prints a courier waybill with a built-in waybill template', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x180': '面单机B' } });
+  const base = await apiBase(page);
+  const headers = await createKey(page);
+  const template = 'templates/builtin-waybill-platform-180';
+  const listed = (await (await fetch(`${base}/v1/templates`, { headers })).json()) as {
+    templates: { name: string; paper: unknown; fieldsMode: string; fieldNames: string[] }[];
+  };
+  const described = listed.templates.find((item) => item.name === template);
+  expect(described?.fieldsMode).toBe('PICKED');
+  expect(described?.fieldNames).toEqual(expect.arrayContaining(['运单号', '三段码', '收件人', '收件地址']));
+
+  const fields = [
+    { name: '快递公司', value: '中通快递' },
+    { name: '运单号', value: '781234567890123' },
+    { name: '三段码', value: '531-A03 12' },
+    { name: '收件人', value: '张三' },
+    { name: '收件电话', value: '138****0000' },
+    { name: '收件地址', value: '浙江省杭州市西湖区文三路 478 号' },
+  ];
+  const created = await fetch(`${base}/v1/printJobs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ template, fields, content: '781234567890123' }),
+  });
+  expect(created.status).toBe(200);
+  await waitAllSent(base, headers, 1);
+  expect(await fakePrints(app)).toEqual([
+    { printerName: '面单机B', raw: '781234567890123', paper: '100x180', templateId: 'builtin:waybill-platform-180' },
+  ]);
+});
+
 test('prints a batch of 300 labels on two papers, each printer in submission order', async ({ electronApp }) => {
   const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
   const waybill = await createWaybillTemplate(page);
@@ -138,7 +172,7 @@ test('prints a batch of 300 labels on two papers, each printer in submission ord
   const base = await apiBase(page);
   const headers = await createKey(page);
   const requests = Array.from({ length: BATCH_SIZE }, (_, index) => ({
-    template: index % 2 === 0 ? STANDARD : waybill.name,
+    template: index % 2 === 0 ? GENERIC : waybill.name,
     fields: [{ name: '序号', value: String(index) }],
     content: `NO-${index}`,
   }));
@@ -160,7 +194,7 @@ test('renders a PDF on the paper of the template', async ({ electronApp }) => {
   const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   const base = await apiBase(page);
   const headers = await createKey(page);
-  const response = await fetch(`${base}/v1/${STANDARD}:render`, {
+  const response = await fetch(`${base}/v1/${GENERIC}:render`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ fields: [{ name: '编码', value: 'CL5640-TK' }] }),

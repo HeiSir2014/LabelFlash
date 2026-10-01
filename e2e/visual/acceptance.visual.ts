@@ -42,7 +42,7 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的 V01–V38）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 视觉验收（设计文档 §8.2 的 V01–V43）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
  * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
@@ -248,12 +248,12 @@ const ITEMS: Item[] = [
   },
   {
     id: 'V02',
-    title: '工作台 · 已扫码（样衣码，规则指定了模板）',
+    title: '工作台 · 已扫码（样衣码）',
     points:
-      '工具条：模板下拉框显示「样衣标准（二维码在左）」并锁住，旁边「规则指定」，右侧只写「规则：横杠三段（编码-颜色-尺码）」；预览为样衣标准模板；空闲时底部状态条不说话',
+      '工具条：模板下拉框显示当前模板「通用（二维码在左）」、可以换，右侧只写「规则：横杠三段（编码-颜色-尺码）」；预览列出编码、颜色、尺码；空闲时底部状态条不说话',
     setup: async ({ page }) => {
       await scan(page, 'CL5640-TK-图片色-XL');
-      await expect(page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
+      await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：横杠三段（编码-颜色-尺码）');
     },
   },
   {
@@ -320,7 +320,7 @@ const ITEMS: Item[] = [
     setup: async ({ page }) => {
       await scan(page, 'CL5640-TK-图片色-XL');
       await openConfig(page, '模板');
-      await page.locator('.template-item', { hasText: '样衣标准（二维码在左）' }).click();
+      await page.locator('.template-item', { hasText: '通用 · 小二维码 + 底部备注' }).click();
     },
   },
   {
@@ -331,7 +331,7 @@ const ITEMS: Item[] = [
     setup: async ({ page }) => {
       await openConfig(page, '模板');
       await page.getByRole('button', { name: '复制' }).click();
-      await page.locator('.template-form').getByLabel('模板名称').fill('样衣标准 · 仓库版');
+      await page.locator('.template-form').getByLabel('模板名称').fill('通用 · 仓库版');
       await page.locator('.template-editing__form').evaluate((el, top) => el.scrollTo(0, top), FORM_SCROLL_PX);
     },
   },
@@ -352,8 +352,8 @@ const ITEMS: Item[] = [
     setup: async ({ page }) => {
       await scan(page, 'CL5640-TK-图片色-XL');
       await openConfig(page, '模板');
-      // 样衣标准本来就是「指定字段」，复制后有现成的字段行。
-      await page.locator('.template-item', { hasText: '样衣标准（二维码在左）' }).click();
+      // 内置模板带着「指定字段」的预设（编码、颜色、尺码、货架号），复制后切过去就有现成的字段行。
+      await page.locator('.template-item', { hasText: '通用（二维码在左）' }).click();
       await page.getByRole('button', { name: '复制' }).click();
       await page.locator('.template-form').getByText('指定字段', { exact: true }).click();
       await page.locator('.template-form').getByText('垂直（名称在上）', { exact: true }).click();
@@ -781,7 +781,7 @@ const ITEMS: Item[] = [
       }
       // 先扫一张不用查询的样衣码，作为「上一张预览」。
       await scan(ctx.page, 'CL5640-TK-图片色-XL');
-      await expect(ctx.page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
+      await expect(ctx.page.locator('.preview-toolbar__usage')).toHaveText('规则：横杠三段（编码-颜色-尺码）');
     },
   },
   {
@@ -795,9 +795,11 @@ const ITEMS: Item[] = [
         prepare: async ({ page, notes }) => {
           await openConfig(page, '模板');
           if ((await page.locator('.template-editing').count()) === 0) {
-            await page.locator('.template-item', { hasText: '样衣标准（二维码在左）' }).click();
+            await page.locator('.template-item', { hasText: '通用（二维码在左）' }).click();
             await page.getByRole('button', { name: '复制' }).click();
           }
+          // 字段名输入框在「指定字段」的字段行里。
+          await page.locator('.template-form').getByText('指定字段', { exact: true }).click();
           const input = page.locator('.slot-card').first().getByLabel('字段名');
           await input.scrollIntoViewIfNeeded();
           await input.focus();
@@ -1046,7 +1048,7 @@ const ITEMS: Item[] = [
     id: 'V35',
     title: '配置中心 · 打印机',
     points:
-      '顶部「纸张 → 打印机」表每种纸一行，下拉框完整显示打印机名；没有可用打印机的纸标红，旁边有「建议：…」按钮；下面每台打印机显示状态（缺纸的红点和「缺纸」）、「负责：…」、驱动纸张（对不上时的提醒和「打开打印首选项」）；没负责纸张的打印机只显示驱动纸张；标题栏胶囊显示出问题的那一台',
+      '顶部「纸张 → 打印机」表每种纸一行，下拉框完整显示打印机名；没有可用打印机的纸标红，旁边有「建议：…」按钮；没在用的内置面单的纸（76×130）列出来但不标红；下面每台打印机显示状态（缺纸的红点和「缺纸」）、「负责：…」、驱动纸张（对不上时的提醒和「打开打印首选项」）；没负责纸张的打印机只显示驱动纸张；标题栏胶囊显示出问题的那一台',
     launch: { fakePrinters: PAPER_PRINTERS },
     setup: async ({ page }) => {
       await saveCopyOnPaper(page, '极兔面单', { widthMm: 100, heightMm: 180 });
@@ -1054,7 +1056,9 @@ const ITEMS: Item[] = [
       await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A' } });
       await page.reload();
       await openConfig(page, '打印机');
-      await expect(page.locator('.paper-row')).toHaveCount(3);
+      // 60×40、100×180、100×150，加上内置一联面单的 76×130（没在用：列出来但不标红）。
+      await expect(page.locator('.paper-row')).toHaveCount(4);
+      await expect(page.locator('.paper-row', { hasText: '76×130' })).not.toHaveClass(/paper-row--missing/);
       await expect(page.locator('.printer-chip')).toHaveText('面单机B（缺纸）');
     },
   },
@@ -1178,7 +1182,50 @@ const ITEMS: Item[] = [
       },
     ],
   },
+  waybillCase(
+    'V39',
+    '平台标准二联（通达系）',
+    '对照平台二联模板：横线在 15、30、40、55、67、89、120、130mm，三段码右侧虚线竖线、存根竖线在 70mm；运单条码约 84mm 宽、号码在下方居中；「集」只在有集包地时印；156mm 处「已验视」靠右；文字都在格子里、没有被裁掉',
+  ),
+  waybillCase(
+    'V40',
+    '平台标准一联（通达系）',
+    '对照平台一联模板：横线在 12、21、37、43.6、48.7、69、79mm，左列到 58mm，右侧竖排条码；「集」「末」「虚拟号码」三个反白标记各在自己的格子里；「标准快递」折成两行；103mm 处「已验视」靠右',
+  ),
+  waybillCase(
+    'V41',
+    '顺丰二联',
+    '对照平台顺丰模板：横线在 15、40、55、70.6、82.6、92、123、131.5、140mm，条码右侧竖线在 75mm、时效格下边在 25mm；托寄物一块竖线在 20、26、80mm，103mm 有横线；存根竖线在 80mm；174mm 处「已验视」',
+  ),
+  waybillCase(
+    'V42',
+    '顺丰 100×150',
+    '对照平台顺丰 100×150 模板：虚线在 12、35、45、55、81、98mm，收件人和二维码之间的虚线竖线在 66mm，寄件人下面不画线；城市代码 / 出港码 / 产品类型一行三格对齐',
+  ),
+  waybillCase(
+    'V43',
+    '德邦二联',
+    '对照平台德邦模板：4×2 路由格的竖线在 25、50、75mm，横线在 15、29、43、65.3、72.1、88.3、99.8、120、130mm；打印时间和末端码之间竖线在 71mm；存根竖线在 70mm；156mm 处「已验视」',
+  ),
 ];
+
+/**
+ * V39–V43：五套内置面单（模板页的大预览，示例面单数据）。分区和每条线的位置要和平台公开的标准面单模板一致，
+ * 验收时把截图和官方模板的坐标逐条核对（设计文档第 2 节）。
+ */
+function waybillCase(id: string, name: string, points: string): Item {
+  return {
+    id,
+    title: `模板 · 面单 · ${name}`,
+    points,
+    setup: async ({ page }) => {
+      await openConfig(page, '模板');
+      await page.locator('.template-item', { hasText: name }).click();
+      const label = page.getByRole('main', { name: '模板' }).frameLocator('.label-frame').locator('body');
+      await expect(label).toContainText('781234567890123');
+    },
+  };
+}
 
 /** V32：本机中转服务和一部测试手机（每种尺寸共用，只连一次）。 */
 let mobileRelay: LocalRelay | null = null;

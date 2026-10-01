@@ -1,4 +1,5 @@
 import type { PaperSize } from '../../shared/paper-sizes';
+import type { WaybillTemplate } from './waybill-model';
 
 /** 标签模板：结构化数据（不是任意 HTML），可校验、可持久化，打印和预览共用。纸张尺寸由模板自己决定。 */
 
@@ -70,13 +71,19 @@ export interface QrConfig {
   content: QrContent;
 }
 
-export interface LabelTemplate {
+/** 两类模板共有、和版式无关的部分。 */
+export interface TemplateBase {
   id: string;
   name: string;
-  /** 用多大的纸：排版、预览软尺和打印页面尺寸都按它；按纸张分配打印机。和版式无关，元素式模板也保留。 */
+  /** 用多大的纸：排版、预览软尺和打印页面尺寸都按它；按纸张分配打印机。 */
   paper: PaperSize;
   /** 指定的打印机（系统里的打印机名）；null = 按纸张分配。这台电脑上没有这台打印机时退回按纸张分配。 */
   printer: string | null;
+}
+
+/** 标签模板（二维码 + 字段区 + 底部整行 + 备注）：「通用 / 样衣」这些版式。 */
+export interface QrLabelTemplate extends TemplateBase {
+  kind: 'label';
   paddingMm: number;
   layout: QrLayout;
   /**
@@ -90,6 +97,10 @@ export interface LabelTemplate {
   bottom: BottomLine;
   note: NoteConfig;
 }
+
+/** label = 标签模板；waybill = 快递面单（格子版式，见 waybill-model.ts）。数据库里的旧模板没有 kind，按 label 读。 */
+export type LabelTemplate = QrLabelTemplate | WaybillTemplate;
+export type TemplateKind = LabelTemplate['kind'];
 
 export const TEMPLATE_LIMITS = {
   paddingMm: { min: 0, max: 6 },
@@ -125,18 +136,28 @@ export function maxQrSizeMm(paper: PaperSize, paddingMm: number): number {
 }
 
 /** 二维码旁字段区的可用宽度（mm）。 */
-export function sideTextWidthMm(template: LabelTemplate): number {
+export function sideTextWidthMm(template: QrLabelTemplate): number {
   const qrWidth = template.qr.visible ? template.qr.sizeMm + LAYOUT_GAP_MM : 0;
   return template.paper.widthMm - 2 * template.paddingMm - qrWidth;
 }
 
 /** 底部整行的可用宽度（mm）。 */
-export function fullTextWidthMm(template: LabelTemplate): number {
+export function fullTextWidthMm(template: QrLabelTemplate): number {
   return template.paper.widthMm - 2 * template.paddingMm;
 }
 
-/** 换一种纸打同一个模板（测试页按打印机负责的纸打印、编辑器换纸张）：二维码跟着纸张缩小，并夹到新纸张的上限内。 */
-export function withPaper(template: LabelTemplate, paper: PaperSize): LabelTemplate {
+/**
+ * 换一种纸打同一个模板（测试页按打印机负责的纸打印、编辑器换纸张）：二维码跟着纸张缩小，并夹到新纸张的上限内。
+ * 面单模板只换纸张：版面的最后一行（商家自定义区）在排版时吸收高度差。
+ */
+export function withPaper<T extends LabelTemplate>(template: T, paper: PaperSize): T {
+  if (template.kind === 'waybill') {
+    return { ...template, paper: { ...paper } };
+  }
+  return withLabelPaper(template, paper) as T;
+}
+
+function withLabelPaper(template: QrLabelTemplate, paper: PaperSize): QrLabelTemplate {
   // 纸变小时二维码按短边等比缩小：只夹到上限的话，60×40 的 22mm 二维码放到 50×30 上，底部整行会被挤出标签裁掉。
   // 纸变大时不放大，免得二维码突然占满面单。
   const shrink = Math.min(1, shortSideMm(paper) / shortSideMm(template.paper));

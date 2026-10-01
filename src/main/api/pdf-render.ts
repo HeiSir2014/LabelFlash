@@ -1,6 +1,7 @@
 import { fieldsScan } from '../../core/print-service';
 import type { ScanField } from '../../core/scan/scan-result';
 import type { LabelTemplate } from '../../core/templates/template-model';
+import { renderWarningTexts } from '../../shared/render-warnings';
 import { renderLabelHtml } from '../printing/label-html';
 import { withLabelWindow } from '../printing/label-window';
 
@@ -19,7 +20,14 @@ export async function renderLabelPdf(
   fields: ScanField[],
   content: string,
 ): Promise<Uint8Array> {
-  const { html } = renderLabelHtml({ scan: fieldsScan(content, fields), template, printedAt: Date.now() }, PDF_DPI);
+  const { html, ...warnings } = renderLabelHtml(
+    { scan: fieldsScan(content, fields), template, printedAt: Date.now() },
+    PDF_DPI,
+  );
+  const texts = renderWarningTexts(warnings);
+  if (texts.length > 0) {
+    console.warn(`[LocalApi] PDF of "${content}" with template "${template.name}": ${texts.join('；')}`);
+  }
   const { widthMm, heightMm } = template.paper;
   return withLabelWindow(html, AbortSignal.timeout(PDF_RENDER_TIMEOUT_MS), (contents) =>
     contents.printToPDF({

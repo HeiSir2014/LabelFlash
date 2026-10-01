@@ -18,7 +18,7 @@ import {
   textHeightMm,
 } from '../../core/templates/text-fit';
 import type { LabelJob } from '../../core/types';
-import type { RenderWarnings } from '../../shared/render-warnings';
+import { NO_RENDER_WARNINGS, type RenderWarnings } from '../../shared/render-warnings';
 import { escapeHtml, mm } from './html-text';
 import { DEFAULT_PRINTER_DPI, planQr } from './qr-code';
 import { renderWaybillHtml } from './waybill-html';
@@ -59,7 +59,7 @@ export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI
   if (template.kind === 'waybill') {
     return renderWaybillHtml({ ...job, template }, dpi);
   }
-  return { ...renderQrLabel({ ...job, template }, dpi), barcodeOmitted: false, overflowCells: 0, issues: [] };
+  return { ...NO_RENDER_WARNINGS, ...renderQrLabel({ ...job, template }, dpi) };
 }
 
 function renderQrLabel(

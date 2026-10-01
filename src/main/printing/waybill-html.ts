@@ -10,7 +10,7 @@ import {
 } from '../../core/templates/waybill-layout';
 import type { WaybillTemplate } from '../../core/templates/waybill-model';
 import type { LabelJob } from '../../core/types';
-import type { RenderWarnings } from '../../shared/render-warnings';
+import { NO_RENDER_WARNINGS, type RenderWarnings } from '../../shared/render-warnings';
 import { encodeCode128 } from './code128';
 import { escapeHtml, mm } from './html-text';
 import { DEFAULT_PRINTER_DPI, dotMm, planQr } from './qr-code';
@@ -89,11 +89,11 @@ export function renderWaybillHtml(
 <body>${cells}${rules}</body>
 </html>`;
   return {
+    ...NO_RENDER_WARNINGS,
     html,
     overflowCells: layout.overflowCells + omitted.cutNumbers,
     barcodeOmitted: omitted.barcode,
     qrOmitted: omitted.qr,
-    issues: [],
   };
 }
 

@@ -385,17 +385,14 @@ function renderPreview(result: PreviewResult, { template, isBound }: PrintTempla
       paper: null,
     };
   }
-  const { html, qrOmitted, barcodeOmitted, overflowCells, issues } = renderLabelHtml(
-    { scan: result.scan, template, printedAt: Date.now() },
-    dpi,
-  );
+  const { html, ...warnings } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() }, dpi);
   return {
     result,
     html,
     templateId: template.id,
     templateName: template.name,
     isTemplateBound: isBound,
-    warnings: { qrOmitted, barcodeOmitted, overflowCells, issues },
+    warnings,
     paper: template.paper,
   };
 }

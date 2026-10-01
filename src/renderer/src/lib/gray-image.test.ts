@@ -12,7 +12,7 @@ function image(id: string, pixelWidth: number, pixelHeight: number): CanvasEleme
 }
 
 describe('rgbaToGray', () => {
-  test('weighs the colour channels like a printer driver does', () => {
+  test('uses Rec. 601 luma', () => {
     const rgba = new Uint8ClampedArray([255, 255, 255, 255, 0, 0, 0, 255, 255, 0, 0, 255]);
     expect(rgbaToGray(rgba, 3, 1)).toEqual(new Uint8Array([255, 0, 76]));
   });
@@ -20,6 +20,10 @@ describe('rgbaToGray', () => {
   test('treats transparent pixels as white paper', () => {
     const rgba = new Uint8ClampedArray([0, 0, 0, 0, 0, 0, 0, 128]);
     expect(rgbaToGray(rgba, 2, 1)).toEqual(new Uint8Array([255, 127]));
+  });
+
+  test('throws when there are fewer bytes than the width and height promise', () => {
+    expect(() => rgbaToGray(new Uint8ClampedArray(4), 2, 1)).toThrow(/expected at least 8 bytes/);
   });
 });
 
@@ -41,6 +45,25 @@ describe('fitPixelBudget', () => {
     expect(fitPixelBudget(10000, 10, CANVAS_LIMITS.imageBytes, CANVAS_LIMITS.imageSidePixels)).toEqual({
       width: 4000,
       height: 4,
+    });
+  });
+
+  test('shrinks a photo where the pixel budget and the side limit both apply', () => {
+    // 5000×3000：像素预算把它压到比两边的「单边上限」都更小，两条限制同时起作用，不是只有一条说了算。
+    const width = 5000;
+    const height = 3000;
+    const { imageBytes, imageSidePixels } = CANVAS_LIMITS;
+    const scale = Math.min(
+      1,
+      Math.sqrt(imageBytes / (width * height)),
+      imageSidePixels / width,
+      imageSidePixels / height,
+    );
+    expect(imageSidePixels / width).toBeLessThan(1);
+    expect(Math.sqrt(imageBytes / (width * height))).toBeLessThan(1);
+    expect(fitPixelBudget(width, height, imageBytes, imageSidePixels)).toEqual({
+      width: Math.floor(width * scale),
+      height: Math.floor(height * scale),
     });
   });
 });

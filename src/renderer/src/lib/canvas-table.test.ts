@@ -77,3 +77,64 @@ describe('table cells', () => {
     expect(next.cells[0]).toEqual(table().cells[0]);
   });
 });
+
+describe('rotation swaps rows and columns onto the right axis', () => {
+  /** 转 90°：行沿着（转之前的）宽排，列沿着（转之前的）高排——和 canvas-layout 的 frame 换算一致。 */
+  function rotated(): CanvasTable {
+    return { ...table(), rotation: 90, width: 50, height: 20 };
+  }
+
+  test('reads the last row and column against the swapped extent', () => {
+    expect(lastRowMm(rotated())).toBe(44); // 50(宽) - 6
+    expect(lastColumnMm(rotated())).toBe(8); // 20(高) - 12
+  });
+
+  test('growing a row grows the width, not the height', () => {
+    const grown = addTableRow(rotated());
+    expect(grown.rowsMm).toEqual([6, 44, 0]);
+    expect(grown.width).toBe(50 + NEW_ROW_MM);
+    expect(grown.height).toBe(20);
+  });
+
+  test('growing a column grows the height, not the width', () => {
+    const grown = addTableColumn(rotated());
+    expect(grown.columnsMm).toEqual([12, 8, 0]);
+    expect(grown.height).toBe(20 + NEW_COLUMN_MM);
+    expect(grown.width).toBe(50);
+  });
+
+  test('removing the last row shrinks the width, not the height', () => {
+    const shrunk = removeTableRow(rotated());
+    expect(shrunk.rowsMm).toEqual([6]);
+    expect(shrunk.width).toBe(6); // 50 - 44
+    expect(shrunk.height).toBe(20);
+  });
+
+  test('removing the last column shrinks the height, not the width', () => {
+    const shrunk = removeTableColumn(rotated());
+    expect(shrunk.columnsMm).toEqual([12]);
+    expect(shrunk.height).toBe(12); // 20 - 8
+    expect(shrunk.width).toBe(50);
+  });
+});
+
+describe('sizes are resolved the way the table layout prints them', () => {
+  test('a squeezed row still reports at least the layout minimum, never zero', () => {
+    const squeezed = setRowMm(table(), 0, 20); // rowsMm 比表格还高，布局会按比例缩小
+    expect(lastRowMm(squeezed)).toBe(1);
+  });
+
+  test('removing a squeezed last row shrinks the table instead of growing it', () => {
+    const squeezed = setRowMm(table(), 0, 20);
+    const shrunk = removeTableRow(squeezed);
+    expect(shrunk.height).toBeLessThan(squeezed.height);
+    expect(shrunk).toMatchObject({ rowsMm: [20], height: 11 });
+  });
+
+  test('adding a row to a squeezed table never stores a zero-height fixed row', () => {
+    const squeezed = setRowMm(table(), 0, 20);
+    const grown = addTableRow(squeezed);
+    expect(grown.rowsMm[1]).toBeGreaterThan(0);
+    expect(grown.rowsMm).toEqual([20, 1, 0]);
+  });
+});

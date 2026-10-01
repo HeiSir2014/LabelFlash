@@ -1,12 +1,11 @@
-import { CANVAS_LIMITS } from '../../../core/templates/canvas-model';
-import type { PaperSize } from '../../../shared/paper-sizes';
-import type { Box, ResizeHandle } from './canvas-edit';
-import { pxToMm } from './canvas-view';
-
 /**
  * 拖动和缩放时的吸附：靠近纸边、安全区、纸的中线、其他元素的边和中线时吸过去，并给出要画的参考线。
  * 网格只是显示，不吸网格（设计文档第 3.3 节列的吸附目标里没有网格；吸网格会和吸元素抢位置）。
  */
+import { CANVAS_LIMITS } from '../../../core/templates/canvas-model';
+import type { PaperSize } from '../../../shared/paper-sizes';
+import type { Box, ResizeHandle } from './canvas-edit';
+import { pxToMm } from './canvas-view';
 
 /** 离参考线 6 个屏幕像素以内就吸过去：和常见设计软件的手感接近；按缩放换算成毫米，放大后吸得更准。 */
 export const SNAP_DISTANCE_PX = 6;
@@ -23,6 +22,7 @@ export interface SnapTargets {
   y: readonly number[];
 }
 
+/** 吸附后的框和要画的参考线。 */
 export interface Snapped {
   box: Box;
   guides: Guide[];
@@ -89,33 +89,48 @@ export function snapMove(box: Box, targets: SnapTargets, threshold: number): Sna
   return { box: { ...box, x: box.x + (x?.delta ?? 0), y: box.y + (y?.delta ?? 0) }, guides };
 }
 
-/** 缩放时吸附：只吸正在拖的那条（那两条）边，对边不动。 */
+/** 不超过 limit 的候选参考线（拖最小、最上的边时用：对边固定在更大的坐标上）。 */
+function atMost(targets: readonly number[], limit: number): number[] {
+  return targets.filter((target) => target <= limit);
+}
+
+/** 不小于 limit 的候选参考线（拖最大、最下的边时用：对边固定在更小的坐标上）。 */
+function atLeast(targets: readonly number[], limit: number): number[] {
+  return targets.filter((target) => target >= limit);
+}
+
+/**
+ * 缩放时吸附：只吸正在拖的那条（那两条）边，对边不动。
+ * 细线、小元素的对边离参考线很近时，直接吸过去会把尺寸压到最小尺寸以下（甚至翻过对边），
+ * 所以候选参考线先按「不动的那条边减去/加上最小尺寸」筛过一遍，筛掉的目标当作不存在。
+ */
 export function snapResize(box: Box, handle: ResizeHandle, targets: SnapTargets, threshold: number): Snapped {
+  const minSize = CANVAS_LIMITS.minSizeMm;
   let { x, y, width, height } = box;
   const guides: Guide[] = [];
   if (handle.includes('w')) {
-    const match = nearest([x], targets.x, threshold);
+    const match = nearest([x], atMost(targets.x, x + width - minSize), threshold);
     if (match !== null) {
       x += match.delta;
       width -= match.delta;
       guides.push({ axis: 'x', at: match.at });
     }
   } else if (handle.includes('e')) {
-    const match = nearest([x + width], targets.x, threshold);
+    const match = nearest([x + width], atLeast(targets.x, x + minSize), threshold);
     if (match !== null) {
       width += match.delta;
       guides.push({ axis: 'x', at: match.at });
     }
   }
   if (handle.includes('n')) {
-    const match = nearest([y], targets.y, threshold);
+    const match = nearest([y], atMost(targets.y, y + height - minSize), threshold);
     if (match !== null) {
       y += match.delta;
       height -= match.delta;
       guides.push({ axis: 'y', at: match.at });
     }
   } else if (handle.includes('s')) {
-    const match = nearest([y + height], targets.y, threshold);
+    const match = nearest([y + height], atLeast(targets.y, y + minSize), threshold);
     if (match !== null) {
       height += match.delta;
       guides.push({ axis: 'y', at: match.at });

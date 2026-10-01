@@ -12,7 +12,7 @@ import {
 } from './canvas-view';
 
 function key(name: string, modifiers: Partial<Omit<DesignerKey, 'key'>> = {}): DesignerKey {
-  return { key: name, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...modifiers };
+  return { key: name, code: '', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...modifiers };
 }
 
 describe('zoom', () => {
@@ -29,6 +29,13 @@ describe('zoom', () => {
   test('stays at the ends', () => {
     expect(zoomIn(ZOOM_LEVELS.at(-1) ?? 0)).toBe(6);
     expect(zoomOut(ZOOM_LEVELS[0] ?? 0)).toBe(0.5);
+  });
+
+  test('clamps an input below the lowest level or above the highest level', () => {
+    expect(zoomIn(-5)).toBe(0.5);
+    expect(zoomOut(-5)).toBe(0.5);
+    expect(zoomIn(100)).toBe(6);
+    expect(zoomOut(100)).toBe(6);
   });
 
   test('converts screen pixels to millimetres at a zoom', () => {
@@ -65,7 +72,16 @@ describe('designerCommand', () => {
     }
   });
 
-  test('ignores Alt combinations', () => {
+  test('ignores Alt combinations, including Ctrl+Alt (AltGr on non-US keyboards)', () => {
     expect(designerCommand(key('ArrowLeft', { altKey: true }))).toBeNull();
+    expect(designerCommand(key('z', { ctrlKey: true, altKey: true }))).toBeNull();
+  });
+
+  // 非拉丁键盘上，Ctrl+Z 这类组合键的 event.key 是当前布局的字符（例如俄语键盘上的「я」），
+  // 不是「z」；但 event.code 是物理键位，不受布局影响，兜底用它识别。
+  test('matches Ctrl shortcuts by the physical key code when the layout is not Latin', () => {
+    expect(designerCommand(key('я', { code: 'KeyZ', ctrlKey: true }))).toEqual({ kind: 'undo' });
+    expect(designerCommand(key('с', { code: 'KeyC', ctrlKey: true }))).toEqual({ kind: 'copy' });
+    expect(designerCommand(key('м', { code: 'KeyV', ctrlKey: true }))).toEqual({ kind: 'paste' });
   });
 });

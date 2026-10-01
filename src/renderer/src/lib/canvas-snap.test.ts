@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { SNAP_DISTANCE_PX, snapMove, snapResize, snapTargets, snapThresholdMm } from './canvas-snap';
+import { CANVAS_LIMITS } from '../../../core/templates/canvas-model';
+import { SNAP_DISTANCE_PX, type SnapTargets, snapMove, snapResize, snapTargets, snapThresholdMm } from './canvas-snap';
 import { PX_PER_MM } from './canvas-view';
 
 const PAPER = { widthMm: 60, heightMm: 40 };
@@ -49,6 +50,14 @@ describe('snapMove', () => {
     const box = { x: 5, y: 7, width: 10, height: 5 };
     expect(snapMove(box, PAPER_ONLY, THRESHOLD_MM)).toEqual({ box, guides: [] });
   });
+
+  test('picks the nearest of several candidate targets on the same edge', () => {
+    const targets: SnapTargets = { x: [10, 10.3, 10.6], y: [] };
+    const { box, guides } = snapMove({ x: 10.4, y: 5, width: 4, height: 4 }, targets, THRESHOLD_MM);
+    expect(box.x).toBeCloseTo(10.3, 9);
+    expect(box.y).toBe(5);
+    expect(guides).toEqual([{ axis: 'x', at: 10.3 }]);
+  });
 });
 
 describe('snapResize', () => {
@@ -57,6 +66,31 @@ describe('snapResize', () => {
     expect(box.x).toBe(1.3);
     expect(box.x + box.width).toBeCloseTo(30, 9);
     expect(guides).toEqual([{ axis: 'x', at: 30 }]);
+  });
+
+  test('snaps the west edge alone, leaving the opposite edge fixed', () => {
+    const { box, guides } = snapResize({ x: 1.3, y: 10, width: 10, height: 5 }, 'w', PAPER_ONLY, THRESHOLD_MM);
+    expect(box.x).toBeCloseTo(1.5, 9);
+    expect(box.x + box.width).toBeCloseTo(11.3, 9);
+    expect(box.y).toBe(10);
+    expect(box.height).toBe(5);
+    expect(guides).toEqual([{ axis: 'x', at: 1.5 }]);
+  });
+
+  test('snaps the north edge alone, leaving the opposite edge fixed', () => {
+    const { box, guides } = snapResize({ x: 10, y: 1.2, width: 10, height: 10 }, 'n', PAPER_ONLY, THRESHOLD_MM);
+    expect(box.y).toBeCloseTo(1.5, 9);
+    expect(box.y + box.height).toBeCloseTo(11.2, 9);
+    expect(box.x).toBe(10);
+    expect(box.width).toBe(10);
+    expect(guides).toEqual([{ axis: 'y', at: 1.5 }]);
+  });
+
+  test('snaps the south edge alone, leaving the opposite edge fixed', () => {
+    const { box, guides } = snapResize({ x: 10, y: 10, width: 10, height: 28.3 }, 's', PAPER_ONLY, THRESHOLD_MM);
+    expect(box.y).toBe(10);
+    expect(box.y + box.height).toBeCloseTo(38.5, 9);
+    expect(guides).toEqual([{ axis: 'y', at: 38.5 }]);
   });
 
   test('snaps both edges at a corner', () => {
@@ -69,5 +103,14 @@ describe('snapResize', () => {
       { axis: 'x', at: 1.5 },
       { axis: 'y', at: 1.5 },
     ]);
+  });
+
+  test('skips a target that would shrink a thin line past the minimum size', () => {
+    const thinLine = { x: 10, y: 5, width: 10, height: CANVAS_LIMITS.minSizeMm };
+    // 目标线紧贴着线的下边缘（没动的那边）：往上吸这条线会把高度压到最小尺寸以下，不该吸。
+    const targets: SnapTargets = { x: [], y: [5 + CANVAS_LIMITS.minSizeMm - 0.05] };
+    const { box, guides } = snapResize(thinLine, 'n', targets, THRESHOLD_MM);
+    expect(box).toEqual(thinLine);
+    expect(guides).toEqual([]);
   });
 });

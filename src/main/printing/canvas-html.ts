@@ -1,0 +1,304 @@
+import { type LaidCanvasContent, type LaidCanvasElement, layoutCanvas } from '../../core/templates/canvas-layout';
+import type { CanvasBarcode, CanvasImage, CanvasQr, CanvasTemplate } from '../../core/templates/canvas-model';
+import { decodeGray, fitContain, monoBmp, resizeGray, toMono } from '../../core/templates/mono-image';
+import { LINE_HEIGHT } from '../../core/templates/text-fit';
+import { CELL_PADDING_MM } from '../../core/templates/waybill-layout';
+import type { LabelJob } from '../../core/types';
+import type { RenderWarnings } from '../../shared/render-warnings';
+import {
+  CANVAS_MAX_MODULE_MM,
+  encodeBarcode,
+  linearBarsPath,
+  MIN_BAR_HEIGHT_MM,
+  matrixPath,
+  matrixQuietZone,
+  moduleDotsFor,
+  QUIET_ZONE_MODULES,
+} from './barcode';
+import { escapeHtml, mm } from './html-text';
+import { DEFAULT_PRINTER_DPI, dotMm, planQr } from './qr-code';
+
+/** 号码和条码之间的空隙（mm），和面单一致。 */
+const BARCODE_TEXT_GAP_MM = 0.4;
+/** 虚线：一段 1.2mm、空 0.8mm，和面单一致。 */
+const DASH_MM = 1.2;
+const DASH_GAP_MM = 0.8;
+
+export interface RenderedCanvas extends RenderWarnings {
+  html: string;
+}
+
+interface Findings {
+  barcodeOmitted: boolean;
+  qrOmitted: boolean;
+  issues: string[];
+}
+
+/**
+ * 自由设计模板 → HTML：每个元素一个绝对定位的框（取整到打印点），转角度时内容框用整点的平移 + 直角旋转，
+ * 条码、二维码、图片按打印点画成 SVG。预览和打印共用这一份（打印窗口不运行脚本）。
+ */
+export function renderCanvasHtml(
+  job: LabelJob & { template: CanvasTemplate },
+  dpi: number = DEFAULT_PRINTER_DPI,
+): RenderedCanvas {
+  const { template } = job;
+  const dot = dotMm(dpi);
+  const layout = layoutCanvas(template, { scan: job.scan, printedAt: new Date(job.printedAt), dotMm: dot });
+  const findings: Findings = { barcodeOmitted: false, qrOmitted: false, issues: [...layout.issues] };
+  const body = layout.elements.map((element) => elementHtml(element, dot, dpi, findings)).join('');
+  const { widthMm, heightMm } = template.paper;
+  const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(job.scan.raw)}</title>
+<style>
+  @page { size: ${mm(widthMm)} ${mm(heightMm)}; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: ${mm(widthMm)}; height: ${mm(heightMm)}; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: ${LINE_HEIGHT}; }
+  .code { position: absolute; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: ${LINE_HEIGHT}; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body>${body}</body>
+</html>`;
+  return {
+    html,
+    qrOmitted: findings.qrOmitted,
+    barcodeOmitted: findings.barcodeOmitted,
+    overflowCells: layout.overflowCount,
+    issues: findings.issues,
+  };
+}
+
+function elementHtml(element: LaidCanvasElement, dot: number, dpi: number, findings: Findings): string {
+  const inner = contentHtml(element, dot, dpi, findings);
+  if (inner === '') {
+    return '';
+  }
+  const { rect, frame } = element;
+  return `<div class="el" style="left:${mm(rect.x)};top:${mm(rect.y)};width:${mm(rect.width)};height:${mm(rect.height)}"><div class="frame" style="width:${mm(frame.width)};height:${mm(frame.height)}${rotationCss(element)}">${inner}</div></div>`;
+}
+
+/**
+ * 直角旋转：内容框先绕左上角转，再平移回元素的框里。平移量是元素框的宽或高（都是整数个点），
+ * 转完的每条边仍在打印点上；绕中心转的话，奇数个点的框会落在半个点上。
+ */
+function rotationCss({ rotation, rect }: LaidCanvasElement): string {
+  switch (rotation) {
+    case 0:
+      return '';
+    case 90:
+      return `;transform:translate(${mm(rect.width)},0mm) rotate(90deg)`;
+    case 180:
+      return `;transform:translate(${mm(rect.width)},${mm(rect.height)}) rotate(180deg)`;
+    case 270:
+      return `;transform:translate(0mm,${mm(rect.height)}) rotate(270deg)`;
+  }
+}
+
+function contentHtml(element: LaidCanvasElement, dot: number, dpi: number, findings: Findings): string {
+  const { content, frame, name } = element;
+  switch (content.kind) {
+    case 'text':
+      return textHtml(content);
+    case 'barcode':
+      return barcodeHtml(content.element, content.value, frame, dot, name, findings);
+    case 'qr':
+      return qrHtml(content.element, content.value, frame, dot, dpi, findings);
+    case 'image':
+      return imageHtml(content.element, frame, dot, findings);
+    case 'line':
+      return lineHtml(content.dashed, frame);
+    case 'rect':
+      return rectHtml(content, dot);
+    case 'table':
+      return tableHtml(content, frame, dot);
+  }
+}
+
+function linesHtml(lines: readonly { text: string; fontSizeMm: number; bold: boolean }[]): string {
+  return lines
+    .map(
+      (line) =>
+        `<div class="line" style="font-size:${mm(line.fontSizeMm)};font-weight:${line.bold ? 700 : 400}">${escapeHtml(line.text)}</div>`,
+    )
+    .join('');
+}
+
+function textHtml(content: Extract<LaidCanvasContent, { kind: 'text' }>): string {
+  const colors = content.inverse ? ';background:#000;color:#fff' : '';
+  return `<div class="text text--${content.valign}" style="text-align:${content.align}${colors}">${linesHtml(content.lines)}</div>`;
+}
+
+function barcodeHtml(
+  element: CanvasBarcode,
+  value: string,
+  frame: { width: number; height: number },
+  dot: number,
+  name: string,
+  findings: Findings,
+): string {
+  const omit = (reason: string) => {
+    findings.barcodeOmitted = true;
+    findings.issues.push(`条码「${name}」${reason}，这张不印条码`);
+    return '';
+  };
+  const result = encodeBarcode(element.symbology, value);
+  if (!result.ok) {
+    return omit(`：${result.reason}`);
+  }
+  const widthDots = Math.round(frame.width / dot);
+  const heightDots = Math.round(frame.height / dot);
+  if (result.code.dimensions === 2) {
+    const { cells, columns, rows, rowScale } = result.code;
+    const quiet = matrixQuietZone(element.symbology);
+    const across = moduleDotsFor(widthDots, columns + 2 * quiet, dot, CANVAS_MAX_MODULE_MM);
+    const down = moduleDotsFor(heightDots, rows * rowScale + 2 * quiet, dot, CANVAS_MAX_MODULE_MM);
+    if (across === null || down === null) {
+      return omit('放不下（框太小）');
+    }
+    const moduleDots = Math.min(across, down);
+    const width = columns * moduleDots;
+    const height = rows * rowScale * moduleDots;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${columns} ${rows * rowScale}" shape-rendering="crispEdges" style="width:${mm(width * dot)};height:${mm(height * dot)}"><path d="${matrixPath(cells, columns, rows, rowScale)}"/></svg>`;
+    return `<div class="code" style="left:${mm(Math.floor((widthDots - width) / 2) * dot)};top:${mm(Math.floor((heightDots - height) / 2) * dot)}">${svg}</div>`;
+  }
+  const { widths, heights, offsets } = result.code;
+  const modules = widths.reduce((sum, width) => sum + width, 0);
+  const moduleDots = moduleDotsFor(widthDots, modules + 2 * QUIET_ZONE_MODULES, dot, CANVAS_MAX_MODULE_MM);
+  if (moduleDots === null) {
+    return omit('放不下（框不够宽）');
+  }
+  const textBlockMm = element.showText ? element.textSizeMm * LINE_HEIGHT + BARCODE_TEXT_GAP_MM : 0;
+  const barHeightMm = frame.height - textBlockMm;
+  if (barHeightMm < MIN_BAR_HEIGHT_MM) {
+    return omit(`太矮（条高不到 ${MIN_BAR_HEIGHT_MM}mm）`);
+  }
+  const barsDots = modules * moduleDots;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${modules} 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:${mm(barsDots * dot)};height:${mm(barHeightMm)}"><path d="${linearBarsPath(widths, false, heights, offsets)}"/></svg>`;
+  const text = element.showText
+    ? `<div class="code__text" style="font-size:${mm(element.textSizeMm)};margin-top:${mm(BARCODE_TEXT_GAP_MM)}">${escapeHtml(value)}</div>`
+    : '';
+  // 起点落在整数个点上（见面单 barcodeSvg 的说明）；号码在条码下方居中。
+  return `<div class="code" style="left:${mm(Math.floor((widthDots - barsDots) / 2) * dot)};top:0;width:${mm(barsDots * dot)}">${svg}${text}</div>`;
+}
+
+function qrHtml(
+  element: CanvasQr,
+  value: string,
+  frame: { width: number; height: number },
+  dot: number,
+  dpi: number,
+  findings: Findings,
+): string {
+  const plan = planQr(value, element.errorCorrection, Math.min(frame.width, frame.height), dpi);
+  if (plan === null) {
+    findings.qrOmitted = true;
+    findings.issues.push(`二维码「${element.name}」内容太长、框太小，这张不印二维码`);
+    return '';
+  }
+  const sizeDots = plan.moduleCount * plan.moduleDots;
+  const left = Math.floor((Math.round(frame.width / dot) - sizeDots) / 2) * dot;
+  const top = Math.floor((Math.round(frame.height / dot) - sizeDots) / 2) * dot;
+  return `<div class="code" style="left:${mm(left)};top:${mm(top)};width:${mm(plan.sizeMm)};height:${mm(plan.sizeMm)}">${plan.svg.replace('<svg ', '<svg width="100%" height="100%" ')}</div>`;
+}
+
+function imageHtml(
+  element: CanvasImage,
+  frame: { width: number; height: number },
+  dot: number,
+  findings: Findings,
+): string {
+  const gray = decodeGray(element.pixels, element.pixelWidth, element.pixelHeight);
+  if (gray === null) {
+    findings.issues.push(`图片「${element.name}」的数据坏了，这张不印这张图`);
+    return '';
+  }
+  const box = fitContain(gray.width, gray.height, Math.round(frame.width / dot), Math.round(frame.height / dot));
+  const mono = toMono(resizeGray(gray, box.width, box.height), element.mode, element.threshold);
+  const left = Math.floor((Math.round(frame.width / dot) - box.width) / 2) * dot;
+  const top = Math.floor((Math.round(frame.height / dot) - box.height) / 2) * dot;
+  // 1 位 BMP：大小有上限（约 宽×高/8 字节），抖动的照片画成 SVG 路径会到几 MB。每个像素正好一个打印点，pixelated 不做插值。
+  return `<img class="dots" alt="" src="data:image/bmp;base64,${monoBmp(mono, box.width, box.height)}" style="left:${mm(left)};top:${mm(top)};width:${mm(box.width * dot)};height:${mm(box.height * dot)};image-rendering:pixelated" />`;
+}
+
+function lineHtml(dashed: boolean, frame: { width: number; height: number }): string {
+  const horizontal = frame.width >= frame.height;
+  const fill = dashed
+    ? `repeating-linear-gradient(${horizontal ? 90 : 180}deg, #000 0 ${mm(DASH_MM)}, transparent ${mm(DASH_MM)} ${mm(DASH_MM + DASH_GAP_MM)})`
+    : '#000';
+  return `<div style="width:100%;height:100%;background:${fill}"></div>`;
+}
+
+/** 边框粗细取整到点（至少 1 个点）：不取整的话细边框会时有时无。 */
+function snapBorder(borderMm: number, dot: number): number {
+  return borderMm <= 0 ? 0 : Math.max(1, Math.round(borderMm / dot)) * dot;
+}
+
+function rectHtml(content: Extract<LaidCanvasContent, { kind: 'rect' }>, dot: number): string {
+  const border = snapBorder(content.borderMm, dot);
+  const style = [
+    'width:100%',
+    'height:100%',
+    border > 0 ? `border:${mm(border)} solid #000` : '',
+    content.filled ? 'background:#000' : '',
+    content.radiusMm > 0 ? `border-radius:${mm(content.radiusMm)}` : '',
+  ]
+    .filter((part) => part !== '')
+    .join(';');
+  return `<div style="${style}"></div>`;
+}
+
+function tableHtml(
+  content: Extract<LaidCanvasContent, { kind: 'table' }>,
+  frame: { width: number; height: number },
+  dot: number,
+): string {
+  const border = snapBorder(content.borderMm, dot);
+  const parts: string[] = [];
+  let top = 0;
+  content.rows.forEach((rowHeight, row) => {
+    let left = 0;
+    content.columns.forEach((columnWidth, column) => {
+      const cell = content.cells[row]?.[column];
+      if (cell && cell.lines.length > 0) {
+        parts.push(
+          `<div class="text text--middle" style="position:absolute;left:${mm(left + CELL_PADDING_MM.x)};top:${mm(top + CELL_PADDING_MM.y)};width:${mm(columnWidth - 2 * CELL_PADDING_MM.x)};height:${mm(rowHeight - 2 * CELL_PADDING_MM.y)};text-align:${cell.align}">${linesHtml(cell.lines)}</div>`,
+        );
+      }
+      left += columnWidth;
+    });
+    top += rowHeight;
+  });
+  if (border > 0) {
+    // 外框画在框内侧；内部格线以格子边界为中心，和面单的线一样。
+    parts.push(`<div style="position:absolute;inset:0;border:${mm(border)} solid #000"></div>`);
+    const half = Math.floor(border / dot / 2) * dot;
+    let y = 0;
+    for (const rowHeight of content.rows.slice(0, -1)) {
+      y += rowHeight;
+      parts.push(
+        `<div style="position:absolute;left:0;top:${mm(y - half)};width:${mm(frame.width)};height:${mm(border)};background:#000"></div>`,
+      );
+    }
+    let x = 0;
+    for (const columnWidth of content.columns.slice(0, -1)) {
+      x += columnWidth;
+      parts.push(
+        `<div style="position:absolute;left:${mm(x - half)};top:0;width:${mm(border)};height:${mm(frame.height)};background:#000"></div>`,
+      );
+    }
+  }
+  return parts.join('');
+}

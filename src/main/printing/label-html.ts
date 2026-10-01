@@ -19,6 +19,7 @@ import {
 } from '../../core/templates/text-fit';
 import type { LabelJob } from '../../core/types';
 import { NO_RENDER_WARNINGS, type RenderWarnings } from '../../shared/render-warnings';
+import { renderCanvasHtml } from './canvas-html';
 import { escapeHtml, mm } from './html-text';
 import { DEFAULT_PRINTER_DPI, planQr } from './qr-code';
 import { renderWaybillHtml } from './waybill-html';
@@ -53,8 +54,7 @@ interface FittedRow extends FieldRow {
 export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI): RenderedLabel {
   const { template } = job;
   if (template.kind === 'canvas') {
-    // Task 8 换成 renderCanvasHtml。
-    return { html: '', qrOmitted: false, barcodeOmitted: false, overflowCells: 0, issues: [] };
+    return renderCanvasHtml({ ...job, template }, dpi);
   }
   if (template.kind === 'waybill') {
     return renderWaybillHtml({ ...job, template }, dpi);

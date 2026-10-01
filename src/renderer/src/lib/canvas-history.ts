@@ -69,3 +69,12 @@ export function redo<T>(history: History<T>, present: T): Stepped<T> | null {
 export function endMerge<T>(history: History<T>): History<T> {
   return history.mergeKey === null ? history : { ...history, mergeKey: null };
 }
+
+/**
+ * 属性栏传上来的合并键：按「改的是哪个东西（元素 id、「cell:行:列」这类复合 id……）+ 哪个字段」合并，
+ * 不同东西或不同字段的连续编辑不会被并成一步。field 为 null（按钮、开关、分段选择、下拉框这类一次点一下
+ * 就改完的控件）时原样返回 null——这些编辑永远各自成一步撤销，调用方不用在每处都重复这条 null 判断。
+ */
+export function historyMergeKey(id: string, field: string | null): string | null {
+  return field === null ? null : `${id}:${field}`;
+}

@@ -4611,6 +4611,7 @@ import { type KeyboardEvent, useRef, useState } from 'react';
 import type { CanvasTemplate } from '../../../../core/templates/canvas-model';
 import { NO_RENDER_WARNINGS, renderWarningTexts } from '../../../../shared/render-warnings';
 import { clampAll, replaceElement, rotateElement } from '../../lib/canvas-edit';
+import { historyMergeKey } from '../../lib/canvas-history';
 import { designerCommand, zoomIn, zoomOut } from '../../lib/canvas-view';
 import { useCanvasDesigner } from '../../view-models/use-canvas-designer';
 import { useCanvasGesture, useCtrlWheelZoom } from '../../view-models/use-canvas-gesture';
@@ -4716,7 +4717,7 @@ export function CanvasDesigner({ draft, preview, sample, fieldNames, onChange, p
             fieldNames={fieldNames}
             editTextId={editTextId}
             onTextEditStarted={() => setEditTextId(null)}
-            onChange={(next, field) => designer.commit(replaceElement(draft, next), `${next.id}:${field}`)}
+            onChange={(next, field) => designer.commit(replaceElement(draft, next), historyMergeKey(next.id, field))}
             onRotate={(rotation) => designer.commit(rotateElement(draft, selected.id, rotation))}
           />
         ) : designer.selection.length > 1 ? (

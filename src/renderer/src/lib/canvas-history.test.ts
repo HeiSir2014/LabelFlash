@@ -4,6 +4,7 @@ import {
   endMerge,
   HISTORY_LIMIT,
   type History,
+  historyMergeKey,
   record,
   redo,
   type Stepped,
@@ -94,5 +95,16 @@ describe('canvas history', () => {
   test('endMerge leaves a history without a pending merge unchanged', () => {
     const history = emptyHistory<string>();
     expect(endMerge(history)).toBe(history);
+  });
+
+  describe('historyMergeKey', () => {
+    test('combines the id and field for a continuous edit', () => {
+      expect(historyMergeKey('e1', 'x')).toBe('e1:x');
+      expect(historyMergeKey('cell:1:2', 'text')).toBe('cell:1:2:text');
+    });
+
+    test('passes a null field through as null, for one-shot edits that never merge', () => {
+      expect(historyMergeKey('e1', null)).toBeNull();
+    });
   });
 });

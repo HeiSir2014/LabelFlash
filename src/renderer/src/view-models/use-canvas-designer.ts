@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   CANVAS_LIMITS,
   type CanvasElement,
@@ -77,11 +77,42 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
 
   // 选图片要跨一次 await（解码、缩放可能要几百毫秒），这期间草稿可能已经变了——其它属性被改，
   // 甚至这个元素被删掉。commit 不能拿 await 之前闭包里的旧草稿当「改之前的样子」，必须用解码完成
-  // 那一刻最新的草稿；按惯例用 ref 跟住，在 useEffect 里更新（不在渲染过程中改 ref）。
+  // 那一刻最新的草稿；按惯例用 ref 跟住，在 effect 里更新（不在渲染过程中改 ref）。
+  // 用 useLayoutEffect 而不是 useEffect：useEffect 要等浏览器画完才跑（被调度为被动效果），如果
+  // commit 紧跟着上一次渲染同步触发（例如程序化调用、测试里连续发事件，都来不及等一轮绘制），
+  // ref 可能还没来得及更新成最新的 draft，commit 的「改之前的样子」就会读到上一轮的旧值。
+  // useLayoutEffect 在浏览器画出来之前、提交 DOM 之后就同步跑完，仍然不是在渲染过程中改 ref，
+  // 只是把更新的时机提前到比 useEffect 更早、但同样安全（已经提交，不会被中断重渲染打断）的地方。
   const draftRef = useRef(draft);
-  useEffect(() => {
+  useLayoutEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+
+  // 组件卸载后（切到别的模板、取消、保存关闭设计器）解码才完成：这份结果不再属于任何正在显示的画布，
+  // 提交了也只是悄悄埋下一个看不见的脏改动，或者（配置页按 draft.id 给设计器建新实例时）错写进下一个
+  // 打开的模板。用 ref 记"组件还挂着没有"：effect 里标记为挂载，卸载时的清理函数标记为未挂载。
+  const isMountedRef = useRef(false);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // 跟住每个元素 id 的「续命代数」：这个 id 从元素列表里消失过一次（删除、撤销加入……），代数就加一。
+  // importImage 解码完成时核对代数有没有变过——变过说明这期间删过这个 id，哪怕之后凑巧又有个新元素
+  // 复用了同一个 id（`newElementId` 会回收删掉的号），解码结果也不该合并进这个不相干的新元素里。
+  const idEpochRef = useRef(new Map<string, number>());
+  const knownIdsRef = useRef(new Set(draft.elements.map((element) => element.id)));
+  useEffect(() => {
+    const currentIds = new Set(draft.elements.map((element) => element.id));
+    for (const existingId of knownIdsRef.current) {
+      if (!currentIds.has(existingId)) {
+        idEpochRef.current.set(existingId, (idEpochRef.current.get(existingId) ?? 0) + 1);
+      }
+    }
+    knownIdsRef.current = currentIds;
+  }, [draft.elements]);
 
   /**
    * 每一次修改都经过这里：先记下改之前的样子（撤销用），再交给草稿；没有变化的不记。
@@ -155,18 +186,25 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
    * 给一个图片元素选文件：解码交给 use-image-import（sandbox 的页面里做，主进程从不解码图片文件）。
    * 解码期间（可能几百毫秒）用 draftRef 读最新草稿去核对图片总量、去合并结果——不用调用这一刻闭包里的
    * 旧草稿，不然这期间如果删掉了这个元素，解码完成后会把它凭空加回来；如果改了别的属性，会被悄悄覆盖掉。
+   * 解码完成时还要核对：组件是不是已经卸载、草稿是不是已经换成了另一个模板、这个 id 是不是已经被删过
+   * （哪怕之后凑巧又有个新元素复用了同一个 id）——三条有一条不对就丢弃结果，不提交。
    * 不记合并键：换一张图是一次性的操作，不该和下一次换图或别的编辑并成一步撤销。
    */
   const importImage = async (id: string, file: File) => {
+    const templateIdAtStart = draftRef.current.id;
+    const epochAtStart = idEpochRef.current.get(id) ?? 0;
     setImportingImageIds((ids) => new Set(ids).add(id));
     try {
       const picked = await importImagePixels(file, id, draftRef.current.elements);
       if (picked === null) {
         return;
       }
+      if (!isMountedRef.current || draftRef.current.id !== templateIdAtStart) {
+        return;
+      }
       const current = draftRef.current;
       const target = current.elements.find((element) => element.id === id);
-      if (target === undefined || target.kind !== 'image') {
+      if (target === undefined || target.kind !== 'image' || (idEpochRef.current.get(id) ?? 0) !== epochAtStart) {
         return;
       }
       commit(replaceElement(current, { ...target, ...picked }));

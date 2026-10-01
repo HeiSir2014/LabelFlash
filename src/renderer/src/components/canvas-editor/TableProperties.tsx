@@ -6,6 +6,7 @@ import {
   type CanvasTableCell,
   DEFAULT_TABLE_CELL,
 } from '../../../../core/templates/canvas-model';
+import { historyMergeKey } from '../../lib/canvas-history';
 import {
   addTableColumn,
   addTableRow,
@@ -82,7 +83,7 @@ export function TableProperties({ element, fieldNames, onChange, onEndMerge }: T
   const cell = element.cells[row]?.[column] ?? DEFAULT_TABLE_CELL;
   // field 为 null（加粗、对齐这类一次点一下就改完的）不生成合并键；连续输入（文字、字号）才按格子 + 字段合并。
   const setCell = (patch: Partial<CanvasTableCell>, field: string | null) =>
-    onChange(updateTableCell(element, row, column, patch), field === null ? null : `cell:${row}:${column}:${field}`);
+    onChange(updateTableCell(element, row, column, patch), historyMergeKey(`cell:${row}:${column}`, field));
   const { fontSizeMm } = CANVAS_LIMITS;
 
   return (

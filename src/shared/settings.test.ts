@@ -34,8 +34,13 @@ describe('sanitizeSettings', () => {
       voice: { enabled: false, name: 'zh-CN-YunxiNeural', ratePercent: 30 },
       ocrModelTier: 'accurate',
       ruleSettings: [
-        { id: 'custom:a1', enabled: true, templateId: 'custom:3f2c-9a' },
-        { id: 'builtin:raw', enabled: false, templateId: null },
+        {
+          id: 'custom:a1',
+          enabled: true,
+          templateId: 'custom:3f2c-9a',
+          templateRoutes: [{ field: '快递公司', match: 'contains', value: '顺丰', templateId: 'custom:sf' }],
+        },
+        { id: 'builtin:raw', enabled: false, templateId: null, templateRoutes: [] },
       ],
       scanLineGapMs: 120,
       webhooks: [

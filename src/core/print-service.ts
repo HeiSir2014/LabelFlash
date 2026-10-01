@@ -42,7 +42,10 @@ export interface PrintServiceDeps {
   recognize: (raw: string) => ScanResult | null;
   /** 执行命中规则的加工步骤。 */
   enrich: (scan: ScanResult, context: EnrichContext) => Promise<EnrichResult>;
-  /** 本次识别结果用的模板（规则绑定的模板或当前模板）；每次打印时读取，切换模板立即生效。 */
+  /**
+   * 这一张用的模板（按字段换模板 → 规则绑定的模板 → 当前模板）；传入的是加工之后的结果，
+   * 每次打印时读取，切换模板立即生效。
+   */
   resolveTemplate: (scan: ScanResult) => LabelTemplate;
   /**
    * 这个模板用哪台打印机（模板指定 → 纸张分配，见 printing/resolve-printer.ts）；每次打印都重新决定，
@@ -113,9 +116,10 @@ export class PrintService {
     if (!recognition.ok) {
       return recognition.result;
     }
-    const template = this.deps.resolveTemplate(recognition.scan);
     const enriched = await this.enrich(recognition.scan, NO_ENRICH_CONTEXT);
     const { scan } = enriched;
+    // 和打印一样，按加工后的字段决定模板（按字段换模板）。
+    const template = this.deps.resolveTemplate(scan);
     return {
       status: 'ok',
       scan,
@@ -132,8 +136,7 @@ export class PrintService {
       const truncated = request.raw.trim().slice(0, MAX_RAW_LENGTH);
       return this.finish(id, request, NO_TARGET, truncated, recognition.result, null);
     }
-    // 模板只看命中的规则，和加工步骤补的字段无关：在加工之前就能决定打印机。
-    return this.printLabel(id, request, recognition.scan, this.deps.resolveTemplate(recognition.scan), SCAN_OPTIONS);
+    return this.printLabel(id, request, recognition.scan, this.deps.resolveTemplate, SCAN_OPTIONS);
   }
 
   /** 按给定的模板和字段打印一张：不识别、不加工、不用扫码的防重复窗口。 */
@@ -143,51 +146,56 @@ export class PrintService {
     if (input.caller !== null) {
       request.caller = input.caller;
     }
-    return this.printLabel(this.deps.createId(), request, scan, input.template, {
+    return this.printLabel(this.deps.createId(), request, scan, () => input.template, {
       dedup: false,
       enrich: false,
       printerName: input.printerName,
     });
   }
 
-  /** 按模板决定打印机 → 防重复 → 加工 → 排队打印 → 写记录（后两步之外的由 options 决定）。 */
+  /**
+   * 防重复 → 加工 → 按加工后的字段决定模板和打印机 → 排队打印 → 写记录（防重复和加工由 options 决定）。
+   * 模板在加工之后才定：「按字段换模板」可以用加工步骤补出来的字段（例如 HTTP 查询回来的快递公司）。
+   */
   private async printLabel(
     id: string,
     request: PrintRequest,
     recognized: ScanResult,
-    template: LabelTemplate,
+    templateFor: (scan: ScanResult) => LabelTemplate,
     options: LabelOptions,
   ): Promise<PrintResult> {
-    const choice: PrinterChoice =
-      options.printerName === null
-        ? await this.deps.choosePrinter(template)
-        : { printerName: options.printerName, reason: 'template' };
-    // 没有打印机时和 1.0.x 没选打印机一样：不打印、不写记录、不占防重复窗口，指定好打印机后可以直接重打。
-    if (choice.printerName === null) {
-      return { status: 'no-printer', paperKey: choice.paperKey, missingPrinter: choice.missingPrinter };
-    }
-    const target: JobTarget = {
-      printerName: choice.printerName,
-      paper: paperKey(template.paper),
-      templateId: template.id,
-    };
     const { raw } = recognized;
     // 先占住防重复窗口再加工：HTTP 查询要花时间，扫码枪连按的第二下必须在这里就被拦下。
     const reservation = options.dedup
       ? this.deps.guard.tryReserve(raw, request.force === true)
       : ({ ok: true } as const);
     if (!reservation.ok) {
+      // 重复的一张不加工：记录里写按识别结果会用的模板和打印机。
+      const planned = await this.plan(templateFor(recognized), options);
+      if (planned.target === null) {
+        return planned.noPrinter;
+      }
       const duplicate: RecordedResult = {
         status: 'duplicate',
         recent: reservation.recent,
         windowMs: this.deps.guard.windowMs,
       };
-      return this.finish(id, request, target, raw, duplicate, recognized);
+      return this.finish(id, request, planned.target, raw, duplicate, recognized);
     }
     const context: EnrichContext = { images: request.images ?? [], manualFields: request.manualFields ?? {} };
     const enriched = options.enrich
       ? await this.enrich(recognized, context)
       : { scan: recognized, traces: [], blocked: null };
+    const template = templateFor(enriched.scan);
+    const planned = await this.plan(template, options);
+    // 没有打印机时和 1.0.x 没选打印机一样：不打印、不写记录、放开防重复窗口，指定好打印机后可以直接重打。
+    if (planned.target === null) {
+      if (options.dedup) {
+        this.deps.guard.release(raw);
+      }
+      return planned.noPrinter;
+    }
+    const { target } = planned;
     if (enriched.blocked) {
       this.deps.guard.release(raw);
       const { reason, detail, field } = enriched.blocked;
@@ -211,6 +219,29 @@ export class PrintService {
       this.deps.guard.commit(scan.raw);
     }
     return this.finish(id, request, target, scan.raw, { status: 'printed', jobId: id, scan }, scan);
+  }
+
+  /** 这个模板打到哪台打印机；没有打印机时给出 no-printer 结果。 */
+  private async plan(
+    template: LabelTemplate,
+    options: LabelOptions,
+  ): Promise<
+    { target: JobTarget; noPrinter: null } | { target: null; noPrinter: Extract<PrintResult, { status: 'no-printer' }> }
+  > {
+    const choice: PrinterChoice =
+      options.printerName === null
+        ? await this.deps.choosePrinter(template)
+        : { printerName: options.printerName, reason: 'template' };
+    if (choice.printerName === null) {
+      return {
+        target: null,
+        noPrinter: { status: 'no-printer', paperKey: choice.paperKey, missingPrinter: choice.missingPrinter },
+      };
+    }
+    return {
+      target: { printerName: choice.printerName, paper: paperKey(template.paper), templateId: template.id },
+      noPrinter: null,
+    };
   }
 
   /**

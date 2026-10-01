@@ -21,7 +21,13 @@ export function templateUses(
   activeTemplateId: string | null,
   ruleSettings: readonly RuleSetting[],
 ): TemplateUse[] {
-  const bound = new Set(ruleSettings.flatMap((setting) => (setting.templateId ? [setting.templateId] : [])));
+  // 规则指定的和「按字段换模板」换到的都算在用。
+  const bound = new Set(
+    ruleSettings.flatMap((setting) => [
+      ...(setting.templateId ? [setting.templateId] : []),
+      ...setting.templateRoutes.map((route) => route.templateId),
+    ]),
+  );
   return templates.map((template) => ({
     name: template.name,
     paper: template.paper,

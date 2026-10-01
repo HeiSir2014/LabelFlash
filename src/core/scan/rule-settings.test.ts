@@ -9,6 +9,7 @@ import {
   sanitizeRuleSettings,
   templateIdFor,
 } from './rule-settings';
+import type { ScanResult } from './scan-result';
 
 const BUILT_IN_IDS = BUILT_IN_RULES.map((rule) => rule.id);
 const CUSTOM: ScanRule = {
@@ -26,8 +27,62 @@ describe('defaultRuleSettings', () => {
     const settings = defaultRuleSettings();
     expect(settings.map((setting) => setting.id)).toEqual(BUILT_IN_IDS);
     expect(settings.every((setting) => setting.enabled)).toBe(true);
-    expect(templateIdFor(settings, DASH_THREE_RULE_ID)).toBe('builtin:standard');
-    expect(templateIdFor(settings, RAW_RULE_ID)).toBeNull();
+    expect(templateIdFor(settings, scanOf(DASH_THREE_RULE_ID))).toBe('builtin:standard');
+    expect(templateIdFor(settings, scanOf(RAW_RULE_ID))).toBeNull();
+    expect(settings.every((setting) => setting.templateRoutes.length === 0)).toBe(true);
+  });
+});
+
+function scanOf(ruleId: string, fields: Record<string, string> = {}): ScanResult {
+  return {
+    raw: 'x',
+    ruleId,
+    ruleName: '规则',
+    fields: Object.entries(fields).map(([name, value]) => ({ name, value })),
+  };
+}
+
+describe('templateIdFor with template routes', () => {
+  const routed: RuleSetting[] = [
+    {
+      id: 'custom:orders',
+      enabled: true,
+      templateId: 'builtin:waybill-platform-180',
+      templateRoutes: [
+        { field: '快递公司', match: 'contains', value: '顺丰', templateId: 'builtin:waybill-sf-150' },
+        { field: '快递公司', match: 'equals', value: '德邦快递', templateId: 'builtin:waybill-deppon-180' },
+      ],
+    },
+  ];
+
+  test('uses the first route whose field matches', () => {
+    expect(templateIdFor(routed, scanOf('custom:orders', { 快递公司: '顺丰速运' }))).toBe('builtin:waybill-sf-150');
+    expect(templateIdFor(routed, scanOf('custom:orders', { 快递公司: ' 德邦快递 ' }))).toBe(
+      'builtin:waybill-deppon-180',
+    );
+  });
+
+  test('compares contains without case and equals exactly', () => {
+    const latin: RuleSetting[] = [
+      {
+        ...routed[0],
+        id: 'custom:orders',
+        templateRoutes: [{ field: '快递公司', match: 'contains', value: 'sf', templateId: 'custom:sf' }],
+      } as RuleSetting,
+    ];
+    expect(templateIdFor(latin, scanOf('custom:orders', { 快递公司: 'SF Express' }))).toBe('custom:sf');
+    expect(templateIdFor(routed, scanOf('custom:orders', { 快递公司: '德邦' }))).toBe('builtin:waybill-platform-180');
+  });
+
+  test('falls back to the rule template when no route matches or the field is missing', () => {
+    expect(templateIdFor(routed, scanOf('custom:orders', { 快递公司: '中通快递' }))).toBe(
+      'builtin:waybill-platform-180',
+    );
+    expect(templateIdFor(routed, scanOf('custom:orders'))).toBe('builtin:waybill-platform-180');
+  });
+
+  test('ignores routes of other rules', () => {
+    expect(templateIdFor(routed, scanOf(RAW_RULE_ID, { 快递公司: '顺丰' }))).toBeNull();
   });
 });
 
@@ -43,9 +98,29 @@ describe('sanitizeRuleSettings', () => {
       null,
     ];
     expect(sanitizeRuleSettings(input)).toEqual([
-      { id: 'custom:a', enabled: false, templateId: 'custom:t1' },
-      { id: 'builtin:raw', enabled: true, templateId: null },
+      { id: 'custom:a', enabled: false, templateId: 'custom:t1', templateRoutes: [] },
+      { id: 'builtin:raw', enabled: true, templateId: null, templateRoutes: [] },
     ]);
+  });
+
+  test('keeps valid template routes and drops broken ones', () => {
+    const good = { field: '快递公司', match: 'contains' as const, value: '顺丰', templateId: 'builtin:waybill-sf-150' };
+    const [setting] = sanitizeRuleSettings([
+      {
+        id: 'custom:a',
+        enabled: true,
+        templateId: null,
+        templateRoutes: [
+          good,
+          { ...good, field: '{坏}' },
+          { ...good, match: 'startsWith' },
+          { ...good, value: '   ' },
+          { ...good, templateId: 'nope' },
+          'x',
+        ],
+      },
+    ]);
+    expect(setting?.templateRoutes).toEqual([good]);
   });
 
   test('falls back to the defaults for anything that is not a list', () => {
@@ -55,7 +130,10 @@ describe('sanitizeRuleSettings', () => {
 
 describe('mergeRuleSettings', () => {
   test('drops settings of rules that no longer exist', () => {
-    const saved: RuleSetting[] = [...defaultRuleSettings(), { id: 'custom:gone', enabled: true, templateId: null }];
+    const saved: RuleSetting[] = [
+      ...defaultRuleSettings(),
+      { id: 'custom:gone', enabled: true, templateId: null, templateRoutes: [] },
+    ];
     expect(mergeRuleSettings(saved, BUILT_IN_IDS).map((setting) => setting.id)).toEqual(BUILT_IN_IDS);
   });
 
@@ -75,6 +153,7 @@ describe('mergeRuleSettings', () => {
       id: CUSTOM.id,
       enabled: true,
       templateId: null,
+      templateRoutes: [],
     });
   });
 

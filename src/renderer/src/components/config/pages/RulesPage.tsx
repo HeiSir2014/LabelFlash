@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import {
   isBuiltInRuleId,
   isRuleKind,
@@ -10,10 +10,12 @@ import type { RuleSetting } from '../../../../../core/scan/rule-settings';
 import type { LabelTemplate } from '../../../../../core/templates/template-model';
 import type { ConfigPage } from '../../../lib/app-view';
 import { RULE_KIND_LABELS, ruleSummary } from '../../../lib/rule-text';
+import { routesButtonLabel } from '../../../lib/template-routes';
 import type { RulesViewModel } from '../../../view-models/use-rules';
 import { DeleteButton } from '../../ConfirmButton';
 import { RuleEditor } from '../../RuleEditor';
 import { RuleTester } from '../../RuleTester';
+import { TemplateRoutes } from '../TemplateRoutes';
 
 /** 规则指定模板下拉框里「不指定」的值。 */
 const FOLLOW_ACTIVE_TEMPLATE = '';
@@ -122,10 +124,12 @@ interface RuleCardProps {
   rules: RulesViewModel;
 }
 
-/** 一条规则：第一行启用和名称，第二行摘要，第三行指定模板和操作。 */
+/** 一条规则：第一行启用和名称，第二行摘要，第三行指定模板和操作；按需展开「按字段换模板」。 */
 function RuleCard({ rule, setting, templates, isFirst, isLast, rules }: RuleCardProps) {
   const isBuiltIn = isBuiltInRuleId(rule.id);
   const summary = ruleSummary(rule);
+  const [isRoutesOpen, setRoutesOpen] = useState(false);
+  const routesId = useId();
   return (
     <li className={`config-card rule-card${setting.enabled ? '' : ' rule-card--disabled'}`}>
       <div className="rule-card__head">
@@ -160,6 +164,15 @@ function RuleCard({ rule, setting, templates, isFirst, isLast, rules }: RuleCard
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          className="button button--small button--quiet"
+          aria-expanded={isRoutesOpen}
+          aria-controls={routesId}
+          onClick={() => setRoutesOpen(!isRoutesOpen)}
+        >
+          {routesButtonLabel(setting.templateRoutes.length)}
+        </button>
         <span className="rule-card__spacer" />
         <button
           type="button"
@@ -202,6 +215,16 @@ function RuleCard({ rule, setting, templates, isFirst, isLast, rules }: RuleCard
           </>
         )}
       </div>
+      {isRoutesOpen && (
+        <div id={routesId}>
+          <TemplateRoutes
+            ruleName={rule.name}
+            routes={setting.templateRoutes}
+            templates={templates}
+            onSave={(routes) => rules.setTemplateRoutes(rule.id, routes)}
+          />
+        </div>
+      )}
     </li>
   );
 }

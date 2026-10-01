@@ -120,6 +120,32 @@ test('tries content against the rules and previews with the template a rule is b
   await expect(page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
 });
 
+// 按字段换模板：同一条规则按字段的值换模板（例如快递公司是顺丰就用顺丰面单），纸张和打印机跟着模板走。
+test('switches the template by a field value set on the rules page', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  await openConfig(page, '识别规则');
+  const card = page.locator('.rule-card', { hasText: '原样打印' });
+  await card.getByRole('button', { name: '按字段换模板' }).click();
+  await card.getByRole('button', { name: '加一条' }).click();
+  await card.getByLabel('第 1 条的字段').fill('内容');
+  await card.getByLabel('第 1 条的值').fill('SF');
+  await card.getByLabel('第 1 条用的模板').selectOption({ label: '顺丰 100×150' });
+  await expect(card.getByRole('button', { name: '按字段换模板（1 条）' })).toBeVisible();
+  const raw = (await callApi(page, 'getSettings')).ruleSettings.find((setting) => setting.id === 'builtin:raw');
+  expect(raw?.templateRoutes).toEqual([
+    { field: '内容', match: 'contains', value: 'SF', templateId: 'builtin:waybill-sf-150' },
+  ]);
+
+  await page.getByRole('button', { name: '返回工作台' }).click();
+  const template = page.getByRole('combobox', { name: '模板', exact: true });
+  await scan(page, 'SF1234567890123');
+  await expect(template.locator('option:checked')).toHaveText('顺丰 100×150');
+  await expect(page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
+  // 不命中时用规则原来的（这里没指定，就是当前模板）。
+  await scan(page, 'hello');
+  await expect(template.locator('option:checked')).toHaveText('通用（二维码在左）');
+});
+
 test('imports a lookup table and shows its first rows', async ({ electronApp }) => {
   const { app, page } = await electronApp.launch();
   const csvPath = join(electronApp.userData, '货架.csv');

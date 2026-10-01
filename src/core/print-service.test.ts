@@ -460,6 +460,21 @@ describe('PrintService printer choice', () => {
     expect(adapter.printed.at(-1)?.fields.at(-1)).toEqual({ name: '货架号', value: 'A-01' });
   });
 
+  // 按字段换模板可以用加工步骤补出来的字段（例如 HTTP 查询回来的快递公司）：模板要在加工之后才定。
+  test('chooses the template from the processed scan, so fields the steps add can switch it', async () => {
+    const { service, useEnrich, templateRequests } = createHarness();
+    useEnrich(withShelf);
+    await service.submit(request());
+    expect(templateRequests[0]?.fields.at(-1)).toEqual({ name: '货架号', value: 'A-01' });
+  });
+
+  test('previews with the template chosen from the processed scan', async () => {
+    const { service, useEnrich, templateRequests } = createHarness();
+    useEnrich(withShelf);
+    await service.preview(RAW);
+    expect(templateRequests.at(-1)?.fields.at(-1)).toEqual({ name: '货架号', value: 'A-01' });
+  });
+
   test('records an unrecognised scan without a printer, paper or template', async () => {
     const { service, store } = createHarness();
     await service.submit(request({ raw: '   ' }));

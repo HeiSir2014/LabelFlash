@@ -3,6 +3,7 @@ import { DASH_THREE_RULE_ID, RAW_RULE_ID } from '../core/scan/builtin-rules';
 import { RuleCatalog } from '../core/scan/rule-catalog';
 import type { ScanResult } from '../core/scan/scan-result';
 import { GENERIC_TEMPLATE, STANDARD_TEMPLATE } from '../core/templates/builtin-templates';
+import { SF_150 } from '../core/templates/builtin-waybills';
 import { TemplateCatalog } from '../core/templates/template-catalog';
 import { InMemoryRuleRepository, InMemoryTemplateRepository } from '../core/testing/in-memory-repositories';
 import { labelOf } from '../core/testing/templates';
@@ -42,6 +43,29 @@ describe('resolvePrintTemplate', () => {
     expect(resolvePrintTemplate(createTemplates(), settings, scanOf(DASH_THREE_RULE_ID))).toMatchObject({
       template: { id: STANDARD_TEMPLATE.id },
       isBound: true,
+    });
+  });
+
+  test('switches template by a field of the processed scan and says the rule chose it', () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      ruleSettings: DEFAULT_SETTINGS.ruleSettings.map((setting) =>
+        setting.id === RAW_RULE_ID
+          ? {
+              ...setting,
+              templateRoutes: [{ field: '快递公司', match: 'contains' as const, value: '顺丰', templateId: SF_150.id }],
+            }
+          : setting,
+      ),
+    };
+    const scan: ScanResult = { ...scanOf(RAW_RULE_ID), fields: [{ name: '快递公司', value: '顺丰速运' }] };
+    expect(resolvePrintTemplate(createTemplates(), settings, scan)).toMatchObject({
+      template: { id: SF_150.id },
+      isBound: true,
+    });
+    expect(resolvePrintTemplate(createTemplates(), settings, scanOf(RAW_RULE_ID))).toMatchObject({
+      template: { id: GENERIC_TEMPLATE.id },
+      isBound: false,
     });
   });
 

@@ -69,11 +69,19 @@ describe('optional templates', () => {
     const waybill = PLATFORM_TWO_PART;
     const optional = (activeId: string | null, boundId: string | null) =>
       templateUses([waybill, STANDARD_TEMPLATE], activeId, [
-        { id: 'builtin:raw', enabled: true, templateId: boundId },
+        { id: 'builtin:raw', enabled: true, templateId: boundId, templateRoutes: [] },
       ]).map((use) => use.optional);
     expect(optional(null, null)).toEqual([true, false]);
     expect(optional(waybill.id, null)).toEqual([false, false]);
     expect(optional(null, waybill.id)).toEqual([false, false]);
+  });
+
+  test('counts a waybill a rule switches to by field as in use', () => {
+    const route = { field: '快递公司', match: 'contains' as const, value: '顺丰', templateId: PLATFORM_TWO_PART.id };
+    const uses = templateUses([PLATFORM_TWO_PART], null, [
+      { id: 'custom:orders', enabled: true, templateId: null, templateRoutes: [route] },
+    ]);
+    expect(uses[0]?.optional).toBe(false);
   });
 
   test('never treats a custom waybill as optional', () => {

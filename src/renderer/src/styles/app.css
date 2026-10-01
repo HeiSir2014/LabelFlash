@@ -3118,3 +3118,42 @@ textarea {
   flex-wrap: wrap;
   gap: var(--space-1);
 }
+
+/* ── 识别规则卡片：按字段换模板（字段 · 比较 · 值 → 模板 · 删除，一行一条） ── */
+.template-routes {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) 0 0;
+  border: 0;
+  border-top: 1px dashed var(--color-rule);
+}
+
+/* 卡片宽度随窗口和侧栏变化：一行放不下时自动折成两行，模板下拉框和「删除」换到下一行，不撑出横向滚动条 */
+.template-routes__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.template-routes__row > .text-field {
+  flex: 1 1 6em;
+  min-width: 0;
+}
+
+.template-routes__row > .select-field:last-of-type {
+  flex: 2 1 12em;
+  min-width: 0;
+}
+
+.template-routes__arrow {
+  color: var(--color-ink-soft);
+}
+
+.template-routes__add {
+  align-self: flex-start;
+}

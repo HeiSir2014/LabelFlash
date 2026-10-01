@@ -68,9 +68,10 @@ interface ScanResult {
 
 ### 2.4 每台电脑的规则设置
 
-规则定义（可分享）和本机设置（不导出）分开存。本机设置保存在 `AppSettings.ruleSettings: { id, enabled, templateId | null }[]`，数组顺序就是匹配顺序：
+规则定义（可分享）和本机设置（不导出）分开存。本机设置保存在 `AppSettings.ruleSettings: { id, enabled, templateId | null, templateRoutes }[]`，数组顺序就是匹配顺序：
 - 读取时丢掉已不存在的规则，并在末尾补上新增的内置规则。
 - `templateId` 为 null 时用当前模板；绑定的模板被删除后同样退回当前模板。
+- `templateRoutes`（按字段换模板）：每条是「字段 包含 / 等于 值 → 模板」，在加工步骤之后按字段判断，第一条命中的生效，都不命中时用 `templateId`。详见面单模板设计文档第 6 节。
 
 ### 2.5 正则的安全执行
 

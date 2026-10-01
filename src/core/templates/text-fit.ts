@@ -133,8 +133,15 @@ export interface RowFitOptions {
 
 /** 垂直排列时，前缀（字段名）行的字号相对于值的比例：字段名小一号，值更醒目。 */
 export const STACKED_PREFIX_SCALE = 0.8;
-/** 缩小到原字号的这个比例以内就能放进一行时，宁可缩小也不折行（例如订单号不从中间断开）。 */
+/** 缩小到原字号的这个比例以内就能放进一行时，宁可缩小也不折行。 */
 const ONE_LINE_MIN_RATIO = 0.75;
+/**
+ * 编码、订单号这类「码」（没有空格和汉字）断开就不好认，也没法照着输入：允许缩得更多。
+ * 样衣模板的字段区只有 29mm，12 位订单号要缩到 0.74 倍，按 0.75 会断成「202609280 / 001」。
+ */
+const CODE_ONE_LINE_MIN_RATIO = 0.6;
+/** 「码」：一串字母、数字和常见符号，中间没有空白、没有汉字。 */
+const CODE_PATTERN = /^[\x21-\x7e]+$/;
 /** 横向排列时值一列至少占字段区宽度的这个比例，前缀再长也要给值留出位置。 */
 const MIN_VALUE_COLUMN_RATIO = 0.4;
 const SCALE_PRECISION = 0.01;
@@ -157,7 +164,8 @@ export function fitRowFontSizes(
   const oneLineSizes = rows.map(({ value, fontSizeMm: base }) => {
     const oneLine = fitFontSizeMm(value, base, layout.baseValueWidthMm, 1);
     const isOneLine = countLines(value, oneLine, layout.baseValueWidthMm) === 1;
-    return isOneLine && oneLine >= base * ONE_LINE_MIN_RATIO ? oneLine : base;
+    const minRatio = CODE_PATTERN.test(value) ? CODE_ONE_LINE_MIN_RATIO : ONE_LINE_MIN_RATIO;
+    return isOneLine && oneLine >= base * minRatio ? oneLine : base;
   });
   const preferred = options.uniform ? oneLineSizes.map(() => Math.min(...oneLineSizes)) : oneLineSizes;
   const sizesFor = (scale: number) => preferred.map((size) => (scale >= 1 ? size : roundDownFontSizeMm(size * scale)));

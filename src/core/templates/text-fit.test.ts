@@ -110,6 +110,22 @@ describe('fitRowFontSizes', () => {
     expect(countLines(row.value, size, valueWidth)).toBe(1);
   });
 
+  // 样衣模板二维码大一些，字段区只有 29mm：12 位订单号要缩到 0.74 倍才放得进一行，以前会断成「202609280 / 001」。
+  test('shrinks a code further than ordinary text rather than breaking it', () => {
+    const sideWidthMm = 29;
+    const row = { prefix: '订单号：', value: '202609280001', fontSizeMm: 3 };
+    const [size = 0] = fitRowFontSizes([row], sideWidthMm, SIDE_HEIGHT_MM, INLINE);
+    const valueWidth = sideWidthMm - estimateTextWidthEm(row.prefix) * row.fontSizeMm;
+    expect(countLines(row.value, size, valueWidth)).toBe(1);
+    expect(size).toBeGreaterThanOrEqual(row.fontSizeMm * 0.6);
+  });
+
+  test('still wraps ordinary text that would need a big shrink', () => {
+    const row = { prefix: '备注：', value: '这是一段写给仓库的备注文字', fontSizeMm: 3 };
+    const [size = 0] = fitRowFontSizes([row], 29, SIDE_HEIGHT_MM, INLINE);
+    expect(size).toBe(3);
+  });
+
   test('lets long text wrap and uses as much of the height as it can', () => {
     const value = '这是一段很长的原样打印内容'.repeat(8);
     const row = { prefix: '内容：', value, fontSizeMm: 3 };

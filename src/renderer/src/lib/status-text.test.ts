@@ -342,6 +342,16 @@ describe('describeSamplePrint', () => {
     });
   });
 
+  test('names the printer the template specified when it is missing from this computer', () => {
+    expect(
+      describeSamplePrint({ status: 'no-printer', paperKey: '60x40', missingPrinter: '热敏标签机A' }, NOW),
+    ).toEqual({
+      tone: 'warning',
+      message:
+        '模板指定的 热敏标签机A 不在这台电脑上，60×40 标签 还没有打印机：在「配置 › 打印机」里给这种纸指定打印机',
+    });
+  });
+
   test('says the printer may already have printed instead of pointing at "强制补打"', () => {
     expect(describeSamplePrint({ status: 'failed', reason: 'PRINT_TIMEOUT' }, NOW)).toEqual({
       tone: 'error',
@@ -356,10 +366,10 @@ describe('describeSamplePrint', () => {
     });
   });
 
-  test('keeps the lookup-failure reason and points back at the sample button instead of "重试打印"', () => {
+  test('says a failed lookup did not print, keeps the reason, and points back at the sample button', () => {
     expect(describeSamplePrint({ status: 'failed', reason: 'LOOKUP_FAILED', detail: '查询超时' }, NOW)).toEqual({
       tone: 'error',
-      message: '查询超时，处理好后再点「打印一张试试」',
+      message: '数据查询失败，没有打印：查询超时；处理好后再点「打印一张试试」',
     });
   });
 

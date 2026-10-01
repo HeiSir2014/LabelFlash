@@ -217,7 +217,8 @@ const SAMPLE_PRINT_RETRY = '处理好后再点「打印一张试试」';
 export function describeSamplePrint(result: PrintResult, now: number): { tone: NoticeTone; message: string } {
   if (result.status === 'no-printer') {
     const paper = formatPaperName(parsePaperKey(result.paperKey) ?? DEFAULT_PAPER);
-    return { tone: 'warning', message: `${paper} 还没有打印机：在「配置 › 打印机」里给这种纸指定打印机` };
+    const missing = result.missingPrinter === null ? '' : `模板指定的 ${result.missingPrinter} 不在这台电脑上，`;
+    return { tone: 'warning', message: `${missing}${paper} 还没有打印机：在「配置 › 打印机」里给这种纸指定打印机` };
   }
   if (result.status === 'failed' && result.reason === 'PRINT_TIMEOUT') {
     return { tone: 'error', message: '打印机没有响应，可能已经出纸；确认后再点「打印一张试试」' };
@@ -226,7 +227,8 @@ export function describeSamplePrint(result: PrintResult, now: number): { tone: N
     return { tone: 'error', message: `${result.detail ?? '打印机当前无法打印'}，${SAMPLE_PRINT_RETRY}` };
   }
   if (result.status === 'failed' && result.reason === 'LOOKUP_FAILED') {
-    return { tone: 'error', message: `${result.detail ?? '接口没有返回需要的数据'}，${SAMPLE_PRINT_RETRY}` };
+    const detail = result.detail ?? '接口没有返回需要的数据';
+    return { tone: 'error', message: `数据查询失败，没有打印：${detail}；${SAMPLE_PRINT_RETRY}` };
   }
   const view = describeResult(result, now);
   const tone: NoticeTone = view.tone === 'success' ? 'info' : view.tone;

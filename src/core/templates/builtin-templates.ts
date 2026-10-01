@@ -109,8 +109,9 @@ export const BUILT_IN_TEMPLATES: readonly LabelTemplate[] = [
 export const DEFAULT_TEMPLATE_ID = GENERIC_TEMPLATE.id;
 
 /**
- * 1.3.0 并进「通用」后去掉的「样衣」模板 → 版式相同的通用模板。
- * 设置、规则绑定、按字段换模板、本机接口里还写着旧编号的，读的时候换过去：打出来还是编码、颜色、尺码、货架号。
+ * 1.3.0 并进「通用」后去掉的「样衣」模板 → 版式最接近的通用模板（二维码在同一侧）。
+ * 设置、规则绑定、按字段换模板、本机接口、打印记录里还写着旧编号的，读的时候换过去：打出来还是编码、颜色、尺码、货架号，
+ * 只是都带字段名（「精简」原来不印字段名）、字号统一。
  */
 const RETIRED_TEMPLATE_IDS: Readonly<Record<string, string>> = {
   [`${BUILT_IN_TEMPLATE_PREFIX}standard`]: GENERIC_TEMPLATE.id,

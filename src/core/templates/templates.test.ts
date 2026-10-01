@@ -256,6 +256,13 @@ describe('TemplateCatalog', () => {
     expect(() => catalog.remove('custom:missing')).toThrow(TemplateError);
   });
 
+  // 打印记录里存的是当时的编号：升级前用样衣模板打的记录，重打时用替代它的通用模板，不能说「模板已删除」。
+  test('finds a retired garment template under its generic replacement', () => {
+    const { catalog } = createCatalog();
+    expect(catalog.get('builtin:standard')?.id).toBe('builtin:generic');
+    expect(catalog.get('builtin:qr-right')?.id).toBe('builtin:generic-qr-right');
+  });
+
   test('resolve falls back to the generic template', () => {
     const { catalog } = createCatalog();
     expect(catalog.resolve('custom:deleted')).toBe(GENERIC_TEMPLATE);

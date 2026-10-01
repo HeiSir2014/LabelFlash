@@ -26,7 +26,11 @@ export function LayerList({ elements, selection, onSelect }: LayerListProps) {
                 type="button"
                 className="layer-list__item"
                 aria-pressed={selection.includes(element.id)}
-                aria-label={`${element.name}（${CANVAS_ELEMENT_LABELS[element.kind]}）`}
+                aria-label={
+                  element.locked
+                    ? `${element.name}（${CANVAS_ELEMENT_LABELS[element.kind]} · 锁定）`
+                    : `${element.name}（${CANVAS_ELEMENT_LABELS[element.kind]}）`
+                }
                 onClick={(event) => onSelect(event.shiftKey ? toggleId(selection, element.id) : [element.id])}
               >
                 <span className="layer-list__name">{element.name}</span>

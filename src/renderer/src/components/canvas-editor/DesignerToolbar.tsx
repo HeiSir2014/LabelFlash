@@ -74,6 +74,9 @@ function ToolGroup({
 /** 设计器的工具条：编辑、对齐、等距、叠放、网格和吸附、缩放，最后是预览内容。 */
 export function DesignerToolbar({ designer, zoom, sample }: DesignerToolbarProps) {
   const { hasSelection } = designer;
+  // 到头了：zoomOut/zoomIn 在端点上原样返回当前值，用「算出来和现在一样」判断该不该再禁用一次。
+  const atMinZoom = zoomOut(zoom) === zoom;
+  const atMaxZoom = zoomIn(zoom) === zoom;
   return (
     <div className="designer-toolbar">
       <ToolGroup label="编辑">
@@ -83,7 +86,8 @@ export function DesignerToolbar({ designer, zoom, sample }: DesignerToolbarProps
         <ToolButton label="粘贴" name="粘贴" disabled={!designer.canPaste} onClick={designer.paste} />
         <ToolButton label="删除" name="删除" disabled={!hasSelection} onClick={designer.remove} />
       </ToolGroup>
-      <ToolGroup label="对齐" showLabel>
+      {/* 组名「元素对齐」而不是「对齐」：属性栏里文字、表格格子也有一个叫「对齐」的控件，两边都在屏幕上时名字不能撞。 */}
+      <ToolGroup label="元素对齐" showLabel>
         {ALIGN_BUTTONS.map((button) => (
           <ToolButton
             key={button.value}
@@ -122,11 +126,11 @@ export function DesignerToolbar({ designer, zoom, sample }: DesignerToolbarProps
         <ToolButton label="吸附" name="吸附" pressed={designer.snap} onClick={() => designer.setSnap(!designer.snap)} />
       </ToolGroup>
       <ToolGroup label="缩放">
-        <ToolButton label="缩小" name="缩小" onClick={() => designer.setZoom(zoomOut(zoom))} />
+        <ToolButton label="缩小" name="缩小" disabled={atMinZoom} onClick={() => designer.setZoom(zoomOut(zoom))} />
         <output className="designer-toolbar__zoom" aria-label="缩放倍数">
           {`${Math.round(zoom * PERCENT)}%`}
         </output>
-        <ToolButton label="放大" name="放大" onClick={() => designer.setZoom(zoomIn(zoom))} />
+        <ToolButton label="放大" name="放大" disabled={atMaxZoom} onClick={() => designer.setZoom(zoomIn(zoom))} />
         <ToolButton
           label="适合"
           name="适合窗口"

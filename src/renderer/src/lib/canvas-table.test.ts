@@ -3,12 +3,14 @@ import { CANVAS_LIMITS, type CanvasTable, newCanvasElement } from '../../../core
 import {
   addTableColumn,
   addTableRow,
+  columnsExtentMm,
   lastColumnMm,
   lastRowMm,
   NEW_COLUMN_MM,
   NEW_ROW_MM,
   removeTableColumn,
   removeTableRow,
+  rowsExtentMm,
   setColumnMm,
   setRowMm,
   updateTableCell,
@@ -87,6 +89,14 @@ describe('rotation swaps rows and columns onto the right axis', () => {
   test('reads the last row and column against the swapped extent', () => {
     expect(lastRowMm(rotated())).toBe(44); // 50(宽) - 6
     expect(lastColumnMm(rotated())).toBe(8); // 20(高) - 12
+  });
+
+  // 属性栏用这两个当行高、列宽数字框的上限：不转时就是表格自己的高、宽；转了一个直角就互换。
+  test('reports the row and column extent the property panel should cap edits at', () => {
+    expect(rowsExtentMm(table())).toBe(12);
+    expect(columnsExtentMm(table())).toBe(36);
+    expect(rowsExtentMm(rotated())).toBe(50);
+    expect(columnsExtentMm(rotated())).toBe(20);
   });
 
   test('growing a row grows the width, not the height', () => {

@@ -17,6 +17,8 @@ interface CanvasStageProps {
   placeholder: string;
   zoom: number;
   showGrid: boolean;
+  /** 覆盖层 aria-label 里撤销快捷键的文字（Windows「Ctrl+Z」，macOS「⌘Z」），由调用方按平台算好传入。 */
+  undoShortcut: string;
   selection: readonly string[];
   gesture: GestureView;
   handlers: GestureHandlers;
@@ -53,6 +55,7 @@ export function CanvasStage({
   placeholder,
   zoom,
   showGrid,
+  undoShortcut,
   selection,
   gesture,
   handlers,
@@ -105,7 +108,7 @@ export function CanvasStage({
             ref={overlayRef}
             className={showGrid ? 'canvas-overlay canvas-overlay--grid' : 'canvas-overlay'}
             role="application"
-            aria-label="画布：方向键移动选中的元素（Shift 加方向键一次 1 毫米），Delete 删除，Ctrl+Z 撤销"
+            aria-label={`画布：方向键移动选中的元素（Shift 加方向键一次 1 毫米），Delete 删除，${undoShortcut} 撤销`}
             // biome-ignore lint/a11y/noNoninteractiveTabindex: 画布是自定义的鼠标和键盘控件（role=application），键盘操作写在 aria-label 里
             tabIndex={0}
             onKeyDown={onKeyDown}

@@ -30,13 +30,16 @@ function isTurned(rotation: Rotation): boolean {
   return rotation % 180 === 90;
 }
 
-/** 行要占满的总长度：没转或转了半圈用高，转了一个直角用宽。 */
-function rowsExtentMm(table: CanvasTable): number {
+/**
+ * 行要占满的总长度：没转或转了半圈用高，转了一个直角用宽。属性栏的行高数字框也用它当上限
+ * ——单独一行不能比表格自己占的总长度还大，不论表格转了多少度。
+ */
+export function rowsExtentMm(table: CanvasTable): number {
   return isTurned(table.rotation) ? table.width : table.height;
 }
 
-/** 列要占满的总长度。 */
-function columnsExtentMm(table: CanvasTable): number {
+/** 列要占满的总长度；属性栏的列宽数字框用它当上限，理由同 rowsExtentMm。 */
+export function columnsExtentMm(table: CanvasTable): number {
   return isTurned(table.rotation) ? table.height : table.width;
 }
 

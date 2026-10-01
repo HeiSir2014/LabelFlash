@@ -1269,6 +1269,8 @@ describe('encodeBarcode', () => {
     const result = encodeBarcode('pdf417', 'ABC');
     if (!result.ok || result.code.dimensions !== 2) throw new Error('expected a 2D code');
     expect(result.code.rowScale).toBe(3);
+    // 只有不重复的行进 cells：行数 × 列数正好是 cells 的长度。
+    expect(result.code.cells).toHaveLength(result.code.rows * result.code.columns);
   });
 
   test('explains in Chinese what is wrong with the content', () => {
@@ -1410,9 +1412,11 @@ export function encodeBarcode(symbology: string, text: string): BarcodeResult {
       },
     };
   }
-  // height、width 是整个符号的英寸数：一行的高度除以一列的宽度就是一行几个模块高。
-  const rowScale = Math.max(1, Math.round(raw.height / raw.pixy / (raw.width / raw.pixx)));
-  return { ok: true, code: { dimensions: 2, cells: raw.pixs, columns: raw.pixx, rows: raw.pixy, rowScale } };
+  // pixs 里只有不重复的行（PDF417 7 行 × 103 列）；pixy 是把每行的高度（几个模块）算进去之后的行数（7 × 3 = 21）。
+  // 实测（bwip-js 4.11.4）：PDF417 一行 3 个模块高、Micro PDF417 2 个、Data Matrix 1 个。
+  const rows = Math.max(1, Math.round(raw.pixs.length / raw.pixx));
+  const rowScale = Math.max(1, Math.round(raw.pixy / rows));
+  return { ok: true, code: { dimensions: 2, cells: raw.pixs, columns: raw.pixx, rows, rowScale } };
 }
 
 /** bwip-js 的错误信息是英文的「bwipp.ean13badLength#4372: EAN-13 must be 12 or 13 digits」：按错误码说中文。 */

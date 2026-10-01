@@ -12,6 +12,9 @@
   --color-warning-wash: #fbe6d7;
   --color-error: #c8372d;
   --color-error-wash: #f8dedb;
+  /* 设计器的选框、控制点和吸附参考线：标签只有黑白，选框用蓝、参考线用洋红才分得清（热敏纸上不会出现这两种颜色） */
+  --color-selection: #2563eb;
+  --color-guide: #d6336c;
   /* 输入框、下拉框和表格的底色：比热敏纸更白，一眼看出哪里可以填、可以看数据 */
   --color-field: #fff;
   /* 标题栏（墨色底）上的次要文字、描边和悬停底色：热敏纸色按不同透明度叠在墨色上 */
@@ -46,6 +49,13 @@
   --template-list-width: 320px;
   /* 识别规则页右侧「试一试」的宽度 */
   --tester-width: 360px;
+  /* 设计器：左边元素栏放得下「二维码」三个字的按钮；右边属性栏放得下标签列和一个数字框 */
+  --designer-palette-width: 88px;
+  --designer-panel-width: 300px;
+  /* 设计器属性栏的标签列：放得下四个字的标签（「放不下时」「号码字号」） */
+  --designer-label-width: 64px;
+  /* 选中元素的控制点：鼠标好抓，又不至于盖住小元素 */
+  --designer-handle-size: 8px;
   /* 确认框：两个按钮和两行说明不换行的宽度 */
   --dialog-width: 400px;
   /* 叠放层级：配置中心盖住工作台，提示条在配置中心之上；确认框是原生模态，浏览器放在最上层 */
@@ -64,6 +74,8 @@
 @media (max-width: 1199px) {
   :root {
     --config-nav-width: 160px;
+    /* 1024 宽的窗口里画布还要占一半以上 */
+    --designer-panel-width: 260px;
   }
 }
 

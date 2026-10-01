@@ -9,6 +9,7 @@ import type { TemplatePreview } from '../../../view-models/use-template-preview'
 import { CanvasBasics } from '../../CanvasBasics';
 import { DeleteButton } from '../../ConfirmButton';
 import { LabelPreview } from '../../LabelPreview';
+import { type SampleContent, SampleInput } from '../../SampleInput';
 import { TemplateEditor } from '../../TemplateEditor';
 import { WaybillEditor } from '../../WaybillEditor';
 
@@ -18,11 +19,6 @@ const MAX_PREVIEW_SCALE = 3;
 /** 还没有结果时说「正在生成」，有结果但没有 HTML 才是内容识别不了：只说程序确知的事。 */
 function previewPlaceholder(preview: TemplatePreview | null): string {
   return preview === null ? '正在生成预览…' : '这段预览内容无法识别，换一段试试';
-}
-
-export interface SampleContent {
-  value: string;
-  onChange: (value: string) => void;
 }
 
 export interface TemplatesPageProps {
@@ -281,25 +277,4 @@ function PreviewSource({ template, sample }: { template: LabelTemplate | null; s
     );
   }
   return <SampleInput sample={sample} />;
-}
-
-/** 「预览内容」：默认是最近一次扫码的内容；多行内容照原样保留，所以用 textarea。 */
-function SampleInput({ sample }: { sample: SampleContent }) {
-  const id = useId();
-  return (
-    <div className="sample-input">
-      <label className="sample-input__label" htmlFor={id}>
-        预览内容
-      </label>
-      <textarea
-        id={id}
-        className="text-field text-area sample-input__field"
-        rows={2}
-        value={sample.value}
-        placeholder="扫码，或输入要预览的内容"
-        spellCheck={false}
-        onChange={(event) => sample.onChange(event.target.value)}
-      />
-    </div>
-  );
 }

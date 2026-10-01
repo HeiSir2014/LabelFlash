@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { BARCODE_TYPES, barcodeType, CANVAS_ELEMENT_KINDS, newCanvasElement, snapBorderDots } from './canvas-model';
+import {
+  BARCODE_TYPES,
+  barcodeType,
+  CANVAS_ELEMENT_KINDS,
+  CANVAS_ELEMENT_LABELS,
+  newCanvasElement,
+  snapBorderDots,
+} from './canvas-model';
 
 const DOT = 25.4 / 203;
 
@@ -33,6 +40,12 @@ describe('canvas model', () => {
       expect(element.kind).toBe(kind);
       expect(element.x + element.width).toBeLessThanOrEqual(60);
       expect(element.y + element.height).toBeLessThanOrEqual(40);
+    }
+  });
+
+  test('names a new element after its kind', () => {
+    for (const kind of CANVAS_ELEMENT_KINDS) {
+      expect(newCanvasElement(kind, 'e1', { widthMm: 60, heightMm: 40 }).name).toBe(CANVAS_ELEMENT_LABELS[kind]);
     }
   });
 

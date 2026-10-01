@@ -227,7 +227,8 @@ const NEW_ELEMENT_SIZE_MM: Readonly<Record<CanvasElementKind, { width: number; h
   table: { width: 36, height: 12 },
 };
 
-const NEW_ELEMENT_NAMES: Readonly<Record<CanvasElementKind, string>> = {
+/** 每种元素的名称：新元素的默认名字、设计器的元素栏和图层列表都用它（只写这一处）。 */
+export const CANVAS_ELEMENT_LABELS: Readonly<Record<CanvasElementKind, string>> = {
   text: '文字',
   barcode: '条码',
   qr: '二维码',
@@ -243,7 +244,7 @@ export function newCanvasElement(kind: CanvasElementKind, id: string, paper: Pap
   const size = NEW_ELEMENT_SIZE_MM[kind];
   const base: CanvasElementBase = {
     id,
-    name: NEW_ELEMENT_NAMES[kind],
+    name: CANVAS_ELEMENT_LABELS[kind],
     x: margin,
     y: margin,
     width: Math.min(size.width, paper.widthMm - 2 * margin),

@@ -111,10 +111,27 @@ function printTime(sizeMm: number, options: CellOptions = {}): WaybillNode {
   return text(sizeMm, [p('{日期}', 2.4), p('{时间}', 2.4), p('打印时间', 2)], options);
 }
 
-/** 商家自定义区：订单系统想印什么都放进「自定义区」字段（例如商品明细）。 */
-function customArea(): WaybillNode {
-  return text(0, [p('{自定义区}', 2.8, { wrap: true })], { valign: 'top' });
+/**
+ * 商家自定义区：订单系统想印什么都放进「自定义区」字段（例如商品明细）。
+ * 平台标准面单在这一区固定印「已验视」（揽件时验视过货物，由揽件员负责），位置照官方模板：
+ * 从自定义区顶上往下 inspectionAtMm 毫米，靠右；官方模板没有「已验视」的（顺丰 100×150）传 null。
+ */
+function customArea(
+  inspectionAtMm: number | null,
+  paragraphs: WaybillParagraph[] = [p('{自定义区}', 2.8, { wrap: true })],
+): WaybillNode {
+  if (inspectionAtMm === null) {
+    return text(0, paragraphs, { valign: 'top' });
+  }
+  return rows(0, [
+    text(inspectionAtMm, paragraphs, { valign: 'top', rule: 'none' }),
+    text(INSPECTION_HEIGHT_MM, [p('已验视', 3, { bold: true })], { align: 'right', rule: 'none' }),
+    gap(0),
+  ]);
 }
+
+/** 「已验视」这一格的高度（mm）：官方模板里是 4mm 左右。 */
+const INSPECTION_HEIGHT_MM = 4;
 
 function root(children: WaybillNode[]): WaybillTemplate['root'] {
   return { sizeMm: 0, ruleAfter: 'none', body: { split: 'rows', children: fill(children) } };
@@ -122,8 +139,8 @@ function root(children: WaybillNode[]): WaybillTemplate['root'] {
 
 /** 100×180 的版面左右各留 1mm：平台模板的线从 1mm 画到 98–99mm。 */
 const WIDE_MARGINS: WaybillMargins = { top: 0, right: 1, bottom: 0, left: 1 };
-/** 一联单左边留 4mm、右边留 1mm：实物上左边框在 4mm 左右，右侧竖排条码一直印到离纸边约 0.5mm。 */
-const ONE_PART_MARGINS: WaybillMargins = { top: 0, right: 1, bottom: 0, left: 4 };
+/** 一联单左右各留 5mm：平台一联模板的线从 5mm 画到 70mm（纸宽 75），两边留给打印头够不到的地方。 */
+const ONE_PART_MARGINS: WaybillMargins = { top: 0, right: 5, bottom: 0, left: 5 };
 /** 平台模板的分隔线约 0.3mm（在 203dpi 上取整成 2 个点）。 */
 const LINE_WIDTH_MM = 0.3;
 
@@ -158,7 +175,8 @@ export const PLATFORM_TWO_PART: WaybillTemplate = waybill('waybill-platform-180'
     ]),
     columns(15, [
       text(79, [p('{三段码}', 11, { bold: true })], { align: 'center', rule: 'dashed' }),
-      text(19, [p('{集包编码}', 4.5, { bold: true, wrap: true })], { align: 'center' }),
+      // 集包编码只占一行（照官方），放不下就缩小字号，不折成两行。
+      text(19, [p('{集包编码}', 4.5, { bold: true })], { align: 'center' }),
     ]),
     columns(10, [mark(9, '集', 5, '集包地'), text(89, [p('{集包地}', 6, { bold: true })])]),
     columns(15, [mark(9, '收', 5.5), receiver(89, 4, 3.4)]),
@@ -185,76 +203,65 @@ export const PLATFORM_TWO_PART: WaybillTemplate = waybill('waybill-platform-180'
       text(30, [p('{快递公司}', 4.5, { bold: true })], { align: 'center', rule: 'none' }),
       barcode(68, { showText: false }),
     ]),
+    // 存根：竖线在 70mm（官方）。
     columns(10, [
       mark(8, '收', 4),
-      text(60, [p('{收件人}  {收件电话}', 2.5, { bold: true }), p('{收件地址}', 2.4, { wrap: true })]),
+      text(61, [p('{收件人}  {收件电话}', 2.5, { bold: true }), p('{收件地址}', 2.4, { wrap: true })]),
       mark(8, '寄', 4),
-      text(22, [p('{寄件人}', 2.4), p('{寄件电话}', 2.4)]),
+      text(0, [p('{寄件人}', 2.4), p('{寄件电话}', 2.4)]),
     ]),
-    customArea(),
+    // 自定义区从 130mm 开始，官方在 156mm 印「已验视」。
+    customArea(26),
   ]),
 });
 
 /**
- * 平台标准一联 76×130：中通、圆通、申通、韵达、极兔（通达系）共用。版式照平台模板的坐标，
- * 并对照了用户给的抖音电商极兔一联单实物（2026-10-01）：页头（标识、打印时间、产品类型）、整行大号三段码，
- * 左列依次是运单条码、集包地、末端网点、虚拟号码、收件人、寄件人，右列是竖排条码；框下大字印商品，最底下订单号和「已验视」。
- * 「集」「末」「虚拟号码」只在对应字段有值时印。
+ * 平台标准一联 76×130：中通、圆通、申通、韵达、极兔（通达系）共用。分隔线照平台一联模板的坐标：
+ * 12（页头）、21（三段码）、37（运单条码）、43.6（集包地 / 末端网点）、48.7（虚拟号码）、69（收件人）、79（寄件人），
+ * 左列宽 53mm、右列是竖排条码；79 以下是商家自定义区，103mm 处印「已验视」。
+ * 「集」「末」「虚拟号码」只在对应字段有值时印（对照过用户给的抖音电商极兔一联单实物，2026-10-01）。
  */
 export const PLATFORM_ONE_PART: WaybillTemplate = waybill('waybill-platform-130', '平台标准一联（通达系）', 130, 76, {
   marginsMm: ONE_PART_MARGINS,
   lineWidthMm: LINE_WIDTH_MM,
   root: root([
-    columns(
-      12,
-      [
-        rows(
-          58,
-          [text(8, [p('{快递公司}', 6, { bold: true })], { rule: 'none' }), text(0, [p('{日期} {时间}', 2.4)])],
-          {
+    columns(12, [
+      rows(
+        53,
+        [text(7, [p('{快递公司}', 5.5, { bold: true })], { rule: 'none' }), text(0, [p('{日期} {时间}', 2.4)])],
+        {
+          rule: 'none',
+        },
+      ),
+      // 格子窄到一行正好两个字：「标准快递」折成「标准 / 快递」两行（照实物）。
+      text(0, [p('{产品类型}', 4.2, { bold: true, wrap: true })], { align: 'center' }),
+    ]),
+    text(9, [p('{三段码}', 7.5, { bold: true })], { align: 'center' }),
+    columns(58, [
+      rows(53, [
+        barcode(16, { textSizeMm: 3 }),
+        columns(6.6, [
+          mark(6, '集', 4, '集包地'),
+          text(21, [p('{集包地}', 3.8, { bold: true })], { rule: 'none' }),
+          mark(6, '末', 4, '末端网点'),
+          text(0, [p('{末端网点}', 3.8, { bold: true })]),
+        ]),
+        columns(5.1, [
+          text(16, [p('虚拟号码', 2.6, { bold: true })], {
+            align: 'center',
+            inverse: true,
             rule: 'none',
-          },
-        ),
-        // 格子窄到一行正好两个字：「标准快递」照实物折成「标准 / 快递」两行。
-        text(0, [p('{产品类型}', 4.2, { bold: true, wrap: true })], { align: 'center' }),
-      ],
-      { rule: 'dashed' },
-    ),
-    text(10.5, [p('{三段码}', 8.5, { bold: true })], { align: 'center', rule: 'dashed' }),
-    columns(64.5, [
-      rows(57, [
-        barcode(14.5, { textSizeMm: 3, rule: 'dashed' }),
-        columns(7, [mark(7, '集', 4.5, '集包地'), text(0, [p('{集包地}', 4.5, { bold: true })])], { rule: 'dashed' }),
-        columns(7, [mark(7, '末', 4.5, '末端网点'), text(0, [p('{末端网点}', 4.5, { bold: true })])], {
-          rule: 'dashed',
-        }),
-        columns(
-          5.5,
-          [
-            text(18, [p('虚拟号码', 3, { bold: true })], {
-              align: 'center',
-              inverse: true,
-              rule: 'none',
-              showIf: '虚拟号码',
-            }),
-            text(0, [p('{虚拟号码}', 3.2)]),
-          ],
-          { rule: 'dashed' },
-        ),
-        columns(18, [mark(7, '收', 5), receiver(0, 3.8, 3.8)], { rule: 'dashed' }),
-        columns(0, [mark(7, '寄', 4), sender(0, 2.8, 2.6)]),
+            showIf: '虚拟号码',
+          }),
+          text(0, [p('{虚拟号码}', 2.8)]),
+        ]),
+        columns(20.3, [mark(6, '收', 4.5), receiver(0, 3.6, 3.4)]),
+        columns(0, [mark(6, '寄', 3.6), sender(0, 2.6, 2.4)]),
       ]),
       barcode(0, { showText: false, vertical: true }),
     ]),
-    text(33, [p('{物品}', 4.2, { wrap: true }), p('{自定义区}', 2.8, { wrap: true })], {
-      valign: 'top',
-      rule: 'none',
-    }),
-    columns(0, [
-      text(45, [p('{订单号}', 2.6)], { rule: 'none' }),
-      // 平台标准面单固定印「已验视」（揽件时验视过货物，由揽件员负责），这里照平台版式印。
-      text(0, [p('已验视', 3.2, { bold: true })], { align: 'right' }),
-    ]),
+    // 自定义区从 79mm 开始：先印商品（大字）和订单号，官方在 103mm 印「已验视」。
+    customArea(24, [p('{物品}', 4, { wrap: true }), p('{自定义区}', 2.8, { wrap: true }), p('订单号：{订单号}', 2.6)]),
   ]),
 });
 
@@ -278,37 +285,46 @@ export const SF_TWO_PART: WaybillTemplate = waybill('waybill-sf-180', '顺丰二
     text(15, [p('{目的地代码}', 10, { bold: true })], { align: 'center' }),
     columns(15.5, [mark(9, '收', 5.5), receiver(89, 4, 3.4)]),
     columns(12, [mark(9, '寄', 5), sender(89, 3, 2.8)]),
-    columns(10, [
-      text(50, [p('付款方式：{付款方式}', 3, { bold: true })]),
+    // 82.6–92：付款方式、声明价值（官方这一行中间没有竖线）。
+    columns(9.5, [
+      text(50, [p('付款方式：{付款方式}', 3, { bold: true })], { rule: 'none' }),
       text(48, [p('声明价值：{声明价值}', 3, { bold: true })]),
     ]),
+    // 92–108：打印时间 | 托寄物（标签列 20–26mm）、收件员 / 派件员 | 签名；竖线在 20、80mm。
     columns(
-      17.5,
+      16,
       [
-        printTime(20),
-        rows(50, [
-          text(11, [p('托寄物：{托寄物}', 2.8, { wrap: true })], { valign: 'top' }),
+        printTime(19),
+        rows(60, [
+          columns(11, [
+            text(6, [p('托寄物', 2.4, { wrap: true })], { align: 'center' }),
+            text(0, [p('{托寄物}', 2.8, { wrap: true })], { valign: 'top' }),
+          ]),
           text(0, [p('收件员：          派件员：', 2.4)]),
         ]),
-        text(28, [p('签名：', 2.6)], { valign: 'top' }),
+        text(0, [p('签名：', 2.6)], { valign: 'top' }),
       ],
       { rule: 'none' },
     ),
+    // 切点（110mm）前后不画线：纸本身在这里撕开。
+    gap(2, { rule: 'none' }),
     columns(13, [
       text(30, [p('顺丰速运', 5, { bold: true })], { align: 'center', rule: 'none' }),
       barcode(68, { showText: false }),
     ]),
+    // 存根：竖线在 80mm（官方）。
     columns(8.5, [
       mark(8, '收', 4),
-      text(60, [p('{收件人}  {收件电话}  {收件地址}', 2.4, { wrap: true })]),
-      text(30, [p('付款方式：{付款方式}', 2.4)]),
+      text(71, [p('{收件人}  {收件电话}  {收件地址}', 2.4, { wrap: true })]),
+      text(0, [p('付款方式：{付款方式}', 2.4, { wrap: true })]),
     ]),
     columns(8.5, [
       mark(8, '寄', 4),
-      text(60, [p('{寄件人}  {寄件电话}  {寄件地址}', 2.4, { wrap: true })]),
-      text(30, [p('声明价值：{声明价值}', 2.4)]),
+      text(71, [p('{寄件人}  {寄件电话}  {寄件地址}', 2.4, { wrap: true })]),
+      text(0, [p('声明价值：{声明价值}', 2.4, { wrap: true })]),
     ]),
-    customArea(),
+    // 自定义区从 140mm 开始，官方在 174mm 印「已验视」。
+    customArea(34),
   ]),
 });
 
@@ -344,8 +360,9 @@ export const SF_150: WaybillTemplate = waybill('waybill-sf-150', '顺丰 100×15
       { rule: 'dashed' },
     ),
     columns(26, [mark(6, '收', 4.5), receiver(58, 4, 3.4, { rule: 'dashed' }), qr(30)], { rule: 'dashed' }),
+    // 官方在寄件人和进港码之间没有分隔线。
     columns(6.5, [mark(6, '寄', 3.6), text(88, [p('{寄件人}  {寄件电话}  {寄件地址}', 2.6, { wrap: true })])], {
-      rule: 'dashed',
+      rule: 'none',
     }),
     columns(
       10.5,
@@ -355,7 +372,7 @@ export const SF_150: WaybillTemplate = waybill('waybill-sf-150', '顺丰 100×15
       ],
       { rule: 'dashed' },
     ),
-    customArea(),
+    customArea(null),
   ]),
 });
 
@@ -382,11 +399,21 @@ export const DEPPON_TWO_PART: WaybillTemplate = waybill('waybill-deppon-180', '�
       text(58, [p('{产品类型}', 5, { bold: true })], { align: 'center' }),
     ]),
     columns(28, [route(1), route(2), route(3), route(4)]),
-    barcode(22, { textSizeMm: 3.2 }),
-    columns(21, [mark(9, '收', 5.5), receiver(89, 4.2, 3.6)]),
-    columns(13, [mark(9, '寄', 5), sender(89, 3, 2.8)]),
+    // 分隔线照官方：43（路由格）、65.3（条码）、72.1（虚拟号码）、88.3（收件人）、99.8（寄件人）、108（打印时间 / 末端码）。
+    barcode(22.3, { textSizeMm: 3.2 }),
+    columns(6.8, [
+      text(18, [p('虚拟号码', 2.8, { bold: true })], {
+        align: 'center',
+        inverse: true,
+        rule: 'none',
+        showIf: '虚拟号码',
+      }),
+      text(0, [p('{虚拟号码}', 3.2)]),
+    ]),
+    columns(16.2, [mark(9, '收', 5.5), receiver(89, 4.2, 3.6)]),
+    columns(11.5, [mark(9, '寄', 5), sender(89, 3, 2.8)]),
     columns(
-      9,
+      8.2,
       [text(70, [p('{日期} {时间}', 2.8)]), text(28, [p('{末端码}', 5, { bold: true })], { align: 'center' })],
       { rule: 'none' },
     ),
@@ -395,13 +422,15 @@ export const DEPPON_TWO_PART: WaybillTemplate = waybill('waybill-deppon-180', '�
       text(30, [p('德邦快递', 4.5, { bold: true })], { align: 'center', rule: 'none' }),
       barcode(68, { showText: false }),
     ]),
+    // 存根：竖线在 70mm（官方）。
     columns(10, [
       mark(8, '收', 4),
-      text(60, [p('{收件人}  {收件电话}', 2.5, { bold: true }), p('{收件地址}', 2.4, { wrap: true })]),
+      text(61, [p('{收件人}  {收件电话}', 2.5, { bold: true }), p('{收件地址}', 2.4, { wrap: true })]),
       mark(8, '寄', 4),
-      text(22, [p('{寄件人}', 2.4), p('{寄件电话}', 2.4)]),
+      text(0, [p('{寄件人}', 2.4), p('{寄件电话}', 2.4)]),
     ]),
-    customArea(),
+    // 自定义区从 130mm 开始，官方在 156mm 印「已验视」。
+    customArea(26),
   ]),
 });
 

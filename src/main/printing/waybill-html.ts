@@ -21,9 +21,12 @@ import { DEFAULT_PRINTER_DPI, dotMm, planQr } from './qr-code';
 
 /** 条码两侧的空白（静区）：标准要求至少 10 个模块，扫码枪才找得到条码的起止。 */
 const QUIET_ZONE_MODULES = 10;
-/** 条码模块宽：203dpi 上 2–4 个点（0.25–0.5mm），其他分辨率按毫米换算。再窄扫码枪读不稳，再宽条码太长。 */
+/**
+ * 条码模块宽：203dpi 上 2–5 个点（0.25–0.625mm），其他分辨率按毫米换算。再窄扫码枪读不稳；
+ * 上限照平台面单：二联的运单条码约 88mm 宽，15 位单号的模块约 0.6mm。
+ */
 const MIN_MODULE_MM = 0.25;
-const MAX_MODULE_MM = 0.5;
+const MAX_MODULE_MM = 0.625;
 /** 号码和条码之间的空隙（mm）。 */
 const BARCODE_TEXT_GAP_MM = 0.4;
 /** 二维码按 M 级容错：面单二维码内容短，M 级足够；放不下时 planQr 逐级降低。 */

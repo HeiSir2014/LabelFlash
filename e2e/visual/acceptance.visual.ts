@@ -1046,7 +1046,7 @@ const ITEMS: Item[] = [
     id: 'V35',
     title: '配置中心 · 打印机',
     points:
-      '顶部「纸张 → 打印机」表每种纸一行，下拉框完整显示打印机名；没有可用打印机的纸标红，旁边有「建议：…」按钮；下面每台打印机显示状态（缺纸的红点和「缺纸」）、「负责：…」、驱动纸张（对不上时的提醒和「打开打印首选项」）；没负责纸张的打印机只显示驱动纸张；标题栏胶囊显示出问题的那一台',
+      '顶部「纸张 → 打印机」表每种纸一行，下拉框完整显示打印机名；没有可用打印机的纸标红，旁边有「建议：…」按钮；没在用的内置面单的纸（76×130）列出来但不标红；下面每台打印机显示状态（缺纸的红点和「缺纸」）、「负责：…」、驱动纸张（对不上时的提醒和「打开打印首选项」）；没负责纸张的打印机只显示驱动纸张；标题栏胶囊显示出问题的那一台',
     launch: { fakePrinters: PAPER_PRINTERS },
     setup: async ({ page }) => {
       await saveCopyOnPaper(page, '极兔面单', { widthMm: 100, heightMm: 180 });
@@ -1054,7 +1054,9 @@ const ITEMS: Item[] = [
       await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A' } });
       await page.reload();
       await openConfig(page, '打印机');
-      await expect(page.locator('.paper-row')).toHaveCount(3);
+      // 60×40、100×180、100×150，加上内置一联面单的 76×130（没在用：列出来但不标红）。
+      await expect(page.locator('.paper-row')).toHaveCount(4);
+      await expect(page.locator('.paper-row', { hasText: '76×130' })).not.toHaveClass(/paper-row--missing/);
       await expect(page.locator('.printer-chip')).toHaveText('面单机B（缺纸）');
     },
   },

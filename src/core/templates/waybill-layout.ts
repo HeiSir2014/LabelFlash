@@ -22,6 +22,11 @@ import {
 
 /** 格子内边距（mm）：左右 0.8、上下 0.5，文字不会贴着线。 */
 export const CELL_PADDING_MM = { x: 0.8, y: 0.5 } as const;
+/**
+ * 每一行只排到可用宽度的 98%：字宽表是按 100px 大字量的，小字号下 macOS 渲染会把一整行撑宽一点
+ * （CI 实测 11.3px 的地址行比估算宽 0.8%，超出 0.5px 被格子边缘裁掉）。留 2% 吸收这类取整误差。
+ */
+const LINE_WIDTH_SLACK = 0.02;
 /** 线至少 0.25mm（203dpi 上 2 个点）：1 个点（0.125mm）的线在热敏纸上时断时续；高分辨率时按毫米算，不会更细。 */
 const MIN_LINE_MM = 0.25;
 /** 放不下时字号最多缩到原来的 60%，再小就截断：远看还认得出是哪一行。 */
@@ -196,7 +201,11 @@ function layoutContent(content: WaybillContent, rect: Rect, context: LayoutConte
       const paragraphs = content.paragraphs
         .map((paragraph) => ({ ...paragraph, text: expandParagraph(paragraph.text, context) }))
         .filter((paragraph): paragraph is WaybillParagraph => paragraph.text !== null);
-      const fitted = fitParagraphs(paragraphs, rect.width - 2 * CELL_PADDING_MM.x, rect.height - 2 * CELL_PADDING_MM.y);
+      const fitted = fitParagraphs(
+        paragraphs,
+        (rect.width - 2 * CELL_PADDING_MM.x) * (1 - LINE_WIDTH_SLACK),
+        rect.height - 2 * CELL_PADDING_MM.y,
+      );
       return { kind: 'text', align: content.align, valign: content.valign, inverse: content.inverse, ...fitted };
     }
   }

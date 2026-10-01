@@ -559,15 +559,22 @@ test('lays out every built-in waybill so that no line is clipped with the system
   for (const template of waybills) {
     const { html } = await callApi(page, 'previewTemplate', '示例', template);
     if (html === null) throw new Error(`no preview for ${template.name}`);
-    // 测试自己开一个能跑脚本的隐藏窗口来量（打印窗口禁用了脚本）：内容溢出时 scrollWidth 比 clientWidth 大。
+    // 测试自己开一个能跑脚本的隐藏窗口来量（打印窗口禁用了脚本）：用 Range 量文字本身的宽度（带小数），
+    // 比这一行的可用宽度宽就是被裁掉了。失败时写出两者和字号，方便对照字宽表。
     const clipped = await app.evaluate(async ({ BrowserWindow }, source) => {
       const window = new BrowserWindow({ show: false });
       try {
         await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(source)}`);
         return (await window.webContents.executeJavaScript(
-          `[...document.querySelectorAll('.line, .code__text')]
-            .filter((line) => line.scrollWidth > line.clientWidth + 0.5)
-            .map((line) => line.textContent)`,
+          `[...document.querySelectorAll('.line, .code__text')].flatMap((line) => {
+            const range = document.createRange();
+            range.selectNodeContents(line);
+            const text = range.getBoundingClientRect().width;
+            const box = line.getBoundingClientRect().width;
+            return text > box + 0.5
+              ? [line.textContent + ' | 文字 ' + text.toFixed(2) + 'px | 可用 ' + box.toFixed(2) + 'px | 字号 ' + getComputedStyle(line).fontSize]
+              : [];
+          })`,
         )) as string[];
       } finally {
         window.destroy();

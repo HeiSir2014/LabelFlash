@@ -48,7 +48,7 @@ const ELEMENT_LIMIT_NOTICE = `一个模板最多 ${CANVAS_LIMITS.elements} 个�
 
 /** 粘贴时有图片因为超出模板图片总量被跳过：和元素数到上限分开说，下一步不一样（删图 vs 删元素）。 */
 function imageLimitNotice(skippedImages: number): string {
-  return `有 ${skippedImages} 张图片超出图片总量上限（一个模板最多 ${megabytes(CANVAS_LIMITS.templateImageBytes)}MB），未粘贴`;
+  return `有 ${skippedImages} 张图片超出图片总量上限（一个模板最多 ${megabytes(CANVAS_LIMITS.templateImageBytes)}MB），未粘贴：先删掉一张图片再粘贴`;
 }
 
 /**
@@ -125,8 +125,11 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
     }
     commit(pasted.template);
     setSelection(pasted.ids);
-    // 再粘贴一次从刚贴的这几个往下错开，不和它们叠在一起。
-    setClipboard(pasted.template.elements.filter((element) => pasted.ids.includes(element.id)));
+    // 只有整批都贴成功才把剪贴板换成这一批（下次再粘贴从这几个往下错开，不和它们叠在一起）；
+    // 有跳过的（图片超量、或者碰到元素数上限）剪贴板保持原样不动，再粘贴一次还能贴出跳过的那些。
+    if (pasted.ids.length === clipboard.length) {
+      setClipboard(pasted.template.elements.filter((element) => pasted.ids.includes(element.id)));
+    }
   };
   const remove = () => commit(deleteElements(draft, liveSelection));
   // 连续按方向键挪同一组元素算一步撤销。

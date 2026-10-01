@@ -6,17 +6,26 @@ import {
   newCanvasElement,
 } from '../../../core/templates/canvas-model';
 import {
+  type Alignment,
   addElement,
+  alignElements,
+  bringToFront,
   clampAll,
   clampBox,
+  copyElements,
   deleteElements,
+  distributeElements,
+  elementsInRect,
   moveBy,
   newElementId,
+  pasteElements,
+  rectFromPoints,
   replaceElement,
   resizeBox,
   rotateElement,
   roundMm,
   roundTo,
+  sendToBack,
   setBox,
   toggleId,
   uniqueName,
@@ -197,5 +206,89 @@ describe('deleteElements and toggleId', () => {
   test('adds or removes one id from a selection', () => {
     expect(toggleId(['a', 'b'], 'a')).toEqual(['b']);
     expect(toggleId(['a'], 'c')).toEqual(['a', 'c']);
+  });
+});
+
+describe('alignElements', () => {
+  test('aligns a single element to the safe area', () => {
+    const template = canvas(rect('a', 10, 10, 20, 10));
+    const x = (alignment: Alignment) => alignElements(template, ['a'], alignment).elements[0]?.x;
+    const y = (alignment: Alignment) => alignElements(template, ['a'], alignment).elements[0]?.y;
+    expect([x('left'), x('center'), x('right')]).toEqual([1.5, 20, 38.5]);
+    expect([y('top'), y('middle'), y('bottom')]).toEqual([1.5, 15, 28.5]);
+  });
+
+  test('aligns several elements to their common bounds, leaving locked ones in place', () => {
+    const template = canvas(rect('a', 10, 10, 10, 5), rect('b', 30, 20, 20, 5));
+    expect(boxes(alignElements(template, ['a', 'b'], 'right')).map((box) => box.x)).toEqual([40, 30]);
+    expect(boxes(alignElements(template, ['a', 'b'], 'middle')).map((box) => box.y)).toEqual([15, 15]);
+    const locked = canvas(rect('a', 10, 10, 10, 5, true), rect('b', 30, 20, 20, 5));
+    expect(boxes(alignElements(locked, ['a', 'b'], 'left')).map((box) => box.x)).toEqual([10, 10]);
+  });
+});
+
+describe('distributeElements', () => {
+  test('spaces the middle elements evenly between the first and the last', () => {
+    const row = canvas(rect('a', 0, 0, 10, 5), rect('c', 50, 0, 10, 5), rect('b', 12, 0, 10, 5));
+    expect(boxes(distributeElements(row, ['a', 'b', 'c'], 'horizontal')).map((box) => box.x)).toEqual([0, 50, 25]);
+    const column = canvas(rect('a', 0, 0, 10, 4), rect('b', 0, 10, 10, 4), rect('c', 0, 30, 10, 4));
+    expect(boxes(distributeElements(column, ['a', 'b', 'c'], 'vertical')).map((box) => box.y)).toEqual([0, 15, 30]);
+  });
+
+  test('needs at least three elements', () => {
+    const template = canvas(rect('a', 0, 0, 10, 5), rect('b', 30, 0, 10, 5));
+    expect(distributeElements(template, ['a', 'b'], 'horizontal')).toBe(template);
+  });
+});
+
+describe('layer order', () => {
+  const template = canvas(rect('a', 0, 0, 1, 1), rect('b', 0, 0, 1, 1), rect('c', 0, 0, 1, 1), rect('d', 0, 0, 1, 1));
+  const order = (next: CanvasTemplate) => next.elements.map((element) => element.id);
+
+  test('brings the selection to the front keeping its own order', () => {
+    expect(order(bringToFront(template, ['b', 'a']))).toEqual(['c', 'd', 'a', 'b']);
+  });
+
+  test('sends the selection to the back keeping its own order', () => {
+    expect(order(sendToBack(template, ['d', 'c']))).toEqual(['c', 'd', 'a', 'b']);
+  });
+});
+
+describe('copy and paste', () => {
+  test('copies deeply, so later edits do not change the clipboard', () => {
+    const template = canvas(rect('a', 10, 10, 10, 5));
+    const [copy] = copyElements(template, ['a']);
+    if (copy === undefined) {
+      throw new Error('expected a copy');
+    }
+    copy.x = 0;
+    expect(template.elements[0]?.x).toBe(10);
+  });
+
+  test('pastes with new ids and names, offset and unlocked', () => {
+    const template = canvas(rect('a', 10, 10, 10, 5, true));
+    const pasted = pasteElements(template, copyElements(template, ['a']));
+    expect(pasted.ids).toEqual(['e1']);
+    expect(pasted.template.elements[1]).toMatchObject({ id: 'e1', name: '矩形 2', x: 12, y: 12, locked: false });
+  });
+
+  test('keeps pasted elements on the paper and within the element limit', () => {
+    const edge = canvas(rect('a', 50, 35, 10, 5));
+    expect(pasteElements(edge, copyElements(edge, ['a'])).template.elements[1]).toMatchObject({ x: 50, y: 35 });
+    const almostFull = canvas(
+      ...Array.from({ length: CANVAS_LIMITS.elements - 1 }, (_, index) => rect(`r${index}`, 0, 0, 1, 1)),
+    );
+    expect(pasteElements(almostFull, copyElements(almostFull, ['r0', 'r1'])).ids).toHaveLength(1);
+  });
+});
+
+describe('marquee selection', () => {
+  test('selects every element the rectangle touches', () => {
+    const template = canvas(rect('a', 10, 10, 10, 5), rect('b', 40, 30, 10, 5), rect('c', 0, 20, 60, 0.25));
+    expect(elementsInRect(template, { x: 5, y: 5, width: 20, height: 20 })).toEqual(['a', 'c']);
+  });
+
+  test('builds the rectangle from two corners in any order', () => {
+    expect(rectFromPoints({ x: 20, y: 5 }, { x: 10, y: 15 })).toEqual({ x: 10, y: 5, width: 10, height: 10 });
   });
 });

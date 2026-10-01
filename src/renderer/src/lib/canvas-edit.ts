@@ -250,3 +250,154 @@ export function deleteElements(template: CanvasTemplate, ids: readonly string[])
   const kept = template.elements.filter((element) => !isMovable(element, ids));
   return kept.length === template.elements.length ? template : { ...template, elements: kept };
 }
+
+export const ALIGNMENTS = ['left', 'center', 'right', 'top', 'middle', 'bottom'] as const;
+export type Alignment = (typeof ALIGNMENTS)[number];
+
+/** 安全区：纸边往里 1.5mm（再往外，打印前检查会提示「靠近纸边」）。 */
+function safeArea(paper: PaperSize): Box {
+  const margin = CANVAS_LIMITS.safeMarginMm;
+  return { x: margin, y: margin, width: paper.widthMm - 2 * margin, height: paper.heightMm - 2 * margin };
+}
+
+function aligned(box: Box, target: Box, alignment: Alignment): Box {
+  switch (alignment) {
+    case 'left':
+      return { ...boxOf(box), x: target.x };
+    case 'center':
+      return { ...boxOf(box), x: target.x + (target.width - box.width) / 2 };
+    case 'right':
+      return { ...boxOf(box), x: target.x + target.width - box.width };
+    case 'top':
+      return { ...boxOf(box), y: target.y };
+    case 'middle':
+      return { ...boxOf(box), y: target.y + (target.height - box.height) / 2 };
+    case 'bottom':
+      return { ...boxOf(box), y: target.y + target.height - box.height };
+  }
+}
+
+/**
+ * 对齐：选一个时对齐到安全区（单个元素居中、靠边是最常用的）；选几个时对齐到它们合起来的外框。
+ * 锁定的不动，但算进外框（拿它当基准对齐别的元素）。
+ */
+export function alignElements(template: CanvasTemplate, ids: readonly string[], alignment: Alignment): CanvasTemplate {
+  const selected = template.elements.filter((element) => ids.includes(element.id));
+  const target = selected.length === 1 ? safeArea(template.paper) : boundsOf(selected);
+  if (target === null) {
+    return template;
+  }
+  return {
+    ...template,
+    elements: template.elements.map((element) =>
+      isMovable(element, ids)
+        ? withBox(element, clampBox(aligned(element, target, alignment), template.paper))
+        : element,
+    ),
+  };
+}
+
+export type DistributeAxis = 'horizontal' | 'vertical';
+
+/** 「等距」至少要三个：两个之间的空隙本来就只有一个。 */
+export const MIN_DISTRIBUTE_COUNT = 3;
+
+/** 等距：按位置排好，第一个和最后一个不动，中间的让相邻两个之间的空隙相等。锁定的不参与。 */
+export function distributeElements(
+  template: CanvasTemplate,
+  ids: readonly string[],
+  axis: DistributeAxis,
+): CanvasTemplate {
+  const isHorizontal = axis === 'horizontal';
+  const startOf = (box: Box) => (isHorizontal ? box.x : box.y);
+  const sizeOf = (box: Box) => (isHorizontal ? box.width : box.height);
+  const moving = template.elements.filter((element) => isMovable(element, ids)).sort((a, b) => startOf(a) - startOf(b));
+  const first = moving[0];
+  const last = moving.at(-1);
+  if (moving.length < MIN_DISTRIBUTE_COUNT || first === undefined || last === undefined) {
+    return template;
+  }
+  const span = startOf(last) + sizeOf(last) - startOf(first);
+  const gap = (span - moving.reduce((sum, element) => sum + sizeOf(element), 0)) / (moving.length - 1);
+  const positions = new Map<string, number>();
+  let cursor = startOf(first);
+  for (const element of moving) {
+    positions.set(element.id, cursor);
+    cursor += sizeOf(element) + gap;
+  }
+  return {
+    ...template,
+    elements: template.elements.map((element) => {
+      const at = positions.get(element.id);
+      if (at === undefined) {
+        return element;
+      }
+      const box = isHorizontal ? { ...boxOf(element), x: at } : { ...boxOf(element), y: at };
+      return withBox(element, clampBox(box, template.paper));
+    }),
+  };
+}
+
+/** 置顶：选中的按原来的先后挪到最上层（数组末尾就是最上层）。 */
+export function bringToFront(template: CanvasTemplate, ids: readonly string[]): CanvasTemplate {
+  const picked = template.elements.filter((element) => ids.includes(element.id));
+  const rest = template.elements.filter((element) => !ids.includes(element.id));
+  return { ...template, elements: [...rest, ...picked] };
+}
+
+/** 置底：选中的按原来的先后挪到最下层。 */
+export function sendToBack(template: CanvasTemplate, ids: readonly string[]): CanvasTemplate {
+  const picked = template.elements.filter((element) => ids.includes(element.id));
+  const rest = template.elements.filter((element) => !ids.includes(element.id));
+  return { ...template, elements: [...picked, ...rest] };
+}
+
+/** 粘贴往右下错开 2mm：和原来的叠在一起时看不出粘贴成功了。 */
+export const PASTE_OFFSET_MM = 2;
+
+/** 复制：深拷贝（之后改模板不影响剪贴板里的）。 */
+export function copyElements(template: CanvasTemplate, ids: readonly string[]): CanvasElement[] {
+  return template.elements.filter((element) => ids.includes(element.id)).map((element) => structuredClone(element));
+}
+
+/** 粘贴：换新 id、名字加编号、错开 offsetMm 再收进纸内、不带锁定；超出元素上限的部分不贴（调用方提示）。 */
+export function pasteElements(
+  template: CanvasTemplate,
+  clip: readonly CanvasElement[],
+  offsetMm: number = PASTE_OFFSET_MM,
+): Added {
+  const room = Math.max(0, CANVAS_LIMITS.elements - template.elements.length);
+  const elements = [...template.elements];
+  const ids: string[] = [];
+  for (const source of clip.slice(0, room)) {
+    const id = newElementId(elements);
+    const copy: CanvasElement = {
+      ...structuredClone(source),
+      id,
+      name: uniqueName(source.name, elements),
+      locked: false,
+    };
+    const box = clampBox({ ...boxOf(source), x: source.x + offsetMm, y: source.y + offsetMm }, template.paper);
+    elements.push(withBox(copy, box));
+    ids.push(id);
+  }
+  return { template: { ...template, elements }, ids };
+}
+
+/** 两个角（任意顺序）围成的框：框选用。 */
+export function rectFromPoints(a: Point, b: Point): Box {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) };
+}
+
+/** 框选：和选框有重叠的元素（细线、小元素不用整个框住），按上下层顺序。 */
+export function elementsInRect(template: CanvasTemplate, rect: Box): string[] {
+  return template.elements
+    .filter(
+      (element) =>
+        element.x < rect.x + rect.width &&
+        element.x + element.width > rect.x &&
+        element.y < rect.y + rect.height &&
+        element.y + element.height > rect.y,
+    )
+    .map((element) => element.id);
+}

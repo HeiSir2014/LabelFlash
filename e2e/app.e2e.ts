@@ -521,3 +521,29 @@ test('previews a label on the paper of its template', async ({ electronApp }) =>
     })
     .toBeLessThan(0.02);
 });
+
+// 面单模板：用示例面单数据预览（不是扫码内容）；复制后改一格的文字，预览跟着变，保存后用于打印。
+test('previews a built-in waybill with sample data and edits a copy cell by cell', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  await openConfig(page, '模板');
+  await page.locator('.template-item', { hasText: '平台标准二联' }).click();
+  await expect(page.locator('.sample-input--note')).toContainText('示例面单数据');
+  const templatesPage = page.getByRole('main', { name: '模板' });
+  const label = templatesPage.frameLocator('.label-frame').locator('body');
+  await expect(label).toContainText('781234567890123');
+  await expect(label).toContainText('杭州转运中心');
+  await expect(templatesPage.locator('.ruler--vertical')).toHaveAttribute('viewBox', /^0 0 \S+ 180$/);
+
+  await page.getByRole('button', { name: '复制' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('编辑：');
+  const outline = page.getByRole('list', { name: '格子' });
+  await outline.getByRole('button', { name: /文字 \{集包地\}/ }).click();
+  await page.locator('.waybill-node').getByLabel('文字', { exact: true }).first().fill('集包：{集包地}');
+  await expect(label).toContainText('集包：杭州转运中心');
+  await page.getByRole('button', { name: '保存模板' }).click();
+  await expect(page.locator('.template-item', { hasText: '平台标准二联' }).last()).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(label).toContainText('集包：杭州转运中心');
+});

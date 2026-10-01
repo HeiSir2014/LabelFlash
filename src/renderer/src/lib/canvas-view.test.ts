@@ -31,10 +31,12 @@ describe('zoom', () => {
     expect(zoomOut(ZOOM_LEVELS[0] ?? 0)).toBe(0.5);
   });
 
-  test('clamps an input below the lowest level or above the highest level', () => {
+  test('never reverses direction for an input outside the levels', () => {
+    // 比最小档还小：放大跳到最小档（朝“放大”方向），缩小没有更小的可去，原样不动（不能跳回变大的最小档）。
     expect(zoomIn(-5)).toBe(0.5);
-    expect(zoomOut(-5)).toBe(0.5);
-    expect(zoomIn(100)).toBe(6);
+    expect(zoomOut(-5)).toBe(-5);
+    // 比最大档还大：缩小收口到最大档（朝“缩小”方向），放大没有更大的可去，原样不动（不能跳回变小的最大档）。
+    expect(zoomIn(100)).toBe(100);
     expect(zoomOut(100)).toBe(6);
   });
 
@@ -83,5 +85,14 @@ describe('designerCommand', () => {
     expect(designerCommand(key('я', { code: 'KeyZ', ctrlKey: true }))).toEqual({ kind: 'undo' });
     expect(designerCommand(key('с', { code: 'KeyC', ctrlKey: true }))).toEqual({ kind: 'copy' });
     expect(designerCommand(key('м', { code: 'KeyV', ctrlKey: true }))).toEqual({ kind: 'paste' });
+  });
+
+  // 拉丁字母键盘（德语 QWERTZ、法语 AZERTY……）上 key 已经是正确的拉丁字母，
+  // 这时要用 key，不能用 code 兜底——不同布局里同一个字母的物理键位不一样。
+  test('prefers the typed Latin letter over the physical code on other Latin layouts', () => {
+    // 德语 QWERTZ：Z 和 Y 互换，Ctrl+Z 物理键位是 KeyY，但 key 仍是「z」，该触发撤销。
+    expect(designerCommand(key('z', { code: 'KeyY', ctrlKey: true }))).toEqual({ kind: 'undo' });
+    // 法语 AZERTY：Ctrl+W 物理键位是 KeyZ，但 key 是「w」，不是快捷键，不该被 code 误判成撤销。
+    expect(designerCommand(key('w', { code: 'KeyZ', ctrlKey: true }))).toBeNull();
   });
 });

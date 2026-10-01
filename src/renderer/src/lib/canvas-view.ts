@@ -11,29 +11,39 @@ const ZOOM_EPSILON = 0.001;
 
 /**
  * 放大一档：从当前倍数（可能是「适合窗口」算出的任意值）到下一个更大的档位。
- * 当前倍数不在档位范围内（「适合窗口」可能算出任意小或任意大的数）时，先收口到范围两端，不越界。
+ * 比最小档还小时跳到最小档（仍是朝「放大」方向，不算反向）；比最大档还大时没有更大的可去，
+ * 原样不动——不能收口到更小的最大档，那样反而变小，和「放大」的方向反了。
  */
 export function zoomIn(current: number): number {
   const min = ZOOM_LEVELS[0] ?? current;
   const max = ZOOM_LEVELS.at(-1) ?? current;
-  if (current < min - ZOOM_EPSILON) {
-    return min;
+  if (current > max + ZOOM_EPSILON) {
+    return current;
   }
   if (current >= max - ZOOM_EPSILON) {
     return max;
   }
+  if (current < min - ZOOM_EPSILON) {
+    return min;
+  }
   return ZOOM_LEVELS.find((level) => level > current + ZOOM_EPSILON) ?? max;
 }
 
-/** 缩小一档；同样先把超出范围的输入收口到两端。 */
+/**
+ * 缩小一档：比最大档还大时收口到最大档（仍是朝「缩小」方向）；比最小档还小时没有更小的可去，
+ * 原样不动——不能收口到更大的最小档，那样反而变大，和「缩小」的方向反了。
+ */
 export function zoomOut(current: number): number {
   const min = ZOOM_LEVELS[0] ?? current;
   const max = ZOOM_LEVELS.at(-1) ?? current;
-  if (current > max + ZOOM_EPSILON) {
-    return max;
+  if (current < min - ZOOM_EPSILON) {
+    return current;
   }
   if (current <= min + ZOOM_EPSILON) {
     return min;
+  }
+  if (current > max + ZOOM_EPSILON) {
+    return max;
   }
   return [...ZOOM_LEVELS].reverse().find((level) => level < current - ZOOM_EPSILON) ?? min;
 }
@@ -82,13 +92,21 @@ const ARROWS: Readonly<Record<string, readonly [number, number]>> = {
   ArrowDown: [0, 1],
 };
 
-/** Ctrl 组合键的物理键位 → 对应的字母：非拉丁键盘（俄语、希腊语……）上 `key` 不是 z/y/c/v 时的兜底。 */
+/**
+ * Ctrl 组合键的物理键位 → 对应的字母：只在 `key` 不是拉丁字母时才用它兜底（例如俄语、希腊语键盘，
+ * `key` 是当前布局的字符，不是 z/y/c/v）。拉丁字母键盘（德语 QWERTZ、法语 AZERTY……）的物理键位
+ * 和字母对不上——QWERTZ 上 Ctrl+Z 的物理键位是 KeyY、AZERTY 上 Ctrl+W 的物理键位是 KeyZ——
+ * 这些布局下 `key` 本身已经是正确的字母，绝不能被 `code` 覆盖掉。
+ */
 const CTRL_SHORTCUT_CODES: Readonly<Record<string, string>> = {
   KeyZ: 'z',
   KeyY: 'y',
   KeyC: 'c',
   KeyV: 'v',
 };
+
+/** 拉丁小写字母：`key` 落在这个范围内时就是可信的，不需要再查 `code`。 */
+const LATIN_LETTER = /^[a-z]$/;
 
 /**
  * 画布上的按键 → 设计器命令。只认方向键、Delete / Backspace、Esc 和 Ctrl（macOS 上 ⌘）组合键；
@@ -102,7 +120,8 @@ export function designerCommand(event: DesignerKey): DesignerCommand | null {
   }
   if (event.ctrlKey || event.metaKey) {
     const letter = event.key.toLowerCase();
-    switch (CTRL_SHORTCUT_CODES[event.code ?? ''] ?? letter) {
+    const name = LATIN_LETTER.test(letter) ? letter : (CTRL_SHORTCUT_CODES[event.code ?? ''] ?? letter);
+    switch (name) {
       case 'z':
         return event.shiftKey ? { kind: 'redo' } : { kind: 'undo' };
       case 'y':

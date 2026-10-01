@@ -48,22 +48,12 @@ describe('fitPixelBudget', () => {
     });
   });
 
-  test('shrinks a photo where the pixel budget and the side limit both apply', () => {
-    // 5000×3000：像素预算把它压到比两边的「单边上限」都更小，两条限制同时起作用，不是只有一条说了算。
-    const width = 5000;
-    const height = 3000;
-    const { imageBytes, imageSidePixels } = CANVAS_LIMITS;
-    const scale = Math.min(
-      1,
-      Math.sqrt(imageBytes / (width * height)),
-      imageSidePixels / width,
-      imageSidePixels / height,
-    );
-    expect(imageSidePixels / width).toBeLessThan(1);
-    expect(Math.sqrt(imageBytes / (width * height))).toBeLessThan(1);
-    expect(fitPixelBudget(width, height, imageBytes, imageSidePixels)).toEqual({
-      width: Math.floor(width * scale),
-      height: Math.floor(height * scale),
+  test('the side limit decides when it is tighter than the pixel budget, even though the pixel budget alone would also shrink it', () => {
+    // 8000×400：单按像素预算算，缩放到约 0.57 倍就够了（1024×1024 个像素以内）；
+    // 但单边上限更严格（4000/8000=0.5 倍），真正说了算的是单边上限，不是像素预算。
+    expect(fitPixelBudget(8000, 400, CANVAS_LIMITS.imageBytes, CANVAS_LIMITS.imageSidePixels)).toEqual({
+      width: 4000,
+      height: 200,
     });
   });
 });

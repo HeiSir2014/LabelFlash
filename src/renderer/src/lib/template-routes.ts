@@ -25,16 +25,24 @@ export function newRouteDraft(): RouteDraft {
 
 export function isCompleteRoute(draft: RouteDraft): boolean {
   return (
-    isValidFieldName(draft.field) &&
+    isValidFieldName(draft.field.trim()) &&
     draft.value.trim() !== '' &&
     draft.value.length <= TEMPLATE_ROUTE_LIMITS.valueLength &&
     draft.templateId !== ''
   );
 }
 
-/** 要保存的：填完整的行，按界面上的顺序。 */
+/** 要保存的：填完整的行，按界面上的顺序；字段名去掉首尾空格（输入时不去，字段名中间可以有空格）。 */
 export function routesToSave(drafts: readonly RouteDraft[]): TemplateRoute[] {
-  return drafts.filter(isCompleteRoute).map((draft) => ({ ...draft }));
+  return drafts.filter(isCompleteRoute).map((draft) => ({ ...draft, field: draft.field.trim() }));
+}
+
+/**
+ * 这一行选的模板已被删除：打印时跳过这一行（见 templateIdFor），界面上要说出来，
+ * 不然下拉框里找不到这个模板，只显示「选模板…」，看起来像没选。
+ */
+export function routeTemplateMissing(draft: RouteDraft, templateIds: readonly string[]): boolean {
+  return draft.templateId !== '' && !templateIds.includes(draft.templateId);
 }
 
 /** 卡片上的按钮文字：有几条就写几条。 */

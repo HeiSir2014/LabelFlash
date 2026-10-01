@@ -85,6 +85,25 @@ describe('resolvePrintTemplate', () => {
     });
   });
 
+  test('uses the rule template when the template a route chose was deleted', () => {
+    const settings = {
+      ...BOUND_SETTINGS,
+      ruleSettings: BOUND_SETTINGS.ruleSettings.map((setting) =>
+        setting.id === DASH_THREE_RULE_ID
+          ? {
+              ...setting,
+              templateRoutes: [{ field: '尺码', match: 'equals' as const, value: 'XL', templateId: 'custom:deleted' }],
+            }
+          : setting,
+      ),
+    };
+    const scan: ScanResult = { ...scanOf(DASH_THREE_RULE_ID), fields: [{ name: '尺码', value: 'XL' }] };
+    expect(resolvePrintTemplate(createTemplates(), settings, scan)).toMatchObject({
+      template: { id: BIG_QR_ID },
+      isBound: true,
+    });
+  });
+
   test('falls back to the active template when the bound one was deleted', () => {
     const templates = createTemplates();
     const copy = templates.duplicate(BIG_QR_ID);

@@ -32,7 +32,7 @@ export function resolvePrintTemplate(
   settings: AppSettings,
   scan: ScanResult | null,
 ): PrintTemplate {
-  const boundId = scan ? templateIdFor(settings.ruleSettings, scan) : null;
+  const boundId = scan ? templateIdFor(settings.ruleSettings, scan, (id) => templates.get(id) !== null) : null;
   const bound = boundId ? templates.get(boundId) : null;
   return {
     template: applyNoteOverride(bound ?? templates.resolve(settings.activeTemplateId), settings.noteOverride),

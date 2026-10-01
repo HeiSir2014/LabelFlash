@@ -28,11 +28,16 @@ describe('defaultRuleSettings', () => {
     const settings = defaultRuleSettings();
     expect(settings.map((setting) => setting.id)).toEqual(BUILT_IN_IDS);
     expect(settings.every((setting) => setting.enabled)).toBe(true);
-    expect(templateIdFor(settings, scanOf(DASH_THREE_RULE_ID))).toBeNull();
-    expect(templateIdFor(settings, scanOf(RAW_RULE_ID))).toBeNull();
+    expect(idFor(settings, scanOf(DASH_THREE_RULE_ID))).toBeNull();
+    expect(idFor(settings, scanOf(RAW_RULE_ID))).toBeNull();
     expect(settings.every((setting) => setting.templateRoutes.length === 0)).toBe(true);
   });
 });
+
+/** 默认所有模板都在；测「模板已删除」时传入 exists。 */
+function idFor(settings: readonly RuleSetting[], scan: ScanResult, exists: (id: string) => boolean = () => true) {
+  return templateIdFor(settings, scan, exists);
+}
 
 function scanOf(ruleId: string, fields: Record<string, string> = {}): ScanResult {
   return {
@@ -57,10 +62,8 @@ describe('templateIdFor with template routes', () => {
   ];
 
   test('uses the first route whose field matches', () => {
-    expect(templateIdFor(routed, scanOf('custom:orders', { 快递公司: '顺丰速运' }))).toBe('builtin:waybill-sf-150');
-    expect(templateIdFor(routed, scanOf('custom:orders', { 快递公司: ' 德邦快递 ' }))).toBe(
-      'builtin:waybill-deppon-180',
-    );
+    expect(idFor(routed, scanOf('custom:orders', { 快递公司: '顺丰速运' }))).toBe('builtin:waybill-sf-150');
+    expect(idFor(routed, scanOf('custom:orders', { 快递公司: ' 德邦快递 ' }))).toBe('builtin:waybill-deppon-180');
   });
 
   test('compares contains without case and equals exactly', () => {
@@ -71,19 +74,37 @@ describe('templateIdFor with template routes', () => {
         templateRoutes: [{ field: '快递公司', match: 'contains', value: 'sf', templateId: 'custom:sf' }],
       } as RuleSetting,
     ];
-    expect(templateIdFor(latin, scanOf('custom:orders', { 快递公司: 'SF Express' }))).toBe('custom:sf');
-    expect(templateIdFor(routed, scanOf('custom:orders', { 快递公司: '德邦' }))).toBe('builtin:waybill-platform-180');
+    expect(idFor(latin, scanOf('custom:orders', { 快递公司: 'SF Express' }))).toBe('custom:sf');
+    expect(idFor(routed, scanOf('custom:orders', { 快递公司: '德邦' }))).toBe('builtin:waybill-platform-180');
   });
 
   test('falls back to the rule template when no route matches or the field is missing', () => {
-    expect(templateIdFor(routed, scanOf('custom:orders', { 快递公司: '中通快递' }))).toBe(
-      'builtin:waybill-platform-180',
-    );
-    expect(templateIdFor(routed, scanOf('custom:orders'))).toBe('builtin:waybill-platform-180');
+    expect(idFor(routed, scanOf('custom:orders', { 快递公司: '中通快递' }))).toBe('builtin:waybill-platform-180');
+    expect(idFor(routed, scanOf('custom:orders'))).toBe('builtin:waybill-platform-180');
+  });
+
+  test('skips a route whose template was deleted and falls through to the next one or the rule template', () => {
+    const shunfeng = scanOf('custom:orders', { 快递公司: '顺丰速运' });
+    const withoutSf = (id: string) => id !== 'builtin:waybill-sf-150';
+    expect(idFor(routed, shunfeng, withoutSf)).toBe('builtin:waybill-platform-180');
+    const twoRoutes: RuleSetting[] = [
+      {
+        ...(routed[0] as RuleSetting),
+        templateRoutes: [
+          { field: '快递公司', match: 'contains', value: '顺丰', templateId: 'builtin:waybill-sf-150' },
+          { field: '快递公司', match: 'contains', value: '顺丰', templateId: 'custom:sf-backup' },
+        ],
+      },
+    ];
+    expect(idFor(twoRoutes, shunfeng, withoutSf)).toBe('custom:sf-backup');
+  });
+
+  test('uses the active template when the rule template was deleted too', () => {
+    expect(idFor(routed, scanOf('custom:orders', { 快递公司: '顺丰' }), () => false)).toBeNull();
   });
 
   test('ignores routes of other rules', () => {
-    expect(templateIdFor(routed, scanOf(RAW_RULE_ID, { 快递公司: '顺丰' }))).toBeNull();
+    expect(idFor(routed, scanOf(RAW_RULE_ID, { 快递公司: '顺丰' }))).toBeNull();
   });
 });
 

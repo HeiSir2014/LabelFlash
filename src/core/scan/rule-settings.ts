@@ -145,14 +145,25 @@ export function orderedEnabledRules(settings: readonly RuleSetting[], rules: rea
 /**
  * 这一张用哪个模板：命中规则的「按字段换模板」从上往下第一条命中的，都不命中时用规则指定的模板；
  * null 表示规则没指定（用当前模板）。scan 要是加工之后的结果，加工步骤补的字段也能用来换模板。
+ * 模板已被删除（exists 为 false）的那一条跳过，接着往下找：删掉顺丰面单后，顺丰单落到规则自己的模板，
+ * 不会一下跳到当前模板（多半是 60×40 标签）。
  */
-export function templateIdFor(settings: readonly RuleSetting[], scan: ScanResult): string | null {
+export function templateIdFor(
+  settings: readonly RuleSetting[],
+  scan: ScanResult,
+  exists: (templateId: string) => boolean,
+): string | null {
   const setting = settings.find((item) => item.id === scan.ruleId);
   if (!setting) {
     return null;
   }
-  const route = setting.templateRoutes.find((candidate) => routeMatches(candidate, scan));
-  return route?.templateId ?? setting.templateId;
+  const route = setting.templateRoutes.find(
+    (candidate) => exists(candidate.templateId) && routeMatches(candidate, scan),
+  );
+  if (route) {
+    return route.templateId;
+  }
+  return setting.templateId !== null && exists(setting.templateId) ? setting.templateId : null;
 }
 
 function routeMatches(route: TemplateRoute, scan: ScanResult): boolean {

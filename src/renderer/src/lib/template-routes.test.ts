@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { isCompleteRoute, newRouteDraft, routesButtonLabel, routesToSave } from './template-routes';
+import {
+  isCompleteRoute,
+  newRouteDraft,
+  routesButtonLabel,
+  routesToSave,
+  routeTemplateMissing,
+} from './template-routes';
 
 describe('template route drafts', () => {
   test('starts a new row on the courier company, not yet complete', () => {
@@ -15,6 +21,19 @@ describe('template route drafts', () => {
     const badField = { ...sf, field: '{x}' };
     const deppon = { ...sf, value: '德邦', templateId: 'builtin:waybill-deppon-180' };
     expect(routesToSave([sf, unfinished, blank, badField, deppon])).toEqual([sf, deppon]);
+  });
+
+  // 输入时不去空格（不然「Order No」打到空格就被吃掉），保存时去掉首尾空格。
+  test('keeps spaces inside the field name and trims the ends when saving', () => {
+    const draft = { field: ' Order No ', match: 'equals' as const, value: 'A', templateId: 'custom:t' };
+    expect(routesToSave([draft])).toEqual([{ ...draft, field: 'Order No' }]);
+  });
+
+  test('tells when the template a row points at was deleted', () => {
+    const draft = { field: '快递公司', match: 'contains' as const, value: '顺丰', templateId: 'custom:gone' };
+    expect(routeTemplateMissing(draft, ['builtin:generic'])).toBe(true);
+    expect(routeTemplateMissing(draft, ['custom:gone'])).toBe(false);
+    expect(routeTemplateMissing({ ...draft, templateId: '' }, [])).toBe(false);
   });
 
   test('names the count on the card button', () => {

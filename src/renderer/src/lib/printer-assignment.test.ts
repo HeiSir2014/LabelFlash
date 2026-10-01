@@ -84,6 +84,15 @@ describe('optional templates', () => {
     expect(uses[0]?.optional).toBe(false);
   });
 
+  // 停用的规则打不出任何东西：它指定的面单没有打印机也不该标红。
+  test('ignores the templates of disabled rules', () => {
+    const route = { field: '快递公司', match: 'contains' as const, value: '顺丰', templateId: PLATFORM_TWO_PART.id };
+    const uses = templateUses([PLATFORM_TWO_PART], null, [
+      { id: 'custom:orders', enabled: false, templateId: PLATFORM_TWO_PART.id, templateRoutes: [route] },
+    ]);
+    expect(uses[0]?.optional).toBe(true);
+  });
+
   test('never treats a custom waybill as optional', () => {
     const copy = { ...PLATFORM_TWO_PART, id: 'custom:w1' };
     expect(templateUses([copy], null, [])[0]?.optional).toBe(false);

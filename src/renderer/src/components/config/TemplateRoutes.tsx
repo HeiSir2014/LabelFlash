@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { RULE_LIMITS } from '../../../../core/scan/rule-model';
 import {
   TEMPLATE_ROUTE_LIMITS,
   TEMPLATE_ROUTE_MATCHES,
@@ -6,7 +7,13 @@ import {
   type TemplateRouteMatch,
 } from '../../../../core/scan/rule-settings';
 import type { LabelTemplate } from '../../../../core/templates/template-model';
-import { MATCH_LABELS, newRouteDraft, type RouteDraft, routesToSave } from '../../lib/template-routes';
+import {
+  MATCH_LABELS,
+  newRouteDraft,
+  type RouteDraft,
+  routesToSave,
+  routeTemplateMissing,
+} from '../../lib/template-routes';
 
 interface TemplateRoutesProps {
   ruleName: string;
@@ -22,6 +29,7 @@ interface TemplateRoutesProps {
 export function TemplateRoutes({ ruleName, routes, templates, onSave }: TemplateRoutesProps) {
   const [drafts, setDrafts] = useState<RouteDraft[]>(() => routes.map((route) => ({ ...route })));
   const hintId = useId();
+  const templateIds = templates.map((template) => template.id);
   const change = (next: RouteDraft[]) => {
     setDrafts(next);
     onSave(routesToSave(next));
@@ -43,9 +51,9 @@ export function TemplateRoutes({ ruleName, routes, templates, onSave }: Template
             className="text-field"
             aria-label={`第 ${index + 1} 条的字段`}
             value={draft.field}
-            maxLength={20}
+            maxLength={RULE_LIMITS.fieldNameLength}
             placeholder="字段名"
-            onChange={(event) => setRow(index, { field: event.target.value.trim() })}
+            onChange={(event) => setRow(index, { field: event.target.value })}
           />
           <select
             className="select-field"
@@ -77,6 +85,9 @@ export function TemplateRoutes({ ruleName, routes, templates, onSave }: Template
             onChange={(event) => setRow(index, { templateId: event.target.value })}
           >
             <option value="">选模板…</option>
+            {routeTemplateMissing(draft, templateIds) && (
+              <option value={draft.templateId}>已删除的模板（这一条不生效）</option>
+            )}
             {templates.map((template) => (
               <option key={template.id} value={template.id}>
                 {template.name}

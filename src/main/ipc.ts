@@ -12,7 +12,7 @@ import { fieldsScan, type PrintService } from '../core/print-service';
 import type { PrinterChoice } from '../core/printing/resolve-printer';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import type { ScanResult } from '../core/scan/scan-result';
-import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
+import { DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE } from '../core/templates/builtin-templates';
 import { WAYBILL_SAMPLE_FIELDS } from '../core/templates/builtin-waybills';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
@@ -187,18 +187,26 @@ export function registerIpc(deps: IpcDeps): void {
     return renderPreview(result, printTemplateFor(result), await dpiFor(result));
   });
   handle(IpcChannel.PreviewTemplate, async (raw, template) => {
-    const result = await deps.service.preview(requireRaw(raw));
-    const fallback = printTemplateFor(result).template;
-    const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, fallback);
-    // 模板页指定了要看的模板，不是规则选的；打印机也按这个模板重新决定（示例内容本来绑的是别的模板）。
-    // 面单要的是订单系统发来的字段，扫码内容填不出来：用示例面单数据预览。
+    const content = requireRaw(raw);
+    const input = requireRecord(template, 'template');
+    // 面单设计时看的是排版：用示例面单数据预览，不识别、不加工预览内容（加工步骤可能要发 HTTP 查询，结果也用不上）。
+    // 模板页指定了要看的模板，不是规则选的；打印机也按这个模板重新决定。
+    if (input['kind'] === 'waybill') {
+      const draft = sanitizeTemplate(input, DRAFT_TEMPLATE_ID, GENERIC_TEMPLATE);
+      const printer = await deps.choosePrinter(draft);
+      const sample: PreviewResult = {
+        status: 'ok',
+        scan: waybillSampleScan(),
+        recent: null,
+        lookupFailure: null,
+        printer,
+      };
+      return renderPreview(sample, { template: draft, isBound: false }, await dpiFor(sample));
+    }
+    const result = await deps.service.preview(content);
+    const draft = sanitizeTemplate(input, DRAFT_TEMPLATE_ID, printTemplateFor(result).template);
     const printer = await deps.choosePrinter(draft);
-    const forDraft: PreviewResult =
-      draft.kind === 'waybill'
-        ? { status: 'ok', scan: waybillSampleScan(), recent: null, lookupFailure: null, printer }
-        : result.status === 'ok'
-          ? { ...result, printer }
-          : result;
+    const forDraft: PreviewResult = result.status === 'ok' ? { ...result, printer } : result;
     return renderPreview(forDraft, { template: draft, isBound: false }, await dpiFor(forDraft));
   });
   handle(IpcChannel.Print, (raw, options) =>

@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from '@playwright/test';
 import { BUILT_IN_WAYBILLS } from '../src/core/templates/builtin-waybills';
 import { estimateTextWidthEm } from '../src/core/templates/text-fit';
 import {
+  allowSlowScannerLines,
   blurActiveElement,
   callApi,
   openConfig,
@@ -79,6 +80,7 @@ test('loads the UI over app:// and previews a scanned label', async ({ electronA
 
 test('takes a burst of lines with Enters in between as one multi-line scan', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
+  await allowSlowScannerLines(page);
   const input = page.locator('.scan-bar__input');
   await input.focus();
   // 像扫码枪一样连续发出按键：码里的换行后面紧跟着下一个字符，只有最后的回车后面是停顿。

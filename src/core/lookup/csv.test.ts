@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseCsv } from './csv';
+import { parseCsv, splitCsvRecords, type TableLimits, tableFromRecords } from './csv';
 import { LOOKUP_LIMITS } from './lookup-model';
 
 function tableOf(text: string) {
@@ -46,5 +46,39 @@ describe('parseCsv', () => {
   test('limits the number of rows', () => {
     const text = `编码\n${'x\n'.repeat(LOOKUP_LIMITS.rows + 1)}`;
     expect(issueOf(text)).toContain(`最多 ${LOOKUP_LIMITS.rows} 行`);
+  });
+});
+
+describe('parseCsv options', () => {
+  test('splits tab-separated text copied from Excel', () => {
+    expect(parseCsv('编码\t备注\nCL1\t"有\t制表符"\n', { delimiter: '\t' })).toEqual({
+      ok: true,
+      table: { columns: ['编码', '备注'], rows: [['CL1', '有\t制表符']] },
+    });
+  });
+
+  test('applies the limits it is given', () => {
+    const limits: TableLimits = { rows: 1, columns: 2, columnNameLength: 10, cellLength: 5, totalChars: 8 };
+    expect(parseCsv('a,b,c\n1,2,3', { limits })).toMatchObject({ ok: false, issue: '最多 2 列，这个文件有 3 列' });
+    expect(parseCsv('a\n1\n2', { limits })).toMatchObject({ ok: false, issue: expect.stringContaining('最多 1 行') });
+    expect(parseCsv('a,b\n12345,1234', { limits })).toMatchObject({
+      ok: false,
+      issue: expect.stringContaining('表格内容太多'),
+    });
+  });
+});
+
+describe('tableFromRecords', () => {
+  test('uses the first non-blank record as the header and pads short rows', () => {
+    expect(tableFromRecords([[''], ['编码', '颜色'], ['CL1']], LOOKUP_LIMITS)).toEqual({
+      ok: true,
+      table: { columns: ['编码', '颜色'], rows: [['CL1', '']] },
+    });
+  });
+});
+
+describe('splitCsvRecords', () => {
+  test('keeps blank records and strips a leading BOM', () => {
+    expect(splitCsvRecords('﻿a,b\n\n1,2', ',')).toEqual({ ok: true, rows: [['a', 'b'], [''], ['1', '2']] });
   });
 });

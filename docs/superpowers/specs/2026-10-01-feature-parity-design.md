@@ -57,8 +57,8 @@ CanvasTemplate { kind: 'canvas', id, name, paper, printer, elements: CanvasEleme
 
 | 层 | 文件 | 作用 |
 |---|---|---|
-| core | `templates/canvas-model.ts`、`sanitize-canvas.ts`、`canvas-layout.ts` | 模型和限制；校验（不合法回到默认值，超出纸张的元素收进纸内）；展开变量、排文字（复用 `fitParagraphs`）、取整到打印点 |
-| main | `printing/canvas-html.ts`、`printing/barcode.ts`、`printing/mono-image.ts` | 画 HTML（绝对定位，mm）；`barcode.ts` 统一出条码（bwip-js `raw()` → 按打印点画 SVG；面单的 Code128 也改走它，输出不变由快照把关）；图片转黑白（`nativeImage` 解码，自己做阈值 / Floyd–Steinberg 抖动，纯函数可测） |
+| core | `templates/canvas-model.ts`、`sanitize-canvas.ts`、`canvas-layout.ts`、`templates/mono-image.ts` | 模型和限制；校验（不合法回到默认值，超出纸张的元素收进纸内）；展开变量、排文字（复用 `fitParagraphs`）、取整到打印点；`mono-image.ts` 是灰度像素（编辑器在 1b 的 sandbox 页面里解码图片文件后存进模板）→ 黑白点的纯函数（缩放、阈值 / Floyd–Steinberg 抖动、编成 1 位 BMP），不碰图片文件本身，主进程和测试都能直接用 |
+| main | `printing/canvas-html.ts`、`printing/barcode.ts` | 画 HTML（绝对定位，mm）；`barcode.ts` 统一出条码的画法和限制（bwip-js `raw()` → 按打印点画 SVG）；面单保留自己的 Code128 编码器，只共用这里的画法和限制，输出逐字不变（快照把关）；图片按 `mono-image.ts` 转黑白后编成 1 位 BMP 嵌进 HTML（不是 SVG 路径：抖动照片的黑白点交替密集，路径字符串能到几 MB，BMP 只随点数线性增长） |
 | renderer | `components/canvas-editor/*`、`lib/canvas-edit.ts` | 三栏编辑器；移动、缩放、对齐、等距、吸附、撤销重做、复制粘贴都是 `lib/` 里的纯函数，有单元测试 |
 
 `renderLabelHtml` 按 `kind` 分派到 `canvas-html`；预览、打印、PDF 共用同一份 HTML。

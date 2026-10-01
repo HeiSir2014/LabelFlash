@@ -600,7 +600,7 @@ test('lays out every built-in waybill so that no line is clipped with the system
     // 排版自己报的问题（格子装不下、条码或二维码放不下）也不能有：下面只量横向有没有被裁。
     expect({ template: template.name, warnings }).toEqual({
       template: template.name,
-      warnings: { qrOmitted: false, barcodeOmitted: false, overflowCells: 0 },
+      warnings: { qrOmitted: false, barcodeOmitted: false, overflowCells: 0, issues: [] },
     });
     // 测试自己开一个能跑脚本的隐藏窗口来量（打印窗口禁用了脚本）：用 Range 量文字本身的宽度（带小数），
     // 比这一行的可用宽度宽就是被裁掉了。失败时写出两者和字号，方便对照字宽表。

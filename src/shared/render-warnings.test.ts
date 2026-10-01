@@ -7,10 +7,16 @@ describe('renderWarningTexts', () => {
   });
 
   test('lists each problem once, with the number of truncated cells', () => {
-    expect(renderWarningTexts({ qrOmitted: true, barcodeOmitted: true, overflowCells: 2 })).toEqual([
+    expect(renderWarningTexts({ qrOmitted: true, barcodeOmitted: true, overflowCells: 2, issues: [] })).toEqual([
       '内容太长，二维码放不下，这张标签不印二维码',
       '条码放不下，或内容里有条码印不了的字（例如中文），这张不印条码',
       '有 2 格内容放不下，已截断：加大这一格或调小字号',
     ]);
+  });
+
+  test('lists the checks of a canvas template after the other warnings', () => {
+    expect(
+      renderWarningTexts({ ...NO_RENDER_WARNINGS, overflowCells: 1, issues: ['条码「商品码」：位数不对'] }),
+    ).toEqual(['有 1 格内容放不下，已截断：加大这一格或调小字号', '条码「商品码」：位数不对']);
   });
 });

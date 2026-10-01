@@ -385,7 +385,7 @@ function renderPreview(result: PreviewResult, { template, isBound }: PrintTempla
       paper: null,
     };
   }
-  const { html, qrOmitted, barcodeOmitted, overflowCells } = renderLabelHtml(
+  const { html, qrOmitted, barcodeOmitted, overflowCells, issues } = renderLabelHtml(
     { scan: result.scan, template, printedAt: Date.now() },
     dpi,
   );
@@ -395,7 +395,7 @@ function renderPreview(result: PreviewResult, { template, isBound }: PrintTempla
     templateId: template.id,
     templateName: template.name,
     isTemplateBound: isBound,
-    warnings: { qrOmitted, barcodeOmitted, overflowCells },
+    warnings: { qrOmitted, barcodeOmitted, overflowCells, issues },
     paper: template.paper,
   };
 }

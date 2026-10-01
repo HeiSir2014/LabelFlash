@@ -93,6 +93,7 @@ export function renderWaybillHtml(
     overflowCells: layout.overflowCells + omitted.cutNumbers,
     barcodeOmitted: omitted.barcode,
     qrOmitted: omitted.qr,
+    issues: [],
   };
 }
 

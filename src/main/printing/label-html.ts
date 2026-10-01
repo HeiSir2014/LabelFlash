@@ -55,7 +55,7 @@ export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI
   if (template.kind === 'waybill') {
     return renderWaybillHtml({ ...job, template }, dpi);
   }
-  return { ...renderQrLabel({ ...job, template }, dpi), barcodeOmitted: false, overflowCells: 0 };
+  return { ...renderQrLabel({ ...job, template }, dpi), barcodeOmitted: false, overflowCells: 0, issues: [] };
 }
 
 function renderQrLabel(

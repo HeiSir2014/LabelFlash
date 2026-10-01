@@ -9,9 +9,16 @@ export interface RenderWarnings {
   barcodeOmitted: boolean;
   /** 面单：缩到最小字号仍放不下、被截断的格子数。 */
   overflowCells: number;
+  /** 自由设计模板的打印前检查：每条写清楚是哪个元素、怎么了。标签和面单是空的。 */
+  issues: readonly string[];
 }
 
-export const NO_RENDER_WARNINGS: RenderWarnings = { qrOmitted: false, barcodeOmitted: false, overflowCells: 0 };
+export const NO_RENDER_WARNINGS: RenderWarnings = {
+  qrOmitted: false,
+  barcodeOmitted: false,
+  overflowCells: 0,
+  issues: [],
+};
 
 /** 给操作员看的提示，每条说清楚少了什么、怎么办。 */
 export function renderWarningTexts(warnings: RenderWarnings): string[] {
@@ -25,5 +32,6 @@ export function renderWarningTexts(warnings: RenderWarnings): string[] {
   if (warnings.overflowCells > 0) {
     texts.push(`有 ${warnings.overflowCells} 格内容放不下，已截断：加大这一格或调小字号`);
   }
+  texts.push(...warnings.issues);
   return texts;
 }

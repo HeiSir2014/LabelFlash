@@ -52,6 +52,10 @@ interface FittedRow extends FieldRow {
  */
 export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI): RenderedLabel {
   const { template } = job;
+  if (template.kind === 'canvas') {
+    // Task 8 换成 renderCanvasHtml。
+    return { html: '', qrOmitted: false, barcodeOmitted: false, overflowCells: 0, issues: [] };
+  }
   if (template.kind === 'waybill') {
     return renderWaybillHtml({ ...job, template }, dpi);
   }

@@ -224,7 +224,7 @@ function EditView({
             printers={printers}
             paperPrinters={paperPrinters}
           />
-        ) : (
+        ) : draft.kind === 'waybill' ? (
           <WaybillEditor
             key={draft.id}
             draft={draft}
@@ -232,7 +232,8 @@ function EditView({
             printers={printers}
             paperPrinters={paperPrinters}
           />
-        )}
+        ) : // 自由设计模板的编辑器在 1b（Task 11）加入，这里先不渲染表单。
+        null}
       </div>
       <section className="template-editing__preview" aria-label="模板预览">
         <PreviewSource template={draft} sample={sample} />

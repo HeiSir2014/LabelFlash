@@ -13,6 +13,10 @@ const FIXED_VARIABLE_NAMES: ReadonlySet<string> = new Set(NOTE_VARIABLES.map((va
 
 /** 给第三方看的「这个模板要哪些字段」；隐藏的二维码、备注里的变量不算。 */
 export function templateFields(template: LabelTemplate): TemplateFields {
+  if (template.kind === 'canvas') {
+    // Task 9 换成真正列出自由设计模板用到的变量。
+    return { mode: 'PICKED', names: [] };
+  }
   if (template.kind === 'waybill') {
     return { mode: 'PICKED', names: withoutFixed(waybillVariables(template)) };
   }

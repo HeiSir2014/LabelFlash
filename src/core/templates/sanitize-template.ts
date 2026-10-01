@@ -3,6 +3,7 @@ import { sanitizePaper } from '../../shared/paper-sizes';
 import { isValidFieldName } from '../scan/rule-model';
 import { GENERIC_TEMPLATE } from './builtin-templates';
 import { PLATFORM_TWO_PART } from './builtin-waybills';
+import { sanitizeCanvasElements } from './sanitize-canvas';
 import { asLoose, bool, clamp, type Loose, pick, sanitizeText } from './sanitize-primitives';
 import { sanitizeWaybillLayout } from './sanitize-waybill';
 import {
@@ -39,7 +40,7 @@ export function sanitizeTemplate(
   labelFallback: QrLabelTemplate = GENERIC_TEMPLATE,
 ): LabelTemplate {
   const input = asLoose(value);
-  const kind = input['kind'] === 'waybill' ? 'waybill' : 'label';
+  const kind = pick(input['kind'], ['label', 'waybill', 'canvas'] as const, 'label');
   // 旧模板（1.0.x）没有纸张字段：按 60×40 读出。
   const paper = sanitizePaper(input['paper'], fallback.paper ?? DEFAULT_PAPER);
   const base = {
@@ -52,6 +53,9 @@ export function sanitizeTemplate(
   if (kind === 'waybill') {
     const layoutFallback = fallback.kind === 'waybill' ? fallback : PLATFORM_TWO_PART;
     return { kind, ...base, ...sanitizeWaybillLayout(input, layoutFallback) };
+  }
+  if (kind === 'canvas') {
+    return { kind, ...base, elements: sanitizeCanvasElements(input['elements'], paper) };
   }
   return sanitizeLabel(input, base, fallback.kind === 'label' ? fallback : labelFallback);
 }

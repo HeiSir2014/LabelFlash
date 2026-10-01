@@ -1,4 +1,5 @@
 import type { PaperSize } from '../../shared/paper-sizes';
+import type { CanvasTemplate } from './canvas-model';
 import type { WaybillTemplate } from './waybill-model';
 
 /** 标签模板：结构化数据（不是任意 HTML），可校验、可持久化，打印和预览共用。纸张尺寸由模板自己决定。 */
@@ -98,8 +99,8 @@ export interface QrLabelTemplate extends TemplateBase {
   note: NoteConfig;
 }
 
-/** label = 标签模板；waybill = 快递面单（格子版式，见 waybill-model.ts）。数据库里的旧模板没有 kind，按 label 读。 */
-export type LabelTemplate = QrLabelTemplate | WaybillTemplate;
+/** label = 标签模板；waybill = 快递面单（格子版式）；canvas = 自由设计（元素版式）。数据库里的旧模板没有 kind，按 label 读。 */
+export type LabelTemplate = QrLabelTemplate | WaybillTemplate | CanvasTemplate;
 export type TemplateKind = LabelTemplate['kind'];
 
 export const TEMPLATE_LIMITS = {
@@ -151,7 +152,8 @@ export function fullTextWidthMm(template: QrLabelTemplate): number {
  * 面单模板只换纸张：版面的最后一行（商家自定义区）在排版时吸收高度差。
  */
 export function withPaper<T extends LabelTemplate>(template: T, paper: PaperSize): T {
-  if (template.kind === 'waybill') {
+  // 面单：版面的最后一行（商家自定义区）在排版时吸收高度差；自由设计：超出新纸张的元素排版时收进纸内。
+  if (template.kind !== 'label') {
     return { ...template, paper: { ...paper } };
   }
   return withLabelPaper(template, paper) as T;

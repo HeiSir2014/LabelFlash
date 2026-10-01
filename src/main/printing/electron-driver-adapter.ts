@@ -1,6 +1,7 @@
 import type { WebContents } from 'electron';
 import { PrintError } from '../../core/errors';
 import type { Clock, LabelJob, PrinterInfo } from '../../core/types';
+import { renderWarningTexts } from '../../shared/render-warnings';
 import { renderLabelHtml } from './label-html';
 import { withLabelWindow } from './label-window';
 import { pageSizeMicrons } from './page-size';
@@ -50,7 +51,14 @@ export class ElectronDriverAdapter implements PrinterDriver {
       });
     }
     // 二维码按这台打印机的分辨率对齐打印点；读不到（或 1 秒内没读到）按 203dpi。
-    const { html } = renderLabelHtml(job, await this.profiles.dpiOf(printerName));
+    const { html, ...warnings } = renderLabelHtml(job, await this.profiles.dpiOf(printerName));
+    // 打印照常进行，但少印的部分（条码、二维码、截断的格子）要留在日志里：本机接口来的面单没人看预览。
+    const texts = renderWarningTexts(warnings);
+    if (texts.length > 0) {
+      console.warn(
+        `[ElectronDriverAdapter] "${job.scan.raw}" on ${printerName} with template "${job.template.name}": ${texts.join('；')}`,
+      );
+    }
     // 超时（PrintQueue 触发 abort）时立刻销毁打印窗口，避免隐藏窗口堆积。
     await withLabelWindow(html, signal, (contents) =>
       printSilently(contents, printerName, pageSizeMicrons(job.template.paper)),

@@ -167,8 +167,9 @@ function dataSymbols(text: string): number[] {
   };
   const leading = digitRun(0);
   let inC = leading >= MIN_DIGITS_AT_EDGE || (leading === text.length && leading % 2 === 0);
-  // 开头的数字是奇数位时，先在 B 子集印一位，剩下的偶数位再切到 C（只有开头整段都是数字时直接从 C 开始）。
-  if (inC && leading % 2 === 1) {
+  // 整串都是奇数位数字（例如 15 位运单号）：先在 B 子集印一位，剩下的偶数位用 C。
+  // 后面还有字母时从 C 开始：多出的一位留到切回 B 之后和字母一起印，比先印这一位少一个符号。
+  if (inC && leading % 2 === 1 && leading === text.length) {
     inC = false;
   }
   const symbols = [inC ? START_C : START_B];

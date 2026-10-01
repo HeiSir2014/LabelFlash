@@ -3,6 +3,7 @@ import { CODE128_PATTERNS, encodeCode128 } from './code128';
 
 const START_B = 104;
 const START_C = 105;
+const SWITCH_TO_B = 100;
 const SWITCH_TO_C = 99;
 const STOP = 106;
 
@@ -52,6 +53,22 @@ describe('encodeCode128', () => {
   test('switches to set C after a letter prefix', () => {
     const code = encodeCode128('DPK123456789012');
     expect(code?.symbols.slice(0, 5)).toEqual([START_B, 36, 48, 43, SWITCH_TO_C]);
+  });
+
+  test('switches back to set B for letters after a run of digits', () => {
+    const code = encodeCode128('1234AB');
+    expect(code?.symbols.slice(0, 6)).toEqual([START_C, 12, 34, SWITCH_TO_B, 33, 34]);
+  });
+
+  // 开头奇数位数字、后面跟字母：先在 C 子集两位一组，多出的一位和字母一起用 B 子集，比整串用 B 少一个符号。
+  test('starts in set C for an odd run of leading digits followed by letters', () => {
+    const code = encodeCode128('12345AB');
+    expect(code?.symbols.slice(0, 7)).toEqual([START_C, 12, 34, SWITCH_TO_B, 21, 33, 34]);
+  });
+
+  test('switches to set C for a run of digits at the end', () => {
+    const code = encodeCode128('AB1234');
+    expect(code?.symbols.slice(0, 6)).toEqual([START_B, 33, 34, SWITCH_TO_C, 12, 34]);
   });
 
   test('round-trips through the pattern table and counts modules', () => {

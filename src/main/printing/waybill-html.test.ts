@@ -77,6 +77,42 @@ describe('renderWaybillHtml', () => {
     expect(render(tiny).barcodeOmitted).toBe(true);
   });
 
+  test('omits a barcode whose bars would be too short to scan', () => {
+    const short = single(
+      { content: { kind: 'barcode', value: '{运单号}', showText: false, textSizeMm: 3, vertical: false } },
+      4,
+    );
+    expect(render(short).barcodeOmitted).toBe(true);
+  });
+
+  // 模块取整数个点还不够：条码在格子里居中时左边空出奇数个点，每条边就落在半个点上，打出来宽窄不一。
+  test('starts the bars on a whole printer dot with a quiet zone of ten modules on each side', () => {
+    const pattern =
+      /width:([\d.]+)mm;height:[\d.]+mm"><div class="code code--across" style="padding-left:([\d.]+)mm"><div class="code__bars"><svg [^>]*viewBox="0 0 (\d+) 1"[^>]*style="width:([\d.]+)mm/g;
+    for (const dpi of [203, 300]) {
+      const dot = 25.4 / dpi;
+      for (const template of BUILT_IN_WAYBILLS) {
+        const matches = [...render(template, WAYBILL_SAMPLE_FIELDS, dpi).html.matchAll(pattern)];
+        expect(matches.length).toBeGreaterThan(0);
+        for (const [, cellWidth, offset, modules, barsWidth] of matches) {
+          const module = Number(barsWidth) / Number(modules);
+          const quietZone = 10 * module - 0.001;
+          expect(Math.abs(Number(offset) / dot - Math.round(Number(offset) / dot))).toBeLessThan(0.01);
+          expect(Number(offset)).toBeGreaterThanOrEqual(quietZone);
+          expect(Number(cellWidth) - Number(offset) - Number(barsWidth)).toBeGreaterThanOrEqual(quietZone);
+        }
+      }
+    }
+  });
+
+  test('counts a number under the barcode that is wider than its cell as cut off', () => {
+    const big = single(
+      { content: { kind: 'barcode', value: '{运单号}', showText: true, textSizeMm: 14, vertical: false } },
+      40,
+    );
+    expect(render(big).overflowCells).toBe(1);
+  });
+
   test('turns a vertical barcode on its side without the number', () => {
     const { html } = render(PLATFORM_ONE_PART);
     expect(html).toMatch(/viewBox="0 0 1 \d+"/);

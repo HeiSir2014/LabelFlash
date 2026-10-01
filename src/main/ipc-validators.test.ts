@@ -85,7 +85,7 @@ describe('ipc validators', () => {
   });
 
   test('requireTemplateId accepts built-in and custom ids only', () => {
-    expect(requireTemplateId('builtin:standard')).toBe('builtin:standard');
+    expect(requireTemplateId('builtin:generic')).toBe('builtin:generic');
     expect(requireTemplateId('custom:3f2c9a1e-0b4d-4c55-9b0e-7d8f1a2b3c4d')).toBe(
       'custom:3f2c9a1e-0b4d-4c55-9b0e-7d8f1a2b3c4d',
     );

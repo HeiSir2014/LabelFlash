@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { STANDARD_TEMPLATE } from './builtin-templates';
+import { GENERIC_TEMPLATE } from './builtin-templates';
 import { PLATFORM_TWO_PART } from './builtin-waybills';
 import { sanitizeTemplate } from './sanitize-template';
 import { WAYBILL_LIMITS, type WaybillTemplate, walkNodes } from './waybill-model';
@@ -18,11 +18,11 @@ function leaf(text: unknown) {
 
 describe('sanitizeTemplate for waybills', () => {
   test('reads a template without kind as a label template', () => {
-    expect(sanitizeTemplate({ name: '旧模板' }, 'custom:old', STANDARD_TEMPLATE).kind).toBe('label');
+    expect(sanitizeTemplate({ name: '旧模板' }, 'custom:old', GENERIC_TEMPLATE).kind).toBe('label');
   });
 
   test('keeps the kind of the input even when the fallback is the other kind', () => {
-    expect(sanitizeTemplate({ kind: 'waybill', name: '面单' }, 'custom:w', STANDARD_TEMPLATE).kind).toBe('waybill');
+    expect(sanitizeTemplate({ kind: 'waybill', name: '面单' }, 'custom:w', GENERIC_TEMPLATE).kind).toBe('waybill');
     expect(sanitizeTemplate({ kind: 'label', name: '标签' }, 'custom:l', PLATFORM_TWO_PART).kind).toBe('label');
   });
 

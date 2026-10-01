@@ -1,7 +1,7 @@
 import { MAX_DEDUP_WINDOW_MS } from '../core/dedup-guard';
 import { sanitizeWebhooks, type WebhookEndpoint } from '../core/notify/webhook-model';
 import { defaultRuleSettings, type RuleSetting, sanitizeRuleSettings } from '../core/scan/rule-settings';
-import { DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
+import { currentTemplateId, DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { DEFAULT_NOTE_OVERRIDE, type NoteOverride } from '../core/templates/note-override';
 import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
 import { DEFAULT_PAPER } from './label-paper';
@@ -216,8 +216,11 @@ function sanitizePrinterName(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 && value.length <= MAX_PRINTER_NAME_LENGTH ? value : null;
 }
 
+/** 去掉的「样衣」模板换成版式相同的通用模板（见 currentTemplateId）。 */
 function sanitizeTemplateId(value: unknown): string {
-  return typeof value === 'string' && TEMPLATE_ID_PATTERN.test(value) ? value : DEFAULT_SETTINGS.activeTemplateId;
+  return typeof value === 'string' && TEMPLATE_ID_PATTERN.test(value)
+    ? currentTemplateId(value)
+    : DEFAULT_SETTINGS.activeTemplateId;
 }
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: 专门用来去掉控制字符（保留换行）

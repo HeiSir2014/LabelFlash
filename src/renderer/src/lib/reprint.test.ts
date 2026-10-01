@@ -22,7 +22,7 @@ describe('reprintMode', () => {
 
   test('re-recognises scans, as before', () => {
     expect(
-      reprintMode({ ...BASE, templateId: 'builtin:standard', fields: [{ name: 'a', value: 'b' }] }, allTemplates),
+      reprintMode({ ...BASE, templateId: 'builtin:generic', fields: [{ name: 'a', value: 'b' }] }, allTemplates),
     ).toBe('rescan');
   });
 

@@ -9,7 +9,7 @@ const PRINTERS: FakePrinterSpec[] = [
   { name: '面单机B', paper: { widthMm: 100, heightMm: 180, dpi: 203 }, readiness: { ready: true } },
   { name: '面单机C', paper: { widthMm: 100, heightMm: 180, dpi: 203 }, readiness: { ready: true } },
 ];
-/** 横杠三段：默认绑定「样衣标准」（60×40）。 */
+/** 横杠三段：用当前模板「通用」（60×40）。 */
 const LABEL_CODE = 'CL5640-TK-图片色-XL';
 /** 只有「整段内容」规则能识别：下面把这条规则绑到 100×180 的模板上。 */
 const WAYBILL_CODE = 'hello';
@@ -57,7 +57,7 @@ test('prints each paper on the printer assigned to it and records printer and pa
   await scan(page, WAYBILL_CODE);
   await expect.poll(async () => (await fakePrints(app)).length).toBe(2);
   expect(await fakePrints(app)).toEqual([
-    { printerName: '标签机A', raw: LABEL_CODE, paper: '60x40', templateId: 'builtin:standard' },
+    { printerName: '标签机A', raw: LABEL_CODE, paper: '60x40', templateId: 'builtin:generic' },
     { printerName: '面单机B', raw: WAYBILL_CODE, paper: '100x180', templateId: waybillId },
   ]);
   const { jobs } = await callApi(page, 'listJobs', { limit: 10 });

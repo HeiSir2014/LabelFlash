@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../scan/scan-result';
 import { InMemoryTemplateRepository } from '../testing/in-memory-repositories';
-import { labelOf } from '../testing/templates';
-import { BUILT_IN_TEMPLATES, DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from './builtin-templates';
+import { labelOf, PICK_TEMPLATE } from '../testing/templates';
+import { BUILT_IN_TEMPLATES, currentTemplateId, DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE } from './builtin-templates';
 import { expandNoteText } from './note-text';
 import { sanitizeTemplate } from './sanitize-template';
 import { TemplateCatalog, TemplateError } from './template-catalog';
@@ -53,19 +53,53 @@ describe('built-in templates', () => {
     expect(ids.every((id) => TEMPLATE_ID_PATTERN.test(id))).toBe(true);
   });
 
-  test('default to the generic all-fields template; the garment ones pick 编码 / 颜色 / 尺码 / 货架号', () => {
+  test('default to the generic template', () => {
     expect(DEFAULT_TEMPLATE_ID).toBe(GENERIC_TEMPLATE.id);
-    expect(GENERIC_TEMPLATE.fieldsArea.mode).toBe('all');
-    expect(STANDARD_TEMPLATE.fieldsArea.mode).toBe('pick');
-    expect(STANDARD_TEMPLATE.fieldsArea.slots.map((slot) => slot.field)).toEqual(['编码', '颜色', '尺码', '货架号']);
   });
 
-  // 内置规则都会从手机拍的标签上读货架号：每个挑字段的内置模板都要显示它（没读到时这一行不显示）。
-  test('every built-in template that picks fields shows the shelf number', () => {
-    for (const template of BUILT_IN_TEMPLATES.flatMap((item) =>
-      item.kind === 'label' && item.fieldsArea.mode === 'pick' ? [item] : [],
-    )) {
-      expect(template.fieldsArea.slots.map((slot) => slot.field)).toContain('货架号');
+  // 「样衣」几套和「通用」打出来几乎一样，1.3.0 并成一组：都叫「通用」，都列出全部字段。
+  // 内置规则都会从手机拍的标签上读货架号，全部字段里就有它（没读到时这一行不显示）。
+  test('every built-in label template is a generic one that lists every field', () => {
+    const labels = BUILT_IN_TEMPLATES.flatMap((item) => (item.kind === 'label' ? [item] : []));
+    expect(labels.map((template) => template.name)).toEqual([
+      '通用（二维码在左）',
+      '通用（二维码在右）',
+      '通用（字段名在上）',
+      '通用 · 大字（无二维码）',
+      '通用 · 大二维码 + 日期备注',
+      '通用 · 小二维码 + 底部备注',
+    ]);
+    expect(labels.every((template) => template.fieldsArea.mode === 'all')).toBe(true);
+  });
+
+  // 复制一个内置模板、切到「指定字段」，就是原来样衣模板的字段行，不用一行一行加。
+  test('come with the garment fields ready for the pick mode', () => {
+    expect(GENERIC_TEMPLATE.fieldsArea.slots.map((slot) => `${slot.prefix}${slot.field}`)).toEqual([
+      '编码：编码',
+      '颜色：颜色',
+      '尺码：尺码',
+      '货架号：货架号',
+    ]);
+  });
+});
+
+describe('currentTemplateId', () => {
+  test('moves a retired garment template to the generic one with the same layout', () => {
+    expect(currentTemplateId('builtin:standard')).toBe('builtin:generic');
+    expect(currentTemplateId('builtin:qr-right')).toBe('builtin:generic-qr-right');
+    expect(currentTemplateId('builtin:plain')).toBe('builtin:generic');
+  });
+
+  test('keeps every other id', () => {
+    expect(currentTemplateId('builtin:big-qr')).toBe('builtin:big-qr');
+    expect(currentTemplateId('custom:standard')).toBe('custom:standard');
+  });
+
+  test('only ever points at a template that exists', () => {
+    const ids = new Set(BUILT_IN_TEMPLATES.map((template) => template.id));
+    for (const retired of ['builtin:standard', 'builtin:qr-right', 'builtin:plain']) {
+      expect(ids.has(retired)).toBe(false);
+      expect(ids.has(currentTemplateId(retired))).toBe(true);
     }
   });
 });
@@ -75,12 +109,12 @@ describe('sanitizeTemplate', () => {
     const result = sanitizeLabel(
       { id: 'evil', name: '我的模板', layout: 'nope', qr: { sizeMm: 'x' } },
       'custom:1',
-      STANDARD_TEMPLATE,
+      PICK_TEMPLATE,
     );
     expect(result.id).toBe('custom:1');
     expect(result.name).toBe('我的模板');
-    expect(result.layout).toBe(STANDARD_TEMPLATE.layout);
-    expect(result.qr.sizeMm).toBe(STANDARD_TEMPLATE.qr.sizeMm);
+    expect(result.layout).toBe(PICK_TEMPLATE.layout);
+    expect(result.qr.sizeMm).toBe(PICK_TEMPLATE.qr.sizeMm);
   });
 
   test('clamps padding, QR and font sizes to the allowed ranges', () => {
@@ -91,10 +125,10 @@ describe('sanitizeTemplate', () => {
         fieldsArea: { all: { fontSizeMm: 99 }, slots: [{ field: '编码', fontSizeMm: 0.1 }] },
       },
       'custom:1',
-      STANDARD_TEMPLATE,
+      PICK_TEMPLATE,
     );
     expect(result.paddingMm).toBe(TEMPLATE_LIMITS.paddingMm.max);
-    expect(result.qr.sizeMm).toBe(maxQrSizeMm(STANDARD_TEMPLATE.paper, TEMPLATE_LIMITS.paddingMm.max));
+    expect(result.qr.sizeMm).toBe(maxQrSizeMm(PICK_TEMPLATE.paper, TEMPLATE_LIMITS.paddingMm.max));
     expect(result.fieldsArea.all.fontSizeMm).toBe(TEMPLATE_LIMITS.fontSizeMm.max);
     expect(result.fieldsArea.slots[0]).toEqual({
       field: '编码',
@@ -112,7 +146,7 @@ describe('sanitizeTemplate', () => {
       { field: '颜色' },
       ...Array.from({ length: 10 }, (_, index) => ({ field: `字段${index}` })),
     ];
-    const result = sanitizeLabel({ fieldsArea: { mode: 'pick', slots } }, 'custom:1', STANDARD_TEMPLATE);
+    const result = sanitizeLabel({ fieldsArea: { mode: 'pick', slots } }, 'custom:1', PICK_TEMPLATE);
     expect(result.fieldsArea.slots).toHaveLength(TEMPLATE_LIMITS.slots);
     expect(result.fieldsArea.slots.slice(0, 2).map((slot) => slot.field)).toEqual(['颜色', '字段0']);
   });
@@ -130,14 +164,13 @@ describe('sanitizeTemplate', () => {
   });
 
   test('keeps the existing picked fields when the input is not a list', () => {
-    const result = sanitizeLabel({ fieldsArea: { mode: 'all', slots: 'x' } }, 'custom:1', STANDARD_TEMPLATE);
+    const result = sanitizeLabel({ fieldsArea: { mode: 'all', slots: 'x' } }, 'custom:1', PICK_TEMPLATE);
     expect(result.fieldsArea.mode).toBe('all');
-    expect(result.fieldsArea.slots).toEqual(STANDARD_TEMPLATE.fieldsArea.slots);
+    expect(result.fieldsArea.slots).toEqual(PICK_TEMPLATE.fieldsArea.slots);
   });
 
   test('accepts every QR content source and rejects a malformed one', () => {
-    const sanitizeQr = (content: unknown) =>
-      sanitizeLabel({ qr: { content } }, 'custom:1', STANDARD_TEMPLATE).qr.content;
+    const sanitizeQr = (content: unknown) => sanitizeLabel({ qr: { content } }, 'custom:1', PICK_TEMPLATE).qr.content;
     expect(sanitizeQr({ kind: 'field', field: '订单号' })).toEqual({ kind: 'field', field: '订单号' });
     expect(sanitizeQr({ kind: 'text', text: 'https://example.com/{订单号}' })).toEqual({
       kind: 'text',
@@ -148,18 +181,18 @@ describe('sanitizeTemplate', () => {
   });
 
   test('strips control characters but keeps line breaks in notes', () => {
-    const result = sanitizeLabel({ note: { text: '第一行\n第二\u0007行' } }, 'custom:1', STANDARD_TEMPLATE);
+    const result = sanitizeLabel({ note: { text: '第一行\n第二\u0007行' } }, 'custom:1', PICK_TEMPLATE);
     expect(result.note.text).toBe('第一行\n第二行');
   });
 
   test('truncates long text', () => {
-    const result = sanitizeLabel({ note: { text: 'x'.repeat(1_000) } }, 'custom:1', STANDARD_TEMPLATE);
+    const result = sanitizeLabel({ note: { text: 'x'.repeat(1_000) } }, 'custom:1', PICK_TEMPLATE);
     expect(result.note.text).toHaveLength(TEMPLATE_LIMITS.noteLength);
   });
 
   test('keeps the fallback name when the new one is blank', () => {
-    expect(sanitizeLabel({ name: '' }, 'custom:1', STANDARD_TEMPLATE).name).toBe(STANDARD_TEMPLATE.name);
-    expect(sanitizeLabel({ name: '   ' }, 'custom:1', STANDARD_TEMPLATE).name).toBe(STANDARD_TEMPLATE.name);
+    expect(sanitizeLabel({ name: '' }, 'custom:1', PICK_TEMPLATE).name).toBe(PICK_TEMPLATE.name);
+    expect(sanitizeLabel({ name: '   ' }, 'custom:1', PICK_TEMPLATE).name).toBe(PICK_TEMPLATE.name);
   });
 });
 
@@ -189,25 +222,23 @@ describe('expandNoteText', () => {
 describe('TemplateCatalog', () => {
   test('lists built-ins before custom templates', () => {
     const { catalog } = createCatalog();
-    const copy = catalog.duplicate(STANDARD_TEMPLATE.id);
+    const copy = catalog.duplicate(GENERIC_TEMPLATE.id);
     expect(catalog.list().map((t) => t.id)).toEqual([...BUILT_IN_TEMPLATES.map((t) => t.id), copy.id]);
   });
 
   test('duplicate creates an editable custom copy', () => {
     const { catalog, repository } = createCatalog();
-    const copy = labelOf(catalog.duplicate(STANDARD_TEMPLATE.id));
+    const copy = labelOf(catalog.duplicate(GENERIC_TEMPLATE.id));
     expect(copy.id).toBe(`${CUSTOM_TEMPLATE_PREFIX}t1`);
-    expect(copy.name).toBe(`${STANDARD_TEMPLATE.name} 副本`);
+    expect(copy.name).toBe(`${GENERIC_TEMPLATE.name} 副本`);
     expect(repository.saved.get(copy.id)).toEqual(copy);
-    const [firstSlot] = copy.fieldsArea.slots;
-    if (!firstSlot) throw new Error('expected picked fields');
-    firstSlot.prefix = 'changed';
-    expect(STANDARD_TEMPLATE.fieldsArea.slots[0]?.prefix).toBe('编码：');
+    copy.fieldsArea.all.separator = 'changed';
+    expect(GENERIC_TEMPLATE.fieldsArea.all.separator).toBe('：');
   });
 
   test('save sanitizes and persists a custom template', () => {
     const { catalog } = createCatalog();
-    const copy = labelOf(catalog.duplicate(STANDARD_TEMPLATE.id));
+    const copy = labelOf(catalog.duplicate(GENERIC_TEMPLATE.id));
     const saved = labelOf(catalog.save(copy.id, { ...copy, note: { ...copy.note, visible: true, text: '样衣间' } }));
     expect(saved.note).toMatchObject({ visible: true, text: '样衣间' });
     expect(catalog.get(copy.id)).toEqual(saved);
@@ -215,8 +246,8 @@ describe('TemplateCatalog', () => {
 
   test('built-in templates are read-only', () => {
     const { catalog } = createCatalog();
-    expect(() => catalog.save(STANDARD_TEMPLATE.id, STANDARD_TEMPLATE)).toThrow(TemplateError);
-    expect(() => catalog.remove(STANDARD_TEMPLATE.id)).toThrow(TemplateError);
+    expect(() => catalog.save(GENERIC_TEMPLATE.id, GENERIC_TEMPLATE)).toThrow(TemplateError);
+    expect(() => catalog.remove(GENERIC_TEMPLATE.id)).toThrow(TemplateError);
   });
 
   test('saving or removing an unknown template fails', () => {
@@ -232,7 +263,7 @@ describe('TemplateCatalog', () => {
 });
 
 describe('template paper and printer', () => {
-  const fallback = STANDARD_TEMPLATE;
+  const fallback = PICK_TEMPLATE;
 
   test('an old template without paper is 60x40 with no printer of its own', () => {
     const { paper: _paper, printer: _printer, ...old } = fallback;

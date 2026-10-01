@@ -6,7 +6,7 @@ function job(n: number, overrides: Partial<PrintJob> = {}): PrintJob {
   return {
     id: `pj-${n}`,
     caller: 'key:k1',
-    templateId: 'builtin:standard',
+    templateId: 'builtin:generic',
     fields: [{ name: '订单号', value: `A00${n}` }],
     content: null,
     copies: 1,

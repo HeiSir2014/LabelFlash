@@ -23,11 +23,12 @@ const CUSTOM: ScanRule = {
 };
 
 describe('defaultRuleSettings', () => {
-  test('enables every built-in rule in order and binds the garment rule to the garment template', () => {
+  // 内置模板都是「通用」，样衣码用哪个由当前模板决定，不再默认绑定。
+  test('enables every built-in rule in order with the active template and no routes', () => {
     const settings = defaultRuleSettings();
     expect(settings.map((setting) => setting.id)).toEqual(BUILT_IN_IDS);
     expect(settings.every((setting) => setting.enabled)).toBe(true);
-    expect(templateIdFor(settings, scanOf(DASH_THREE_RULE_ID))).toBe('builtin:standard');
+    expect(templateIdFor(settings, scanOf(DASH_THREE_RULE_ID))).toBeNull();
     expect(templateIdFor(settings, scanOf(RAW_RULE_ID))).toBeNull();
     expect(settings.every((setting) => setting.templateRoutes.length === 0)).toBe(true);
   });
@@ -125,6 +126,20 @@ describe('sanitizeRuleSettings', () => {
 
   test('falls back to the defaults for anything that is not a list', () => {
     expect(sanitizeRuleSettings('x')).toEqual(defaultRuleSettings());
+  });
+
+  // 1.2.x 的横杠三段默认绑定「样衣标准」：升级后换成版式相同的通用模板，照样打出编码、颜色、尺码。
+  test('moves bindings and routes from a retired garment template to its generic replacement', () => {
+    const [setting] = sanitizeRuleSettings([
+      {
+        id: DASH_THREE_RULE_ID,
+        enabled: true,
+        templateId: 'builtin:standard',
+        templateRoutes: [{ field: '尺码', match: 'equals', value: 'XL', templateId: 'builtin:qr-right' }],
+      },
+    ]);
+    expect(setting?.templateId).toBe('builtin:generic');
+    expect(setting?.templateRoutes[0]?.templateId).toBe('builtin:generic-qr-right');
   });
 });
 

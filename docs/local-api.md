@@ -69,16 +69,17 @@ CDL-云签速印在电脑上提供一个 HTTP 接口。网页系统、客户端�
 
 ```json
 {
-  "name": "templates/builtin-standard",
-  "displayName": "样衣标准（二维码在左）",
+  "name": "templates/builtin-generic",
+  "displayName": "通用（二维码在左）",
   "paper": { "widthMm": 60, "heightMm": 40 },
   "printer": null,
-  "fieldsMode": "PICKED",
-  "fieldNames": ["编码", "颜色", "尺码"]
+  "fieldsMode": "ALL",
+  "fieldNames": []
 }
 ```
 
-- 模板在电脑上的配置中心「模板」页设计。接口里用 `name`（冒号换成了横线：程序里的 `builtin:standard` 就是 `builtin-standard`）。
+- 模板在电脑上的配置中心「模板」页设计。接口里用 `name`（冒号换成了横线：程序里的 `builtin:generic` 就是 `builtin-generic`）。
+- 1.3.0 起内置标签模板只有「通用」一组。原来的样衣模板名照样能用：`builtin-standard`、`builtin-plain` 按 `builtin-generic` 打，`builtin-qr-right` 按 `builtin-generic-qr-right` 打。
 - `fieldsMode` 为 `ALL` 时，标签按你给的顺序显示全部字段；`PICKED` 时只显示模板指定的字段。`fieldNames` 是模板点名要的字段（指定的字段、二维码取的字段、备注里的 `{字段名}`），照着传即可。
 
 ### 打印任务
@@ -87,7 +88,7 @@ CDL-云签速印在电脑上提供一个 HTTP 接口。网页系统、客户端�
 
 ```json
 {
-  "template": "templates/builtin-standard",
+  "template": "templates/builtin-generic",
   "fields": [
     { "name": "编码", "value": "CL5640-TK" },
     { "name": "颜色", "value": "图片色" },
@@ -114,7 +115,7 @@ CDL-云签速印在电脑上提供一个 HTTP 接口。网页系统、客户端�
 ```json
 {
   "name": "printJobs/3f1c0b52-…",
-  "template": "templates/builtin-standard",
+  "template": "templates/builtin-generic",
   "fields": [ … ],
   "content": "CL5640-TK-图片色-XL",
   "copies": 1,
@@ -306,7 +307,7 @@ async function print(fields, content) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      template: 'templates/builtin-standard',
+      template: 'templates/builtin-generic',
       fields,
       content,
       requestId: newRequestId(),
@@ -338,7 +339,7 @@ async function waitSent(name) {
 
 // 只排版：拿到 PDF
 async function renderPdf(fields) {
-  const response = await fetch(`${BASE}/v1/templates/builtin-standard:render`, {
+  const response = await fetch(`${BASE}/v1/templates/builtin-generic:render`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ fields }),
@@ -365,7 +366,7 @@ requests.get(f"{BASE}/v1/service", timeout=3).raise_for_status()
 batch = {
     "requests": [
         {
-            "template": "templates/builtin-standard",
+            "template": "templates/builtin-generic",
             "fields": [{"name": "编码", "value": f"CL{n:04d}"}, {"name": "尺码", "value": "M"}],
             "requestId": str(uuid.uuid4()),
         }
@@ -395,7 +396,7 @@ while pending:
                 print(job["name"], job["failure"])
 
 pdf = requests.post(
-    f"{BASE}/v1/templates/builtin-standard:render",
+    f"{BASE}/v1/templates/builtin-generic:render",
     json={"fields": [{"name": "编码", "value": "CL0001"}]},
     headers=HEADERS,
     timeout=30,
@@ -414,7 +415,7 @@ http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer
 
 var request = new
 {
-    template = "templates/builtin-standard",
+    template = "templates/builtin-generic",
     fields = new[] { new { name = "编码", value = "CL5640-TK" }, new { name = "尺码", value = "XL" } },
     copies = 2,
     requestId = Guid.NewGuid().ToString(),
@@ -454,7 +455,7 @@ public class PrintLabel {
   public static void main(String[] args) throws Exception {
     HttpClient http = HttpClient.newHttpClient();
     String body = """
-        {"template":"templates/builtin-standard",
+        {"template":"templates/builtin-generic",
          "fields":[{"name":"编码","value":"CL5640-TK"},{"name":"尺码","value":"XL"}],
          "requestId":"%s"}
         """.formatted(UUID.randomUUID());
@@ -466,7 +467,7 @@ public class PrintLabel {
     HttpResponse<String> created = http.send(create, HttpResponse.BodyHandlers.ofString());
     System.out.println(created.statusCode() + " " + created.body()); // 用 JSON 库读出 name 后轮询 GET /v1/{name}
 
-    HttpRequest render = HttpRequest.newBuilder(URI.create(BASE + "/v1/templates/builtin-standard:render"))
+    HttpRequest render = HttpRequest.newBuilder(URI.create(BASE + "/v1/templates/builtin-generic:render"))
         .header("Authorization", "Bearer " + KEY)
         .header("Content-Type", "application/json")
         .POST(HttpRequest.BodyPublishers.ofString("{\"fields\":[{\"name\":\"编码\",\"value\":\"CL5640-TK\"}]}"))

@@ -27,7 +27,7 @@ describe('SqliteApiJobStore', () => {
     store.insert({
       id: 'pj-1',
       caller: 'key:k1',
-      templateId: 'builtin:standard',
+      templateId: 'builtin:generic',
       fields: [{ name: 'a', value: '1' }],
       content: null,
       copies: 1,

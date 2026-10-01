@@ -11,12 +11,13 @@ import { MAX_RAW_LENGTH } from './scan/normalize-raw';
 import { recognize } from './scan/recognize';
 import type { ScanRule } from './scan/rule-model';
 import type { ScanResult } from './scan/scan-result';
-import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE, STANDARD_TEMPLATE } from './templates/builtin-templates';
+import { BUILT_IN_TEMPLATES, GENERIC_TEMPLATE } from './templates/builtin-templates';
 import { PLATFORM_TWO_PART } from './templates/builtin-waybills';
 import type { LabelTemplate } from './templates/template-model';
 import { FAKE_CLOCK_START, FakeClock } from './testing/fake-clock';
 import { FakePrinterAdapter } from './testing/fake-printer-adapter';
 import { InMemoryJobStore } from './testing/in-memory-job-store';
+import { PICK_TEMPLATE } from './testing/templates';
 import type { JobRecord, PrintRequest } from './types';
 
 const WINDOW_MS = 10 * 60_000;
@@ -39,7 +40,7 @@ function createHarness(store = new InMemoryJobStore()) {
   const clock = new FakeClock();
   const adapter = new FakePrinterAdapter();
   const guard = new DedupGuard(clock, WINDOW_MS);
-  let template: LabelTemplate = STANDARD_TEMPLATE;
+  let template: LabelTemplate = PICK_TEMPLATE;
   let rules: readonly ScanRule[] = BUILT_IN_RULES;
   const templateRequests: ScanResult[] = [];
   const recorded: Array<{ job: JobRecord; scan: ScanResult | null }> = [];
@@ -110,7 +111,7 @@ describe('PrintService.submit', () => {
     expect(result).toEqual({ status: 'printed', jobId: 'job-1', scan: RAW_SCAN });
     expect(templateRequests).toEqual([RAW_SCAN]);
     expect(adapter.printed).toEqual([
-      { printerName: PRINTER, raw: RAW, templateId: STANDARD_TEMPLATE.id, paper: '60x40', fields: RAW_SCAN.fields },
+      { printerName: PRINTER, raw: RAW, templateId: PICK_TEMPLATE.id, paper: '60x40', fields: RAW_SCAN.fields },
     ]);
     expect(store.listRecent(1)[0]).toMatchObject({
       id: 'job-1',
@@ -433,7 +434,7 @@ describe('PrintService printer choice', () => {
     expect(store.listRecent(1)[0]).toMatchObject({
       printerName: '面单机B',
       paper: '60x40',
-      templateId: STANDARD_TEMPLATE.id,
+      templateId: PICK_TEMPLATE.id,
     });
   });
 
@@ -519,7 +520,7 @@ describe('PrintService.printFields', () => {
     { name: '收件人', value: '张三' },
   ];
   const input = {
-    template: STANDARD_TEMPLATE,
+    template: PICK_TEMPLATE,
     fields,
     content: 'A001',
     source: 'api',
@@ -539,7 +540,7 @@ describe('PrintService.printFields', () => {
     expect(result.status).toBe('printed');
     expect(lookups).toBe(0);
     expect(templateRequests).toEqual([]);
-    expect(adapter.printed.at(-1)).toMatchObject({ raw: 'A001', templateId: STANDARD_TEMPLATE.id, fields });
+    expect(adapter.printed.at(-1)).toMatchObject({ raw: 'A001', templateId: PICK_TEMPLATE.id, fields });
     expect(store.listRecent(1)[0]).toMatchObject({ source: 'api', caller: 'key:k1', fields, raw: 'A001' });
   });
 

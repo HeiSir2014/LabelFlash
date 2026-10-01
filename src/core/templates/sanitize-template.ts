@@ -1,7 +1,7 @@
 import { DEFAULT_PAPER } from '../../shared/label-paper';
 import { sanitizePaper } from '../../shared/paper-sizes';
 import { isValidFieldName } from '../scan/rule-model';
-import { STANDARD_TEMPLATE } from './builtin-templates';
+import { GENERIC_TEMPLATE } from './builtin-templates';
 import { PLATFORM_TWO_PART } from './builtin-waybills';
 import { sanitizeWaybillLayout } from './sanitize-waybill';
 import {
@@ -37,7 +37,7 @@ export function sanitizeTemplate(
   value: unknown,
   id: string,
   fallback: LabelTemplate,
-  labelFallback: QrLabelTemplate = STANDARD_TEMPLATE,
+  labelFallback: QrLabelTemplate = GENERIC_TEMPLATE,
 ): LabelTemplate {
   const input = asLoose(value);
   const kind = input['kind'] === 'waybill' ? 'waybill' : 'label';

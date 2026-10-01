@@ -1,5 +1,6 @@
+import { currentTemplateId } from '../templates/builtin-templates';
 import { TEMPLATE_ID_PATTERN } from '../templates/template-model';
-import { BUILT_IN_RULES, DEFAULT_RULE_TEMPLATE_BINDINGS, RAW_RULE_ID } from './builtin-rules';
+import { BUILT_IN_RULES, RAW_RULE_ID } from './builtin-rules';
 import { isValidFieldName, RULE_ID_PATTERN, RULE_LIMITS, type ScanRule } from './rule-model';
 import { fieldValue, type ScanResult } from './scan-result';
 
@@ -43,9 +44,9 @@ export function defaultRuleSettings(): RuleSetting[] {
   return BUILT_IN_RULES.map((rule) => newRuleSetting(rule.id));
 }
 
-/** 新出现的规则（内置、新建、导入）：启用，按内置的默认绑定，没有按字段换模板。 */
+/** 新出现的规则（内置、新建、导入）：启用，用当前模板，没有按字段换模板。 */
 function newRuleSetting(id: string): RuleSetting {
-  return { id, enabled: true, templateId: DEFAULT_RULE_TEMPLATE_BINDINGS[id] ?? null, templateRoutes: [] };
+  return { id, enabled: true, templateId: null, templateRoutes: [] };
 }
 
 /** 校验保存的规则设置：不合法或重复的项直接丢弃（缺少的规则会在合并时补回来）。 */
@@ -71,7 +72,7 @@ export function sanitizeRuleSettings(value: unknown): RuleSetting[] {
       settings.push({
         id,
         enabled,
-        templateId: templateId as string | null,
+        templateId: templateId === null ? null : currentTemplateId(templateId as string),
         // 1.2.0 及以前没有这一项：读成没有按字段换模板。
         templateRoutes: sanitizeTemplateRoutes(templateRoutes),
       });
@@ -105,7 +106,12 @@ function sanitizeTemplateRoutes(value: unknown): TemplateRoute[] {
       text.length <= TEMPLATE_ROUTE_LIMITS.valueLength &&
       isTemplateId(templateId)
     ) {
-      routes.push({ field, match: match as TemplateRouteMatch, value: text, templateId });
+      routes.push({
+        field,
+        match: match as TemplateRouteMatch,
+        value: text,
+        templateId: currentTemplateId(templateId),
+      });
     }
   }
   return routes;

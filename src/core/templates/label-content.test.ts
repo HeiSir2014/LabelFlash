@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../scan/scan-result';
-import { GENERIC_TEMPLATE, STANDARD_TEMPLATE } from './builtin-templates';
+import { PICK_TEMPLATE } from '../testing/templates';
+import { GENERIC_TEMPLATE } from './builtin-templates';
 import { bottomText, resolveFields, resolveQrText } from './label-content';
 import { type QrLabelTemplate, TEMPLATE_LIMITS } from './template-model';
 
@@ -67,8 +68,8 @@ describe('resolveFieldRows', () => {
     ]);
   });
 
-  test('the garment template shows only the picked fields, with their own prefixes and styles', () => {
-    const rows = resolveFieldRows(STANDARD_TEMPLATE, {
+  test('a template that picks fields shows only those, with their own prefixes and styles', () => {
+    const rows = resolveFieldRows(PICK_TEMPLATE, {
       ...GARMENT,
       fields: [...GARMENT.fields, { name: '库位', value: 'A-01' }],
     });
@@ -78,14 +79,14 @@ describe('resolveFieldRows', () => {
 
   test('skips picked fields that were not recognised', () => {
     const scan: ScanResult = { ...GARMENT, fields: [{ name: '尺码', value: 'XL' }] };
-    expect(resolveFieldRows(STANDARD_TEMPLATE, scan).map((row) => row.value)).toEqual(['XL']);
+    expect(resolveFieldRows(PICK_TEMPLATE, scan).map((row) => row.value)).toEqual(['XL']);
   });
 
   test('falls back to every field when none of the picked fields was recognised', () => {
-    const fields = resolveFields(STANDARD_TEMPLATE, ORDER);
+    const fields = resolveFields(PICK_TEMPLATE, ORDER);
     expect(fields.rows.map((row) => [row.prefix, row.value])).toEqual([['订单号：', '202609280001']]);
     expect(fields.isAllFields).toBe(true);
-    expect(resolveFields(STANDARD_TEMPLATE, GARMENT).isAllFields).toBe(false);
+    expect(resolveFields(PICK_TEMPLATE, GARMENT).isAllFields).toBe(false);
   });
 
   test('joins each name with the separator of the template', () => {
@@ -102,6 +103,23 @@ describe('resolveFieldRows', () => {
     expect(rows).toHaveLength(TEMPLATE_LIMITS.allFieldRows);
     expect(rows.at(-2)?.value).toBe('5');
     expect(rows.at(-1)).toMatchObject({ prefix: '', value: '…等 4 项' });
+  });
+
+  // 货架号是内置规则最后补上的字段，理货的人靠它找货架：字段再多也不能被折进「…等 N 项」。
+  test('keeps the shelf number when the other fields do not fit', () => {
+    const fields = [
+      ...Array.from({ length: 8 }, (_, index) => ({ name: `字段${index + 1}`, value: `${index + 1}` })),
+      { name: '货架号', value: 'A-1-2-3' },
+    ];
+    const rows = resolveFieldRows(GENERIC_TEMPLATE, { ...MULTI_LINE, fields });
+    expect(rows.map((row) => `${row.prefix}${row.value}`)).toEqual([
+      '字段1：1',
+      '字段2：2',
+      '字段3：3',
+      '字段4：4',
+      '货架号：A-1-2-3',
+      '…等 4 项',
+    ]);
   });
 });
 

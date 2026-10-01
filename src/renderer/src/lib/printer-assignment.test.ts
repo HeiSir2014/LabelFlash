@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { STANDARD_TEMPLATE } from '../../../core/templates/builtin-templates';
+import { GENERIC_TEMPLATE } from '../../../core/templates/builtin-templates';
 import { PLATFORM_TWO_PART } from '../../../core/templates/builtin-waybills';
 import {
   describeTemplatePrinter,
@@ -12,7 +12,7 @@ import {
 } from './printer-assignment';
 
 const TEMPLATES = [
-  { name: '样衣标准', paper: { widthMm: 60, heightMm: 40 }, printer: null },
+  { name: '通用标签', paper: { widthMm: 60, heightMm: 40 }, printer: null },
   { name: '申通面单', paper: { widthMm: 100, heightMm: 180 }, printer: '面单机B' },
   { name: '极兔面单', paper: { widthMm: 100, heightMm: 180 }, printer: null },
   { name: '顺丰面单', paper: { widthMm: 100, heightMm: 150 }, printer: '面单机B' },
@@ -68,7 +68,7 @@ describe('optional templates', () => {
   test('treats built-in waybills as optional until they are active or bound to a rule', () => {
     const waybill = PLATFORM_TWO_PART;
     const optional = (activeId: string | null, boundId: string | null) =>
-      templateUses([waybill, STANDARD_TEMPLATE], activeId, [
+      templateUses([waybill, GENERIC_TEMPLATE], activeId, [
         { id: 'builtin:raw', enabled: true, templateId: boundId, templateRoutes: [] },
       ]).map((use) => use.optional);
     expect(optional(null, null)).toEqual([true, false]);

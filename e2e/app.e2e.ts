@@ -50,14 +50,15 @@ test('loads the UI over app:// and previews a scanned label', async ({ electronA
     '通用（二维码在左）',
   );
 
-  // 横杠三段：默认绑定样衣标准模板，只显示编码 / 颜色 / 尺码。
+  // 横杠三段：用当前模板（通用），列出编码 / 颜色 / 尺码。
   await scan(page, 'CL5640-TK-图片色-XXL');
   await expect(page.locator('.status-strip__title')).toHaveText('没有可用的打印机');
   const template = page.getByRole('combobox', { name: '模板', exact: true });
   await expect(usage).toHaveText('规则：横杠三段（编码-颜色-尺码）');
-  await expect(template.locator('option:checked')).toHaveText('样衣标准（二维码在左）');
+  await expect(template.locator('option:checked')).toHaveText('通用（二维码在左）');
   const values = page.frameLocator('.label-frame').locator('.value');
   await expect(values).toHaveText(['CL5640-TK', '图片色', 'XXL']);
+  await expect(page.frameLocator('.label-frame').locator('.prefix')).toHaveText(['编码：', '颜色：', '尺码：']);
 
   // 纯数字订单号：用当前模板（通用），字段区列出「订单号」。
   await scan(page, '202609280001');
@@ -109,13 +110,13 @@ test('tries content against the rules and previews with the template a rule is b
   await tester.fill('CL1_红_M ');
   await expect(result).toContainText('命中「新规则（分隔符拆分）」');
 
-  await page.getByLabel('「纯数字订单号」用的模板').selectOption({ label: '样衣标准（二维码在左）' });
+  await page.getByLabel('「纯数字订单号」用的模板').selectOption({ label: '通用 · 大二维码 + 日期备注' });
   await page.getByRole('button', { name: '返回工作台' }).click();
   await scan(page, '202609280001');
   // 规则指定的模板显示在下拉框里、锁住（改当前模板对这一张不起作用），旁边标「规则指定」。
   await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：纯数字订单号');
   const template = page.getByRole('combobox', { name: '模板', exact: true });
-  await expect(template.locator('option:checked')).toHaveText('样衣标准（二维码在左）');
+  await expect(template.locator('option:checked')).toHaveText('通用 · 大二维码 + 日期备注');
   await expect(template).toBeDisabled();
   await expect(page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
 });

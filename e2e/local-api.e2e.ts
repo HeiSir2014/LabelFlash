@@ -10,7 +10,7 @@ const PRINTERS: FakePrinterSpec[] = [
   { name: '标签机A', paper: { widthMm: 60, heightMm: 40, dpi: 203 }, readiness: { ready: true } },
   { name: '面单机B', paper: { widthMm: 100, heightMm: 180, dpi: 203 }, readiness: { ready: true } },
 ];
-const STANDARD = 'templates/builtin-standard';
+const GENERIC = 'templates/builtin-generic';
 const SITE = 'https://erp.example.com';
 /** 服装标签一批两三百张很常见：E2E 按这个量走一遍。 */
 const BATCH_SIZE = 300;
@@ -172,7 +172,7 @@ test('prints a batch of 300 labels on two papers, each printer in submission ord
   const base = await apiBase(page);
   const headers = await createKey(page);
   const requests = Array.from({ length: BATCH_SIZE }, (_, index) => ({
-    template: index % 2 === 0 ? STANDARD : waybill.name,
+    template: index % 2 === 0 ? GENERIC : waybill.name,
     fields: [{ name: '序号', value: String(index) }],
     content: `NO-${index}`,
   }));
@@ -194,7 +194,7 @@ test('renders a PDF on the paper of the template', async ({ electronApp }) => {
   const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   const base = await apiBase(page);
   const headers = await createKey(page);
-  const response = await fetch(`${base}/v1/${STANDARD}:render`, {
+  const response = await fetch(`${base}/v1/${GENERIC}:render`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ fields: [{ name: '编码', value: 'CL5640-TK' }] }),

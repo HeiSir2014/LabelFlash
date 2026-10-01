@@ -1,4 +1,5 @@
-import { fieldValue, type ScanResult } from '../scan/scan-result';
+import { SHELF_NUMBER_FIELD } from '../scan/builtin-rules';
+import { fieldValue, type ScanField, type ScanResult } from '../scan/scan-result';
 import { expandNoteText } from './note-text';
 import { type QrLabelTemplate, TEMPLATE_LIMITS, type TextStyle } from './template-model';
 
@@ -35,24 +36,28 @@ export function resolveFields(template: QrLabelTemplate, scan: ScanResult): Reso
   return { rows: allFieldRows(template, scan), isAllFields: true };
 }
 
-/** 按识别顺序列出全部字段，最多 6 行；放不下时最后一行写「…等 N 项」。 */
+/**
+ * 按识别顺序列出全部字段，最多 6 行；放不下时最后一行写「…等 N 项」。
+ * 货架号是内置规则最后补上的字段，理货的人靠它找货架，放不下时也留着它，折掉的是它前面的字段。
+ */
 function allFieldRows(template: QrLabelTemplate, scan: ScanResult): FieldRow[] {
   const { all } = template.fieldsArea;
   const style: TextStyle = { fontSizeMm: all.fontSizeMm, bold: all.bold };
   // 空值（例如查找表没查到）不占一行。
-  const rows = scan.fields
-    .filter((field) => field.value !== '')
-    .map((field) => ({
-      prefix: all.showNames ? `${field.name}${all.separator}` : '',
-      value: field.value,
-      style,
-    }));
+  const fields = scan.fields.filter((field) => field.value !== '');
+  const toRow = (field: ScanField): FieldRow => ({
+    prefix: all.showNames ? `${field.name}${all.separator}` : '',
+    value: field.value,
+    style,
+  });
   const maxRows = TEMPLATE_LIMITS.allFieldRows;
-  if (rows.length <= maxRows) {
-    return rows;
+  if (fields.length <= maxRows) {
+    return fields.map(toRow);
   }
-  const shown = rows.slice(0, maxRows - 1);
-  return [...shown, { prefix: '', value: `…等 ${rows.length - shown.length} 项`, style }];
+  const shelf = fields.filter((field) => field.name === SHELF_NUMBER_FIELD);
+  const others = fields.filter((field) => field.name !== SHELF_NUMBER_FIELD);
+  const shown = [...others.slice(0, maxRows - 1 - shelf.length), ...shelf];
+  return [...shown.map(toRow), { prefix: '', value: `…等 ${fields.length - shown.length} 项`, style }];
 }
 
 /** 二维码内容；字段没识别到、文本展开后为空时，退回原始内容。 */

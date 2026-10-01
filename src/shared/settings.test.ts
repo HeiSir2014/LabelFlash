@@ -137,6 +137,12 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ notePresets: many }).notePresets).toHaveLength(MAX_NOTE_PRESETS);
   });
 
+  test('moves a retired garment template to its generic replacement', () => {
+    expect(sanitizeSettings({ activeTemplateId: 'builtin:qr-right' }).activeTemplateId).toBe(
+      'builtin:generic-qr-right',
+    );
+  });
+
   test('rejects malformed template ids', () => {
     expect(sanitizeSettings({ activeTemplateId: '../etc' }).activeTemplateId).toBe(DEFAULT_SETTINGS.activeTemplateId);
   });

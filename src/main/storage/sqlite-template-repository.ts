@@ -1,5 +1,5 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
-import { STANDARD_TEMPLATE } from '../../core/templates/builtin-templates';
+import { GENERIC_TEMPLATE } from '../../core/templates/builtin-templates';
 import { sanitizeTemplate } from '../../core/templates/sanitize-template';
 import type { TemplateRepository } from '../../core/templates/template-catalog';
 import type { LabelTemplate } from '../../core/templates/template-model';
@@ -29,7 +29,7 @@ export class SqliteTemplateRepository implements TemplateRepository {
     for (const row of this.selectAll.all()) {
       const id = readString(row, 'id');
       try {
-        templates.push(sanitizeTemplate(JSON.parse(readString(row, 'body')), id, STANDARD_TEMPLATE));
+        templates.push(sanitizeTemplate(JSON.parse(readString(row, 'body')), id, GENERIC_TEMPLATE));
       } catch (error) {
         console.error(`[TemplateRepository] template "${id}" is unreadable and was skipped`, error);
       }

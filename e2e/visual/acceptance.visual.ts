@@ -248,12 +248,12 @@ const ITEMS: Item[] = [
   },
   {
     id: 'V02',
-    title: '工作台 · 已扫码（样衣码，规则指定了模板）',
+    title: '工作台 · 已扫码（样衣码）',
     points:
-      '工具条：模板下拉框显示「样衣标准（二维码在左）」并锁住，旁边「规则指定」，右侧只写「规则：横杠三段（编码-颜色-尺码）」；预览为样衣标准模板；空闲时底部状态条不说话',
+      '工具条：模板下拉框显示当前模板「通用（二维码在左）」、可以换，右侧只写「规则：横杠三段（编码-颜色-尺码）」；预览列出编码、颜色、尺码；空闲时底部状态条不说话',
     setup: async ({ page }) => {
       await scan(page, 'CL5640-TK-图片色-XL');
-      await expect(page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
+      await expect(page.locator('.preview-toolbar__usage')).toHaveText('规则：横杠三段（编码-颜色-尺码）');
     },
   },
   {
@@ -320,7 +320,7 @@ const ITEMS: Item[] = [
     setup: async ({ page }) => {
       await scan(page, 'CL5640-TK-图片色-XL');
       await openConfig(page, '模板');
-      await page.locator('.template-item', { hasText: '样衣标准（二维码在左）' }).click();
+      await page.locator('.template-item', { hasText: '通用 · 小二维码 + 底部备注' }).click();
     },
   },
   {
@@ -331,7 +331,7 @@ const ITEMS: Item[] = [
     setup: async ({ page }) => {
       await openConfig(page, '模板');
       await page.getByRole('button', { name: '复制' }).click();
-      await page.locator('.template-form').getByLabel('模板名称').fill('样衣标准 · 仓库版');
+      await page.locator('.template-form').getByLabel('模板名称').fill('通用 · 仓库版');
       await page.locator('.template-editing__form').evaluate((el, top) => el.scrollTo(0, top), FORM_SCROLL_PX);
     },
   },
@@ -352,8 +352,8 @@ const ITEMS: Item[] = [
     setup: async ({ page }) => {
       await scan(page, 'CL5640-TK-图片色-XL');
       await openConfig(page, '模板');
-      // 样衣标准本来就是「指定字段」，复制后有现成的字段行。
-      await page.locator('.template-item', { hasText: '样衣标准（二维码在左）' }).click();
+      // 内置模板带着「指定字段」的预设（编码、颜色、尺码、货架号），复制后切过去就有现成的字段行。
+      await page.locator('.template-item', { hasText: '通用（二维码在左）' }).click();
       await page.getByRole('button', { name: '复制' }).click();
       await page.locator('.template-form').getByText('指定字段', { exact: true }).click();
       await page.locator('.template-form').getByText('垂直（名称在上）', { exact: true }).click();
@@ -781,7 +781,7 @@ const ITEMS: Item[] = [
       }
       // 先扫一张不用查询的样衣码，作为「上一张预览」。
       await scan(ctx.page, 'CL5640-TK-图片色-XL');
-      await expect(ctx.page.locator('.preview-toolbar').getByText('规则指定')).toBeVisible();
+      await expect(ctx.page.locator('.preview-toolbar__usage')).toHaveText('规则：横杠三段（编码-颜色-尺码）');
     },
   },
   {
@@ -795,9 +795,11 @@ const ITEMS: Item[] = [
         prepare: async ({ page, notes }) => {
           await openConfig(page, '模板');
           if ((await page.locator('.template-editing').count()) === 0) {
-            await page.locator('.template-item', { hasText: '样衣标准（二维码在左）' }).click();
+            await page.locator('.template-item', { hasText: '通用（二维码在左）' }).click();
             await page.getByRole('button', { name: '复制' }).click();
           }
+          // 字段名输入框在「指定字段」的字段行里。
+          await page.locator('.template-form').getByText('指定字段', { exact: true }).click();
           const input = page.locator('.slot-card').first().getByLabel('字段名');
           await input.scrollIntoViewIfNeeded();
           await input.focus();

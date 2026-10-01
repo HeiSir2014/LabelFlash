@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ElectronApplication, Page } from '@playwright/test';
+import { BUILT_IN_WAYBILLS } from '../src/core/templates/builtin-waybills';
 import {
   blurActiveElement,
   callApi,
@@ -546,4 +547,31 @@ test('previews a built-in waybill with sample data and edits a copy cell by cell
     'true',
   );
   await expect(label).toContainText('集包：杭州转运中心');
+});
+
+// 面单每一行的位置和换行是按字宽表算好的：用这台电脑的系统字体真实渲染一遍，没有哪一行被格子边缘裁掉。
+// CI 在 Windows（微软雅黑）和 macOS（苹方）上都跑这一条。
+test('lays out every built-in waybill so that no line is clipped with the system fonts', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch();
+  const waybills = (await callApi(page, 'listTemplates')).filter((template) => template.kind === 'waybill');
+  expect(waybills).toHaveLength(BUILT_IN_WAYBILLS.length);
+  for (const template of waybills) {
+    const { html } = await callApi(page, 'previewTemplate', '示例', template);
+    if (html === null) throw new Error(`no preview for ${template.name}`);
+    // 测试自己开一个能跑脚本的隐藏窗口来量（打印窗口禁用了脚本）：内容溢出时 scrollWidth 比 clientWidth 大。
+    const clipped = await app.evaluate(async ({ BrowserWindow }, source) => {
+      const window = new BrowserWindow({ show: false });
+      try {
+        await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(source)}`);
+        return (await window.webContents.executeJavaScript(
+          `[...document.querySelectorAll('.line, .code__text')]
+            .filter((line) => line.scrollWidth > line.clientWidth + 0.5)
+            .map((line) => line.textContent)`,
+        )) as string[];
+      } finally {
+        window.destroy();
+      }
+    }, html);
+    expect({ template: template.name, clipped }).toEqual({ template: template.name, clipped: [] });
+  }
 });

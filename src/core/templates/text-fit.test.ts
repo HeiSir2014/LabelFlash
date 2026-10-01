@@ -17,9 +17,40 @@ const INLINE = { arrangement: 'inline', uniform: false } as const;
 describe('estimateTextWidthEm', () => {
   test('counts CJK as full width and narrow Latin glyphs as narrower than digits and capitals', () => {
     expect(estimateTextWidthEm('图片色')).toBe(3);
-    expect(estimateTextWidthEm('1')).toBeLessThan(estimateTextWidthEm('0'));
+    expect(estimateTextWidthEm('i')).toBeLessThan(estimateTextWidthEm('0'));
     expect(estimateTextWidthEm('0')).toBeLessThan(estimateTextWidthEm('C'));
     expect(estimateTextWidthEm('C')).toBeLessThan(estimateTextWidthEm('W'));
+  });
+
+  // 微软雅黑、苹方的数字是等宽的：1 和 0 一样宽，不能当窄字（以前当窄字，订单号会被估窄）。
+  test('treats every digit as the same width', () => {
+    expect(new Set([...'0123456789'].map((digit) => estimateTextWidthEm(digit))).size).toBe(1);
+  });
+
+  // 2026-10-01 在 Edge 里实测的微软雅黑粗体字宽（em）：估算不能比它窄，否则字会被边缘裁掉。
+  test('is never narrower than the measured Microsoft YaHei bold widths', () => {
+    const measured: Record<string, number> = {
+      '0': 0.617,
+      '1': 0.617,
+      A: 0.752,
+      L: 0.547,
+      W: 1.076,
+      a: 0.578,
+      m: 0.982,
+      i: 0.296,
+      '-': 0.448,
+      ' ': 0.298,
+      '*': 0.487,
+      '×': 0.761,
+      '…': 0.963,
+      '&': 0.911,
+      '+': 0.761,
+      '/': 0.473,
+      '—': 1.08,
+    };
+    for (const [char, width] of Object.entries(measured)) {
+      expect(estimateTextWidthEm(char)).toBeGreaterThanOrEqual(width);
+    }
   });
 });
 
@@ -111,7 +142,7 @@ describe('fitRowFontSizes', () => {
   });
 
   test('stacked rows give the value the full width and count the name line in the height', () => {
-    const row = { prefix: '订单号', value: 'A20260928-0000001', fontSizeMm: 3 };
+    const row = { prefix: '订单号', value: 'A20260928-00001', fontSizeMm: 3 };
     const [stacked = 0] = fitRowFontSizes([row], SIDE_WIDTH_MM, SIDE_HEIGHT_MM, { ...INLINE, arrangement: 'stacked' });
     const [inline = 0] = fitRowFontSizes([row], SIDE_WIDTH_MM, SIDE_HEIGHT_MM, INLINE);
     expect(stacked).toBeGreaterThanOrEqual(inline);

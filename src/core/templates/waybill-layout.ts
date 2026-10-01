@@ -1,7 +1,7 @@
 import type { ScanResult } from '../scan/scan-result';
 import { expandVariables, NOTE_VARIABLES, variableNames } from './note-text';
 import type { TextAlign } from './template-model';
-import { LINE_HEIGHT } from './text-fit';
+import { estimateTextWidthEm, LINE_HEIGHT } from './text-fit';
 import {
   isSplit,
   type SplitDirection,
@@ -310,52 +310,9 @@ function ellipsize(text: string, fontSizeMm: number, widthMm: number): string {
   return `${chars.join('').trimEnd()}${ELLIPSIS}`;
 }
 
+/** 一行文字的估算宽度（mm）：字宽表在 text-fit.ts，标签和面单共用，按实测取上限。 */
 export function textWidthMm(text: string, fontSizeMm: number): number {
-  let em = 0;
-  for (const char of text) {
-    em += charWidthEm(char);
-  }
-  return em * fontSizeMm;
-}
-
-/**
- * 面单文字的字宽（em）。面单每一行都单独画、不让浏览器折行，估窄了字就被格子边缘裁掉，所以按实测取上限：
- * 2026-10-01 在 Edge 里量微软雅黑粗体（比常规体宽 3%–5%，也比苹方宽），每类取最宽的字再留一点余量。
- * 标签模板用的 text-fit 估算偏窄（例如数字 1 当窄字），面单不用它。
- */
-const WAYBILL_EM = {
-  wide: 1,
-  digit: 0.63,
-  upper: 0.86,
-  upperWide: 1.1,
-  lower: 0.68,
-  lowerWide: 1,
-  thin: 0.36,
-  bracket: 0.48,
-  dash: 0.46,
-  space: 0.31,
-  times: 0.78,
-  other: 0.92,
-} as const;
-
-/** 全角：CJK、全角标点和符号、韩文；省略号在雅黑粗体里接近一个字宽，也按全角算。 */
-const WIDE_CHAR = /[ᄀ-ᅟ…⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
-const THIN_CHARS = new Set([..."iIjl.,:;!'`|"]);
-const BRACKET_CHARS = new Set([...'()[]{}/\\']);
-
-function charWidthEm(char: string): number {
-  if (WIDE_CHAR.test(char)) return WAYBILL_EM.wide;
-  if (char >= '0' && char <= '9') return WAYBILL_EM.digit;
-  if ('MW@%—'.includes(char)) return WAYBILL_EM.upperWide;
-  if (char >= 'A' && char <= 'Z') return WAYBILL_EM.upper;
-  if (char === 'm' || char === 'w') return WAYBILL_EM.lowerWide;
-  if (THIN_CHARS.has(char)) return WAYBILL_EM.thin;
-  if (char >= 'a' && char <= 'z') return WAYBILL_EM.lower;
-  if (BRACKET_CHARS.has(char)) return WAYBILL_EM.bracket;
-  if (char === '-' || char === '_') return WAYBILL_EM.dash;
-  if (char === ' ') return WAYBILL_EM.space;
-  if (char === '×') return WAYBILL_EM.times;
-  return WAYBILL_EM.other;
+  return estimateTextWidthEm(text) * fontSizeMm;
 }
 
 /** 句末标点：跟着前一个字，不落在行首。 */

@@ -1,45 +1,48 @@
 import { type FieldArrangement, TEMPLATE_LIMITS } from './template-model';
 
 /**
- * 标签文字排版估算。打印窗口不运行脚本（安全要求），没法在页面里实测文字宽度，
+ * 标签、面单的文字排版估算。打印窗口不运行脚本（安全要求），没法在页面里实测文字宽度，
  * 所以在生成 HTML 前按字符类别估算字宽、逐字模拟折行，算出放得下的字号。
- * 字宽按微软雅黑 / 苹方粗体偏保守取值：宁可略小，也不能被标签边缘裁掉。
+ *
+ * 字宽按实测：2026-10-01 在 Edge 里逐个字符量微软雅黑粗体（比常规体宽 3%–5%），再放宽一点。
+ * 宁可估宽、字号略小，也不能估窄：估窄了字会被标签或面单格子的边缘裁掉；
+ * 也不按类别取上限，否则 L、I 这类窄字母会被当成 W 那么宽，天天打的标签无端缩小。
+ * 雅黑和苹方的数字都是等宽的，1 和 0 一样宽。
  */
 
-const EM = {
-  wide: 1,
-  upperWide: 0.92,
-  upper: 0.7,
-  lowerWide: 0.86,
-  lower: 0.56,
-  digit: 0.58,
-  narrow: 0.3,
-  dash: 0.4,
-  space: 0.32,
-  other: 0.62,
-} as const;
-
-/** 全角字符：韩文字母、CJK 及符号、韩文音节、兼容汉字、竖排与全角标点。 */
-const WIDE_CHAR_PATTERN = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
-const NARROW_CHARS = new Set([..."iIl1|.,:;!'`()[]{}/\\"]);
-const DASH_CHARS = new Set([...'-_']);
-const UPPER_WIDE_CHARS = new Set([...'MW@%']);
-const LOWER_WIDE_CHARS = new Set([...'mw']);
+/** 空格（32）到 ~（126）每个字符的宽度（em），按字符码顺序：微软雅黑粗体实测值。 */
+const ASCII_WIDTHS_EM: readonly number[] = [
+  0.298, 0.349, 0.521, 0.64, 0.617, 0.931, 0.911, 0.308, 0.39, 0.39, 0.487, 0.761, 0.286, 0.437, 0.286, 0.473, 0.617,
+  0.617, 0.617, 0.617, 0.617, 0.617, 0.617, 0.617, 0.617, 0.617, 0.286, 0.286, 0.761, 0.761, 0.761, 0.474, 1.03, 0.752,
+  0.684, 0.643, 0.792, 0.572, 0.558, 0.765, 0.821, 0.335, 0.444, 0.693, 0.547, 1.028, 0.848, 0.818, 0.657, 0.818, 0.698,
+  0.602, 0.645, 0.776, 0.715, 1.076, 0.7, 0.648, 0.65, 0.39, 0.464, 0.39, 0.761, 0.448, 0.334, 0.578, 0.666, 0.517,
+  0.665, 0.582, 0.405, 0.665, 0.646, 0.296, 0.317, 0.596, 0.296, 0.982, 0.648, 0.657, 0.666, 0.665, 0.424, 0.494, 0.414,
+  0.648, 0.577, 0.852, 0.585, 0.574, 0.514, 0.39, 0.341, 0.39, 0.761,
+];
+const FIRST_ASCII = 32;
+/** 其他常见符号的实测宽度（em）。 */
+const SYMBOL_WIDTHS_EM: Readonly<Record<string, number>> = {
+  '×': 0.761,
+  '…': 0.963,
+  '—': 1.08,
+  '–': 0.54,
+  '·': 0.439,
+  '°': 0.41,
+  '¥': 0.617,
+};
+/** 实测值再放宽 3%：苹方、不同版本的雅黑、渲染时的取整都可能让字略宽一点。 */
+const SAFETY_FACTOR = 1.03;
+/** 表里没有的字（汉字、全角标点、韩文和其他文字）按一个字宽算：雅黑、苹方的汉字正好一个字宽，别的文字不会更宽。 */
+const DEFAULT_WIDTH_EM = 1;
 
 export const LINE_HEIGHT = 1.2;
 const FONT_SIZE_STEP_PER_MM = 10;
 
 export function charWidthEm(char: string): number {
-  if (WIDE_CHAR_PATTERN.test(char)) return EM.wide;
-  if (char === ' ') return EM.space;
-  if (NARROW_CHARS.has(char)) return EM.narrow;
-  if (DASH_CHARS.has(char)) return EM.dash;
-  if (UPPER_WIDE_CHARS.has(char)) return EM.upperWide;
-  if (LOWER_WIDE_CHARS.has(char)) return EM.lowerWide;
-  if (char >= '0' && char <= '9') return EM.digit;
-  if (char >= 'A' && char <= 'Z') return EM.upper;
-  if (char >= 'a' && char <= 'z') return EM.lower;
-  return EM.other;
+  const code = char.charCodeAt(0);
+  const ascii = char.length === 1 ? ASCII_WIDTHS_EM[code - FIRST_ASCII] : undefined;
+  const measured = ascii ?? SYMBOL_WIDTHS_EM[char];
+  return measured === undefined ? DEFAULT_WIDTH_EM : measured * SAFETY_FACTOR;
 }
 
 export function estimateTextWidthEm(text: string): number {

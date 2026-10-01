@@ -198,9 +198,13 @@ function layoutContent(content: WaybillContent, rect: Rect, context: LayoutConte
         vertical: content.vertical,
       };
     case 'text': {
-      const paragraphs = content.paragraphs
-        .map((paragraph) => ({ ...paragraph, text: expandParagraph(paragraph.text, context) }))
-        .filter((paragraph): paragraph is WaybillParagraph => paragraph.text !== null);
+      // 「只在某字段有值时显示」的格子，那个字段空着时整格不印（反白的黑底也不画）。
+      const hidden = content.showIf !== '' && fieldText(content.showIf, context) === '';
+      const paragraphs = hidden
+        ? []
+        : content.paragraphs
+            .map((paragraph) => ({ ...paragraph, text: expandParagraph(paragraph.text, context) }))
+            .filter((paragraph): paragraph is WaybillParagraph => paragraph.text !== null);
       const fitted = fitParagraphs(
         paragraphs,
         (rect.width - 2 * CELL_PADDING_MM.x) * (1 - LINE_WIDTH_SLACK),
@@ -223,13 +227,16 @@ const FIXED_VARIABLES: ReadonlySet<string> = new Set(NOTE_VARIABLES.map((variabl
  */
 export function expandParagraph(text: string, context: Pick<LayoutContext, 'scan' | 'printedAt'>): string | null {
   const fields = variableNames(text).filter((name) => !FIXED_VARIABLES.has(name));
-  const hasValue = fields.some(
-    (name) => (context.scan.fields.find((field) => field.name === name)?.value ?? '') !== '',
-  );
+  const hasValue = fields.some((name) => fieldText(name, context) !== '');
   if (fields.length > 0 && !hasValue) {
     return null;
   }
   return expandVariables(text, context.scan, context.printedAt, (value) => value, 'empty');
+}
+
+/** 字段的值；这次没有这个字段时是空字符串。 */
+function fieldText(name: string, context: Pick<LayoutContext, 'scan'>): string {
+  return context.scan.fields.find((field) => field.name === name)?.value ?? '';
 }
 
 interface FittedText {

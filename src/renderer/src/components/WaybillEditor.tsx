@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { RULE_LIMITS } from '../../../core/scan/rule-model';
 import { WAYBILL_FIELD_NAMES } from '../../../core/templates/builtin-waybills';
 import { NOTE_VARIABLES } from '../../../core/templates/note-text';
 import { DEFAULT_PARAGRAPH } from '../../../core/templates/sanitize-waybill';
@@ -16,6 +17,7 @@ import {
   type WaybillTemplate,
 } from '../../../core/templates/waybill-model';
 import { PAPER_LIMITS_MM } from '../../../shared/paper-sizes';
+import { FIELD_NAME_LIST_ID } from '../lib/field-names';
 import {
   canAdd,
   canSplit,
@@ -62,7 +64,14 @@ const VALIGN_OPTIONS: ReadonlyArray<{ value: VerticalAlign; label: string }> = [
 
 /** 换内容类型时的初始内容。 */
 const CONTENT_DEFAULTS: Record<WaybillContentKind, WaybillContent> = {
-  text: { kind: 'text', paragraphs: [{ ...DEFAULT_PARAGRAPH }], align: 'left', valign: 'middle', inverse: false },
+  text: {
+    kind: 'text',
+    paragraphs: [{ ...DEFAULT_PARAGRAPH }],
+    align: 'left',
+    valign: 'middle',
+    inverse: false,
+    showIf: '',
+  },
   barcode: { kind: 'barcode', value: '{运单号}', showText: true, textSizeMm: 3, vertical: false },
   qr: { kind: 'qr', value: '{二维码}' },
   empty: { kind: 'empty' },
@@ -374,6 +383,14 @@ function TextContentEditor({
         label="反白（黑底白字）"
         checked={content.inverse}
         onChange={(inverse) => onChange({ ...content, inverse })}
+      />
+      <TextInput
+        label="只在有值时显示"
+        value={content.showIf}
+        maxLength={RULE_LIMITS.fieldNameLength}
+        placeholder="字段名，例如 集包地；留空总是显示"
+        list={FIELD_NAME_LIST_ID}
+        onChange={(showIf) => onChange({ ...content, showIf: showIf.trim() })}
       />
       <p className="form-hint">
         用 {'{字段名}'}{' '}

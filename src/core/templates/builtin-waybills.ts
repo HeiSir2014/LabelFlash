@@ -46,6 +46,7 @@ interface TextOptions extends CellOptions {
   align?: TextAlign;
   valign?: VerticalAlign;
   inverse?: boolean;
+  showIf?: string;
 }
 
 function text(sizeMm: number, paragraphs: WaybillParagraph[], options: TextOptions = {}): WaybillNode {
@@ -57,14 +58,15 @@ function text(sizeMm: number, paragraphs: WaybillParagraph[], options: TextOptio
       align: options.align ?? 'left',
       valign: options.valign ?? 'middle',
       inverse: options.inverse ?? false,
+      showIf: options.showIf ?? '',
     },
     options,
   );
 }
 
-/** 「收」「寄」「集」这样的反白标记。 */
-function mark(sizeMm: number, char: string, fontSizeMm: number): WaybillNode {
-  return text(sizeMm, [p(char, fontSizeMm, { bold: true })], { align: 'center', inverse: true, rule: 'none' });
+/** 「收」「寄」「集」这样的反白标记；showIf 给了字段名时，只在那个字段有值时印（例如「集」跟着集包地）。 */
+function mark(sizeMm: number, char: string, fontSizeMm: number, showIf = ''): WaybillNode {
+  return text(sizeMm, [p(char, fontSizeMm, { bold: true })], { align: 'center', inverse: true, rule: 'none', showIf });
 }
 
 function barcode(
@@ -120,8 +122,8 @@ function root(children: WaybillNode[]): WaybillTemplate['root'] {
 
 /** 100×180 的版面左右各留 1mm：平台模板的线从 1mm 画到 98–99mm。 */
 const WIDE_MARGINS: WaybillMargins = { top: 0, right: 1, bottom: 0, left: 1 };
-/** 一联单左右各留 4mm：平台模板的版面只用中间约 65mm，两边留给打印头够不到的地方。 */
-const NARROW_MARGINS: WaybillMargins = { top: 0, right: 4, bottom: 0, left: 4 };
+/** 一联单左边留 4mm、右边留 1mm：实物上左边框在 4mm 左右，右侧竖排条码一直印到离纸边约 0.5mm。 */
+const ONE_PART_MARGINS: WaybillMargins = { top: 0, right: 1, bottom: 0, left: 4 };
 /** 平台模板的分隔线约 0.3mm（在 203dpi 上取整成 2 个点）。 */
 const LINE_WIDTH_MM = 0.3;
 
@@ -158,7 +160,7 @@ export const PLATFORM_TWO_PART: WaybillTemplate = waybill('waybill-platform-180'
       text(79, [p('{三段码}', 11, { bold: true })], { align: 'center', rule: 'dashed' }),
       text(19, [p('{集包编码}', 4.5, { bold: true, wrap: true })], { align: 'center' }),
     ]),
-    columns(10, [mark(9, '集', 5), text(89, [p('{集包地}', 6, { bold: true })])]),
+    columns(10, [mark(9, '集', 5, '集包地'), text(89, [p('{集包地}', 6, { bold: true })])]),
     columns(15, [mark(9, '收', 5.5), receiver(89, 4, 3.4)]),
     columns(12, [mark(9, '寄', 5), sender(89, 3, 2.8)]),
     barcode(22, { textSizeMm: 3.2 }),
@@ -193,30 +195,66 @@ export const PLATFORM_TWO_PART: WaybillTemplate = waybill('waybill-platform-180'
   ]),
 });
 
-/** 平台标准一联 76×130：中通、圆通、申通、韵达、极兔（通达系）共用（版面宽 68mm，右侧一列是竖排条码）。 */
+/**
+ * 平台标准一联 76×130：中通、圆通、申通、韵达、极兔（通达系）共用。版式照平台模板的坐标，
+ * 并对照了用户给的抖音电商极兔一联单实物（2026-10-01）：页头（标识、打印时间、产品类型）、整行大号三段码，
+ * 左列依次是运单条码、集包地、末端网点、虚拟号码、收件人、寄件人，右列是竖排条码；框下大字印商品，最底下订单号和「已验视」。
+ * 「集」「末」「虚拟号码」只在对应字段有值时印。
+ */
 export const PLATFORM_ONE_PART: WaybillTemplate = waybill('waybill-platform-130', '平台标准一联（通达系）', 130, 76, {
-  marginsMm: NARROW_MARGINS,
+  marginsMm: ONE_PART_MARGINS,
   lineWidthMm: LINE_WIDTH_MM,
   root: root([
-    columns(12, [
-      text(28, [p('{快递公司}', 6, { bold: true })], { align: 'center', rule: 'none' }),
-      text(22, [p('{产品类型}', 3.4, { bold: true })], { align: 'center', inverse: true, rule: 'none' }),
-      text(18, [p('{日期}', 2.2), p('{时间}', 2.2)], { align: 'right' }),
-    ]),
-    text(9, [p('{三段码}', 7.5, { bold: true })], { align: 'center' }),
-    columns(58, [
-      rows(55, [
-        barcode(16, { textSizeMm: 2.8 }),
-        columns(6, [
-          text(20, [p('{集包编码}', 3.6, { bold: true })], { align: 'center', inverse: true }),
-          text(35, [p('{集包地}', 4, { bold: true })]),
-        ]),
-        columns(22, [mark(6, '收', 4), receiver(49, 3.4, 3)]),
-        columns(0, [mark(6, '寄', 4), sender(49, 2.6, 2.4)]),
+    columns(
+      12,
+      [
+        rows(
+          58,
+          [text(8, [p('{快递公司}', 6, { bold: true })], { rule: 'none' }), text(0, [p('{日期} {时间}', 2.4)])],
+          {
+            rule: 'none',
+          },
+        ),
+        // 格子窄到一行正好两个字：「标准快递」照实物折成「标准 / 快递」两行。
+        text(0, [p('{产品类型}', 4.2, { bold: true, wrap: true })], { align: 'center' }),
+      ],
+      { rule: 'dashed' },
+    ),
+    text(10.5, [p('{三段码}', 8.5, { bold: true })], { align: 'center', rule: 'dashed' }),
+    columns(64.5, [
+      rows(57, [
+        barcode(14.5, { textSizeMm: 3, rule: 'dashed' }),
+        columns(7, [mark(7, '集', 4.5, '集包地'), text(0, [p('{集包地}', 4.5, { bold: true })])], { rule: 'dashed' }),
+        columns(7, [mark(7, '末', 4.5, '末端网点'), text(0, [p('{末端网点}', 4.5, { bold: true })])], {
+          rule: 'dashed',
+        }),
+        columns(
+          5.5,
+          [
+            text(18, [p('虚拟号码', 3, { bold: true })], {
+              align: 'center',
+              inverse: true,
+              rule: 'none',
+              showIf: '虚拟号码',
+            }),
+            text(0, [p('{虚拟号码}', 3.2)]),
+          ],
+          { rule: 'dashed' },
+        ),
+        columns(18, [mark(7, '收', 5), receiver(0, 3.8, 3.8)], { rule: 'dashed' }),
+        columns(0, [mark(7, '寄', 4), sender(0, 2.8, 2.6)]),
       ]),
-      barcode(13, { showText: false, vertical: true }),
+      barcode(0, { showText: false, vertical: true }),
     ]),
-    customArea(),
+    text(33, [p('{物品}', 4.2, { wrap: true }), p('{自定义区}', 2.8, { wrap: true })], {
+      valign: 'top',
+      rule: 'none',
+    }),
+    columns(0, [
+      text(45, [p('{订单号}', 2.6)], { rule: 'none' }),
+      // 平台标准面单固定印「已验视」（揽件时验视过货物，由揽件员负责），这里照平台版式印。
+      text(0, [p('已验视', 3.2, { bold: true })], { align: 'right' }),
+    ]),
   ]),
 });
 
@@ -384,6 +422,9 @@ export const WAYBILL_SAMPLE_FIELDS: readonly ScanField[] = [
   { name: '三段码', value: '531-A03 12' },
   { name: '集包地', value: '杭州转运中心' },
   { name: '集包编码', value: '571-01' },
+  { name: '末端网点', value: '西湖文三' },
+  { name: '虚拟号码', value: '157 8150 4022 转 1077' },
+  { name: '订单号', value: 'SO20261001-0007' },
   { name: '收件人', value: '张三' },
   { name: '收件电话', value: '138****0000' },
   { name: '收件地址', value: '浙江省杭州市西湖区文三路 478 号华星时代广场 A 座 1203 室' },

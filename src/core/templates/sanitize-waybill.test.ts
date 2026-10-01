@@ -73,6 +73,20 @@ describe('sanitizeTemplate for waybills', () => {
     expect(result.root.body.children[0]?.body).toMatchObject({ content: { paragraphs: [{ text: 'abc' }] } });
   });
 
+  test('keeps a valid show-if field and drops an invalid one', () => {
+    const cell = (showIf: unknown) => ({
+      sizeMm: 10,
+      body: { content: { kind: 'text', paragraphs: [{ text: '集' }], showIf } },
+    });
+    const result = sanitizeWaybill({
+      kind: 'waybill',
+      root: { body: { split: 'rows', children: [cell('集包地'), cell('{坏}'), cell(3)] } },
+    });
+    expect(
+      result.root.body.children.map((child) => ('content' in child.body ? child.body.content : null)),
+    ).toMatchObject([{ showIf: '集包地' }, { showIf: '' }, { showIf: '' }]);
+  });
+
   test('turns unknown content into an empty cell', () => {
     const result = sanitizeWaybill({
       kind: 'waybill',

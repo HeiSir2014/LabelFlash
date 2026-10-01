@@ -40,6 +40,7 @@ function text(sizeMm: number, value: string, options: Partial<WaybillNode> = {})
         align: 'left',
         valign: 'middle',
         inverse: false,
+        showIf: '',
       },
     },
     ...options,
@@ -179,6 +180,19 @@ describe('paragraphs', () => {
     const context = { scan: scanOf({}), printedAt: PRINTED_AT };
     expect(expandParagraph('签收栏', context)).toBe('签收栏');
     expect(expandParagraph('{日期}', context)).toBe('2026-10-01');
+  });
+
+  test('hides a cell shown only with a field when that field is empty, ink included', () => {
+    const marked = (showIf: string): WaybillNode => {
+      const node = text(10, '集');
+      if ('content' in node.body && node.body.content.kind === 'text') {
+        node.body.content = { ...node.body.content, inverse: true, showIf };
+      }
+      return node;
+    };
+    const template = waybillOf([marked('集包地'), text(0, 'x')]);
+    expect(textLines(layout(template, scanOf({ 集包地: '' })).cells[0])).toEqual([]);
+    expect(textLines(layout(template, scanOf({ 集包地: '杭州转运中心' })).cells[0])).toEqual(['集']);
   });
 
   test('prints nothing in a cell whose only paragraph is dropped', () => {

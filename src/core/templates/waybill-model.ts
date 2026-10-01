@@ -34,6 +34,11 @@ export interface WaybillText {
   valign: VerticalAlign;
   /** 反白：黑底白字（「收」「寄」、服务标签）。展开后没有字时不画黑底。 */
   inverse: boolean;
+  /**
+   * 只在这个字段有值时显示这一格（例如「集」只在有集包地时印）；空字符串 = 总是显示。
+   * 平台面单上「集」「末」「虚拟号码」这类标记都是有内容才印的，没有内容时不留一个孤零零的标记。
+   */
+  showIf: string;
 }
 
 export interface WaybillBarcode {

@@ -24,6 +24,7 @@ function text(sizeMm: number, value: string): WaybillNode {
         align: 'left',
         valign: 'middle',
         inverse: false,
+        showIf: '',
       },
     },
   };

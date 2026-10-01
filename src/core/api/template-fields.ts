@@ -47,6 +47,9 @@ function waybillVariables(template: WaybillTemplate): string[] {
     const { content } = node.body;
     if (content.kind === 'text') {
       names.push(...content.paragraphs.flatMap((paragraph) => variableNames(paragraph.text)));
+      if (content.showIf !== '') {
+        names.push(content.showIf);
+      }
     } else if (content.kind === 'barcode' || content.kind === 'qr') {
       names.push(...variableNames(content.value));
     }

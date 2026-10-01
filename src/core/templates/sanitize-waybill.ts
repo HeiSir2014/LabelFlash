@@ -1,4 +1,5 @@
 import { PAPER_LIMITS_MM } from '../../shared/paper-sizes';
+import { isValidFieldName } from '../scan/rule-model';
 import { TEXT_ALIGNS } from './template-model';
 import {
   RULE_STYLES,
@@ -95,6 +96,8 @@ export function sanitizeContent(value: unknown): WaybillContent {
         align: pick(input['align'], TEXT_ALIGNS, 'left'),
         valign: pick(input['valign'], VERTICAL_ALIGNS, 'middle'),
         inverse: bool(input['inverse'], false),
+        // 字段名不合法（或没填）就当作总是显示。
+        showIf: typeof input['showIf'] === 'string' && isValidFieldName(input['showIf']) ? input['showIf'] : '',
       };
     case 'barcode':
       return {

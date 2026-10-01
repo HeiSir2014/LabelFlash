@@ -1,12 +1,24 @@
 import { type ElectronApplication, expect, type Page } from '@playwright/test';
 import type { FakePrint } from '../../src/main/printing/fake-printers';
 import { IpcChannel, type LabelFlashApi } from '../../src/shared/ipc-contract';
+import { SCAN_LINE_GAP_RANGE } from '../../src/shared/settings';
 
 /** 工作台扫码框：填入内容再按回车。 */
 export async function scan(page: Page, raw: string): Promise<void> {
   const input = page.locator('.scan-bar__input');
   await input.fill(raw);
   await input.press('Enter');
+}
+
+/**
+ * 多行扫码的用例先调它：把「码里的换行」和「扫完了」的分界（scanLineGapMs）调到最大。
+ * typeLikeScanner 每打一行、按一次回车都要和 Playwright 来回一趟，CI 机器忙时回车后的停顿会超过默认的 80ms，
+ * 一张多行码就被拆成几张（2026-10-01 macOS CI 出现过）；真扫码枪的回车后面紧跟着下一个字，不受影响。
+ */
+export async function allowSlowScannerLines(page: Page): Promise<void> {
+  await callApi(page, 'updateSettings', { scanLineGapMs: SCAN_LINE_GAP_RANGE.max });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
 }
 
 /** 像扫码枪一样逐行打字、每行回车：焦点不在输入框时由程序决定字符落在哪里。 */

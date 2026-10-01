@@ -9,6 +9,7 @@ import type { FakePrinterSpec } from '../../src/main/printing/fake-printers';
 import { RECENT_DELIVERY_COUNT } from '../../src/shared/ipc-contract';
 import { HISTORY_LIMIT_RANGE } from '../../src/shared/settings';
 import {
+  allowSlowScannerLines,
   blurActiveElement,
   callApi,
   openConfig,
@@ -261,6 +262,8 @@ const ITEMS: Item[] = [
     title: '工作台 · 已扫码（多行键值）',
     points: '预览字段完整，工具条规则名正确',
     setup: async ({ page }) => {
+      // 分界调大才不会被 CI 的延迟拆成几张（每一项都是新启动的程序和数据目录，影响不到别的项）。
+      await allowSlowScannerLines(page);
       await page.locator('.scan-bar__input').focus();
       await typeLikeScanner(page, ['订单号：A20260929001', '款号：CL5640', '颜色：图片色', '尺码：XL', '数量：2']);
       await expect(page.locator('.preview-toolbar__usage')).toContainText('多行键值');
@@ -1033,10 +1036,12 @@ const ITEMS: Item[] = [
           const input = page.locator('.scan-bar__input');
           // 输入法开着时扫码枪飞快地按了一串键，没有结尾的回车：拼不回来，不提交，提醒操作员。
           await input.evaluate((element: HTMLInputElement) => {
-            for (const code of ['KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE']) {
-              element.dispatchEvent(
-                new KeyboardEvent('keydown', { key: 'Process', code, bubbles: true, cancelable: true }),
-              );
+            // 先建好再派发：事件的 timeStamp 是创建的时间，边建边派发时 CI 忙起来会被当成几串（见 app.e2e.ts）。
+            const events = ['KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE'].map(
+              (code) => new KeyboardEvent('keydown', { key: 'Process', code, bubbles: true, cancelable: true }),
+            );
+            for (const event of events) {
+              element.dispatchEvent(event);
             }
           });
           await expect(page.locator('.scan-bar__ime')).toBeVisible();

@@ -38,6 +38,11 @@ export function parseBatchPlan(value: unknown): BatchPlan | null {
   ) {
     return null;
   }
+  // 只按序号打没有表格：份数、序号取列都没有列可取。这类设置本身就是错的，解析时直接拒绝，
+  // 不要留到逐行展开时对着一张不存在的表格给每一行都报同一个问题。
+  if (data.kind === 'serial-only' && (copies.kind === 'column' || serial.column !== null)) {
+    return null;
+  }
   return { templateId, data, mapping, serial, copies, rows };
 }
 
@@ -79,13 +84,15 @@ function parseMapping(value: unknown): Record<string, FieldSource> | null {
   if (mapping === null) {
     return null;
   }
-  const entries = Object.entries(mapping);
-  if (entries.length > BATCH_LIMITS.variables) {
+  // 先只数键名、不取值：渲染进程不可信，键名数量超限时不该为了数数而把每个键的值都读一遍
+  // （攻击者可以在每个键上放一个很大的值，让 Object.entries 白白多做一遍没用的工作）。
+  const keys = Object.keys(mapping);
+  if (keys.length > BATCH_LIMITS.variables) {
     return null;
   }
   const parsed: [string, FieldSource][] = [];
-  for (const [name, source] of entries) {
-    const field = parseSource(source);
+  for (const name of keys) {
+    const field = parseSource(mapping[name]);
     if (!isText(name, 1, VARIABLE_NAME_MAX_LENGTH) || field === null) {
       return null;
     }
@@ -154,12 +161,12 @@ function parseCopies(value: unknown): CopiesSettings | null {
   return null;
 }
 
-/** null = 全部行；数组 = 勾选的行；undefined = 不合法。 */
+/** null = 全部行；数组 = 勾选的行（至少一行，空数组没有意义，当不合法处理）；undefined = 不合法。 */
 function parseRows(value: unknown): number[] | null | undefined {
   if (value === null) {
     return null;
   }
-  if (!Array.isArray(value) || value.length > BATCH_LIMITS.rows) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > BATCH_LIMITS.rows) {
     return undefined;
   }
   const rows: number[] = [];

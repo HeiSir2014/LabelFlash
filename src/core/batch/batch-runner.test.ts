@@ -136,4 +136,148 @@ describe('BatchRun', () => {
     expect(changes.map((change) => change.state)).toEqual(['running', 'running', 'done']);
     expect(run.pendingLabels).toBe(0);
   });
+
+  // 批量打印不走识别、不走防重复：duplicate / invalid 理论上不会出现，但万一出现也不能当成「已发送」。
+  test('treats any status other than printed as a failure', async () => {
+    const { run, release, finished } = gatedRun(1);
+    await settle();
+    await release({ status: 'duplicate', recent: { state: 'printed', at: 0 }, windowMs: 1_000 });
+    await finished;
+    expect(run.snapshot()).toMatchObject({
+      state: 'done',
+      sent: 0,
+      failed: 1,
+      failures: [{ row: 1, copy: 1, reason: 'PRINT_ERROR' }],
+    });
+  });
+
+  // macOS 上拔了纸、卡纸不会被识别成打印机问题，每一张都会普普通通地失败：连续 3 张都失败就该停下来，
+  // 而不是接着把剩下的都打一遍、刷出一整批失败记录。
+  test('pauses after consecutive failures on different labels and retries the one that tripped it', async () => {
+    const { run, printed, release, finished } = gatedRun(3);
+    const failed: PrintResult = { status: 'failed', reason: 'PRINT_ERROR' };
+    await settle();
+    await release(failed);
+    await settle();
+    await release(failed);
+    await settle();
+    await release(failed);
+    expect(printed).toEqual([1, 2, 3]);
+    expect(run.snapshot()).toMatchObject({
+      state: 'paused',
+      pauseReason: 'consecutive-failures',
+      sent: 0,
+      failed: 2,
+      failures: [
+        { row: 1, copy: 1, reason: 'PRINT_ERROR' },
+        { row: 2, copy: 1, reason: 'PRINT_ERROR' },
+      ],
+    });
+    run.resume();
+    await settle();
+    expect(printed).toEqual([1, 2, 3, 3]);
+    await release();
+    await finished;
+    expect(run.snapshot()).toMatchObject({ state: 'done', sent: 1, failed: 2 });
+  });
+
+  test('does not auto-pause when failures are not consecutive', async () => {
+    const { run, release, finished } = gatedRun(5);
+    const failed: PrintResult = { status: 'failed', reason: 'PRINT_ERROR' };
+    await settle();
+    await release(failed);
+    await settle();
+    await release(failed);
+    await settle();
+    await release(); // 打成功一张，清零连续失败计数。
+    await settle();
+    await release(failed);
+    await settle();
+    await release(failed);
+    await finished;
+    expect(run.snapshot()).toMatchObject({ state: 'done', sent: 1, failed: 4 });
+  });
+
+  test('a second resume while already running does nothing', async () => {
+    const { run, printed, release, finished } = gatedRun(2);
+    await settle();
+    run.pause();
+    await release();
+    run.resume();
+    run.resume();
+    await settle();
+    expect(printed).toEqual([1, 2]);
+    await release();
+    await finished;
+    expect(run.snapshot().state).toBe('done');
+  });
+
+  test('resume does nothing while a label is in flight and the run is not paused', async () => {
+    const { run, printed, release, finished } = gatedRun(1);
+    await settle();
+    run.resume();
+    await release();
+    await finished;
+    expect(printed).toEqual([1]);
+    expect(run.snapshot().state).toBe('done');
+  });
+
+  test('cancels while auto-paused for a printer problem', async () => {
+    const { run, release, finished } = gatedRun(2);
+    await settle();
+    await release(NOT_READY);
+    expect(run.snapshot()).toMatchObject({ state: 'paused', pauseReason: 'PRINTER_NOT_READY' });
+    run.cancel();
+    await finished;
+    expect(run.snapshot()).toMatchObject({ state: 'canceled', sent: 0, failed: 0 });
+  });
+
+  test('an empty batch finishes immediately as done', async () => {
+    const changes: BatchProgress[] = [];
+    const run = new BatchRun('20261002-143501-a1b2', [], {
+      print: async () => PRINTED,
+      onChange: (progress) => changes.push(progress),
+    });
+    await run.run();
+    expect(run.snapshot()).toMatchObject({ state: 'done', total: 0, sent: 0, failed: 0 });
+    expect(changes.map((change) => change.state)).toEqual(['running', 'done']);
+  });
+
+  test('running it a second time rejects instead of starting a second loop', async () => {
+    const { run, release, finished } = gatedRun(1);
+    await settle();
+    await expect(run.run()).rejects.toThrow();
+    await release();
+    await finished;
+  });
+
+  // onChange 是界面层的回调：它抛错不能打断批量打印本身。
+  test('keeps running even if onChange throws', async () => {
+    const printedRows: number[] = [];
+    const run = new BatchRun('20261002-143501-a1b2', labels(2), {
+      print: async (label) => {
+        printedRows.push(label.row);
+        return PRINTED;
+      },
+      onChange: () => {
+        throw new Error('ui crashed');
+      },
+    });
+    await run.run();
+    expect(printedRows).toEqual([1, 2]);
+    expect(run.snapshot()).toMatchObject({ state: 'done', sent: 2, failed: 0 });
+  });
+
+  // cancel() 让 isActive 立刻变 false 太早：正在打的这一张还没真正打完，调用方可能还需要等它。
+  test('isActive and pendingLabels still see the in-flight label right after cancel', async () => {
+    const { run, release, finished } = gatedRun(2);
+    await settle();
+    run.cancel();
+    expect(run.isActive).toBe(true);
+    expect(run.pendingLabels).toBe(1);
+    await release();
+    await finished;
+    expect(run.isActive).toBe(false);
+    expect(run.pendingLabels).toBe(0);
+  });
 });

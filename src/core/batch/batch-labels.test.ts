@@ -145,6 +145,48 @@ describe('planLabels', () => {
       issue: `一批最多 ${BATCH_LIMITS.labels} 张：请减少份数或分几批打`,
     });
   });
+
+  // 份数为 0（或解析不了）的行不打印，也不该占用一个序号：否则序号会和实际打出来的张数对不上。
+  test('does not spend a serial number on a row that prints zero copies', () => {
+    const table: BatchTable = {
+      id: TABLE_ID,
+      name: 'r.csv',
+      columns: ['编码', '份数'],
+      rows: [
+        ['A', '1'],
+        ['B', '0'],
+        ['C', '1'],
+      ],
+    };
+    const withCopiesColumn = plan({
+      mapping: { 编码: { kind: 'column', column: '编码' } },
+      copies: { kind: 'column', column: '份数' },
+    });
+    const { labels } = okPlan(planLabels({ table, plan: withCopiesColumn, fields: PICKED }));
+    expect(labels.map((label) => [label.row, label.fields.at(-1)?.value])).toEqual([
+      [1, 'A001'],
+      [3, 'A002'],
+    ]);
+  });
+
+  test('excludes the copies and serial source columns when a template shows all fields', () => {
+    const table: BatchTable = {
+      id: TABLE_ID,
+      name: 'r.csv',
+      columns: ['编码', '份数', '货架号'],
+      rows: [['CL1', '2', 'A-01']],
+    };
+    const withControls = plan({
+      mapping: {},
+      copies: { kind: 'column', column: '份数' },
+      serial: { ...DEFAULT_SERIAL, enabled: true, column: '货架号' },
+    });
+    const { labels } = okPlan(planLabels({ table, plan: withControls, fields: ALL }));
+    expect(labels[0]?.fields).toEqual([
+      { name: '编码', value: 'CL1' },
+      { name: '序号', value: 'A-01' },
+    ]);
+  });
 });
 
 describe('labelForRow', () => {
@@ -153,5 +195,25 @@ describe('labelForRow', () => {
     expect(labelForRow(input, 2)?.fields.at(-1)?.value).toBe('A002');
     expect(labelForRow(input, 1)?.fields.at(-1)?.value).toBe('A002');
     expect(labelForRow(input, 3)).toBeNull();
+  });
+
+  // 预览和实际打印必须用同一套序号规则：份数为 0 的行不占序号，预览也要跳过它。
+  test('matches planLabels when a row between prints zero copies', () => {
+    const table: BatchTable = {
+      id: TABLE_ID,
+      name: 'r.csv',
+      columns: ['编码', '份数'],
+      rows: [
+        ['A', '1'],
+        ['B', '0'],
+        ['C', '1'],
+      ],
+    };
+    const withCopiesColumn = plan({
+      mapping: { 编码: { kind: 'column', column: '编码' } },
+      copies: { kind: 'column', column: '份数' },
+    });
+    const input = { table, plan: withCopiesColumn, fields: PICKED };
+    expect(labelForRow(input, 2)?.fields.at(-1)?.value).toBe('A002');
   });
 });

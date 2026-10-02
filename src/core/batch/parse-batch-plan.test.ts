@@ -31,6 +31,7 @@ describe('parseBatchPlan', () => {
     ['copies', { copies: { kind: 'fixed', count: 0 } }],
     ['rows', { rows: [BATCH_LIMITS.rows] }],
     ['rows type', { rows: 'all' }],
+    ['rows, empty selection', { rows: [] }],
   ])('rejects a bad %s', (_name, patch) => {
     expect(parseBatchPlan({ ...VALID, ...patch })).toBeNull();
   });
@@ -38,6 +39,21 @@ describe('parseBatchPlan', () => {
   test('rejects anything that is not an object', () => {
     expect(parseBatchPlan(null)).toBeNull();
     expect(parseBatchPlan([VALID])).toBeNull();
+  });
+
+  // 只按序号打时没有表格：份数取列、序号取列都没有列可取，这类设置本身就是错的，解析时直接拒绝，
+  // 不要留到逐行展开时对着一张不存在的表格报一堆莫名其妙的问题。
+  test('rejects serial-only data combined with a copies or serial column', () => {
+    const serialOnly = { ...VALID, data: { kind: 'serial-only' as const, count: 5 } };
+    expect(parseBatchPlan({ ...serialOnly, copies: { kind: 'column', column: '份数' } })).toBeNull();
+    expect(parseBatchPlan({ ...serialOnly, serial: { ...VALID.serial, column: '货架号' } })).toBeNull();
+  });
+
+  test('rejects a mapping with more variables than the limit', () => {
+    const mapping = Object.fromEntries(
+      Array.from({ length: BATCH_LIMITS.variables + 1 }, (_, i) => [`v${i}`, { kind: 'none' }]),
+    );
+    expect(parseBatchPlan({ ...VALID, mapping })).toBeNull();
   });
 
   // 结构化克隆过来的对象可以带名为 __proto__ 的自有键：只当普通变量名，不能改到原型。

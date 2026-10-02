@@ -51,7 +51,9 @@ export function tableFromRecords(records: readonly (readonly string[])[], limits
   if (!header) {
     return { ok: false, issue: '文件是空的，第一行应该是列名' };
   }
-  const columns = header.map((name) => name.trim());
+  // 右边多选中的一列、或列应用过格式但没有内容：表头和每一行在这一列都是空的，丢掉，不当成「没有列名」报错；
+  // 中间空出来的列名（后面还有有内容的列）不受影响，照样报错，得让用户自己补上列名。
+  const columns = header.slice(0, usefulWidth(header, body)).map((name) => name.trim());
   const columnIssue = checkColumns(columns, limits);
   if (columnIssue) {
     return { ok: false, issue: columnIssue };
@@ -62,7 +64,8 @@ export function tableFromRecords(records: readonly (readonly string[])[], limits
   const rows: string[][] = [];
   let totalChars = 0;
   for (const [index, row] of body.entries()) {
-    if (row.length > columns.length) {
+    // 比列名多出来的格子要是全空，就是表头那边已经去掉的同一批空列：不算错，直接忽略即可。
+    if (row.slice(columns.length).some((cell) => cell.trim() !== '')) {
       return {
         ok: false,
         issue: `第 ${index + 2} 行有 ${row.length} 列，比列名多（${columns.length} 列）：请检查表头是否完整、分隔符是否正确`,
@@ -80,6 +83,24 @@ export function tableFromRecords(records: readonly (readonly string[])[], limits
     rows.push(columns.map((_, column) => row[column] ?? ''));
   }
   return { ok: true, table: { columns, rows } };
+}
+
+/**
+ * 从右边数，表头和所有数据行在这一列都是空的，就不算一列：返回去掉这些空列之后的宽度。
+ * 只看末尾这一段连续的空列，中间空出来的列名一旦后面还有内容就停住，交给 checkColumns 报错。
+ */
+function usefulWidth(header: readonly string[], body: readonly (readonly string[])[]): number {
+  let width = header.length;
+  while (width > 0) {
+    const index = width - 1;
+    const headerBlank = (header[index] ?? '').trim() === '';
+    const columnBlank = headerBlank && body.every((row) => (row[index] ?? '').trim() === '');
+    if (!columnBlank) {
+      break;
+    }
+    width -= 1;
+  }
+  return width;
 }
 
 function checkColumns(columns: readonly string[], limits: TableLimits): string | null {

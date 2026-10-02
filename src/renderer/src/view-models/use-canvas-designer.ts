@@ -133,7 +133,7 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
     setHistory((currentHistory) => record(currentHistory, before, mergeKey));
     onChange(next);
   };
-  /** 结束当前的合并：属性栏（Task 14）的文字框失焦时调用。 */
+  /** 结束当前的合并：属性栏的文字框失焦时调用。 */
   const endMerge = () => setHistory((current) => endHistoryMerge(current));
   const apply = (stepped: Stepped<CanvasTemplate> | null) => {
     if (stepped !== null) {

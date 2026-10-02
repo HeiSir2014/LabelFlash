@@ -197,6 +197,79 @@ test('prints a canvas template through the local API', async ({ electronApp }) =
   ]);
 });
 
+// 自己设计的自由设计模板：本机接口列出它用到的字段，按它打到这种纸的打印机。
+test('prints a canvas template made in the designer through the local API', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x180': '面单机B' } });
+  const created = await callApi(page, 'createCanvasTemplate');
+  await callApi(page, 'saveTemplate', {
+    ...created,
+    name: '价签',
+    elements: [
+      {
+        id: 'price',
+        name: '价格',
+        kind: 'text',
+        x: 2,
+        y: 2,
+        width: 40,
+        height: 10,
+        rotation: 0,
+        locked: false,
+        text: '￥{价格}',
+        fontSizeMm: 6,
+        bold: true,
+        align: 'left',
+        valign: 'middle',
+        fit: 'shrink',
+        inverse: false,
+      },
+      {
+        id: 'code',
+        name: '商品码',
+        kind: 'barcode',
+        x: 2,
+        y: 20,
+        width: 50,
+        height: 15,
+        rotation: 0,
+        locked: false,
+        symbology: 'ean13',
+        value: '{商品码}',
+        showText: true,
+        textSizeMm: 2.5,
+      },
+    ],
+  });
+  const base = await apiBase(page);
+  const headers = await createKey(page);
+  const template = `templates/${created.id.replace(':', '-')}`;
+  const listed = (await (await fetch(`${base}/v1/templates`, { headers })).json()) as {
+    templates: { name: string; fieldsMode: string; fieldNames: string[] }[];
+  };
+  expect(listed.templates.find((item) => item.name === template)).toMatchObject({
+    fieldsMode: 'PICKED',
+    fieldNames: ['价格', '商品码'],
+  });
+  const response = await fetch(`${base}/v1/printJobs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      template,
+      fields: [
+        { name: '价格', value: '59.90' },
+        { name: '商品码', value: '6901234567892' },
+      ],
+      content: '6901234567892',
+    }),
+  });
+  expect(response.status).toBe(200);
+  await waitAllSent(base, headers, 1);
+  expect(await fakePrints(app)).toEqual([
+    { printerName: '标签机A', raw: '6901234567892', paper: '60x40', templateId: created.id },
+  ]);
+});
+
 test('prints a batch of 300 labels on two papers, each printer in submission order', async ({ electronApp }) => {
   const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
   const waybill = await createWaybillTemplate(page);

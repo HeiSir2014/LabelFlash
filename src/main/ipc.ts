@@ -8,7 +8,7 @@ import {
   type OpenDialogOptions,
   shell,
 } from 'electron';
-import { fieldsScan, type PrintService } from '../core/print-service';
+import { API_RULE, BATCH_RULE, fieldsScan, type PrintService } from '../core/print-service';
 import type { PrinterChoice } from '../core/printing/resolve-printer';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import type { ScanResult } from '../core/scan/scan-result';
@@ -242,7 +242,7 @@ export function registerIpc(deps: IpcDeps): void {
     const { job, template, fields } = storedLabelOf(jobId);
     const result: PreviewResult = {
       status: 'ok',
-      scan: fieldsScan(job.raw, fields),
+      scan: fieldsScan(job.raw, fields, job.batch === undefined ? API_RULE : BATCH_RULE),
       recent: null,
       lookupFailure: null,
       printer: await deps.choosePrinter(template),
@@ -258,6 +258,8 @@ export function registerIpc(deps: IpcDeps): void {
       source: 'history',
       caller: job.caller ?? null,
       printerName: null,
+      // 批量打的重打后还算这一批的这一行这一份：整批重打失败的时，重打成功的不再算失败。
+      ...(job.batch === undefined ? {} : { batch: job.batch }),
     });
   });
   handle(IpcChannel.GetSettings, () => deps.settings.current);

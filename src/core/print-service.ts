@@ -10,6 +10,7 @@ import type { ScanField, ScanResult } from './scan/scan-result';
 import { GENERIC_TEMPLATE } from './templates/builtin-templates';
 import { type LabelTemplate, withPaper } from './templates/template-model';
 import type {
+  BatchRef,
   Clock,
   JobRecord,
   LabelJob,
@@ -86,12 +87,21 @@ const SCAN_OPTIONS: LabelOptions = { dedup: true, enrich: true, printerName: nul
 /** 本机接口的识别结果里的「规则」：备注变量 {规则} 和打印结果通知里显示为「本机接口」。 */
 export const API_RULE = { id: 'api', name: '本机接口' } as const;
 
-/** 不经过识别规则的一张的识别结果（预览按记录重打时也用它，和打印时一致）。 */
-export function fieldsScan(content: string, fields: ScanField[]): ScanResult {
-  return { raw: content, ruleId: API_RULE.id, ruleName: API_RULE.name, fields };
+/** 批量打印的「规则」：备注变量 {规则} 和打印结果通知里显示为「批量打印」。 */
+export const BATCH_RULE = { id: 'batch', name: '批量打印' } as const;
+
+/** 不经过识别规则的一张算在哪条「规则」名下。 */
+export interface FieldsRule {
+  id: string;
+  name: string;
 }
 
-/** 不经过识别规则的一张：本机接口提交的，或从打印记录按当时的模板和字段重打的。 */
+/** 不经过识别规则的一张的识别结果（预览按记录重打时也用它，和打印时一致）。 */
+export function fieldsScan(content: string, fields: ScanField[], rule: FieldsRule = API_RULE): ScanResult {
+  return { raw: content, ruleId: rule.id, ruleName: rule.name, fields };
+}
+
+/** 不经过识别规则的一张：本机接口提交的，批量打印的，或从打印记录按当时的模板和字段重打的。 */
 export interface FieldsPrint {
   template: LabelTemplate;
   fields: ScanField[];
@@ -100,6 +110,8 @@ export interface FieldsPrint {
   source: PrintSource;
   caller: string | null;
   printerName: string | null;
+  /** 批量打印的一张（含从打印记录重打批量打的）：写进打印记录；规则名记为「批量打印」。 */
+  batch?: BatchRef;
 }
 
 type Recognition = { ok: true; scan: ScanResult } | { ok: false; result: Extract<PrintResult, { status: 'invalid' }> };
@@ -150,10 +162,13 @@ export class PrintService {
 
   /** 按给定的模板和字段打印一张：不识别、不加工、不用扫码的防重复窗口。 */
   async printFields(input: FieldsPrint): Promise<PrintResult> {
-    const scan = fieldsScan(input.content, input.fields);
+    const scan = fieldsScan(input.content, input.fields, input.batch === undefined ? API_RULE : BATCH_RULE);
     const request: PrintRequest = { raw: input.content, source: input.source };
     if (input.caller !== null) {
       request.caller = input.caller;
+    }
+    if (input.batch !== undefined) {
+      request.batch = input.batch;
     }
     return this.printLabel(this.deps.createId(), request, scan, () => input.template, {
       dedup: false,
@@ -420,6 +435,9 @@ export class PrintService {
     }
     if (request.caller !== undefined) {
       job.caller = request.caller;
+    }
+    if (request.batch !== undefined) {
+      job.batch = request.batch;
     }
     try {
       this.deps.store.append(job);

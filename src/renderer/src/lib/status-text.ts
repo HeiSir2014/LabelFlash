@@ -323,9 +323,11 @@ export function describeJobMeta(job: JobRecord, caller: string | null = null): s
   const paper = job.paper === undefined ? null : parsePaperKey(job.paper);
   const source = describeSource(job.source);
   const submitter = job.source === 'history' ? `原提交：${caller}` : caller;
+  const position =
+    job.batch === undefined ? '' : `（第 ${job.batch.row} 行${job.batch.copy > 1 ? `第 ${job.batch.copy} 份` : ''}）`;
   return [
     formatDateTime(job.createdAt),
-    caller === null ? source : `${source}（${submitter}）`,
+    caller === null ? `${source}${position}` : `${source}（${submitter}）`,
     job.printerName === '' ? null : job.printerName,
     paper === null ? '—' : formatPaperName(paper),
   ]

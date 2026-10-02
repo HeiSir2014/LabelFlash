@@ -301,6 +301,16 @@ describe('describeJobMeta', () => {
       describeJobMeta({ ...job, source: 'history', printerName: '标签机A', forced: false, paper: '60x40' }, 'ERP'),
     ).toBe(`${formatDateTime(NOW)} · 记录重打（原提交：ERP） · 标签机A · 60×40 标签`);
   });
+
+  test('shows the row and copy of a batch job', () => {
+    const batchJob = { ...job, source: 'batch' as const, printerName: 'P', forced: false };
+    expect(describeJobMeta({ ...batchJob, batch: { id: '20261002-143501-a1b2', row: 3, copy: 2 } })).toContain(
+      '批量（第 3 行第 2 份）',
+    );
+    expect(describeJobMeta({ ...batchJob, batch: { id: '20261002-143501-a1b2', row: 3, copy: 1 } })).toContain(
+      '批量（第 3 行）',
+    );
+  });
 });
 
 describe('describeJobStatus', () => {

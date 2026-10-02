@@ -1,0 +1,491 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`template library HTML 样衣吊牌: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>CL5640-TK-图片色-XL</title>
+<style>
+  @page { size: 60mm 40mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 60mm; height: 40mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:38.037mm;height:7.007mm"><div class="frame" style="width:38.037mm;height:7.007mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:5mm;font-weight:700">CL5640-TK</div></div></div></div><div class="el" style="left:44.043mm;top:2.002mm;width:14.014mm;height:14.014mm"><div class="frame" style="width:14.014mm;height:14.014mm"><div class="code" style="left:2.252mm;top:2.252mm;width:9.384mm;height:9.384mm"><svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 25" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM9 0h1v1H9zM11 0h1v1H11zM18 0h7v1H18zM0 1h1v1H0zM6 1h1v1H6zM9 1h1v1H9zM11 1h1v1H11zM13 1h1v1H13zM15 1h2v1H15zM18 1h1v1H18zM24 1h1v1H24zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM8 2h1v1H8zM13 2h1v1H13zM18 2h1v1H18zM20 2h3v1H20zM24 2h1v1H24zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM8 3h1v1H8zM10 3h2v1H10zM14 3h1v1H14zM16 3h1v1H16zM18 3h1v1H18zM20 3h3v1H20zM24 3h1v1H24zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM8 4h1v1H8zM10 4h1v1H10zM12 4h1v1H12zM14 4h2v1H14zM18 4h1v1H18zM20 4h3v1H20zM24 4h1v1H24zM0 5h1v1H0zM6 5h1v1H6zM8 5h1v1H8zM10 5h1v1H10zM14 5h1v1H14zM18 5h1v1H18zM24 5h1v1H24zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h1v1H14zM16 6h1v1H16zM18 6h7v1H18zM8 7h3v1H8zM12 7h4v1H12zM0 8h1v1H0zM2 8h5v1H2zM9 8h1v1H9zM11 8h2v1H11zM18 8h5v1H18zM0 9h1v1H0zM7 9h3v1H7zM15 9h1v1H15zM17 9h3v1H17zM22 9h1v1H22zM24 9h1v1H24zM1 10h2v1H1zM4 10h3v1H4zM8 10h2v1H8zM12 10h1v1H12zM14 10h1v1H14zM20 10h4v1H20zM2 11h2v1H2zM7 11h1v1H7zM9 11h2v1H9zM13 11h1v1H13zM16 11h6v1H16zM23 11h2v1H23zM0 12h3v1H0zM4 12h3v1H4zM12 12h1v1H12zM14 12h1v1H14zM16 12h1v1H16zM21 12h2v1H21zM24 12h1v1H24zM0 13h4v1H0zM8 13h3v1H8zM16 13h2v1H16zM19 13h2v1H19zM22 13h3v1H22zM0 14h1v1H0zM3 14h1v1H3zM5 14h2v1H5zM8 14h2v1H8zM11 14h2v1H11zM15 14h1v1H15zM24 14h1v1H24zM0 15h1v1H0zM3 15h2v1H3zM7 15h1v1H7zM10 15h2v1H10zM15 15h1v1H15zM17 15h1v1H17zM21 15h1v1H21zM23 15h1v1H23zM0 16h1v1H0zM2 16h1v1H2zM5 16h3v1H5zM9 16h1v1H9zM11 16h1v1H11zM16 16h5v1H16zM22 16h1v1H22zM24 16h1v1H24zM8 17h2v1H8zM12 17h2v1H12zM16 17h1v1H16zM20 17h3v1H20zM0 18h7v1H0zM13 18h4v1H13zM18 18h1v1H18zM20 18h3v1H20zM24 18h1v1H24zM0 19h1v1H0zM6 19h1v1H6zM8 19h1v1H8zM12 19h2v1H12zM15 19h2v1H15zM20 19h5v1H20zM0 20h1v1H0zM2 20h3v1H2zM6 20h1v1H6zM8 20h3v1H8zM12 20h1v1H12zM14 20h1v1H14zM16 20h5v1H16zM23 20h2v1H23zM0 21h1v1H0zM2 21h3v1H2zM6 21h1v1H6zM8 21h2v1H8zM15 21h1v1H15zM17 21h1v1H17zM21 21h1v1H21zM24 21h1v1H24zM0 22h1v1H0zM2 22h3v1H2zM6 22h1v1H6zM8 22h1v1H8zM11 22h2v1H11zM15 22h2v1H15zM19 22h1v1H19zM22 22h1v1H22zM24 22h1v1H24zM0 23h1v1H0zM6 23h1v1H6zM9 23h1v1H9zM11 23h1v1H11zM14 23h1v1H14zM16 23h2v1H16zM19 23h1v1H19zM21 23h2v1H21zM0 24h7v1H0zM8 24h1v1H8zM11 24h1v1H11zM19 24h4v1H19zM24 24h1v1H24z"/></svg></div></div></div><div class="el" style="left:2.002mm;top:10.01mm;width:38.037mm;height:10.01mm"><div class="frame" style="width:38.037mm;height:10.01mm"><div class="text text--middle" style="position:absolute;left:0.8mm;top:0.5mm;width:10.412mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.8mm;font-weight:700">颜色</div></div><div class="text text--middle" style="position:absolute;left:12.812mm;top:0.5mm;width:24.426mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.8mm;font-weight:400">图片色</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:5.505mm;width:10.412mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.8mm;font-weight:700">尺码</div></div><div class="text text--middle" style="position:absolute;left:12.812mm;top:5.505mm;width:24.426mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.8mm;font-weight:400">XL</div></div><div style="position:absolute;inset:0;border:0.25mm solid #000"></div><div style="position:absolute;left:0;top:4.88mm;width:38.037mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:11.887mm;top:0;width:0.25mm;height:10.01mm;background:#000"></div></div></div><div class="el" style="left:2.002mm;top:21.521mm;width:56.055mm;height:12.012mm"><div class="frame" style="width:56.055mm;height:12.012mm"><div class="code" style="left:11.261mm;top:0;width:33.533mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 134 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:33.533mm;height:8.612mm"><path d="M0 0h2v1H0zM3 0h1v1H3zM6 0h1v1H6zM11 0h1v1H11zM15 0h1v1H15zM19 0h2v1H19zM22 0h1v1H22zM26 0h2v1H26zM29 0h3v1H29zM33 0h1v1H33zM35 0h3v1H35zM39 0h4v1H39zM44 0h3v1H44zM50 0h1v1H50zM52 0h2v1H52zM55 0h2v1H55zM60 0h1v1H60zM62 0h1v1H62zM66 0h1v1H66zM68 0h4v1H68zM73 0h3v1H73zM77 0h1v1H77zM80 0h2v1H80zM83 0h3v1H83zM88 0h2v1H88zM91 0h3v1H91zM97 0h1v1H97zM99 0h1v1H99zM101 0h2v1H101zM106 0h3v1H106zM110 0h1v1H110zM115 0h2v1H115zM118 0h1v1H118zM121 0h2v1H121zM126 0h3v1H126zM130 0h1v1H130zM132 0h2v1H132z"/></svg><div class="code__text" style="font-size:2.5mm;margin-top:0.4mm">CL5640-TK</div></div></div></div><div class="el" style="left:2.002mm;top:34.033mm;width:56.055mm;height:0.25mm"><div class="frame" style="width:56.055mm;height:0.25mm"><div style="width:100%;height:100%;background:#000"></div></div></div><div class="el" style="left:2.002mm;top:34.659mm;width:36.035mm;height:3.503mm"><div class="frame" style="width:36.035mm;height:3.503mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">货架号 A-1-2-3</div></div></div></div><div class="el" style="left:40.039mm;top:34.659mm;width:18.018mm;height:3.503mm"><div class="frame" style="width:18.018mm;height:3.503mm"><div class="text text--middle" style="text-align:right"><div class="line" style="font-size:2.4mm;font-weight:400">2026-10-02</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 服装合格证: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>CL5640-TK</title>
+<style>
+  @page { size: 70mm 50mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 70mm; height: 50mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:65.94mm;height:6.006mm"><div class="frame" style="width:65.94mm;height:6.006mm"><div class="text text--middle" style="text-align:center;background:#000;color:#fff"><div class="line" style="font-size:4mm;font-weight:700">合 格 证</div></div></div></div><div class="el" style="left:2.002mm;top:9.509mm;width:44.043mm;height:30.03mm"><div class="frame" style="width:44.043mm;height:30.03mm"><div class="text text--middle" style="position:absolute;left:0.8mm;top:0.5mm;width:10.412mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">品名</div></div><div class="text text--middle" style="position:absolute;left:12.812mm;top:0.5mm;width:30.432mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">女式连衣裙</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:5.505mm;width:10.412mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">款号</div></div><div class="text text--middle" style="position:absolute;left:12.812mm;top:5.505mm;width:30.432mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">CL5640-TK</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:10.51mm;width:10.412mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">颜色</div></div><div class="text text--middle" style="position:absolute;left:12.812mm;top:10.51mm;width:30.432mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">图片色</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:15.515mm;width:10.412mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">号型</div></div><div class="text text--middle" style="position:absolute;left:12.812mm;top:15.515mm;width:30.432mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">165/88A</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:20.52mm;width:10.412mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">成分</div></div><div class="text text--middle" style="position:absolute;left:12.812mm;top:20.52mm;width:30.432mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">面料 100%棉</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:25.525mm;width:10.412mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">标准</div></div><div class="text text--middle" style="position:absolute;left:12.812mm;top:25.525mm;width:30.432mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">FZ/T 81004-2022</div></div><div style="position:absolute;inset:0;border:0.25mm solid #000"></div><div style="position:absolute;left:0;top:4.88mm;width:44.043mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:9.885mm;width:44.043mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:14.89mm;width:44.043mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:19.895mm;width:44.043mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:24.9mm;width:44.043mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:11.887mm;top:0;width:0.25mm;height:30.03mm;background:#000"></div></div></div><div class="el" style="left:49.048mm;top:9.509mm;width:18.894mm;height:19.019mm"><div class="frame" style="width:18.894mm;height:19.019mm"><div class="code" style="left:1.501mm;top:1.627mm;width:15.766mm;height:15.766mm"><svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM9 0h1v1H9zM14 0h7v1H14zM0 1h1v1H0zM6 1h1v1H6zM10 1h3v1H10zM14 1h1v1H14zM20 1h1v1H20zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM8 2h1v1H8zM10 2h1v1H10zM14 2h1v1H14zM16 2h3v1H16zM20 2h1v1H20zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM8 3h5v1H8zM14 3h1v1H14zM16 3h3v1H16zM20 3h1v1H20zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM8 4h1v1H8zM10 4h1v1H10zM12 4h1v1H12zM14 4h1v1H14zM16 4h3v1H16zM20 4h1v1H20zM0 5h1v1H0zM6 5h1v1H6zM8 5h4v1H8zM14 5h1v1H14zM20 5h1v1H20zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h7v1H14zM8 7h3v1H8zM0 8h1v1H0zM2 8h5v1H2zM11 8h1v1H11zM14 8h5v1H14zM0 9h2v1H0zM3 9h1v1H3zM10 9h6v1H10zM18 9h2v1H18zM2 10h1v1H2zM4 10h1v1H4zM6 10h1v1H6zM8 10h2v1H8zM12 10h1v1H12zM14 10h2v1H14zM17 10h2v1H17zM0 11h4v1H0zM9 11h7v1H9zM17 11h1v1H17zM19 11h2v1H19zM2 12h1v1H2zM4 12h3v1H4zM9 12h1v1H9zM12 12h1v1H12zM15 12h1v1H15zM18 12h1v1H18zM8 13h1v1H8zM10 13h1v1H10zM12 13h1v1H12zM15 13h1v1H15zM17 13h1v1H17zM20 13h1v1H20zM0 14h7v1H0zM9 14h1v1H9zM11 14h1v1H11zM13 14h1v1H13zM15 14h2v1H15zM20 14h1v1H20zM0 15h1v1H0zM6 15h1v1H6zM8 15h1v1H8zM10 15h1v1H10zM15 15h2v1H15zM18 15h1v1H18zM0 16h1v1H0zM2 16h3v1H2zM6 16h1v1H6zM8 16h2v1H8zM11 16h1v1H11zM13 16h1v1H13zM15 16h1v1H15zM19 16h1v1H19zM0 17h1v1H0zM2 17h3v1H2zM6 17h1v1H6zM8 17h2v1H8zM11 17h4v1H11zM17 17h1v1H17zM0 18h1v1H0zM2 18h3v1H2zM6 18h1v1H6zM8 18h2v1H8zM12 18h1v1H12zM14 18h5v1H14zM0 19h1v1H0zM6 19h1v1H6zM10 19h7v1H10zM18 19h1v1H18zM20 19h1v1H20zM0 20h7v1H0zM8 20h1v1H8zM12 20h1v1H12zM15 20h3v1H15z"/></svg></div></div></div><div class="el" style="left:48.047mm;top:30.03mm;width:19.895mm;height:4.004mm"><div class="frame" style="width:19.895mm;height:4.004mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">等级 合格品</div></div></div></div><div class="el" style="left:48.047mm;top:35.034mm;width:19.895mm;height:4.004mm"><div class="frame" style="width:19.895mm;height:4.004mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">GB 18401 B类</div></div></div></div><div class="el" style="left:2.002mm;top:41.04mm;width:65.94mm;height:0.25mm"><div class="frame" style="width:65.94mm;height:0.25mm"><div style="width:100%;height:100%;background:#000"></div></div></div><div class="el" style="left:2.002mm;top:42.041mm;width:65.94mm;height:6.006mm"><div class="frame" style="width:65.94mm;height:6.006mm"><div class="text text--middle" style="text-align:right"><div class="line" style="font-size:4.5mm;font-weight:700">零售价 ¥399.00</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 简洁吊牌: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>CL5640-TK-图片色-XL</title>
+<style>
+  @page { size: 50mm 30mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 50mm; height: 30mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:46.045mm;height:6.006mm"><div class="frame" style="width:46.045mm;height:6.006mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:4.5mm;font-weight:700">CL5640-TK</div></div></div></div><div class="el" style="left:2.002mm;top:8.508mm;width:46.045mm;height:4.004mm"><div class="frame" style="width:46.045mm;height:4.004mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3mm;font-weight:400">图片色  XL</div></div></div></div><div class="el" style="left:2.002mm;top:13.013mm;width:46.045mm;height:12.012mm"><div class="frame" style="width:46.045mm;height:12.012mm"><div class="code" style="left:6.256mm;top:0;width:33.533mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 134 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:33.533mm;height:8.972mm"><path d="M0 0h2v1H0zM3 0h1v1H3zM6 0h1v1H6zM11 0h1v1H11zM15 0h1v1H15zM19 0h2v1H19zM22 0h1v1H22zM26 0h2v1H26zM29 0h3v1H29zM33 0h1v1H33zM35 0h3v1H35zM39 0h4v1H39zM44 0h3v1H44zM50 0h1v1H50zM52 0h2v1H52zM55 0h2v1H55zM60 0h1v1H60zM62 0h1v1H62zM66 0h1v1H66zM68 0h4v1H68zM73 0h3v1H73zM77 0h1v1H77zM80 0h2v1H80zM83 0h3v1H83zM88 0h2v1H88zM91 0h3v1H91zM97 0h1v1H97zM99 0h1v1H99zM101 0h2v1H101zM106 0h3v1H106zM110 0h1v1H110zM115 0h2v1H115zM118 0h1v1H118zM121 0h2v1H121zM126 0h3v1H126zM130 0h1v1H130zM132 0h2v1H132z"/></svg><div class="code__text" style="font-size:2.2mm;margin-top:0.4mm">CL5640-TK</div></div></div></div><div class="el" style="left:2.002mm;top:25.525mm;width:46.045mm;height:3.003mm"><div class="frame" style="width:46.045mm;height:3.003mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:2.4mm;font-weight:400">货架号 A-1-2-3</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 简洁价签: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>6901234567892</title>
+<style>
+  @page { size: 40mm 30mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 40mm; height: 30mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:36.035mm;height:5.005mm"><div class="frame" style="width:36.035mm;height:5.005mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3.2mm;font-weight:700">纯棉袜子</div></div></div></div><div class="el" style="left:2.002mm;top:7.507mm;width:36.035mm;height:10.01mm"><div class="frame" style="width:36.035mm;height:10.01mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:8mm;font-weight:700">¥12.80</div></div></div></div><div class="el" style="left:2.002mm;top:18.018mm;width:36.035mm;height:10.01mm"><div class="frame" style="width:36.035mm;height:10.01mm"><div class="code" style="left:6.131mm;top:0;width:23.773mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 95 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:23.773mm;height:7.21mm"><path d="M0 0h1v1H0zM2 0h1v1H2zM6 0h1v1H6zM8 0h2v1H8zM11 0h1v1H11zM14 0h3v1H14zM18 0h2v1H18zM22 0h2v1H22zM26 0h2v1H26zM29 0h2v1H29zM32 0h4v1H32zM37 0h1v1H37zM39 0h1v1H39zM43 0h2v1H43zM46 0h1v1H46zM48 0h1v1H48zM50 0h1v1H50zM53 0h3v1H53zM57 0h1v1H57zM59 0h1v1H59zM64 0h1v1H64zM68 0h1v1H68zM71 0h1v1H71zM74 0h1v1H74zM78 0h3v1H78zM82 0h1v1H82zM85 0h2v1H85zM88 0h2v1H88zM92 0h1v1H92zM94 0h1v1H94z"/></svg><div class="code__text" style="font-size:2mm;margin-top:0.4mm">6901234567892</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 明码标价签: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>6901234567892</title>
+<style>
+  @page { size: 60mm 40mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 60mm; height: 40mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:56.055mm;height:6.006mm"><div class="frame" style="width:56.055mm;height:6.006mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:4mm;font-weight:700">红富士苹果</div></div></div></div><div class="el" style="left:2.002mm;top:8.508mm;width:30.03mm;height:20.02mm"><div class="frame" style="width:30.03mm;height:20.02mm"><div class="text text--middle" style="position:absolute;left:0.8mm;top:0.5mm;width:8.41mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">产地</div></div><div class="text text--middle" style="position:absolute;left:10.81mm;top:0.5mm;width:18.42mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">山东烟台</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:5.505mm;width:8.41mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">规格</div></div><div class="text text--middle" style="position:absolute;left:10.81mm;top:5.505mm;width:18.42mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">75mm 以上</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:10.51mm;width:8.41mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">等级</div></div><div class="text text--middle" style="position:absolute;left:10.81mm;top:10.51mm;width:18.42mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">一级</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:15.515mm;width:8.41mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">单位</div></div><div class="text text--middle" style="position:absolute;left:10.81mm;top:15.515mm;width:18.42mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">500g</div></div><div style="position:absolute;inset:0;border:0.25mm solid #000"></div><div style="position:absolute;left:0;top:4.88mm;width:30.03mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:9.885mm;width:30.03mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:14.89mm;width:30.03mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:9.885mm;top:0;width:0.25mm;height:20.02mm;background:#000"></div></div></div><div class="el" style="left:33.033mm;top:8.508mm;width:25.025mm;height:4.004mm"><div class="frame" style="width:25.025mm;height:4.004mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:2.6mm;font-weight:400">零售价</div></div></div></div><div class="el" style="left:33.033mm;top:12.512mm;width:25.025mm;height:10.01mm"><div class="frame" style="width:25.025mm;height:10.01mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:6mm;font-weight:700">¥6.80</div></div></div></div><div class="el" style="left:2.002mm;top:29.529mm;width:36.035mm;height:8.508mm"><div class="frame" style="width:36.035mm;height:8.508mm"><div class="code" style="left:6.131mm;top:0;width:23.773mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 95 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:23.773mm;height:5.708mm"><path d="M0 0h1v1H0zM2 0h1v1H2zM6 0h1v1H6zM8 0h2v1H8zM11 0h1v1H11zM14 0h3v1H14zM18 0h2v1H18zM22 0h2v1H22zM26 0h2v1H26zM29 0h2v1H29zM32 0h4v1H32zM37 0h1v1H37zM39 0h1v1H39zM43 0h2v1H43zM46 0h1v1H46zM48 0h1v1H48zM50 0h1v1H50zM53 0h3v1H53zM57 0h1v1H57zM59 0h1v1H59zM64 0h1v1H64zM68 0h1v1H68zM71 0h1v1H71zM74 0h1v1H74zM78 0h3v1H78zM82 0h1v1H82zM85 0h2v1H85zM88 0h2v1H88zM92 0h1v1H92zM94 0h1v1H94z"/></svg><div class="code__text" style="font-size:2mm;margin-top:0.4mm">6901234567892</div></div></div></div><div class="el" style="left:40.039mm;top:33.033mm;width:18.018mm;height:4.004mm"><div class="frame" style="width:18.018mm;height:4.004mm"><div class="text text--middle" style="text-align:right"><div class="line" style="font-size:2.4mm;font-weight:400">GP0301</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 促销价签: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>6901234567892</title>
+<style>
+  @page { size: 70mm 50mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 70mm; height: 50mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:65.94mm;height:8.008mm"><div class="frame" style="width:65.94mm;height:8.008mm"><div class="text text--middle" style="text-align:center;background:#000;color:#fff"><div class="line" style="font-size:6mm;font-weight:700">特 价</div></div></div></div><div class="el" style="left:2.002mm;top:11.011mm;width:65.94mm;height:6.006mm"><div class="frame" style="width:65.94mm;height:6.006mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:4mm;font-weight:700">保温杯 500ml</div></div></div></div><div class="el" style="left:2.002mm;top:18.518mm;width:32.032mm;height:5.005mm"><div class="frame" style="width:32.032mm;height:5.005mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3mm;font-weight:400">原价 ¥89.00</div></div></div></div><div class="el" style="left:36.035mm;top:18.518mm;width:31.906mm;height:5.005mm"><div class="frame" style="width:31.906mm;height:5.005mm"><div class="text text--middle" style="text-align:right"><div class="line" style="font-size:3mm;font-weight:400">500ml</div></div></div></div><div class="el" style="left:2.002mm;top:24.024mm;width:65.94mm;height:12.012mm"><div class="frame" style="width:65.94mm;height:12.012mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:10mm;font-weight:700">¥59.00</div></div></div></div><div class="el" style="left:2.002mm;top:37.036mm;width:65.94mm;height:0.25mm"><div class="frame" style="width:65.94mm;height:0.25mm"><div style="width:100%;height:100%;background:#000"></div></div></div><div class="el" style="left:2.002mm;top:38.037mm;width:40.039mm;height:10.01mm"><div class="frame" style="width:40.039mm;height:10.01mm"><div class="code" style="left:8.133mm;top:0;width:23.773mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 95 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:23.773mm;height:7.21mm"><path d="M0 0h1v1H0zM2 0h1v1H2zM6 0h1v1H6zM8 0h2v1H8zM11 0h1v1H11zM14 0h3v1H14zM18 0h2v1H18zM22 0h2v1H22zM26 0h2v1H26zM29 0h2v1H29zM32 0h4v1H32zM37 0h1v1H37zM39 0h1v1H39zM43 0h2v1H43zM46 0h1v1H46zM48 0h1v1H48zM50 0h1v1H50zM53 0h3v1H53zM57 0h1v1H57zM59 0h1v1H59zM64 0h1v1H64zM68 0h1v1H68zM71 0h1v1H71zM74 0h1v1H74zM78 0h3v1H78zM82 0h1v1H82zM85 0h2v1H85zM88 0h2v1H88zM92 0h1v1H92zM94 0h1v1H94z"/></svg><div class="code__text" style="font-size:2mm;margin-top:0.4mm">6901234567892</div></div></div></div><div class="el" style="left:44.043mm;top:41.04mm;width:23.899mm;height:5.005mm"><div class="frame" style="width:23.899mm;height:5.005mm"><div class="text text--middle" style="text-align:right"><div class="line" style="font-size:2.6mm;font-weight:400">货号 BW0500</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML EAN-13 商品条码: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>6901234567892</title>
+<style>
+  @page { size: 40mm 30mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 40mm; height: 30mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:36.035mm;height:5.005mm"><div class="frame" style="width:36.035mm;height:5.005mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:3mm;font-weight:700">纯棉袜子</div></div></div></div><div class="el" style="left:2.002mm;top:8.008mm;width:36.035mm;height:16.016mm"><div class="frame" style="width:36.035mm;height:16.016mm"><div class="code" style="left:6.131mm;top:0;width:23.773mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 95 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:23.773mm;height:12.736mm"><path d="M0 0h1v1H0zM2 0h1v1H2zM6 0h1v1H6zM8 0h2v1H8zM11 0h1v1H11zM14 0h3v1H14zM18 0h2v1H18zM22 0h2v1H22zM26 0h2v1H26zM29 0h2v1H29zM32 0h4v1H32zM37 0h1v1H37zM39 0h1v1H39zM43 0h2v1H43zM46 0h1v1H46zM48 0h1v1H48zM50 0h1v1H50zM53 0h3v1H53zM57 0h1v1H57zM59 0h1v1H59zM64 0h1v1H64zM68 0h1v1H68zM71 0h1v1H71zM74 0h1v1H74zM78 0h3v1H78zM82 0h1v1H82zM85 0h2v1H85zM88 0h2v1H88zM92 0h1v1H92zM94 0h1v1H94z"/></svg><div class="code__text" style="font-size:2.4mm;margin-top:0.4mm">6901234567892</div></div></div></div><div class="el" style="left:2.002mm;top:24.524mm;width:36.035mm;height:4.004mm"><div class="frame" style="width:36.035mm;height:4.004mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:2.6mm;font-weight:400">均码 3双装</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML EAN-13 条码 + 价格: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>6901234567892</title>
+<style>
+  @page { size: 50mm 30mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 50mm; height: 30mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:30.03mm;height:5.005mm"><div class="frame" style="width:30.03mm;height:5.005mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3mm;font-weight:700">纯棉袜子</div></div></div></div><div class="el" style="left:32.032mm;top:2.002mm;width:16.016mm;height:5.005mm"><div class="frame" style="width:16.016mm;height:5.005mm"><div class="text text--middle" style="text-align:right"><div class="line" style="font-size:3.4mm;font-weight:700">¥12.80</div></div></div></div><div class="el" style="left:2.002mm;top:8.008mm;width:46.045mm;height:20.02mm"><div class="frame" style="width:46.045mm;height:20.02mm"><div class="code" style="left:5.13mm;top:0;width:35.66mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 95 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:35.66mm;height:16.74mm"><path d="M0 0h1v1H0zM2 0h1v1H2zM6 0h1v1H6zM8 0h2v1H8zM11 0h1v1H11zM14 0h3v1H14zM18 0h2v1H18zM22 0h2v1H22zM26 0h2v1H26zM29 0h2v1H29zM32 0h4v1H32zM37 0h1v1H37zM39 0h1v1H39zM43 0h2v1H43zM46 0h1v1H46zM48 0h1v1H48zM50 0h1v1H50zM53 0h3v1H53zM57 0h1v1H57zM59 0h1v1H59zM64 0h1v1H64zM68 0h1v1H68zM71 0h1v1H71zM74 0h1v1H74zM78 0h3v1H78zM82 0h1v1H82zM85 0h2v1H85zM88 0h2v1H88zM92 0h1v1H92zM94 0h1v1H94z"/></svg><div class="code__text" style="font-size:2.4mm;margin-top:0.4mm">6901234567892</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML Code128 货号条码: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>CL5640-TK</title>
+<style>
+  @page { size: 60mm 40mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 60mm; height: 40mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:56.055mm;height:5.005mm"><div class="frame" style="width:56.055mm;height:5.005mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3.2mm;font-weight:700">女式连衣裙</div></div></div></div><div class="el" style="left:2.002mm;top:7.507mm;width:56.055mm;height:4.504mm"><div class="frame" style="width:56.055mm;height:4.504mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3mm;font-weight:400">货号 CL5640-TK</div></div></div></div><div class="el" style="left:2.002mm;top:12.512mm;width:56.055mm;height:4.504mm"><div class="frame" style="width:56.055mm;height:4.504mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3mm;font-weight:400">颜色 图片色   尺码 XL</div></div></div></div><div class="el" style="left:2.002mm;top:18.018mm;width:56.055mm;height:16.016mm"><div class="frame" style="width:56.055mm;height:16.016mm"><div class="code" style="left:11.261mm;top:0;width:33.533mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 134 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:33.533mm;height:12.616mm"><path d="M0 0h2v1H0zM3 0h1v1H3zM6 0h1v1H6zM11 0h1v1H11zM15 0h1v1H15zM19 0h2v1H19zM22 0h1v1H22zM26 0h2v1H26zM29 0h3v1H29zM33 0h1v1H33zM35 0h3v1H35zM39 0h4v1H39zM44 0h3v1H44zM50 0h1v1H50zM52 0h2v1H52zM55 0h2v1H55zM60 0h1v1H60zM62 0h1v1H62zM66 0h1v1H66zM68 0h4v1H68zM73 0h3v1H73zM77 0h1v1H77zM80 0h2v1H80zM83 0h3v1H83zM88 0h2v1H88zM91 0h3v1H91zM97 0h1v1H97zM99 0h1v1H99zM101 0h2v1H101zM106 0h3v1H106zM110 0h1v1H110zM115 0h2v1H115zM118 0h1v1H118zM121 0h2v1H121zM126 0h3v1H126zM130 0h1v1H130zM132 0h2v1H132z"/></svg><div class="code__text" style="font-size:2.5mm;margin-top:0.4mm">CL5640-TK</div></div></div></div><div class="el" style="left:2.002mm;top:34.534mm;width:56.055mm;height:4.004mm"><div class="frame" style="width:56.055mm;height:4.004mm"><div class="text text--middle" style="text-align:right"><div class="line" style="font-size:3mm;font-weight:700">¥399.00</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 鞋盒标: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>XZ2026-BK</title>
+<style>
+  @page { size: 70mm 50mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 70mm; height: 50mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:46.045mm;height:6.006mm"><div class="frame" style="width:46.045mm;height:6.006mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:4mm;font-weight:700">男式休闲鞋</div></div></div></div><div class="el" style="left:50.049mm;top:2.002mm;width:17.893mm;height:14.014mm"><div class="frame" style="width:17.893mm;height:14.014mm"><div class="text text--middle" style="text-align:center;background:#000;color:#fff"><div class="line" style="font-size:9mm;font-weight:700">42</div></div></div></div><div class="el" style="left:50.049mm;top:16.516mm;width:17.893mm;height:4.004mm"><div class="frame" style="width:17.893mm;height:4.004mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:2.6mm;font-weight:400">尺码</div></div></div></div><div class="el" style="left:2.002mm;top:9.009mm;width:46.045mm;height:15.015mm"><div class="frame" style="width:46.045mm;height:15.015mm"><div class="text text--middle" style="position:absolute;left:0.8mm;top:0.5mm;width:8.41mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.8mm;font-weight:700">货号</div></div><div class="text text--middle" style="position:absolute;left:10.81mm;top:0.5mm;width:34.435mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.8mm;font-weight:400">XZ2026-BK</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:5.505mm;width:8.41mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.8mm;font-weight:700">颜色</div></div><div class="text text--middle" style="position:absolute;left:10.81mm;top:5.505mm;width:34.435mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.8mm;font-weight:400">黑色</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:10.51mm;width:8.41mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.8mm;font-weight:700">价格</div></div><div class="text text--middle" style="position:absolute;left:10.81mm;top:10.51mm;width:34.435mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.8mm;font-weight:400">¥459.00</div></div><div style="position:absolute;inset:0;border:0.25mm solid #000"></div><div style="position:absolute;left:0;top:4.88mm;width:46.045mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:9.885mm;width:46.045mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:9.885mm;top:0;width:0.25mm;height:15.015mm;background:#000"></div></div></div><div class="el" style="left:2.002mm;top:26.026mm;width:46.045mm;height:20.02mm"><div class="frame" style="width:46.045mm;height:20.02mm"><div class="code" style="left:5.13mm;top:0;width:35.66mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 95 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:35.66mm;height:16.74mm"><path d="M0 0h1v1H0zM2 0h1v1H2zM6 0h1v1H6zM8 0h2v1H8zM11 0h1v1H11zM14 0h3v1H14zM18 0h2v1H18zM22 0h2v1H22zM26 0h2v1H26zM29 0h2v1H29zM32 0h4v1H32zM37 0h1v1H37zM39 0h1v1H39zM43 0h2v1H43zM46 0h1v1H46zM48 0h1v1H48zM50 0h1v1H50zM53 0h3v1H53zM57 0h1v1H57zM59 0h1v1H59zM64 0h1v1H64zM68 0h1v1H68zM71 0h1v1H71zM74 0h1v1H74zM78 0h3v1H78zM82 0h1v1H82zM85 0h2v1H85zM88 0h2v1H88zM92 0h1v1H92zM94 0h1v1H94z"/></svg><div class="code__text" style="font-size:2.4mm;margin-top:0.4mm">6901234567892</div></div></div></div><div class="el" style="left:51.05mm;top:27.027mm;width:16.892mm;height:17.017mm"><div class="frame" style="width:16.892mm;height:17.017mm"><div class="code" style="left:1.877mm;top:1.877mm;width:13.138mm;height:13.138mm"><svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM9 0h2v1H9zM14 0h7v1H14zM0 1h1v1H0zM6 1h1v1H6zM8 1h1v1H8zM10 1h1v1H10zM12 1h1v1H12zM14 1h1v1H14zM20 1h1v1H20zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM10 2h3v1H10zM14 2h1v1H14zM16 2h3v1H16zM20 2h1v1H20zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM10 3h1v1H10zM14 3h1v1H14zM16 3h3v1H16zM20 3h1v1H20zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM8 4h2v1H8zM12 4h1v1H12zM14 4h1v1H14zM16 4h3v1H16zM20 4h1v1H20zM0 5h1v1H0zM6 5h1v1H6zM9 5h1v1H9zM12 5h1v1H12zM14 5h1v1H14zM20 5h1v1H20zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h7v1H14zM9 7h1v1H9zM11 7h2v1H11zM0 8h1v1H0zM2 8h1v1H2zM4 8h1v1H4zM6 8h1v1H6zM9 8h3v1H9zM16 8h1v1H16zM19 8h1v1H19zM0 9h1v1H0zM2 9h4v1H2zM8 9h1v1H8zM10 9h1v1H10zM14 9h2v1H14zM17 9h1v1H17zM19 9h1v1H19zM0 10h2v1H0zM3 10h1v1H3zM6 10h2v1H6zM9 10h1v1H9zM12 10h1v1H12zM16 10h1v1H16zM18 10h1v1H18zM20 10h1v1H20zM0 11h3v1H0zM5 11h1v1H5zM7 11h1v1H7zM14 11h2v1H14zM17 11h2v1H17zM20 11h1v1H20zM3 12h2v1H3zM6 12h3v1H6zM10 12h1v1H10zM12 12h1v1H12zM14 12h1v1H14zM16 12h2v1H16zM19 12h1v1H19zM8 13h4v1H8zM13 13h1v1H13zM15 13h1v1H15zM0 14h7v1H0zM9 14h1v1H9zM11 14h1v1H11zM13 14h2v1H13zM18 14h2v1H18zM0 15h1v1H0zM6 15h1v1H6zM9 15h1v1H9zM11 15h3v1H11zM15 15h3v1H15zM19 15h1v1H19zM0 16h1v1H0zM2 16h3v1H2zM6 16h1v1H6zM8 16h1v1H8zM11 16h1v1H11zM13 16h2v1H13zM16 16h5v1H16zM0 17h1v1H0zM2 17h3v1H2zM6 17h1v1H6zM14 17h2v1H14zM17 17h3v1H17zM0 18h1v1H0zM2 18h3v1H2zM6 18h1v1H6zM8 18h1v1H8zM12 18h1v1H12zM16 18h1v1H16zM18 18h1v1H18zM20 18h1v1H20zM0 19h1v1H0zM6 19h1v1H6zM9 19h1v1H9zM14 19h4v1H14zM19 19h2v1H19zM0 20h7v1H0zM8 20h1v1H8zM10 20h1v1H10zM12 20h1v1H12zM14 20h1v1H14zM17 20h1v1H17zM20 20h1v1H20z"/></svg></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 鞋盒标（大尺码）: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>XZ2026-BK</title>
+<style>
+  @page { size: 60mm 40mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 60mm; height: 40mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:20.02mm;height:16.016mm"><div class="frame" style="width:20.02mm;height:16.016mm"><div class="text text--middle" style="text-align:center;background:#000;color:#fff"><div class="line" style="font-size:9mm;font-weight:700">42</div></div></div></div><div class="el" style="left:24.024mm;top:2.002mm;width:34.033mm;height:5.005mm"><div class="frame" style="width:34.033mm;height:5.005mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3.2mm;font-weight:700">男式休闲鞋</div></div></div></div><div class="el" style="left:24.024mm;top:7.507mm;width:34.033mm;height:4.504mm"><div class="frame" style="width:34.033mm;height:4.504mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:2.8mm;font-weight:400">货号 XZ2026-BK</div></div></div></div><div class="el" style="left:24.024mm;top:12.512mm;width:34.033mm;height:4.504mm"><div class="frame" style="width:34.033mm;height:4.504mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:2.8mm;font-weight:400">颜色 黑色</div></div></div></div><div class="el" style="left:2.002mm;top:19.519mm;width:56.055mm;height:18.018mm"><div class="frame" style="width:56.055mm;height:18.018mm"><div class="code" style="left:11.261mm;top:0;width:33.533mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 134 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:33.533mm;height:14.738mm"><path d="M0 0h2v1H0zM3 0h1v1H3zM6 0h1v1H6zM11 0h3v1H11zM17 0h1v1H17zM19 0h2v1H19zM22 0h3v1H22zM26 0h2v1H26zM31 0h1v1H31zM33 0h1v1H33zM35 0h3v1H35zM39 0h4v1H39zM44 0h2v1H44zM48 0h1v1H48zM51 0h3v1H51zM55 0h3v1H55zM60 0h1v1H60zM63 0h2v1H63zM66 0h1v1H66zM68 0h4v1H68zM73 0h3v1H73zM77 0h1v1H77zM80 0h2v1H80zM83 0h3v1H83zM88 0h1v1H88zM92 0h1v1H92zM94 0h2v1H94zM99 0h1v1H99zM101 0h2v1H101zM106 0h3v1H106zM110 0h1v1H110zM115 0h2v1H115zM118 0h1v1H118zM121 0h2v1H121zM126 0h3v1H126zM130 0h1v1H130zM132 0h2v1H132z"/></svg><div class="code__text" style="font-size:2.4mm;margin-top:0.4mm">XZ2026-BK</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 食品标签: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>手工曲奇饼干</title>
+<style>
+  @page { size: 60mm 40mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 60mm; height: 40mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:56.055mm;height:6.006mm"><div class="frame" style="width:56.055mm;height:6.006mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:4mm;font-weight:700">手工曲奇饼干</div></div></div></div><div class="el" style="left:2.002mm;top:9.009mm;width:56.055mm;height:20.02mm"><div class="frame" style="width:56.055mm;height:20.02mm"><div class="text text--middle" style="position:absolute;left:0.8mm;top:0.5mm;width:12.414mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">净含量</div></div><div class="text text--middle" style="position:absolute;left:14.814mm;top:0.5mm;width:40.441mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">200g</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:5.505mm;width:12.414mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">生产日期</div></div><div class="text text--middle" style="position:absolute;left:14.814mm;top:5.505mm;width:40.441mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">2026-10-02</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:10.51mm;width:12.414mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">保质期</div></div><div class="text text--middle" style="position:absolute;left:14.814mm;top:10.51mm;width:40.441mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">30 天</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:15.515mm;width:12.414mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:700">贮存条件</div></div><div class="text text--middle" style="position:absolute;left:14.814mm;top:15.515mm;width:40.441mm;height:4.005mm;text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">常温避光保存</div></div><div style="position:absolute;inset:0;border:0.25mm solid #000"></div><div style="position:absolute;left:0;top:4.88mm;width:56.055mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:9.885mm;width:56.055mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:14.89mm;width:56.055mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:13.889mm;top:0;width:0.25mm;height:20.02mm;background:#000"></div></div></div><div class="el" style="left:2.002mm;top:30.03mm;width:56.055mm;height:4.004mm"><div class="frame" style="width:56.055mm;height:4.004mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:2.6mm;font-weight:400">生产商：广州市某某食品有限公司</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 预包装食品标签: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>6901234567892</title>
+<style>
+  @page { size: 100mm 100mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100mm; height: 100mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:95.969mm;height:8.008mm"><div class="frame" style="width:95.969mm;height:8.008mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:6mm;font-weight:700">手工曲奇饼干</div></div></div></div><div class="el" style="left:2.002mm;top:11.011mm;width:95.969mm;height:14.014mm"><div class="frame" style="width:95.969mm;height:14.014mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3mm;font-weight:400">配料：小麦粉、黄油、白砂糖、鸡蛋、全脂乳粉、食用盐、食品添加剂</div><div class="line" style="font-size:3mm;font-weight:400">（碳酸氢铵）</div></div></div></div><div class="el" style="left:2.002mm;top:26.026mm;width:95.969mm;height:35.034mm"><div class="frame" style="width:95.969mm;height:35.034mm"><div class="text text--middle" style="position:absolute;left:0.8mm;top:0.5mm;width:18.42mm;height:6.007mm;text-align:left"><div class="line" style="font-size:3mm;font-weight:700">生产日期</div></div><div class="text text--middle" style="position:absolute;left:20.82mm;top:0.5mm;width:74.35mm;height:6.007mm;text-align:left"><div class="line" style="font-size:3mm;font-weight:400">2026-10-02</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:7.507mm;width:18.42mm;height:6.007mm;text-align:left"><div class="line" style="font-size:3mm;font-weight:700">保质期</div></div><div class="text text--middle" style="position:absolute;left:20.82mm;top:7.507mm;width:74.35mm;height:6.007mm;text-align:left"><div class="line" style="font-size:3mm;font-weight:400">30 天</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:14.514mm;width:18.42mm;height:6.007mm;text-align:left"><div class="line" style="font-size:3mm;font-weight:700">贮存条件</div></div><div class="text text--middle" style="position:absolute;left:20.82mm;top:14.514mm;width:74.35mm;height:6.007mm;text-align:left"><div class="line" style="font-size:3mm;font-weight:400">常温避光保存</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:21.521mm;width:18.42mm;height:6.007mm;text-align:left"><div class="line" style="font-size:3mm;font-weight:700">生产商</div></div><div class="text text--middle" style="position:absolute;left:20.82mm;top:21.521mm;width:74.35mm;height:6.007mm;text-align:left"><div class="line" style="font-size:3mm;font-weight:400">广州市某某食品有限公司</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:28.528mm;width:18.42mm;height:6.007mm;text-align:left"><div class="line" style="font-size:3mm;font-weight:700">产地</div></div><div class="text text--middle" style="position:absolute;left:20.82mm;top:28.528mm;width:74.35mm;height:6.007mm;text-align:left"><div class="line" style="font-size:3mm;font-weight:400">广东广州</div></div><div style="position:absolute;inset:0;border:0.25mm solid #000"></div><div style="position:absolute;left:0;top:6.882mm;width:95.969mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:13.889mm;width:95.969mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:20.896mm;width:95.969mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:27.902mm;width:95.969mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:19.895mm;top:0;width:0.25mm;height:35.034mm;background:#000"></div></div></div><div class="el" style="left:2.002mm;top:63.938mm;width:60.059mm;height:30.03mm"><div class="frame" style="width:60.059mm;height:30.03mm"><div class="code" style="left:6.256mm;top:0;width:47.547mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 95 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:47.547mm;height:26.03mm"><path d="M0 0h1v1H0zM2 0h1v1H2zM6 0h1v1H6zM8 0h2v1H8zM11 0h1v1H11zM14 0h3v1H14zM18 0h2v1H18zM22 0h2v1H22zM26 0h2v1H26zM29 0h2v1H29zM32 0h4v1H32zM37 0h1v1H37zM39 0h1v1H39zM43 0h2v1H43zM46 0h1v1H46zM48 0h1v1H48zM50 0h1v1H50zM53 0h3v1H53zM57 0h1v1H57zM59 0h1v1H59zM64 0h1v1H64zM68 0h1v1H68zM71 0h1v1H71zM74 0h1v1H74zM78 0h3v1H78zM82 0h1v1H82zM85 0h2v1H85zM88 0h2v1H88zM92 0h1v1H92zM94 0h1v1H94z"/></svg><div class="code__text" style="font-size:3mm;margin-top:0.4mm">6901234567892</div></div></div></div><div class="el" style="left:63.938mm;top:65.94mm;width:34.033mm;height:6.006mm"><div class="frame" style="width:34.033mm;height:6.006mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:3mm;font-weight:400">净含量</div></div></div></div><div class="el" style="left:63.938mm;top:71.946mm;width:34.033mm;height:14.014mm"><div class="frame" style="width:34.033mm;height:14.014mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:7mm;font-weight:700">200g</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 珠宝标: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>JW260001</title>
+<style>
+  @page { size: 30mm 20mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 30mm; height: 20mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:15.015mm;height:4.004mm"><div class="frame" style="width:15.015mm;height:4.004mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:2.4mm;font-weight:700">足金吊坠</div></div></div></div><div class="el" style="left:2.002mm;top:6.506mm;width:15.015mm;height:3.503mm"><div class="frame" style="width:15.015mm;height:3.503mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:2mm;font-weight:400">足金999 3.25g</div></div></div></div><div class="el" style="left:2.002mm;top:10.51mm;width:15.015mm;height:5.005mm"><div class="frame" style="width:15.015mm;height:5.005mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3.4mm;font-weight:700">¥2680</div></div></div></div><div class="el" style="left:17.517mm;top:2.002mm;width:10.51mm;height:10.51mm"><div class="frame" style="width:10.51mm;height:10.51mm"><div class="code" style="left:1.251mm;top:1.251mm;width:7.883mm;height:7.883mm"><svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM8 0h1v1H8zM10 0h1v1H10zM12 0h1v1H12zM14 0h7v1H14zM0 1h1v1H0zM6 1h1v1H6zM8 1h2v1H8zM12 1h1v1H12zM14 1h1v1H14zM20 1h1v1H20zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM9 2h4v1H9zM14 2h1v1H14zM16 2h3v1H16zM20 2h1v1H20zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM8 3h2v1H8zM12 3h1v1H12zM14 3h1v1H14zM16 3h3v1H16zM20 3h1v1H20zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM9 4h2v1H9zM14 4h1v1H14zM16 4h3v1H16zM20 4h1v1H20zM0 5h1v1H0zM6 5h1v1H6zM9 5h1v1H9zM14 5h1v1H14zM20 5h1v1H20zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h7v1H14zM8 7h1v1H8zM0 8h1v1H0zM2 8h2v1H2zM5 8h3v1H5zM9 8h2v1H9zM14 8h1v1H14zM17 8h1v1H17zM19 8h2v1H19zM7 9h1v1H7zM10 9h1v1H10zM12 9h1v1H12zM15 9h1v1H15zM18 9h3v1H18zM1 10h1v1H1zM4 10h5v1H4zM10 10h1v1H10zM12 10h6v1H12zM19 10h2v1H19zM3 11h3v1H3zM10 11h1v1H10zM12 11h2v1H12zM17 11h2v1H17zM20 11h1v1H20zM0 12h1v1H0zM2 12h2v1H2zM6 12h1v1H6zM8 12h1v1H8zM10 12h2v1H10zM13 12h1v1H13zM16 12h1v1H16zM18 12h2v1H18zM8 13h3v1H8zM13 13h1v1H13zM17 13h1v1H17zM19 13h1v1H19zM0 14h7v1H0zM8 14h1v1H8zM13 14h2v1H13zM16 14h1v1H16zM19 14h1v1H19zM0 15h1v1H0zM6 15h1v1H6zM8 15h1v1H8zM10 15h6v1H10zM18 15h1v1H18zM0 16h1v1H0zM2 16h3v1H2zM6 16h1v1H6zM9 16h1v1H9zM11 16h1v1H11zM14 16h1v1H14zM16 16h2v1H16zM19 16h2v1H19zM0 17h1v1H0zM2 17h3v1H2zM6 17h1v1H6zM8 17h1v1H8zM10 17h1v1H10zM13 17h1v1H13zM16 17h1v1H16zM19 17h1v1H19zM0 18h1v1H0zM2 18h3v1H2zM6 18h1v1H6zM8 18h2v1H8zM11 18h1v1H11zM13 18h1v1H13zM15 18h1v1H15zM18 18h1v1H18zM0 19h1v1H0zM6 19h1v1H6zM9 19h4v1H9zM14 19h1v1H14zM17 19h1v1H17zM0 20h7v1H0zM8 20h1v1H8zM10 20h3v1H10zM16 20h1v1H16zM19 20h1v1H19z"/></svg></div></div></div><div class="el" style="left:2.002mm;top:15.515mm;width:26.026mm;height:3.003mm"><div class="frame" style="width:26.026mm;height:3.003mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:2mm;font-weight:400">JW260001</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 小商品标: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>SP1024</title>
+<style>
+  @page { size: 40mm 30mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 40mm; height: 30mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:36.035mm;height:5.005mm"><div class="frame" style="width:36.035mm;height:5.005mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3mm;font-weight:700">发夹</div></div></div></div><div class="el" style="left:2.002mm;top:7.007mm;width:20.02mm;height:8.008mm"><div class="frame" style="width:20.02mm;height:8.008mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:6mm;font-weight:700">¥9.90</div></div></div></div><div class="el" style="left:22.022mm;top:7.007mm;width:16.016mm;height:8.008mm"><div class="frame" style="width:16.016mm;height:8.008mm"><div class="text text--middle" style="text-align:right"><div class="line" style="font-size:2.6mm;font-weight:400">2只装</div></div></div></div><div class="el" style="left:2.002mm;top:16.016mm;width:36.035mm;height:12.012mm"><div class="frame" style="width:36.035mm;height:12.012mm"><div class="code" style="left:6.757mm;top:0;width:22.522mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:22.522mm;height:9.212mm"><path d="M0 0h2v1H0zM3 0h1v1H3zM6 0h1v1H6zM11 0h2v1H11zM14 0h3v1H14zM18 0h1v1H18zM22 0h3v1H22zM26 0h3v1H26zM30 0h2v1H30zM33 0h1v1H33zM35 0h3v1H35zM39 0h4v1H39zM44 0h2v1H44zM48 0h1v1H48zM52 0h1v1H52zM55 0h3v1H55zM59 0h1v1H59zM62 0h2v1H62zM66 0h2v1H66zM69 0h4v1H69zM74 0h2v1H74zM77 0h2v1H77zM82 0h3v1H82zM86 0h1v1H86zM88 0h2v1H88z"/></svg><div class="code__text" style="font-size:2mm;margin-top:0.4mm">SP1024</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 货架 / 库位标: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>A-12-03-02</title>
+<style>
+  @page { size: 100mm 100mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100mm; height: 100mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:95.969mm;height:10.01mm"><div class="frame" style="width:95.969mm;height:10.01mm"><div class="text text--middle" style="text-align:center;background:#000;color:#fff"><div class="line" style="font-size:6mm;font-weight:700">库 位</div></div></div></div><div class="el" style="left:2.002mm;top:14.014mm;width:95.969mm;height:30.03mm"><div class="frame" style="width:95.969mm;height:30.03mm"><div class="text text--middle" style="text-align:center"><div class="line" style="font-size:14.2mm;font-weight:700">A-12-03-02</div></div></div></div><div class="el" style="left:6.006mm;top:46.045mm;width:87.962mm;height:29.904mm"><div class="frame" style="width:87.962mm;height:29.904mm"><div class="code" style="left:7.633mm;top:0;width:72.571mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 145 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:72.571mm;height:25.904mm"><path d="M0 0h2v1H0zM3 0h1v1H3zM6 0h1v1H6zM11 0h1v1H11zM13 0h1v1H13zM17 0h2v1H17zM22 0h1v1H22zM25 0h2v1H25zM28 0h3v1H28zM33 0h1v1H33zM36 0h3v1H36zM41 0h2v1H41zM44 0h2v1H44zM48 0h3v1H48zM53 0h1v1H53zM55 0h1v1H55zM58 0h2v1H58zM61 0h3v1H61zM66 0h1v1H66zM69 0h3v1H69zM73 0h2v1H73zM77 0h2v1H77zM81 0h1v1H81zM83 0h3v1H83zM88 0h1v1H88zM91 0h2v1H91zM94 0h3v1H94zM99 0h1v1H99zM102 0h3v1H102zM106 0h2v1H106zM110 0h2v1H110zM114 0h3v1H114zM119 0h1v1H119zM121 0h1v1H121zM124 0h1v1H124zM126 0h4v1H126zM132 0h2v1H132zM137 0h3v1H137zM141 0h1v1H141zM143 0h2v1H143z"/></svg><div class="code__text" style="font-size:3mm;margin-top:0.4mm">A-12-03-02</div></div></div></div><div class="el" style="left:2.002mm;top:78.953mm;width:95.969mm;height:0.25mm"><div class="frame" style="width:95.969mm;height:0.25mm"><div style="width:100%;height:100%;background:#000"></div></div></div><div class="el" style="left:2.002mm;top:80.955mm;width:95.969mm;height:15.015mm"><div class="frame" style="width:95.969mm;height:15.015mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:5mm;font-weight:400">存放：女式连衣裙（夏季款）</div></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 资产标签: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>ZC-2026-0001</title>
+<style>
+  @page { size: 50mm 30mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 50mm; height: 30mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:46.045mm;height:5.005mm"><div class="frame" style="width:46.045mm;height:5.005mm"><div class="text text--middle" style="text-align:center;background:#000;color:#fff"><div class="line" style="font-size:3.2mm;font-weight:700">固定资产</div></div></div></div><div class="el" style="left:2.002mm;top:8.008mm;width:30.03mm;height:19.519mm"><div class="frame" style="width:30.03mm;height:19.519mm"><div class="text text--middle" style="position:absolute;left:0.8mm;top:0.5mm;width:6.408mm;height:5.506mm;text-align:left"><div class="line" style="font-size:2.4mm;font-weight:700">名称</div></div><div class="text text--middle" style="position:absolute;left:8.808mm;top:0.5mm;width:20.422mm;height:5.506mm;text-align:left"><div class="line" style="font-size:2.4mm;font-weight:400">笔记本电脑</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:7.006mm;width:6.408mm;height:5.506mm;text-align:left"><div class="line" style="font-size:2.4mm;font-weight:700">编号</div></div><div class="text text--middle" style="position:absolute;left:8.808mm;top:7.006mm;width:20.422mm;height:5.506mm;text-align:left"><div class="line" style="font-size:2.4mm;font-weight:400">ZC-2026-0001</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:13.513mm;width:6.408mm;height:5.506mm;text-align:left"><div class="line" style="font-size:2.4mm;font-weight:700">部门</div></div><div class="text text--middle" style="position:absolute;left:8.808mm;top:13.513mm;width:20.422mm;height:5.506mm;text-align:left"><div class="line" style="font-size:2.4mm;font-weight:400">财务部</div></div><div style="position:absolute;inset:0;border:0.25mm solid #000"></div><div style="position:absolute;left:0;top:6.381mm;width:30.03mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:12.888mm;width:30.03mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:7.883mm;top:0;width:0.25mm;height:19.519mm;background:#000"></div></div></div><div class="el" style="left:33.033mm;top:8.008mm;width:15.015mm;height:15.015mm"><div class="frame" style="width:15.015mm;height:15.015mm"><div class="code" style="left:2.252mm;top:2.252mm;width:10.51mm;height:10.51mm"><svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM10 0h3v1H10zM14 0h7v1H14zM0 1h1v1H0zM6 1h1v1H6zM11 1h2v1H11zM14 1h1v1H14zM20 1h1v1H20zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM8 2h2v1H8zM11 2h2v1H11zM14 2h1v1H14zM16 2h3v1H16zM20 2h1v1H20zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM8 3h1v1H8zM10 3h1v1H10zM14 3h1v1H14zM16 3h3v1H16zM20 3h1v1H20zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM8 4h3v1H8zM12 4h1v1H12zM14 4h1v1H14zM16 4h3v1H16zM20 4h1v1H20zM0 5h1v1H0zM6 5h1v1H6zM8 5h1v1H8zM10 5h2v1H10zM14 5h1v1H14zM20 5h1v1H20zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h7v1H14zM8 7h1v1H8zM10 7h1v1H10zM0 8h1v1H0zM2 8h5v1H2zM9 8h1v1H9zM11 8h1v1H11zM14 8h5v1H14zM0 9h2v1H0zM3 9h2v1H3zM7 9h3v1H7zM11 9h2v1H11zM15 9h1v1H15zM17 9h1v1H17zM19 9h2v1H19zM0 10h1v1H0zM3 10h1v1H3zM6 10h5v1H6zM12 10h1v1H12zM15 10h1v1H15zM0 11h2v1H0zM4 11h2v1H4zM8 11h1v1H8zM11 11h2v1H11zM15 11h1v1H15zM17 11h4v1H17zM0 12h1v1H0zM2 12h5v1H2zM9 12h2v1H9zM12 12h1v1H12zM14 12h2v1H14zM8 13h2v1H8zM12 13h1v1H12zM15 13h1v1H15zM17 13h1v1H17zM20 13h1v1H20zM0 14h7v1H0zM10 14h2v1H10zM15 14h1v1H15zM19 14h1v1H19zM0 15h1v1H0zM6 15h1v1H6zM8 15h3v1H8zM15 15h1v1H15zM18 15h1v1H18zM20 15h1v1H20zM0 16h1v1H0zM2 16h3v1H2zM6 16h1v1H6zM8 16h4v1H8zM15 16h2v1H15zM18 16h2v1H18zM0 17h1v1H0zM2 17h3v1H2zM6 17h1v1H6zM8 17h1v1H8zM10 17h5v1H10zM16 17h1v1H16zM18 17h1v1H18zM0 18h1v1H0zM2 18h3v1H2zM6 18h1v1H6zM8 18h3v1H8zM12 18h1v1H12zM14 18h3v1H14zM18 18h1v1H18zM0 19h1v1H0zM6 19h1v1H6zM9 19h1v1H9zM11 19h4v1H11zM20 19h1v1H20zM0 20h7v1H0zM8 20h2v1H8zM12 20h1v1H12zM15 20h2v1H15zM18 20h1v1H18z"/></svg></div></div></div></body>
+</html>"
+`;
+
+exports[`template library HTML 箱标: HTML stays the same 1`] = `
+"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>编码：CL5640-TK
+颜色：图片色
+尺码：XL
+数量：50 件
+序号：001</title>
+<style>
+  @page { size: 100mm 150mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100mm; height: 150mm; overflow: hidden; background: #fff; color: #000; }
+  body { position: relative; font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif; }
+  .el { position: absolute; }
+  .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  .text { display: flex; flex-direction: column; height: 100%; }
+  .text--middle { justify-content: center; }
+  .text--top { justify-content: flex-start; }
+  .line { white-space: pre; overflow: hidden; line-height: 1.2; }
+  .code { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .code svg { display: block; }
+  .dots { position: absolute; display: block; }
+  .code__text { white-space: pre; line-height: 1.2; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body><div class="el" style="left:2.002mm;top:2.002mm;width:95.969mm;height:10.01mm"><div class="frame" style="width:95.969mm;height:10.01mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:6mm;font-weight:700">女式连衣裙</div></div></div></div><div class="el" style="left:2.002mm;top:14.014mm;width:95.969mm;height:49.924mm"><div class="frame" style="width:95.969mm;height:49.924mm"><div class="text text--middle" style="position:absolute;left:0.8mm;top:0.5mm;width:22.424mm;height:9.01mm;text-align:left"><div class="line" style="font-size:5mm;font-weight:700">货号</div></div><div class="text text--middle" style="position:absolute;left:24.824mm;top:0.5mm;width:70.346mm;height:9.01mm;text-align:left"><div class="line" style="font-size:5mm;font-weight:400">CL5640-TK</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:10.51mm;width:22.424mm;height:9.01mm;text-align:left"><div class="line" style="font-size:5mm;font-weight:700">颜色</div></div><div class="text text--middle" style="position:absolute;left:24.824mm;top:10.51mm;width:70.346mm;height:9.01mm;text-align:left"><div class="line" style="font-size:5mm;font-weight:400">图片色</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:20.52mm;width:22.424mm;height:9.01mm;text-align:left"><div class="line" style="font-size:5mm;font-weight:700">尺码</div></div><div class="text text--middle" style="position:absolute;left:24.824mm;top:20.52mm;width:70.346mm;height:9.01mm;text-align:left"><div class="line" style="font-size:5mm;font-weight:400">XL</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:30.53mm;width:22.424mm;height:9.01mm;text-align:left"><div class="line" style="font-size:5mm;font-weight:700">数量</div></div><div class="text text--middle" style="position:absolute;left:24.824mm;top:30.53mm;width:70.346mm;height:9.01mm;text-align:left"><div class="line" style="font-size:5mm;font-weight:400">50 件</div></div><div class="text text--middle" style="position:absolute;left:0.8mm;top:40.539mm;width:22.424mm;height:8.885mm;text-align:left"><div class="line" style="font-size:5mm;font-weight:700">箱号</div></div><div class="text text--middle" style="position:absolute;left:24.824mm;top:40.539mm;width:70.346mm;height:8.885mm;text-align:left"><div class="line" style="font-size:5mm;font-weight:400">001</div></div><div style="position:absolute;inset:0;border:0.25mm solid #000"></div><div style="position:absolute;left:0;top:9.885mm;width:95.969mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:19.895mm;width:95.969mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:29.904mm;width:95.969mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:0;top:39.914mm;width:95.969mm;height:0.25mm;background:#000"></div><div style="position:absolute;left:23.899mm;top:0;width:0.25mm;height:49.924mm;background:#000"></div></div></div><div class="el" style="left:2.002mm;top:67.942mm;width:95.969mm;height:30.03mm"><div class="frame" style="width:95.969mm;height:30.03mm"><div class="code" style="left:14.389mm;top:0;width:67.066mm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 134 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:67.066mm;height:25.43mm"><path d="M0 0h2v1H0zM3 0h1v1H3zM6 0h1v1H6zM11 0h1v1H11zM15 0h1v1H15zM19 0h2v1H19zM22 0h1v1H22zM26 0h2v1H26zM29 0h3v1H29zM33 0h1v1H33zM35 0h3v1H35zM39 0h4v1H39zM44 0h3v1H44zM50 0h1v1H50zM52 0h2v1H52zM55 0h2v1H55zM60 0h1v1H60zM62 0h1v1H62zM66 0h1v1H66zM68 0h4v1H68zM73 0h3v1H73zM77 0h1v1H77zM80 0h2v1H80zM83 0h3v1H83zM88 0h2v1H88zM91 0h3v1H91zM97 0h1v1H97zM99 0h1v1H99zM101 0h2v1H101zM106 0h3v1H106zM110 0h1v1H110zM115 0h2v1H115zM118 0h1v1H118zM121 0h2v1H121zM126 0h3v1H126zM130 0h1v1H130zM132 0h2v1H132z"/></svg><div class="code__text" style="font-size:3.5mm;margin-top:0.4mm">CL5640-TK</div></div></div></div><div class="el" style="left:2.002mm;top:99.973mm;width:95.969mm;height:0.25mm"><div class="frame" style="width:95.969mm;height:0.25mm"><div style="width:100%;height:100%;background:#000"></div></div></div><div class="el" style="left:2.002mm;top:102.976mm;width:40.039mm;height:40.039mm"><div class="frame" style="width:40.039mm;height:40.039mm"><div class="code" style="left:3.754mm;top:3.754mm;width:32.407mm;height:32.407mm"><svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 37 37" shape-rendering="crispEdges"><path d="M0 0h7v1H0zM8 0h1v1H8zM11 0h1v1H11zM15 0h1v1H15zM18 0h1v1H18zM21 0h7v1H21zM30 0h7v1H30zM0 1h1v1H0zM6 1h1v1H6zM8 1h1v1H8zM11 1h1v1H11zM14 1h1v1H14zM18 1h1v1H18zM20 1h2v1H20zM24 1h1v1H24zM27 1h1v1H27zM30 1h1v1H30zM36 1h1v1H36zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM10 2h2v1H10zM13 2h3v1H13zM17 2h3v1H17zM21 2h2v1H21zM24 2h3v1H24zM30 2h1v1H30zM32 2h3v1H32zM36 2h1v1H36zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM8 3h2v1H8zM12 3h1v1H12zM14 3h1v1H14zM17 3h1v1H17zM22 3h1v1H22zM26 3h1v1H26zM30 3h1v1H30zM32 3h3v1H32zM36 3h1v1H36zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM11 4h1v1H11zM13 4h2v1H13zM16 4h1v1H16zM20 4h2v1H20zM25 4h1v1H25zM27 4h1v1H27zM30 4h1v1H30zM32 4h3v1H32zM36 4h1v1H36zM0 5h1v1H0zM6 5h1v1H6zM13 5h1v1H13zM18 5h1v1H18zM20 5h5v1H20zM28 5h1v1H28zM30 5h1v1H30zM36 5h1v1H36zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h1v1H14zM16 6h1v1H16zM18 6h1v1H18zM20 6h1v1H20zM22 6h1v1H22zM24 6h1v1H24zM26 6h1v1H26zM28 6h1v1H28zM30 6h7v1H30zM8 7h2v1H8zM11 7h1v1H11zM13 7h2v1H13zM16 7h2v1H16zM20 7h2v1H20zM23 7h1v1H23zM26 7h1v1H26zM0 8h1v1H0zM2 8h2v1H2zM5 8h3v1H5zM9 8h1v1H9zM11 8h4v1H11zM20 8h1v1H20zM22 8h2v1H22zM30 8h1v1H30zM33 8h1v1H33zM35 8h2v1H35zM3 9h2v1H3zM9 9h1v1H9zM14 9h2v1H14zM17 9h2v1H17zM23 9h1v1H23zM26 9h1v1H26zM29 9h2v1H29zM32 9h1v1H32zM34 9h3v1H34zM2 10h1v1H2zM6 10h2v1H6zM9 10h2v1H9zM16 10h2v1H16zM20 10h3v1H20zM27 10h4v1H27zM33 10h4v1H33zM1 11h1v1H1zM5 11h1v1H5zM11 11h4v1H11zM16 11h2v1H16zM21 11h1v1H21zM23 11h1v1H23zM25 11h1v1H25zM27 11h1v1H27zM30 11h1v1H30zM1 12h4v1H1zM6 12h1v1H6zM9 12h2v1H9zM12 12h2v1H12zM15 12h1v1H15zM18 12h2v1H18zM23 12h2v1H23zM26 12h1v1H26zM28 12h4v1H28zM34 12h2v1H34zM1 13h1v1H1zM3 13h3v1H3zM8 13h1v1H8zM11 13h2v1H11zM15 13h3v1H15zM20 13h4v1H20zM26 13h2v1H26zM29 13h1v1H29zM33 13h1v1H33zM35 13h2v1H35zM1 14h1v1H1zM4 14h1v1H4zM6 14h1v1H6zM8 14h2v1H8zM12 14h1v1H12zM15 14h2v1H15zM20 14h2v1H20zM23 14h1v1H23zM25 14h2v1H25zM28 14h2v1H28zM31 14h1v1H31zM35 14h2v1H35zM0 15h1v1H0zM3 15h3v1H3zM7 15h1v1H7zM10 15h1v1H10zM19 15h2v1H19zM22 15h1v1H22zM24 15h1v1H24zM26 15h7v1H26zM34 15h3v1H34zM0 16h3v1H0zM4 16h1v1H4zM6 16h1v1H6zM9 16h1v1H9zM12 16h2v1H12zM15 16h1v1H15zM17 16h1v1H17zM21 16h2v1H21zM25 16h2v1H25zM29 16h2v1H29zM34 16h2v1H34zM2 17h1v1H2zM5 17h1v1H5zM9 17h1v1H9zM11 17h2v1H11zM14 17h1v1H14zM17 17h1v1H17zM19 17h1v1H19zM21 17h2v1H21zM26 17h2v1H26zM29 17h2v1H29zM32 17h2v1H32zM35 17h2v1H35zM3 18h1v1H3zM6 18h3v1H6zM11 18h1v1H11zM13 18h1v1H13zM18 18h2v1H18zM21 18h2v1H21zM24 18h2v1H24zM28 18h1v1H28zM30 18h1v1H30zM32 18h2v1H32zM0 19h2v1H0zM4 19h2v1H4zM7 19h5v1H7zM14 19h3v1H14zM18 19h1v1H18zM21 19h1v1H21zM24 19h1v1H24zM27 19h2v1H27zM30 19h1v1H30zM34 19h1v1H34zM36 19h1v1H36zM4 20h3v1H4zM8 20h2v1H8zM12 20h1v1H12zM15 20h1v1H15zM17 20h1v1H17zM22 20h1v1H22zM25 20h1v1H25zM27 20h1v1H27zM29 20h1v1H29zM32 20h4v1H32zM0 21h1v1H0zM2 21h1v1H2zM5 21h1v1H5zM8 21h1v1H8zM10 21h1v1H10zM12 21h3v1H12zM17 21h1v1H17zM19 21h5v1H19zM30 21h1v1H30zM32 21h1v1H32zM36 21h1v1H36zM0 22h1v1H0zM3 22h2v1H3zM6 22h1v1H6zM10 22h1v1H10zM15 22h1v1H15zM18 22h3v1H18zM22 22h1v1H22zM26 22h1v1H26zM29 22h1v1H29zM31 22h1v1H31zM33 22h4v1H33zM1 23h3v1H1zM5 23h1v1H5zM7 23h1v1H7zM9 23h1v1H9zM11 23h1v1H11zM16 23h2v1H16zM20 23h2v1H20zM24 23h2v1H24zM27 23h1v1H27zM32 23h1v1H32zM1 24h1v1H1zM4 24h1v1H4zM6 24h1v1H6zM8 24h1v1H8zM11 24h1v1H11zM13 24h1v1H13zM15 24h2v1H15zM19 24h3v1H19zM23 24h1v1H23zM25 24h1v1H25zM27 24h1v1H27zM29 24h1v1H29zM33 24h2v1H33zM36 24h1v1H36zM3 25h1v1H3zM5 25h1v1H5zM8 25h5v1H8zM14 25h1v1H14zM17 25h1v1H17zM19 25h3v1H19zM25 25h2v1H25zM29 25h2v1H29zM32 25h1v1H32zM34 25h3v1H34zM1 26h1v1H1zM4 26h1v1H4zM6 26h3v1H6zM10 26h2v1H10zM13 26h2v1H13zM17 26h1v1H17zM20 26h5v1H20zM27 26h1v1H27zM29 26h3v1H29zM35 26h2v1H35zM0 27h1v1H0zM2 27h1v1H2zM7 27h2v1H7zM15 27h1v1H15zM18 27h3v1H18zM23 27h3v1H23zM28 27h1v1H28zM30 27h3v1H30zM35 27h1v1H35zM2 28h5v1H2zM10 28h1v1H10zM16 28h2v1H16zM19 28h1v1H19zM21 28h2v1H21zM24 28h2v1H24zM28 28h6v1H28zM35 28h2v1H35zM8 29h3v1H8zM12 29h5v1H12zM21 29h2v1H21zM25 29h1v1H25zM27 29h2v1H27zM32 29h1v1H32zM34 29h1v1H34zM36 29h1v1H36zM0 30h7v1H0zM8 30h3v1H8zM16 30h1v1H16zM18 30h3v1H18zM22 30h3v1H22zM28 30h1v1H28zM30 30h1v1H30zM32 30h2v1H32zM0 31h1v1H0zM6 31h1v1H6zM8 31h2v1H8zM11 31h2v1H11zM16 31h7v1H16zM25 31h2v1H25zM28 31h1v1H28zM32 31h1v1H32zM34 31h1v1H34zM36 31h1v1H36zM0 32h1v1H0zM2 32h3v1H2zM6 32h1v1H6zM10 32h1v1H10zM13 32h1v1H13zM16 32h1v1H16zM21 32h2v1H21zM24 32h1v1H24zM26 32h1v1H26zM28 32h5v1H28zM34 32h2v1H34zM0 33h1v1H0zM2 33h3v1H2zM6 33h1v1H6zM8 33h1v1H8zM12 33h1v1H12zM14 33h4v1H14zM19 33h7v1H19zM30 33h1v1H30zM32 33h3v1H32zM36 33h1v1H36zM0 34h1v1H0zM2 34h3v1H2zM6 34h1v1H6zM8 34h1v1H8zM10 34h3v1H10zM14 34h2v1H14zM19 34h1v1H19zM22 34h1v1H22zM26 34h2v1H26zM30 34h2v1H30zM0 35h1v1H0zM6 35h1v1H6zM9 35h1v1H9zM11 35h3v1H11zM15 35h1v1H15zM17 35h1v1H17zM20 35h2v1H20zM24 35h1v1H24zM26 35h1v1H26zM28 35h1v1H28zM30 35h1v1H30zM33 35h2v1H33zM0 36h7v1H0zM8 36h1v1H8zM10 36h1v1H10zM12 36h3v1H12zM17 36h1v1H17zM20 36h2v1H20zM24 36h2v1H24zM27 36h4v1H27zM33 36h1v1H33zM35 36h2v1H35z"/></svg></div></div></div><div class="el" style="left:46.045mm;top:103.977mm;width:51.926mm;height:8.008mm"><div class="frame" style="width:51.926mm;height:8.008mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3.5mm;font-weight:400">装箱日期 2026-10-02</div></div></div></div><div class="el" style="left:46.045mm;top:113.987mm;width:51.926mm;height:8.008mm"><div class="frame" style="width:51.926mm;height:8.008mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:3.5mm;font-weight:400">毛重 12.5kg</div></div></div></div><div class="el" style="left:46.045mm;top:123.997mm;width:51.926mm;height:19.019mm"><div class="frame" style="width:51.926mm;height:19.019mm"><div class="text text--middle" style="text-align:left"><div class="line" style="font-size:4mm;font-weight:400">易皱，请勿挤压</div></div></div></div></body>
+</html>"
+`;

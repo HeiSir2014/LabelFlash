@@ -3,7 +3,8 @@ import type { CanvasElementBase, CanvasTemplate } from './canvas-model';
 import { BUILT_IN_TEMPLATE_PREFIX } from './template-model';
 
 /**
- * 内置的自由设计模板（只读，复制后修改）。这里只有一个示例，完整的模板库是子项目 2。
+ * 内置的自由设计模板（只读，复制后修改）：模板列表里只放这一个示例，能直接设为当前模板。
+ * 按行业分类的模板在模板库（library/），复制后才能用；模板库的「样衣吊牌」复用这里的元素。
  * 坐标都在 1.5mm 安全区内（打印前检查不报问题，快照测试把关）。
  */
 

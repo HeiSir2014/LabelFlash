@@ -1,3 +1,4 @@
+import type { BatchPlan } from '../core/batch/batch-model';
 import type { LookupTableData, LookupTableInfo } from '../core/lookup/lookup-model';
 import type { Delivery } from '../core/notify/delivery';
 import type { RuleKind, ScanRule } from '../core/scan/rule-model';
@@ -5,6 +6,7 @@ import type { RuleSetting } from '../core/scan/rule-settings';
 import type { CanvasTemplate } from '../core/templates/canvas-model';
 import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
+import type { BatchCheckResult, BatchPreviewResult, BatchStartResult, BatchStatus, BatchTableResult } from './batch';
 import type { PaperCheck } from './driver-paper';
 import type { JobPage, JobQuery } from './job-history';
 import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from './local-api';
@@ -89,6 +91,18 @@ export const IpcChannel = {
   DecideApiOrigin: 'api:origins:decide',
   FirewallStatus: 'api:firewall:status',
   AddFirewallRule: 'api:firewall:add',
+  BatchOpenFile: 'batch:open-file',
+  BatchReadDropped: 'batch:read-dropped',
+  BatchPaste: 'batch:paste',
+  BatchPreview: 'batch:preview',
+  BatchCheck: 'batch:check',
+  BatchStart: 'batch:start',
+  BatchPause: 'batch:pause',
+  BatchResume: 'batch:resume',
+  BatchCancel: 'batch:cancel',
+  BatchRetryFailed: 'batch:retry-failed',
+  BatchStatus: 'batch:status',
+  BatchStatusChanged: 'batch:status-changed',
 } as const;
 
 /** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
@@ -246,6 +260,27 @@ export interface LabelFlashApi {
   getFirewallStatus(): Promise<FirewallStatus>;
   /** 弹管理员确认，添加防火墙规则；返回之后查到的状态（操作员拒绝时仍是 missing）。 */
   addFirewallRule(): Promise<FirewallStatus>;
+  /** 主进程弹出打开对话框选 .xlsx / .csv，在隔离的子进程里读；.xls 给出另存为的提示。 */
+  openBatchFile(): Promise<BatchTableResult>;
+  /** 拖进窗口的文件：界面读成字节交来（不传路径），主进程认类型、在子进程里读。 */
+  readDroppedBatchFile(name: string, bytes: Uint8Array): Promise<BatchTableResult>;
+  /** 粘贴从 Excel 复制的表格（Tab 分隔，第一行是列名）。 */
+  pasteBatchTable(text: string): Promise<BatchTableResult>;
+  /** 第 rowIndex 行（从 0 数）打出来的样子，序号按勾选的行算。 */
+  previewBatchRow(plan: BatchPlan, rowIndex: number): Promise<BatchPreviewResult>;
+  /** 把要打的每一行排一遍，列出打不全的行；又开始了一次检查时这一次返回 null。 */
+  checkBatch(plan: BatchPlan): Promise<BatchCheckResult | null>;
+  startBatch(plan: BatchPlan): Promise<BatchStartResult>;
+  /** 打完正在打的这一张后暂停。 */
+  pauseBatch(): Promise<void>;
+  resumeBatch(): Promise<void>;
+  /** 不再交新的标签；正在打的这一张照常打完。 */
+  cancelBatch(): Promise<void>;
+  /** 按打印记录重打这一批失败的标签；row 不为 null 时只重打那一行（从 1 数）。 */
+  retryBatchFailures(batchId: string, row: number | null): Promise<BatchStartResult>;
+  getBatchStatus(): Promise<BatchStatus | null>;
+  /** 批量打印的进度（合并推送，状态变化立即推）。 */
+  onBatchStatus(listener: (status: BatchStatus | null) => void): () => void;
 }
 
 export interface WindowControlsApi {

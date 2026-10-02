@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type BatchPlan, DEFAULT_COPIES, DEFAULT_SERIAL } from '../../core/batch/batch-model';
+import {
+  BATCH_LIMITS,
+  type BatchPlan,
+  DEFAULT_COPIES,
+  DEFAULT_SERIAL,
+  FILE_TOO_LARGE_ISSUE,
+} from '../../core/batch/batch-model';
 import type { FieldsPrint } from '../../core/print-service';
 import { CANVAS_TAG } from '../../core/templates/builtin-canvas';
 import type { JobRecord, PrintResult } from '../../core/types';
@@ -111,6 +117,21 @@ describe('BatchStation tables', () => {
     expect(await station.loadBytes('old.xls', new Uint8Array([0xd0, 0xcf, 0x11, 0xe0]))).toEqual({
       status: 'invalid',
       issue: XLS_ISSUE,
+    });
+    expect(reads).toBe(0);
+  });
+
+  test('refuses a file over the size limit before starting a reader', async () => {
+    let reads = 0;
+    const { station } = createStation({
+      readTable: async () => {
+        reads += 1;
+        return { ok: true, records: [] };
+      },
+    });
+    expect(await station.loadBytes('huge.csv', new Uint8Array(BATCH_LIMITS.fileBytes + 1))).toEqual({
+      status: 'invalid',
+      issue: FILE_TOO_LARGE_ISSUE,
     });
     expect(reads).toBe(0);
   });

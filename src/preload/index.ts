@@ -77,6 +77,18 @@ const api: LabelFlashApi = {
   decideApiOrigin: (origin, allow) => ipcRenderer.invoke(IpcChannel.DecideApiOrigin, origin, allow),
   getFirewallStatus: () => ipcRenderer.invoke(IpcChannel.FirewallStatus),
   addFirewallRule: () => ipcRenderer.invoke(IpcChannel.AddFirewallRule),
+  openBatchFile: () => ipcRenderer.invoke(IpcChannel.BatchOpenFile),
+  readDroppedBatchFile: (name, bytes) => ipcRenderer.invoke(IpcChannel.BatchReadDropped, name, bytes),
+  pasteBatchTable: (text) => ipcRenderer.invoke(IpcChannel.BatchPaste, text),
+  previewBatchRow: (plan, rowIndex) => ipcRenderer.invoke(IpcChannel.BatchPreview, plan, rowIndex),
+  checkBatch: (plan) => ipcRenderer.invoke(IpcChannel.BatchCheck, plan),
+  startBatch: (plan) => ipcRenderer.invoke(IpcChannel.BatchStart, plan),
+  pauseBatch: () => ipcRenderer.invoke(IpcChannel.BatchPause),
+  resumeBatch: () => ipcRenderer.invoke(IpcChannel.BatchResume),
+  cancelBatch: () => ipcRenderer.invoke(IpcChannel.BatchCancel),
+  retryBatchFailures: (batchId, row) => ipcRenderer.invoke(IpcChannel.BatchRetryFailed, batchId, row),
+  getBatchStatus: () => ipcRenderer.invoke(IpcChannel.BatchStatus),
+  onBatchStatus: (listener) => subscribe(IpcChannel.BatchStatusChanged, listener),
 };
 
 const windowControls: WindowControlsApi = {

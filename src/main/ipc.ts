@@ -8,6 +8,7 @@ import {
   type OpenDialogOptions,
   shell,
 } from 'electron';
+import { BATCH_LIMITS } from '../core/batch/batch-model';
 import { API_RULE, BATCH_RULE, fieldsScan, type PrintService } from '../core/print-service';
 import type { PrinterChoice } from '../core/printing/resolve-printer';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
@@ -18,6 +19,7 @@ import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
 import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult } from '../core/types';
+import type { BatchTableResult } from '../shared/batch';
 import { BRAND } from '../shared/brand';
 import { checkDriverPaper } from '../shared/driver-paper';
 import {
@@ -32,11 +34,16 @@ import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
 import { NO_RENDER_WARNINGS } from '../shared/render-warnings';
 import type { AppSettings } from '../shared/settings';
 import type { LocalApi } from './api/local-api';
+import type { BatchStation } from './batch/batch-station';
 import { logFailures } from './ipc-errors';
 import {
   requireApiKeyId,
   requireApiKeyName,
+  requireBatchId,
+  requireBatchPlan,
   requireBoolean,
+  requireBytes,
+  requireIndex,
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
@@ -78,6 +85,8 @@ function waybillSampleScan(): ScanResult {
 }
 /** 打印记录编号是 UUID（36 个字符）；留出余量，挡住异常长的参数。 */
 const MAX_JOB_ID_LENGTH = 64;
+/** 拖进来的文件名：Windows 的路径上限是 260，文件名只会更短。 */
+const MAX_FILE_NAME_LENGTH = 260;
 
 /** 已校验的纸张键 → 纸张（requirePaperKey 保证能解析，兜底只为类型）。 */
 function paperOf(key: string): PaperSize {
@@ -87,6 +96,8 @@ function paperOf(key: string): PaperSize {
 export interface IpcDeps {
   service: PrintService;
   adapter: PrinterDriver;
+  /** 批量打印：读表格、预览、检查、开打。 */
+  batch: BatchStation;
   jobs: SqliteJobStore;
   settings: SqliteSettingsStore;
   templates: TemplateCatalog;
@@ -371,6 +382,45 @@ export function registerIpc(deps: IpcDeps): void {
   );
   handle(IpcChannel.FirewallStatus, () => deps.localApi.checkFirewall());
   handle(IpcChannel.AddFirewallRule, () => deps.localApi.addFirewallRule());
+
+  handle(IpcChannel.BatchOpenFile, async (): Promise<BatchTableResult> => {
+    const window = deps.getWindow();
+    const options: OpenDialogOptions = {
+      title: '导入要批量打印的表格',
+      // 列出 .xls：选了它会得到「另存为 .xlsx 或 CSV」的提示，比在对话框里找不到文件更好懂。
+      filters: [{ name: 'Excel 或 CSV 表格', extensions: ['xlsx', 'csv', 'xls'] }],
+      properties: ['openFile'],
+    };
+    const { canceled, filePaths } = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options);
+    const [path] = filePaths;
+    if (canceled || path === undefined) {
+      return { status: 'canceled' };
+    }
+    return deps.batch.loadPath(path);
+  });
+  handle(IpcChannel.BatchReadDropped, (name, bytes) =>
+    deps.batch.loadBytes(
+      requireString(name, 'file name', MAX_FILE_NAME_LENGTH),
+      requireBytes(bytes, 'file', BATCH_LIMITS.fileBytes),
+    ),
+  );
+  handle(IpcChannel.BatchPaste, (text) =>
+    deps.batch.paste(requireString(text, 'pasted table', BATCH_LIMITS.pasteChars)),
+  );
+  handle(IpcChannel.BatchPreview, (plan, rowIndex) =>
+    deps.batch.preview(requireBatchPlan(plan), requireIndex(rowIndex, 'row index')),
+  );
+  handle(IpcChannel.BatchCheck, (plan) => deps.batch.check(requireBatchPlan(plan)));
+  handle(IpcChannel.BatchStart, (plan) => deps.batch.start(requireBatchPlan(plan)));
+  handle(IpcChannel.BatchPause, () => deps.batch.pause());
+  handle(IpcChannel.BatchResume, () => deps.batch.resume());
+  handle(IpcChannel.BatchCancel, () => deps.batch.cancel());
+  handle(IpcChannel.BatchRetryFailed, (batchId, row) =>
+    deps.batch.retryFailed(requireBatchId(batchId), row === null ? null : requirePositiveInteger(row, 'row')),
+  );
+  handle(IpcChannel.BatchStatus, () => deps.batch.status());
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());
   on(IpcChannel.WindowToggleMaximize, () => {

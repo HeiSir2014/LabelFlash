@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
+import type { BatchPlan } from '../core/batch/batch-model';
 import {
   MAX_IPC_STRING_LENGTH,
   MAX_RAW_INPUT_LENGTH,
   requireApiKeyId,
   requireApiKeyName,
+  requireBatchId,
+  requireBatchPlan,
   requireBoolean,
+  requireBytes,
+  requireIndex,
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
@@ -135,5 +140,26 @@ describe('ipc validators', () => {
     expect(requireWebOrigin('https://erp.example.com')).toBe('https://erp.example.com');
     expect(() => requireWebOrigin('null')).toThrow(TypeError);
     expect(() => requireWebOrigin(7)).toThrow(TypeError);
+  });
+
+  test('batch plans, ids, byte arrays and row indexes are checked', () => {
+    const plan: BatchPlan = {
+      templateId: 'builtin:generic',
+      data: { kind: 'serial-only', count: 3 },
+      mapping: {},
+      serial: { enabled: true, prefix: '', start: 1, step: 1, digits: 0, suffix: '', column: null },
+      copies: { kind: 'fixed', count: 1 },
+      rows: null,
+    };
+    expect(requireBatchPlan(plan)).toEqual(plan);
+    expect(() => requireBatchPlan({ ...plan, templateId: 'x' })).toThrow('Invalid batch plan');
+    expect(requireBatchId('20261002-143501-a1b2')).toBe('20261002-143501-a1b2');
+    expect(() => requireBatchId('20261002')).toThrow('Invalid batch id');
+    expect(requireBytes(new Uint8Array(2), 'file', 2)).toHaveLength(2);
+    expect(() => requireBytes(new Uint8Array(3), 'file', 2)).toThrow('Invalid file');
+    expect(() => requireBytes('abc', 'file', 2)).toThrow('Invalid file');
+    expect(requireIndex(0, 'row index')).toBe(0);
+    expect(() => requireIndex(-1, 'row index')).toThrow('Invalid row index');
+    expect(() => requireIndex(1.5, 'row index')).toThrow('Invalid row index');
   });
 });

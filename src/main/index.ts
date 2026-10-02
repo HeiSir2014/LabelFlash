@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { hostname, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net } from 'electron';
+import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net, utilityProcess } from 'electron';
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
+import { batchIdFor } from '../core/batch/batch-model';
 import { DedupGuard } from '../core/dedup-guard';
 import { PrintQueue } from '../core/print-queue';
-import { PrintService } from '../core/print-service';
+import { BATCH_RULE, fieldsScan, PrintService } from '../core/print-service';
 import { type PrinterChoice, resolvePrinter } from '../core/printing/resolve-printer';
 import { type EnrichDeps, enrich } from '../core/scan/enrich';
 import { recognize } from '../core/scan/recognize';
@@ -28,6 +29,9 @@ import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
+import { BatchStation } from './batch/batch-station';
+import batchReaderPath from './batch/reader-worker?modulePath';
+import { TableReaderHost } from './batch/table-reader-host';
 import { BUILD_NUMBER } from './build-info';
 import { addFirewallRule, firewallStatus } from './firewall';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
@@ -51,11 +55,13 @@ import { AlertThrottle } from './printing/alert-throttle';
 import { queryDriverPaper } from './printing/driver-paper';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { FakeDriverAdapter, FakePrinters, parseFakePrinters } from './printing/fake-printers';
+import { renderLabelHtml } from './printing/label-html';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
 import type { PrinterDriver } from './printing/printer-driver';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { PrinterProfiles } from './printing/printer-profiles';
 import { createReadinessProbe, type PrinterReadiness, PrinterStatusMonitor } from './printing/printer-status';
+import { DEFAULT_PRINTER_DPI } from './printing/qr-code';
 import { RelaunchIntents, UPDATED_ARG } from './relaunch-intent';
 import { createHttpStepRunner } from './scan/http-step';
 import { RuleService } from './scan/rule-service';
@@ -84,6 +90,12 @@ const OCR_INTRA_THREADS = 4;
 const OCR_RECOGNITION_BATCH_SIZE = 8;
 const DATABASE_FILE_NAME = 'labelflash.db';
 const VOICE_CACHE_DIR_NAME = 'voice-cache';
+/** 读一个表格最多等这么久：20MB 的 .xlsx 在普通办公电脑上几秒读完，30 秒还没完多半是压缩炸弹或坏文件。 */
+const TABLE_READ_TIMEOUT_MS = 30_000;
+/** 读表格子进程的堆上限：一万行的表格解开后几十 MB；超过 512MB 只可能是压缩炸弹，V8 结束进程，按「读不出」处理。 */
+const TABLE_READER_HEAP_MB = 512;
+/** 任务管理器、进程列表里显示的子进程名。 */
+const TABLE_READER_SERVICE_NAME = `${BRAND.productNameAscii} table reader`;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: AppTray | null = null;
@@ -385,6 +397,65 @@ async function bootstrap(): Promise<void> {
     onRecorded: (job, scan) => outbox.enqueueResult(job, scan),
   });
   service.restore();
+  // 批量打印：表格在隔离的子进程里读（不可信的文件 + 第三方解析库，见 batch/table-reader-host.ts）。
+  const tableReader = new TableReaderHost({
+    fork: () => {
+      const child = utilityProcess.fork(batchReaderPath, [], {
+        serviceName: TABLE_READER_SERVICE_NAME,
+        execArgv: [`--max-old-space-size=${TABLE_READER_HEAP_MB}`],
+      });
+      return {
+        postMessage: (request) => child.postMessage(request),
+        onMessage: (listener) => {
+          child.on('message', listener);
+        },
+        onExit: (listener) => {
+          child.on('exit', listener);
+        },
+        kill: () => {
+          child.kill();
+        },
+      };
+    },
+    timeoutMs: TABLE_READ_TIMEOUT_MS,
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => clearTimeout(timer);
+    },
+    log: (line) => console.warn(line),
+  });
+  const batch = new BatchStation({
+    readTable: (request) => tableReader.read(request),
+    findTemplate: (id) => templates.get(id),
+    printFields: (input) => service.printFields(input),
+    dpiFor: async (template) => {
+      const { printerName } = await choosePrinter(template);
+      return printerName !== null && (await isInstalled(printerName))
+        ? profiles.dpiOf(printerName)
+        : DEFAULT_PRINTER_DPI;
+    },
+    render: (template, label, dpi) => {
+      // diagnostics 是条码库的原始英文错误：预览和检查不用（打印时适配器另写日志）。
+      const {
+        html,
+        diagnostics: _diagnostics,
+        ...warnings
+      } = renderLabelHtml(
+        { scan: fieldsScan(label.content, label.fields, BATCH_RULE), template, printedAt: Date.now() },
+        dpi,
+      );
+      return { html, warnings, paper: template.paper };
+    },
+    failedJobs: (batchId, row) => jobs.listBatchFailures(batchId, row),
+    createTableId: randomUUID,
+    createBatchId: () => batchIdFor(new Date(), randomUUID().slice(0, 4)),
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => clearTimeout(timer);
+    },
+    onStatus: (status) => sendToMainWindow(IpcChannel.BatchStatusChanged, status),
+    onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
+  });
   const voice = new VoiceClips(join(dataPath, VOICE_CACHE_DIR_NAME), synthesizeWithEdge);
   // 后台预热全部播报语：之后扫码时直接播缓存，不等在线合成。
   const warmVoice = () => {
@@ -488,6 +559,7 @@ async function bootstrap(): Promise<void> {
   registerIpc({
     service,
     adapter,
+    batch,
     jobs,
     settings,
     templates,
@@ -614,7 +686,8 @@ async function bootstrap(): Promise<void> {
       isUpdateReady: updater.current.state === 'ready',
       // 托盘建不起来时关窗就是退出，不会有「关在托盘里」。
       hiddenSince: tray === null ? null : hiddenSince,
-      pendingPrints: printQueue.pending + localApi.pendingJobs,
+      // 批量打印还有没打的（暂停中的也算）时不静默更新：重启会丢掉这一批剩下的。
+      pendingPrints: printQueue.pending + localApi.pendingJobs + batch.pendingLabels,
       isMobileOn: mobile.status().state !== 'off',
       now: Date.now(),
     };

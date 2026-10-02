@@ -1,4 +1,6 @@
+import type { BatchPlan } from '../core/batch/batch-model';
 import { BATCH_ID_PATTERN } from '../core/batch/batch-model';
+import { parseBatchPlan } from '../core/batch/parse-batch-plan';
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
@@ -182,6 +184,38 @@ export function requireApiKeyName(value: unknown): string {
 export function requireWebOrigin(value: unknown): string {
   if (typeof value !== 'string' || value.length > MAX_IPC_STRING_LENGTH || !isWebOrigin(value)) {
     throw new TypeError('Invalid web origin');
+  }
+  return value;
+}
+
+/** 批量打印的设置：逐项核对（见 core/batch/parse-batch-plan.ts）。 */
+export function requireBatchPlan(value: unknown): BatchPlan {
+  const plan = parseBatchPlan(value);
+  if (plan === null) {
+    throw new TypeError('Invalid batch plan');
+  }
+  return plan;
+}
+
+export function requireBatchId(value: unknown): string {
+  if (typeof value !== 'string' || !BATCH_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid batch id');
+  }
+  return value;
+}
+
+/** 界面读出来的文件字节（拖进窗口的文件）：只收 Uint8Array，长度有上限。 */
+export function requireBytes(value: unknown, name: string, maxBytes: number): Uint8Array {
+  if (!(value instanceof Uint8Array) || value.length > maxBytes) {
+    throw new TypeError(`Invalid ${name}`);
+  }
+  return value;
+}
+
+/** 从 0 数的下标（行号等）。 */
+export function requireIndex(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`Invalid ${name}`);
   }
   return value;
 }

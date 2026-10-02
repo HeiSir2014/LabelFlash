@@ -105,6 +105,11 @@ const FAILURE_SHORT: Record<PrintFailureReason, string> = {
   TEXT_NOT_FOUND: '没认出',
 };
 
+/** 失败原因的简短说法（打印记录、批量打印的失败行共用）。 */
+export function describeFailureShort(reason: PrintFailureReason): string {
+  return FAILURE_SHORT[reason];
+}
+
 /** 这些失败确定没有出纸，可以直接重试；超时结果不确定，只能强制补打。 */
 const RETRYABLE_FAILURES: ReadonlySet<PrintFailureReason> = new Set([
   'PRINTER_NOT_FOUND',

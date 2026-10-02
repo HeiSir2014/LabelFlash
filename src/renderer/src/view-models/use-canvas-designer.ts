@@ -84,8 +84,27 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
   // useLayoutEffect 在浏览器画出来之前、提交 DOM 之后就同步跑完，仍然不是在渲染过程中改 ref，
   // 只是把更新的时机提前到比 useEffect 更早、但同样安全（已经提交，不会被中断重渲染打断）的地方。
   const draftRef = useRef(draft);
+  // 跟住每个元素 id 的「续命代数」：这个 id 从元素列表里消失过一次（删除、撤销加入……），代数就加一。
+  // importImage 解码完成时核对代数有没有变过——变过说明这期间删过这个 id，哪怕之后凑巧又有个新元素
+  // 复用了同一个 id（`newElementId` 会回收删掉的号），解码结果也不该合并进这个不相干的新元素里。
+  const idEpochRef = useRef(new Map<string, number>());
+  // 上一次见到的 id 集合；undefined 表示还没有「上一次」（刚挂载）。和 draftRef 放进同一个
+  // useLayoutEffect 一起更新：分开写的话，draftRef 已经指向新草稿、这里却还没来得及比对出
+  // 「消失过」的 id，两者会短暂不一致。初始不在渲染时就地 new Set(...)：那样每次渲染都要新建
+  // 一次集合，哪怕这次渲染根本用不上（只有草稿真的变了，下面的 effect 才会用到它）。
+  const knownIdsRef = useRef<Set<string> | undefined>(undefined);
   useLayoutEffect(() => {
     draftRef.current = draft;
+    const currentIds = new Set(draft.elements.map((element) => element.id));
+    const previousIds = knownIdsRef.current;
+    if (previousIds !== undefined) {
+      for (const existingId of previousIds) {
+        if (!currentIds.has(existingId)) {
+          idEpochRef.current.set(existingId, (idEpochRef.current.get(existingId) ?? 0) + 1);
+        }
+      }
+    }
+    knownIdsRef.current = currentIds;
   }, [draft]);
 
   // 组件卸载后（切到别的模板、取消、保存关闭设计器）解码才完成：这份结果不再属于任何正在显示的画布，
@@ -98,21 +117,6 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
       isMountedRef.current = false;
     };
   }, []);
-
-  // 跟住每个元素 id 的「续命代数」：这个 id 从元素列表里消失过一次（删除、撤销加入……），代数就加一。
-  // importImage 解码完成时核对代数有没有变过——变过说明这期间删过这个 id，哪怕之后凑巧又有个新元素
-  // 复用了同一个 id（`newElementId` 会回收删掉的号），解码结果也不该合并进这个不相干的新元素里。
-  const idEpochRef = useRef(new Map<string, number>());
-  const knownIdsRef = useRef(new Set(draft.elements.map((element) => element.id)));
-  useEffect(() => {
-    const currentIds = new Set(draft.elements.map((element) => element.id));
-    for (const existingId of knownIdsRef.current) {
-      if (!currentIds.has(existingId)) {
-        idEpochRef.current.set(existingId, (idEpochRef.current.get(existingId) ?? 0) + 1);
-      }
-    }
-    knownIdsRef.current = currentIds;
-  }, [draft.elements]);
 
   /**
    * 每一次修改都经过这里：先记下改之前的样子（撤销用），再交给草稿；没有变化的不记。

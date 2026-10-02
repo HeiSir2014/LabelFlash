@@ -24,12 +24,18 @@ export interface PrinterChoices {
 interface TemplateBasicsProps<T extends LabelTemplate> extends PrinterChoices {
   draft: T;
   onChange: (draft: T) => void;
+  /**
+   * 名称框失焦时要做的事：设计器用它结束撤销历史的合并（见 canvas-history 的 mergeKey）。
+   * 标签、面单的编辑器没有撤销历史，不传。
+   */
+  onNameEndMerge?: () => void;
 }
 
 /** 两类模板都有的：名称、纸张、打印机（标签模板和面单模板的编辑器共用）。 */
 export function TemplateBasics<T extends LabelTemplate>({
   draft,
   onChange,
+  onNameEndMerge,
   printers,
   paperPrinters,
 }: TemplateBasicsProps<T>) {
@@ -58,6 +64,7 @@ export function TemplateBasics<T extends LabelTemplate>({
         value={draft.name}
         maxLength={TEMPLATE_LIMITS.nameLength}
         onChange={(name) => onChange({ ...draft, name })}
+        onBlur={onNameEndMerge}
       />
       <SelectField
         label="纸张尺寸"

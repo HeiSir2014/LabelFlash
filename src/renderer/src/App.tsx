@@ -369,8 +369,12 @@ export function App() {
               onDraftChange: templates.changeDraft,
               onSave: () => void templates.saveDraft(),
               onCancel: templates.cancelEdit,
+              onCreateCanvas: () => void templates.createCanvas(),
+              onPrintSample: () => void templates.printSample(config.templatePage.sample.value),
+              isPrintingSample: templates.isPrintingSample,
               printers: printers.printers,
               paperPrinters,
+              platform,
             }}
             rules={{
               rules,

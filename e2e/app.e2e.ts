@@ -588,7 +588,7 @@ test('previews a built-in waybill with sample data and edits a copy cell by cell
   await expect(label).toContainText('集包：杭州转运中心');
 });
 
-// 自由设计模板：内置示例按扫码内容排版，复制后能改纸张（设计器在 1b）。
+// 自由设计模板：内置示例按扫码内容排版，复制后进设计器。
 test('previews the built-in canvas tag and copies it', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
   await scan(page, 'CL5640-TK-图片色-XL');
@@ -598,7 +598,7 @@ test('previews the built-in canvas tag and copies it', async ({ electronApp }) =
   await expect(frame.locator('.line', { hasText: 'CL5640-TK' }).first()).toBeVisible();
   await expect(frame.locator('svg[shape-rendering="crispEdges"]')).toHaveCount(2);
   await page.getByRole('button', { name: '复制' }).click();
-  await expect(page.locator('.template-editing__form').getByText('设计器')).toBeVisible();
+  await expect(page.getByRole('region', { name: '设计器' })).toBeVisible();
 });
 
 // 面单每一行的位置和换行是按字宽表算好的：用这台电脑的系统字体真实渲染一遍，没有哪一行被格子边缘裁掉。

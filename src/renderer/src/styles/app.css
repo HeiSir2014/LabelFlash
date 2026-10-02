@@ -2564,6 +2564,14 @@ textarea {
   list-style: none;
 }
 
+/* 「新建自由设计模板」：跟在自定义模板下面，左对齐，和列表文字同一条边。
+   flex-shrink: 0——不然列表内容把这一列挤得超出可视高度时，这个按钮会被压扁到点击区域不够 28px。 */
+.template-list__create {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin: var(--space-2) var(--space-4) 0;
+}
+
 /* 选中的模板：与导航当前项、「使用中」的标记一致（左边 4px 竖条） */
 .template-item {
   display: flex;

@@ -20,12 +20,14 @@ export interface PaperPreset extends PaperSize {
 }
 
 /**
- * 自定义尺寸的范围：覆盖所有预设并留出余量。下限 25mm：边距最大 6mm 时，二维码仍放得下最小边长 10mm。
- * 宽度上限 120mm：不做横版纸（例如 150×100）。
+ * 自定义尺寸的范围：覆盖所有预设并留出余量。
+ * 高度下限 20mm：最小的常用热敏标签是 30×20（珠宝、小商品）。标签模板换到这么矮的纸上，二维码按短边等比缩小（withPaper），
+ * 边距超过 5mm 时二维码会小于最小边长 10mm，按 planQr 的规则放不下就不印并提示。
+ * 宽度下限 25mm：边距最大 6mm 时，二维码仍放得下最小边长 10mm。宽度上限 120mm：不做横版纸（例如 150×100）。
  */
 export const PAPER_LIMITS_MM = {
   width: { min: 25, max: 120 },
-  height: { min: 25, max: 220 },
+  height: { min: 20, max: 220 },
 } as const;
 
 /** 驱动以 0.1mm 为单位保存纸张尺寸，四舍五入后可能差零点几毫米。 */
@@ -38,6 +40,7 @@ export const PAPER_PRESETS: readonly PaperPreset[] = [
   { name: '60×40 标签', widthMm: 60, heightMm: 40, parts: [], usage: '样衣标签（内置模板）' },
   { name: '50×30 标签', widthMm: 50, heightMm: 30, parts: [], usage: '小标签' },
   { name: '40×30 标签', widthMm: 40, heightMm: 30, parts: [], usage: '小标签' },
+  { name: '30×20 标签', widthMm: 30, heightMm: 20, parts: [], usage: '珠宝、小商品' },
   { name: '70×50 标签', widthMm: 70, heightMm: 50, parts: [], usage: '标签' },
   { name: '100×100 标签', widthMm: 100, heightMm: 100, parts: [], usage: '标签、箱唛' },
   { name: '76×130 一联面单', widthMm: 76, heightMm: 130, parts: [], usage: '申通、极兔、中通、圆通、韵达' },

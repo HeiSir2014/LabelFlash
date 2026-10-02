@@ -82,6 +82,14 @@ describe('built-in templates', () => {
       '货架号：货架号',
     ]);
   });
+
+  // 30×20 是最小的常用标签：标签模板换上去，二维码跟着缩小、仍在纸内，纸张也存得住。
+  test('moves a label template onto 30x20 paper with its QR code still inside', () => {
+    const paper = { widthMm: 30, heightMm: 20 };
+    const small = withPaper(GENERIC_TEMPLATE, paper);
+    expect(small.qr.sizeMm).toBeLessThanOrEqual(maxQrSizeMm(paper, small.paddingMm));
+    expect(sanitizeLabel(small, small.id, GENERIC_TEMPLATE).paper).toEqual(paper);
+  });
 });
 
 describe('currentTemplateId', () => {

@@ -29,6 +29,10 @@ export function useTemplates({
   // 守着「打印一张试试」：用 ref 而不是只看 state，state 的更新要等下一次渲染才生效，
   // 同一个事件循环里的第二次点击读到的还是旧值，光靠 state 挡不住几乎同时的两次点击。
   const isPrintingSampleRef = useRef(false);
+  const [isCreatingCanvas, setIsCreatingCanvas] = useState(false);
+  // 守着「新建自由设计模板」：原因同上——双击按钮会在主进程回应第一次调用之前就发出第二次，
+  // 光靠 state 挡不住，得建出两个空白模板才反应过来。
+  const isCreatingCanvasRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -77,8 +81,16 @@ export function useTemplates({
     [load],
   );
 
-  /** 新建空白的自由设计模板：选中它，直接进设计器。 */
+  /**
+   * 新建空白的自由设计模板：选中它，直接进设计器。
+   * 建好之前再点一下什么也不做，不然双击按钮会建出两个空白模板。
+   */
   const createCanvas = useCallback(async () => {
+    if (isCreatingCanvasRef.current) {
+      return;
+    }
+    isCreatingCanvasRef.current = true;
+    setIsCreatingCanvas(true);
     try {
       const created = await window.api.createCanvasTemplate();
       await load();
@@ -86,6 +98,9 @@ export function useTemplates({
       setDraft(structuredClone(created));
     } catch (error) {
       reportError('新建自由设计模板', error);
+    } finally {
+      isCreatingCanvasRef.current = false;
+      setIsCreatingCanvas(false);
     }
   }, [load]);
 
@@ -166,6 +181,7 @@ export function useTemplates({
     activate,
     duplicate,
     createCanvas,
+    isCreatingCanvas,
     startEdit,
     changeDraft: setDraft,
     saveDraft,

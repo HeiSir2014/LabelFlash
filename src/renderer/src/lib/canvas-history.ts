@@ -2,6 +2,7 @@
  * 设计器的撤销 / 重做。只记「改之前的样子」：现在的样子由调用方持有（模板页的草稿），
  * 这里只存过去和将来，草稿仍然只有一份，不会和历史里的副本走散。纯函数，不碰 React。
  */
+import { deepEqual } from './deep-equal';
 
 /** 最多记 100 步：一张标签改 100 步已经很多；每步存一份整个模板，有图片时一份可达几 MB，再多占内存。 */
 export const HISTORY_LIMIT = 100;
@@ -77,4 +78,17 @@ export function endMerge<T>(history: History<T>): History<T> {
  */
 export function historyMergeKey(id: string, field: string | null): string | null {
   return field === null ? null : `${id}:${field}`;
+}
+
+/**
+ * 设计器「模板」面板（名称、纸张、打印机）传上来的合并键：名称是要连续打字的输入框，纸张、打印机是
+ * 下拉框，一次选择就改完。只有「这一步只改了名称、别的都没变」才用合并键（连续打字合并成一步）；
+ * 纸张、打印机这类一次点一下就改完的，或者和名称一起改的，都返回 null，各自成一步撤销——不然连着
+ * 选两次纸张会被并成一步，撤销一次却只退回半步。
+ */
+export function basicsMergeKey<T extends { id: string; name: string }>(prev: T, next: T): string | null {
+  if (prev.name === next.name) {
+    return null;
+  }
+  return deepEqual({ ...prev, name: next.name }, next) ? historyMergeKey(next.id, 'name') : null;
 }

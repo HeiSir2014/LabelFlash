@@ -3,7 +3,7 @@ import type { CanvasTemplate } from '../../../../core/templates/canvas-model';
 import { NO_RENDER_WARNINGS, renderWarningTexts } from '../../../../shared/render-warnings';
 import type { Platform } from '../../lib/app-view';
 import { clampAll, replaceElement, rotateElement } from '../../lib/canvas-edit';
-import { historyMergeKey } from '../../lib/canvas-history';
+import { basicsMergeKey, historyMergeKey } from '../../lib/canvas-history';
 import { designerCommand, undoShortcutLabel, zoomIn, zoomOut } from '../../lib/canvas-view';
 import { useCanvasDesigner } from '../../view-models/use-canvas-designer';
 import { useCanvasGesture, useCtrlWheelZoom } from '../../view-models/use-canvas-gesture';
@@ -77,16 +77,17 @@ export function CanvasDesigner({
     designer.selection.length === 1
       ? (draft.elements.find((element) => element.id === designer.selection[0]) ?? null)
       : null;
-  const checks = renderWarningTexts(preview?.warnings ?? NO_RENDER_WARNINGS);
+  // 切换模板那一刻，preview 还是上一个草稿的结果（生成新的要等 150ms 防抖 + 一次主进程往返）：
+  // 按 templateId 核对，不是这份草稿的结果就当还没有，不然会闪一下上一个模板的标签和检查结果。
+  const currentPreview = preview?.templateId === draft.id ? preview : null;
+  const checks = renderWarningTexts(currentPreview?.warnings ?? NO_RENDER_WARNINGS);
 
   /**
-   * 「模板」里的名称、纸张、打印机：名称是要连续打字的输入框，纸张和打印机是下拉框、一次选择就改完。
-   * 都按同一个合并键会把连续两次换纸张并成一步撤销，撤销一次却只退回半步；所以只有名称变了才用
-   * 合并键（同一个草稿连续打字算一步），纸张、打印机这类一次点一下就改完的各自成一步。
+   * 「模板」里的名称、纸张、打印机：名称是要连续打字的输入框，纸张和打印机是下拉框、一次选择就改完，
+   * 合并规则见 lib/canvas-history 的 basicsMergeKey。
    */
   const onBasicsChange = (next: CanvasTemplate) => {
-    const mergeKey = next.name === draft.name ? historyMergeKey(draft.id, 'name') : null;
-    designer.commit(clampAll(next), mergeKey);
+    designer.commit(clampAll(next), basicsMergeKey(draft, next));
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -121,8 +122,8 @@ export function CanvasDesigner({
       <ElementPalette onAdd={(kind) => designer.add(kind)} />
       <CanvasStage
         template={draft}
-        html={preview?.html ?? null}
-        placeholder={placeholderOf(preview)}
+        html={currentPreview?.html ?? null}
+        placeholder={placeholderOf(currentPreview)}
         zoom={zoom}
         showGrid={designer.showGrid}
         undoShortcut={undoShortcutLabel(platform)}
@@ -168,7 +169,7 @@ export function CanvasDesigner({
       </aside>
       <section className="designer-checks" aria-label="打印前检查">
         <h2 className="designer-checks__title">打印前检查</h2>
-        {preview === null ? (
+        {currentPreview === null ? (
           <p className="designer-checks__ok">正在检查…</p>
         ) : checks.length === 0 ? (
           <p className="designer-checks__ok">按这段预览内容没有发现问题</p>

@@ -48,6 +48,8 @@ export interface TemplatesPageProps {
   onCancel: () => void;
   /** 新建空白的自由设计模板，直接进设计器。 */
   onCreateCanvas: () => void;
+  /** 「新建自由设计模板」正在进行：按钮禁用，避免连点建出好几个空白模板。 */
+  isCreatingCanvas: boolean;
   /** 「打印一张试试」：按预览内容打印正在编辑的草稿（只在设计器里有）。 */
   onPrintSample: () => void;
   /** 「打印一张试试」正在进行：按钮禁用，避免连点打出好几张一样的草稿。 */
@@ -81,6 +83,7 @@ function ListView({
   onEdit,
   onRemove,
   onCreateCanvas,
+  isCreatingCanvas,
   printers,
   paperPrinters,
 }: TemplatesPageProps) {
@@ -106,9 +109,10 @@ function ListView({
         <button
           type="button"
           className="button button--small button--quiet template-list__create"
+          disabled={isCreatingCanvas}
           onClick={onCreateCanvas}
         >
-          新建自由设计模板
+          {isCreatingCanvas ? '正在新建…' : '新建自由设计模板'}
         </button>
       </div>
       <section className="template-stage" aria-label="模板预览">

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  basicsMergeKey,
   emptyHistory,
   endMerge,
   HISTORY_LIMIT,
@@ -105,6 +106,20 @@ describe('canvas history', () => {
 
     test('passes a null field through as null, for one-shot edits that never merge', () => {
       expect(historyMergeKey('e1', null)).toBeNull();
+    });
+  });
+
+  describe('basicsMergeKey', () => {
+    test('merges consecutive name edits, but not a change to anything else', () => {
+      const base = { id: 't1', name: 'a', widthMm: 60 };
+      // 连续打字改名称：同一个合并键，才能撤销一次回到开始打字之前。
+      expect(basicsMergeKey(base, { ...base, name: 'ab' })).toBe('t1:name');
+      // 纸张、打印机这类一次选择就改完的字段：各自成一步，不合并。
+      expect(basicsMergeKey(base, { ...base, widthMm: 80 })).toBeNull();
+      // 同一步里名称和别的字段一起变了（理论上不会发生，但不能悄悄把它当纯改名合并掉）。
+      expect(basicsMergeKey(base, { ...base, name: 'ab', widthMm: 80 })).toBeNull();
+      // 什么都没变：不算一步。
+      expect(basicsMergeKey(base, { ...base })).toBeNull();
     });
   });
 });

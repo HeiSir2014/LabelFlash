@@ -248,6 +248,31 @@ describe('BatchStation printing', () => {
     ]);
     expect(station.retryFailed(BATCH_ID, 3)).toEqual({ status: 'invalid', issue: '这一批没有要重打的失败标签' });
   });
+
+  // 一批最多 2 万张，但保留的打印记录条数可能比它小（例如调小过容量）：这一批还在这次会话里时，
+  // 重打失败的要用内存里完整的名单，不能依赖可能已经被裁剪掉的打印记录。
+  test('retries failures of the batch still in memory without querying the trimmed job history', async () => {
+    const printed: FieldsPrint[] = [];
+    const { station } = createStation({
+      printFields: async (input) => {
+        printed.push(input);
+        return input.content.includes('BAD') ? { status: 'failed', reason: 'PRINT_ERROR' } : PRINTED;
+      },
+      failedJobs: () => {
+        throw new Error('must not query job history for a batch still in this session');
+      },
+    });
+    const tableId = await loaded(station);
+    const started = station.start(planFor(tableId));
+    if (started.status !== 'started') {
+      throw new Error('expected the batch to start');
+    }
+    await station.whenIdle();
+    printed.length = 0;
+    expect(station.retryFailed(started.batch.batchId, null).status).toBe('started');
+    await station.whenIdle();
+    expect(printed.map((input) => input.content)).toEqual(['编码：BAD']);
+  });
 });
 
 describe('BatchStation preview and check', () => {

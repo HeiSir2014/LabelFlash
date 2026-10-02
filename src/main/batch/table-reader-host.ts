@@ -18,21 +18,30 @@ export interface TableReaderHostDeps {
 
 export const READ_TIMEOUT_ISSUE = '读表格超时：文件太大或已损坏。可以在 Excel 里「另存为」CSV 再试';
 export const READER_FAILED_ISSUE = '读表格时出错：文件太大或已损坏。可以在 Excel 里「另存为」CSV 再试';
+/** 又导入了一个新文件，上一个还没读完就被结束：这是正常操作，不是出错。 */
+export const READ_SUPERSEDED_ISSUE = '已经开始读取另一个文件，这次导入被取消';
 /** 子进程给的原因的长度上限：只显示一句话，更长的说明子进程出了问题。 */
 const MAX_ISSUE_LENGTH = 200;
+/** 写日志时 detail 最多留这么多字：它是库的原始错误（可能是一整段堆栈），完整内容对排查没有额外帮助。 */
+const MAX_LOGGED_DETAIL_LENGTH = 500;
 
 /**
  * 每读一个文件起一个子进程（Chromium 两条法则：不可信的输入 + 第三方解析库，不放在高权限的主进程里）。
  * 读完、超时、出错都结束它，不复用：坏文件把子进程弄坏了也不影响下一次。
+ * 同一时间只读一个文件：新的一次 read() 直接结束上一次还没读完的子进程，不等它超时。
  */
 export class TableReaderHost {
+  private current: { cancel: () => void } | null = null;
+
   constructor(private readonly deps: TableReaderHostDeps) {}
 
   read(request: TableReadRequest): Promise<TableReadReply> {
+    const previous = this.current;
     return new Promise((resolve) => {
       let isSettled = false;
       let child: ReaderProcess | null = null;
       let cancelTimer: () => void = () => undefined;
+      const token: { cancel: () => void } = { cancel: () => undefined };
       const finish = (reply: TableReadReply) => {
         if (isSettled) {
           return;
@@ -40,8 +49,15 @@ export class TableReaderHost {
         isSettled = true;
         cancelTimer();
         child?.kill();
+        if (this.current === token) {
+          this.current = null;
+        }
         resolve(reply);
       };
+      token.cancel = () => finish({ ok: false, issue: READ_SUPERSEDED_ISSUE });
+      this.current = token;
+      // 先登记好这一次、再结束上一次：万一上一次的结束回调是同步触发的，也不会把这一次顶掉。
+      previous?.cancel();
       cancelTimer = this.deps.schedule(() => {
         this.deps.log(`[batch] table reader timed out after ${this.deps.timeoutMs}ms`);
         finish({ ok: false, issue: READ_TIMEOUT_ISSUE });
@@ -56,7 +72,7 @@ export class TableReaderHost {
       child.onMessage((message) => {
         const reply = readReply(message);
         if (!reply.ok && reply.detail !== undefined) {
-          this.deps.log(`[batch] table reader refused the file: ${reply.detail}`);
+          this.deps.log(`[batch] table reader refused the file: ${reply.detail.slice(0, MAX_LOGGED_DETAIL_LENGTH)}`);
         }
         finish(reply.ok ? reply : { ok: false, issue: reply.issue });
       });

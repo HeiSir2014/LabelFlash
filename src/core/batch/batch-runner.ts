@@ -5,14 +5,17 @@ export type BatchState = 'running' | 'paused' | 'done' | 'canceled';
 
 /**
  * 为什么暂停：operator = 操作员点的；no-printer / PRINTER_NOT_READY / PRINTER_NOT_FOUND 是打印机的问题
- * （那一张没打成，继续时重打它）；consecutive-failures 见 CONSECUTIVE_FAILURE_PAUSE_LIMIT 的说明。
+ * （那一张没打成，继续时重打它）；consecutive-failures / consecutive-failures-after-timeout 见
+ * CONSECUTIVE_FAILURE_PAUSE_LIMIT 的说明——后者是触发暂停的那一张超时了（不确定有没有打印），
+ * 界面要用不同的措辞提醒操作员自己确认这几张有没有出纸，而不是直接当成「没打」重打。
  */
 export type BatchPauseReason =
   | 'operator'
   | 'no-printer'
   | 'PRINTER_NOT_READY'
   | 'PRINTER_NOT_FOUND'
-  | 'consecutive-failures';
+  | 'consecutive-failures'
+  | 'consecutive-failures-after-timeout';
 
 export interface BatchFailure {
   row: number;
@@ -137,10 +140,17 @@ export class BatchRun {
       this.consecutiveFailures += 1;
       if (this.consecutiveFailures >= CONSECUTIVE_FAILURE_PAUSE_LIMIT) {
         this.consecutiveFailures = 0;
-        if (!this.is('canceled')) {
-          this.setState('paused', 'consecutive-failures');
+        // 超时不代表没打印（只是驱动没回话）：重打这一张有重复出纸的风险，不能当成「没打」直接重试，
+        // 按失败记下、照常前进到下一张；暂停原因单独标出来，界面提醒操作员自己确认这几张有没有出纸。
+        const timedOut = result.status === 'failed' && result.reason === 'PRINT_TIMEOUT';
+        if (timedOut) {
+          this.failures.push({ row: label.row, copy: label.copy, reason: 'PRINT_TIMEOUT' });
+          this.next += 1;
         }
-        continue; // 这一张不算失败、也不前进：继续时重打它。
+        if (!this.is('canceled')) {
+          this.setState('paused', timedOut ? 'consecutive-failures-after-timeout' : 'consecutive-failures');
+        }
+        continue; // 没超时的那一张不算失败、也不前进：继续时重打它。
       }
       this.failures.push({ row: label.row, copy: label.copy, reason: failureReasonOf(result) });
       this.next += 1;
@@ -188,6 +198,21 @@ export class BatchRun {
   /** 查询用的完整快照：按需调用，失败名单最多给最近 MAX_SNAPSHOT_FAILURES 条。 */
   snapshot(): BatchSnapshot {
     return { ...this.progress(), failures: this.failures.slice(-MAX_SNAPSHOT_FAILURES) };
+  }
+
+  /**
+   * 这一批里失败的标签（按行号筛选，null = 全部），按原始标签表里的顺序：从失败记录的 (row, copy)
+   * 找回当时打印用的完整标签（字段、内容）。不受历史保留条数限制——这份名单只要这个 BatchRun
+   * 还在内存里（这次会话还没打别的批）就是完整的，重打失败的优先用它，不必查打印记录表。
+   */
+  failedLabels(row: number | null): BatchLabel[] {
+    if (this.failures.length === 0) {
+      return [];
+    }
+    const wanted = new Set(
+      this.failures.filter((failure) => row === null || failure.row === row).map((failure) => key(failure)),
+    );
+    return this.labels.filter((label) => wanted.has(key(label)));
   }
 
   /** 用方法读状态：循环里隔着 await 读 this.state，TypeScript 的收窄会误以为它没变。 */
@@ -240,4 +265,9 @@ function printerProblem(result: PrintResult): BatchPauseReason | null {
 /** 批量打印不走识别和防重复，理论上只会是 printed 或 failed；万一出现别的状态，按驱动报错处理。 */
 function failureReasonOf(result: PrintResult): PrintFailureReason {
   return result.status === 'failed' ? result.reason : 'PRINT_ERROR';
+}
+
+/** 行号、份号拼成的键：同一行同一份只会出现一次（标签按行、份展开），用来对上失败记录和原始标签。 */
+function key(labelOrFailure: { row: number; copy: number }): string {
+  return `${labelOrFailure.row}:${labelOrFailure.copy}`;
 }

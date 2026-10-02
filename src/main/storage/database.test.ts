@@ -213,4 +213,23 @@ describe('migration 6', () => {
     expect(db.prepare('SELECT COUNT(*) AS n FROM jobs').get()?.['n']).toBe(3);
     db.close();
   });
+
+  // 和迁移 3 的同一条规则：重建表之后，自增计数接着旧表走，删掉的旧序号不会被新记录复用。
+  test('keeps counting sequence numbers from where the old table stopped, even after a delete', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, MIGRATIONS.slice(0, 5));
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES ('a', 1, 'A', 'P', 'desktop', 'printed', 0)",
+    ).run();
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES ('b', 2, 'B', 'P', 'desktop', 'printed', 0)",
+    ).run();
+    db.prepare("DELETE FROM jobs WHERE id = 'b'").run();
+    migrate(db);
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES ('c', 3, 'C', 'P', 'desktop', 'printed', 0)",
+    ).run();
+    expect(db.prepare("SELECT seq FROM jobs WHERE id = 'c'").get()?.['seq']).toBe(3);
+    db.close();
+  });
 });

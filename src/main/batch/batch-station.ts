@@ -65,6 +65,7 @@ export interface BatchStationDeps {
 
 interface CurrentBatch {
   run: BatchRun;
+  template: LabelTemplate;
   templateName: string;
   finished: Promise<void>;
 }
@@ -181,10 +182,21 @@ export class BatchStation {
     return this.begin(this.deps.createBatchId(), prepared.template, planned.labels);
   }
 
-  /** 按打印记录重打一批里失败的标签（row 不为 null 时只重打那一行）：同一个批次号、行号、份号，当时的模板和字段。 */
+  /**
+   * 重打一批里失败的标签（row 不为 null 时只重打那一行）：同一个批次号、行号、份号，当时的模板和字段。
+   * 这一批如果还是这次会话里刚打过（或正在打）的那一批，用 BatchRun 内存里的完整失败名单——
+   * 打印记录按容量环形保留，条数可能比一批的张数（最多 2 万）小，查出来的会少于实际失败的。
+   * 换了别的批、或跨了重启，内存里已经没有了，退回查打印记录（受保留条数限制）。
+   */
   retryFailed(batchId: string, row: number | null): BatchStartResult {
     if (this.current?.run.isActive === true) {
       return { status: 'invalid', issue: BUSY };
+    }
+    if (this.current?.run.batchId === batchId) {
+      const labels = this.current.run.failedLabels(row);
+      return labels.length === 0
+        ? { status: 'invalid', issue: NO_FAILURES }
+        : this.begin(batchId, this.current.template, labels);
     }
     const jobs = this.deps.failedJobs(batchId, row);
     const labels = jobs.flatMap((job): BatchLabel[] =>
@@ -289,7 +301,7 @@ export class BatchStation {
     const finished = new Promise<void>((resolve) => {
       markFinished = resolve;
     });
-    this.current = { run, templateName: template.name, finished };
+    this.current = { run, template, templateName: template.name, finished };
     this.lastState = null;
     // run() 本身不该 reject（onChange 抛错已经在 BatchRun 内部兜住，print() 的异常也转成失败），
     // 但这里仍然 .catch：防止版本以外的意外把这个 Promise 的 rejection 落地成未处理异常，带崩主进程。

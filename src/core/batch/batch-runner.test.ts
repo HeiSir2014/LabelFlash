@@ -280,4 +280,61 @@ describe('BatchRun', () => {
     expect(run.isActive).toBe(false);
     expect(run.pendingLabels).toBe(0);
   });
+
+  // 超时不代表没打印（驱动只是没回话）：触发自动暂停的那一张如果是超时，重打有重复出纸的风险，
+  // 按失败记下、前进到下一张，暂停原因单独标出来，界面要用不同的措辞提醒操作员自己确认有没有出纸。
+  test('does not retry the label that tripped the pause when it timed out, and says so in the pause reason', async () => {
+    const { run, printed, release, finished } = gatedRun(5);
+    const timeout: PrintResult = { status: 'failed', reason: 'PRINT_TIMEOUT' };
+    await settle();
+    await release(timeout);
+    await settle();
+    await release(timeout);
+    await settle();
+    await release(timeout);
+    expect(printed).toEqual([1, 2, 3]); // 没有重打第 3 张
+    expect(run.snapshot()).toMatchObject({
+      state: 'paused',
+      pauseReason: 'consecutive-failures-after-timeout',
+      sent: 0,
+      failed: 3,
+      failures: [
+        { row: 1, copy: 1, reason: 'PRINT_TIMEOUT' },
+        { row: 2, copy: 1, reason: 'PRINT_TIMEOUT' },
+        { row: 3, copy: 1, reason: 'PRINT_TIMEOUT' },
+      ],
+    });
+    run.resume();
+    await settle();
+    expect(printed).toEqual([1, 2, 3, 4]); // 第 4 张是新的一张，不是重打
+    await release();
+    await release();
+    await finished;
+    expect(run.snapshot()).toMatchObject({ state: 'done', sent: 2, failed: 3 });
+  });
+});
+
+describe('BatchRun.failedLabels', () => {
+  test('is empty for a run with no failures', async () => {
+    const run = new BatchRun('20261002-143501-a1b2', labels(2), {
+      print: async () => PRINTED,
+      onChange: () => undefined,
+    });
+    await run.run();
+    expect(run.failedLabels(null)).toEqual([]);
+  });
+
+  test('finds the original labels of failed rows and copies, optionally for one row', async () => {
+    const { run, release, finished } = gatedRun(3);
+    await settle();
+    await release({ status: 'failed', reason: 'PRINT_ERROR' });
+    await settle();
+    await release();
+    await settle();
+    await release({ status: 'failed', reason: 'PRINT_TIMEOUT' });
+    await finished;
+    expect(run.failedLabels(null).map((label) => label.row)).toEqual([1, 3]);
+    expect(run.failedLabels(3).map((label) => label.row)).toEqual([3]);
+    expect(run.failedLabels(2)).toEqual([]);
+  });
 });

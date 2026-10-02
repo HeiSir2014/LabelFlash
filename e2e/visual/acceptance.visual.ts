@@ -43,7 +43,7 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的 V01–V44）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 视觉验收（设计文档 §8.2 的 V01–V48）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
  * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
@@ -1223,6 +1223,72 @@ const ITEMS: Item[] = [
       await page.locator('.template-item', { hasText: '吊牌（自由设计示例）' }).click();
     },
   },
+  {
+    id: 'V45',
+    title: '模板 · 自由设计 · 设计器（1280px）',
+    points:
+      '三栏：左边 7 种元素、中间画布、右边属性和图层；工具条按组排开，放不下时整组换行、按钮文字不裁；画布有毫米标尺、1mm 网格、1.5mm 安全区虚线；选中的条码有蓝色选框和 8 个控制点；画布就是打印的样子（Code128、二维码、表格格线）；底部打印前检查写「没有发现问题」，操作条有「打印一张试试」',
+    sizes: [SIZE_1280],
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+      await selectLayer(page, '编码条码（条码）');
+    },
+  },
+  {
+    id: 'V46',
+    title: '模板 · 自由设计 · 设计器（1024px）',
+    points:
+      '没有横向滚动；属性栏收窄到 260px 仍放得下标签和数字框；工具条换成两三行；画布缩到放得下整张标签；选中的文字属性栏里「内容」框完整',
+    sizes: [SIZE_1024],
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+      await selectLayer(page, '编码（文字）');
+    },
+  },
+  {
+    id: 'V47',
+    title: '模板 · 自由设计 · 多选和放大（1920px）',
+    points:
+      'Shift 多选三个文字：每个都有选框、没有控制点，属性栏写「已选 3 个元素」，等距按钮可用；放大一档后画布出现滚动条，标尺和网格跟着放大、不糊',
+    sizes: [SIZE_1920],
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+      await selectLayer(page, '编码（文字）');
+      const layers = page.getByRole('list', { name: '图层' });
+      await layers.getByRole('button', { name: '货架号（文字）' }).click({ modifiers: ['Shift'] });
+      await layers.getByRole('button', { name: '日期（文字）' }).click({ modifiers: ['Shift'] });
+      await page.getByRole('button', { name: '放大' }).click();
+    },
+  },
+  {
+    id: 'V48',
+    title: '模板 · 自由设计 · 元素属性',
+    points:
+      '每种元素一张：标签列对齐、数字框带单位、开关和分段按钮不换行；文字有「内容」和「插入字段」；条码的码制下拉分「常用」「更多一维码」「更多二维码」，改成 EAN-13 后底部打印前检查写明原因；图片有「选择图片…」和阈值滑块；表格有行高、列宽、加减行列和格子编辑',
+    sizes: [SIZE_1280],
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+      const designer = page.getByRole('region', { name: '设计器' });
+      await designer.getByRole('button', { name: '添加图片' }).click();
+      await designer.getByRole('button', { name: '添加矩形' }).click();
+    },
+    shots: [
+      { label: '文字', prepare: ({ page }) => selectLayer(page, '编码（文字）') },
+      {
+        label: '条码 · EAN-13 内容不合',
+        prepare: async ({ page }) => {
+          await selectLayer(page, '编码条码（条码）');
+          await page.getByRole('region', { name: '设计器' }).getByLabel('码制').selectOption('ean13');
+          await expect(page.getByRole('region', { name: '打印前检查' })).toContainText('条码「编码条码」');
+        },
+      },
+      { label: '二维码', prepare: ({ page }) => selectLayer(page, '二维码（二维码）') },
+      { label: '图片', prepare: ({ page }) => selectLayer(page, '图片（图片）') },
+      { label: '线', prepare: ({ page }) => selectLayer(page, '分隔线（线）') },
+      { label: '矩形', prepare: ({ page }) => selectLayer(page, '矩形（矩形）') },
+      { label: '表格', prepare: ({ page }) => selectLayer(page, '颜色尺码（表格）') },
+    ],
+  },
 ];
 
 /**
@@ -1241,6 +1307,20 @@ function waybillCase(id: string, name: string, points: string): Item {
       await expect(label).toContainText('781234567890123');
     },
   };
+}
+
+/** V45–V48：复制内置的吊牌示例，进设计器。 */
+async function openCanvasDesigner(page: Page): Promise<void> {
+  await scan(page, 'CL5640-TK-图片色-XL');
+  await openConfig(page, '模板');
+  await page.locator('.template-item', { hasText: '吊牌（自由设计示例）' }).click();
+  await page.getByRole('button', { name: '复制' }).click();
+  await expect(page.getByRole('region', { name: '设计器' })).toBeVisible();
+}
+
+/** 在图层列表里点选一个元素（名字形如「编码条码（条码）」）。 */
+async function selectLayer(page: Page, name: string): Promise<void> {
+  await page.getByRole('list', { name: '图层' }).getByRole('button', { name }).click();
 }
 
 /** V32：本机中转服务和一部测试手机（每种尺寸共用，只连一次）。 */

@@ -1,4 +1,5 @@
 /** 设计器画布的显示和按键：缩放档位、屏幕像素换毫米、按键 → 命令。纯函数，不碰 DOM。 */
+import type { Platform } from './app-view';
 
 /** CSS 像素每毫米（CSS 规定 1in = 96px = 25.4mm）：预览和设计器都按它把毫米换成屏幕上的大小。 */
 export const PX_PER_MM = 96 / 25.4;
@@ -60,6 +61,11 @@ export const NUDGE_LARGE_MM = 1;
 
 /** 从元素栏拖到画布上时，拖动数据里放元素类型用的格式名（只在这个页面内部用）。 */
 export const ELEMENT_DRAG_TYPE = 'application/x-labelflash-element';
+
+/** 画布覆盖层 aria-label 里的撤销快捷键文字：和配置中心的快捷键提示（`configShortcutLabel`）用同一套平台判断。 */
+export function undoShortcutLabel(platform: Platform): string {
+  return platform === 'mac' ? '⌘Z' : 'Ctrl+Z';
+}
 
 /** 画布上的按键解析出的命令：视图模型据此改选区、历史或模板，具体怎么改不在这里管。 */
 export type DesignerCommand =

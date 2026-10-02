@@ -1,5 +1,6 @@
 import type { PaperSize } from '../../shared/paper-sizes';
 import type { CanvasTemplate } from './canvas-model';
+import { sanitizeCanvasElements } from './sanitize-canvas';
 import type { WaybillTemplate } from './waybill-model';
 
 /** 标签模板：结构化数据（不是任意 HTML），可校验、可持久化，打印和预览共用。纸张尺寸由模板自己决定。 */
@@ -158,11 +159,16 @@ export function fullTextWidthMm(template: QrLabelTemplate): number {
 /**
  * 换一种纸打同一个模板（测试页按打印机负责的纸打印、编辑器换纸张）：二维码跟着纸张缩小，并夹到新纸张的上限内。
  * 面单模板只换纸张：版面的最后一行（商家自定义区）在排版时吸收高度差。
+ * 自由设计模板：元素位置和大小用 sanitizeCanvasElements 夹到新纸张内——layoutCanvas 只负责排版，
+ * 不会把超出纸张的元素挪回来，换到更小的纸时元素会被裁掉一截，所以必须在这里夹一遍。
  */
 export function withPaper<T extends LabelTemplate>(template: T, paper: PaperSize): T {
-  // 面单：版面的最后一行（商家自定义区）在排版时吸收高度差；自由设计：超出新纸张的元素排版时收进纸内。
-  if (template.kind !== 'label') {
+  if (template.kind === 'waybill') {
+    // 面单：版面的最后一行（商家自定义区）在排版时吸收高度差，只需要换纸张。
     return { ...template, paper: { ...paper } };
+  }
+  if (template.kind === 'canvas') {
+    return { ...template, paper: { ...paper }, elements: sanitizeCanvasElements(template.elements, paper) } as T;
   }
   return withLabelPaper(template, paper) as T;
 }

@@ -35,7 +35,7 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
   - macOS 还是普通输入框（密码框会打开系统的「安全输入」，对扫码枪输出中文的影响未验证），靠上面这一条应对输入法。
   - 不要把扫码框改回 textarea，也不要去掉「密码框」：Windows 上中文模式下扫码会立刻坏掉（已用微软拼音实测）。
 - **多行扫码**：二维码里的换行会以回车发出，`lib/scan-assembler.ts` 按回车后的停顿区分「码里的换行」和「扫完了」。停顿时长是设置项 `scanLineGapMs`，默认 80 毫秒。
-- **不能打印的界面**：配置中心里扫码永远不打印（F2 也不行）；「打印机」页的「测试页」是操作员明确点的按钮，照常打印。
+- **不能打印的界面**：配置中心里扫码永远不打印（F2 也不行）；「打印机」页的「测试页」是操作员明确点的按钮，照常打印。模板页设计器的「打印一张试试」同样是明确点的按钮，照常打印（不写打印记录）。
 - **一件事只在一处说**：界面精简的取舍见 `docs/superpowers/specs/2026-09-29-config-center-layout-design.md` 最后一节。加元素前先看有没有已经表达同一件事的地方。
 
 ## 手机扫码
@@ -44,6 +44,16 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 - **浮层非模态**：不用 `dialog.showModal`，扫码框和 F2 照常可用；只在工作台上显示，配置中心打开时隐藏。Esc 关闭。
 - **二维码在本机生成**：用 `view-models/use-qr-image.ts`，不请求任何在线服务。
 - **手机的打印结果不播报**：拿手机的人看手机；这边只刷新打印记录。
+
+## 自由设计的设计器
+
+设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 3.3 节。
+
+- **分层**：纯逻辑在 `lib/canvas-edit.ts`（移动、缩放、旋转、增删、对齐、等距、叠放、复制粘贴、框选）、`canvas-snap.ts`、`canvas-history.ts`、`canvas-table.ts`、`canvas-view.ts`（缩放档位、按键 → 命令）、`gray-image.ts`；状态在 `view-models/use-canvas-designer.ts`（选中、撤销历史、剪贴板、缩放、开关）、`use-canvas-gesture.ts`（拖动、缩放、框选）、`use-image-import.ts`；组件在 `components/canvas-editor/`。
+- **画布就是预览**：标签是模板页预览的同一份 HTML（`previewTemplate`），透明覆盖层只画框；拖动时只动覆盖层，松手才改草稿。不要在覆盖层上自己画元素内容。
+- **扫码**：画布是可聚焦的 `div`，不是输入框；只处理方向键、Delete / Backspace、Esc、Ctrl / ⌘ 组合键（`designerCommand`，有测试）。不要拦字母、数字做快捷键，也不要给画布加 `data-keep-focus`（那只对工作台有意义）：配置中心要把扫码枪的字符送进「预览内容」。
+- **改模板只经 `commit`**：先记撤销历史再交给草稿；同一个字段的连续输入用同一个合并键。
+- **剪贴板**在设计器的内存里；**图片**在页面里解码，模板只存灰度像素。
 
 ## 播报与提示音
 

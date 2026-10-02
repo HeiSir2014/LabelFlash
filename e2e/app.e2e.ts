@@ -1,12 +1,16 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ElectronApplication, Page } from '@playwright/test';
+import sharp from 'sharp';
 import { BUILT_IN_WAYBILLS } from '../src/core/templates/builtin-waybills';
 import { estimateTextWidthEm } from '../src/core/templates/text-fit';
+import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
 import {
   allowSlowScannerLines,
   blurActiveElement,
   callApi,
+  fakePrints,
   openConfig,
   recordClipboard,
   recordVoiceCues,
@@ -588,6 +592,225 @@ test('previews a built-in waybill with sample data and edits a copy cell by cell
   await expect(label).toContainText('集包：杭州转运中心');
 });
 
+// 自由设计模板：内置示例按扫码内容排版，复制后进设计器。
+test('previews the built-in canvas tag and copies it', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  await scan(page, 'CL5640-TK-图片色-XL');
+  await openConfig(page, '模板');
+  await page.locator('.template-item', { hasText: '吊牌（自由设计示例）' }).click();
+  const frame = page.getByRole('main', { name: '模板' }).frameLocator('.label-frame');
+  await expect(frame.locator('.line', { hasText: 'CL5640-TK' }).first()).toBeVisible();
+  await expect(frame.locator('svg[shape-rendering="crispEdges"]')).toHaveCount(2);
+  await page.getByRole('button', { name: '复制' }).click();
+  await expect(page.getByRole('region', { name: '设计器' })).toBeVisible();
+});
+
+/** 「打印一张试试」：一台装 60×40 的假打印机（打印只记下来）。 */
+const SAMPLE_PRINTERS: FakePrinterSpec[] = [
+  { name: '标签机A', paper: { widthMm: 60, heightMm: 40, dpi: 203 }, readiness: { ready: true } },
+];
+/** 把文字往右拖这么多屏幕像素：在「适合窗口」的倍数下是几毫米，又远大于吸附距离。 */
+const DRAG_PX = 40;
+
+// 自由设计：新建空白模板，加文字、拖动、改字号、撤销重做，再加条码看打印前检查，保存后扫码按它排版。
+test('designs a canvas template from scratch and uses it for scans', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  await scan(page, 'CL5640-TK-图片色-XL');
+  await openConfig(page, '模板');
+  await page.getByRole('button', { name: '新建自由设计模板' }).click();
+  const designer = page.getByRole('region', { name: '设计器' });
+  await expect(designer).toBeVisible();
+  const label = page.getByRole('main', { name: '模板' }).frameLocator('.label-frame');
+
+  // 加一个文字：放在纸中间、选中；改内容，画布上就是打印的样子。
+  await designer.getByRole('button', { name: '添加文字' }).click();
+  await designer.getByLabel('内容', { exact: true }).fill('品名 {编码}');
+  await expect(label.locator('.line', { hasText: '品名 CL5640-TK' })).toBeVisible();
+
+  // 拖到右边：位置跟着变。
+  const x = designer.getByLabel('X', { exact: true });
+  const before = Number(await x.inputValue());
+  const box = await page.locator('.canvas-overlay__box[data-element-id="e1"]').boundingBox();
+  if (box === null) {
+    throw new Error('the text box is not on the canvas');
+  }
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + DRAG_PX, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => Number(await x.inputValue())).toBeGreaterThan(before);
+
+  // 改字号，再在画布上用键盘撤销、重做。
+  const fontSize = designer.getByLabel('字号', { exact: true });
+  await fontSize.fill('5');
+  await page.locator('.canvas-overlay').focus();
+  await page.keyboard.press('Control+Z');
+  await expect(fontSize).toHaveValue('3.5');
+  await page.keyboard.press('Control+Y');
+  await expect(fontSize).toHaveValue('5');
+
+  // 加一个条码：默认内容 {完整内容} 里有中文，Code 128 印不了，底部写明原因；改成 {编码} 就印出来。
+  await designer.getByRole('button', { name: '添加条码' }).click();
+  await expect(designer.getByLabel('码制')).toHaveValue('code128');
+  const checks = designer.getByRole('region', { name: '打印前检查' });
+  await expect(checks).toContainText('条码「条码」');
+  await designer.getByLabel('内容', { exact: true }).fill('{编码}');
+  await expect(label.locator('svg[shape-rendering="crispEdges"]')).toHaveCount(1);
+  await expect(checks).toContainText('没有发现问题');
+
+  // Esc 取消选中（不离开编辑），右栏换成模板设置，改名后保存。
+  await page.locator('.canvas-overlay').focus();
+  await page.keyboard.press('Escape');
+  await designer.getByLabel('模板名称').fill('E2E 吊牌');
+  await page.getByRole('button', { name: '保存模板' }).click();
+  await expect(page.locator('.template-item', { hasText: 'E2E 吊牌' })).toHaveAttribute('aria-pressed', 'true');
+
+  // 设为当前模板，回到工作台扫码：标签按设计出来的样子排。
+  const saved = (await callApi(page, 'listTemplates')).find((template) => template.name === 'E2E 吊牌');
+  if (saved === undefined) {
+    throw new Error('the designed template was not saved');
+  }
+  expect(saved.kind === 'canvas' && saved.elements.map((element) => element.kind)).toEqual(['text', 'barcode']);
+  await callApi(page, 'updateSettings', { activeTemplateId: saved.id, autoPrint: false });
+  await page.reload();
+  await scan(page, 'CL5640-TK-图片色-XL');
+  await expect(page.frameLocator('.label-frame').locator('.line', { hasText: '品名 CL5640-TK' })).toBeVisible();
+});
+
+// 焦点在画布上时扫码：字符不当成快捷键，照样填进「预览内容」，画布按新内容排版。
+test('keeps the scanner working while the canvas has focus', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  await openConfig(page, '模板');
+  await page.getByRole('button', { name: '新建自由设计模板' }).click();
+  const designer = page.getByRole('region', { name: '设计器' });
+  await designer.getByRole('button', { name: '添加文字' }).click();
+  await designer.getByLabel('内容', { exact: true }).fill('{编码}');
+  await page.locator('.canvas-overlay').focus();
+  await typeLikeScanner(page, ['CL5640-TK-图片色-XL']);
+  await expect(page.getByLabel('预览内容')).toHaveValue('CL5640-TK-图片色-XL');
+  const label = page.getByRole('main', { name: '模板' }).frameLocator('.label-frame');
+  await expect(label.locator('.line', { hasText: 'CL5640-TK' })).toBeVisible();
+  await expect(designer.getByRole('list', { name: '图层' }).getByRole('button')).toHaveCount(1);
+});
+
+// 「打印一张试试」：按预览内容把没保存的草稿打到装着这种纸的打印机上；不写打印记录。
+test('prints one sample of a canvas draft without recording a job', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch({ fakePrinters: SAMPLE_PRINTERS });
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A' }, autoPrint: false });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await scan(page, 'CL5640-TK-图片色-XL');
+  const jobsBefore = (await callApi(page, 'listJobs', { limit: 100 })).jobs.length;
+  await openConfig(page, '模板');
+  await page.locator('.template-item', { hasText: '吊牌（自由设计示例）' }).click();
+  await page.getByRole('button', { name: '复制' }).click();
+  await page.getByRole('button', { name: '打印一张试试' }).click();
+  await expect
+    .poll(() => fakePrints(app))
+    .toEqual([{ printerName: '标签机A', raw: 'CL5640-TK-图片色-XL', paper: '60x40', templateId: 'custom:draft' }]);
+  // 打印只记下来；草稿没保存过，不占打印记录、也不占防重复窗口。
+  expect((await callApi(page, 'listJobs', { limit: 100 })).jobs.length).toBe(jobsBefore);
+});
+
+// 设计器剩下的操作：拖到画布上新建、方向键微调、缩放控制点、复制粘贴、对齐、叠放、双击改文字、
+// 表格加减行、选图片、Esc 取消一次还按着的拖动。
+test('covers the rest of the designer toolbox: drag-add, resize, copy, align, stack, table and image', async ({
+  electronApp,
+}) => {
+  const { page } = await electronApp.launch();
+  await openConfig(page, '模板');
+  await page.getByRole('button', { name: '新建自由设计模板' }).click();
+  const designer = page.getByRole('region', { name: '设计器' });
+  const overlay = page.locator('.canvas-overlay');
+
+  // 点一下加文字（e1）。
+  await designer.getByRole('button', { name: '添加文字' }).click();
+
+  // 拖到画布上加条码（e2）：源是元素栏的按钮，画布接收 drop；用 DataTransfer 手动模拟（HTML5 拖拽，
+  // Playwright 的鼠标事件驱动不了原生拖拽），不关心落点，只关心加上了。
+  const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+  await designer.getByRole('button', { name: '添加条码' }).dispatchEvent('dragstart', { dataTransfer });
+  await overlay.dispatchEvent('dragover', { dataTransfer });
+  await overlay.dispatchEvent('drop', { dataTransfer });
+  const layerList = designer.getByRole('list', { name: '图层' });
+  await expect(layerList.getByRole('button')).toHaveCount(2);
+
+  // 选中文字（e1），方向键微调：右移一步是 0.1mm。
+  await layerList.getByRole('button', { name: '文字（文字）' }).click();
+  const x = designer.getByLabel('X', { exact: true });
+  const beforeArrow = Number(await x.inputValue());
+  await overlay.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => Number(await x.inputValue())).toBeCloseTo(beforeArrow + 0.1, 5);
+
+  // 拖控制点缩放：选中的元素有 8 个控制点，拖右下角（se）变大。
+  const width = designer.getByLabel('宽', { exact: true });
+  const beforeWidth = Number(await width.inputValue());
+  const handle = page.locator('.canvas-overlay__box[data-element-id="e1"] [data-handle="se"]');
+  const handleBox = await handle.boundingBox();
+  if (handleBox === null) {
+    throw new Error('the resize handle is not on the canvas');
+  }
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x + handleBox.width / 2 + DRAG_PX, handleBox.y + handleBox.height / 2, {
+    steps: 5,
+  });
+  await page.mouse.up();
+  await expect.poll(async () => Number(await width.inputValue())).toBeGreaterThan(beforeWidth);
+
+  // Esc 取消一次还按着的拖动：按下不松手就按 Esc，位置恢复，不提交这一步。
+  const beforeCancel = Number(await x.inputValue());
+  const boxBeforeCancel = await page.locator('.canvas-overlay__box[data-element-id="e1"]').boundingBox();
+  if (boxBeforeCancel === null) {
+    throw new Error('the text box is not on the canvas');
+  }
+  await page.mouse.move(boxBeforeCancel.x + boxBeforeCancel.width / 2, boxBeforeCancel.y + boxBeforeCancel.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(boxBeforeCancel.x + DRAG_PX * 2, boxBeforeCancel.y, { steps: 5 });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect.poll(async () => Number(await x.inputValue())).toBe(beforeCancel);
+
+  // 双击文字：焦点直接落进右栏的「内容」框。
+  await page.locator('.canvas-overlay__box[data-element-id="e1"]').dblclick();
+  await expect(designer.getByLabel('内容', { exact: true })).toBeFocused();
+
+  // 复制粘贴：图层多一个，新名字自动编号。
+  await overlay.focus();
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Control+v');
+  await expect(layerList.getByRole('button')).toHaveCount(3);
+  await expect(layerList.getByRole('button', { name: '文字 2（文字）' })).toBeVisible();
+
+  // 对齐：单选时对齐到安全区（左对齐落在安全边距 1.5mm）。
+  await page.getByRole('button', { name: '左对齐' }).click();
+  await expect.poll(async () => Number(await x.inputValue())).toBe(1.5);
+
+  // 叠放：置底之后，这个元素在图层列表（上层在前）里排到最后一个。
+  await page.getByRole('button', { name: '置底' }).click();
+  await expect(layerList.getByRole('button').last()).toHaveAttribute('aria-pressed', 'true');
+
+  // 加一个表格（e4），加一行、再删掉。
+  await designer.getByRole('button', { name: '添加表格' }).click();
+  await layerList.getByRole('button', { name: '表格（表格）' }).click();
+  const rowCountBefore = await designer.getByLabel(/第 \d+ 行高$/).count();
+  await designer.getByRole('button', { name: '加一行' }).click();
+  await expect(designer.getByLabel(/第 \d+ 行高$/)).toHaveCount(rowCountBefore + 1);
+  await designer.getByRole('button', { name: '删最后一行' }).click();
+  await expect(designer.getByLabel(/第 \d+ 行高$/)).toHaveCount(rowCountBefore);
+
+  // 加一张图片（e5），选一张很小的 PNG：读完之后属性栏写出像素尺寸。
+  await designer.getByRole('button', { name: '添加图片' }).click();
+  await layerList.getByRole('button', { name: '图片（图片）' }).click();
+  const fixture = join(tmpdir(), `canvas-designer-e2e-${process.pid}.png`);
+  await sharp({ create: { width: 4, height: 3, channels: 3, background: { r: 10, g: 20, b: 30 } } })
+    .png()
+    .toFile(fixture);
+  await designer.locator('input[type="file"]').setInputFiles(fixture);
+  await expect(designer.getByText('4×3 像素')).toBeVisible();
+});
+
 // 面单每一行的位置和换行是按字宽表算好的：用这台电脑的系统字体真实渲染一遍，没有哪一行被格子边缘裁掉。
 // CI 在 Windows（微软雅黑）和 macOS（苹方）上都跑这一条。
 test('lays out every built-in waybill so that no line is clipped with the system fonts', async ({ electronApp }) => {
@@ -600,7 +823,7 @@ test('lays out every built-in waybill so that no line is clipped with the system
     // 排版自己报的问题（格子装不下、条码或二维码放不下）也不能有：下面只量横向有没有被裁。
     expect({ template: template.name, warnings }).toEqual({
       template: template.name,
-      warnings: { qrOmitted: false, barcodeOmitted: false, overflowCells: 0 },
+      warnings: { qrOmitted: false, barcodeOmitted: false, overflowCells: 0, issues: [] },
     });
     // 测试自己开一个能跑脚本的隐藏窗口来量（打印窗口禁用了脚本）：用 Range 量文字本身的宽度（带小数），
     // 比这一行的可用宽度宽就是被裁掉了。失败时写出两者和字号，方便对照字宽表。

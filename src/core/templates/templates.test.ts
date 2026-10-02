@@ -2,10 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../scan/scan-result';
 import { InMemoryTemplateRepository } from '../testing/in-memory-repositories';
 import { labelOf, PICK_TEMPLATE } from '../testing/templates';
+import { CANVAS_TAG } from './builtin-canvas';
 import { BUILT_IN_TEMPLATES, currentTemplateId, DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE } from './builtin-templates';
 import { expandNoteText } from './note-text';
 import { sanitizeTemplate } from './sanitize-template';
-import { TemplateCatalog, TemplateError } from './template-catalog';
+import { NEW_CANVAS_TEMPLATE_NAME, TemplateCatalog, TemplateError } from './template-catalog';
 import {
   CUSTOM_TEMPLATE_PREFIX,
   fullTextWidthMm,
@@ -236,6 +237,20 @@ describe('TemplateCatalog', () => {
     expect(GENERIC_TEMPLATE.fieldsArea.all.separator).toBe('：');
   });
 
+  test('createCanvas saves an empty canvas template on the default paper', () => {
+    const { catalog, repository } = createCatalog();
+    const created = catalog.createCanvas();
+    expect(created).toEqual({
+      kind: 'canvas',
+      id: `${CUSTOM_TEMPLATE_PREFIX}t1`,
+      name: NEW_CANVAS_TEMPLATE_NAME,
+      paper: { widthMm: 60, heightMm: 40 },
+      printer: null,
+      elements: [],
+    });
+    expect(repository.saved.get(created.id)).toEqual(created);
+  });
+
   test('save sanitizes and persists a custom template', () => {
     const { catalog } = createCatalog();
     const copy = labelOf(catalog.duplicate(GENERIC_TEMPLATE.id));
@@ -325,5 +340,17 @@ describe('template paper and printer', () => {
     expect(larger.qr.sizeMm).toBe(22);
     const tiny = withPaper({ ...fallback, qr: { ...fallback.qr, sizeMm: 12 } }, { widthMm: 30, heightMm: 25 });
     expect(tiny.qr.sizeMm).toBe(TEMPLATE_LIMITS.qrSizeMm.min);
+  });
+
+  // 自由设计模板的 60×40 示例里有个 x=2 width=56 的条码（右边到 58），换到更小的纸上不收进去的话会被裁掉一截。
+  test('pulls canvas elements back inside a smaller paper', () => {
+    const moved = withPaper(CANVAS_TAG, { widthMm: 40, heightMm: 30 });
+    expect(moved.paper).toEqual({ widthMm: 40, heightMm: 30 });
+    for (const element of moved.elements) {
+      expect(element.x).toBeGreaterThanOrEqual(0);
+      expect(element.y).toBeGreaterThanOrEqual(0);
+      expect(element.x + element.width).toBeLessThanOrEqual(40);
+      expect(element.y + element.height).toBeLessThanOrEqual(30);
+    }
   });
 });

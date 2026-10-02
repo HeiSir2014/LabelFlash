@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isBuiltInTemplateId, type LabelTemplate } from '../../../core/templates/template-model';
 import type { AppSettings } from '../../../shared/settings';
 import { deepEqual } from '../lib/deep-equal';
 import { notices, reportError } from '../lib/notices';
+import { describeSamplePrint } from '../lib/status-text';
 
 interface TemplatesOptions {
   activeTemplateId: string | null;
@@ -24,6 +25,14 @@ export function useTemplates({
   const [templates, setTemplates] = useState<LabelTemplate[]>([]);
   const [draft, setDraft] = useState<LabelTemplate | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isPrintingSample, setIsPrintingSample] = useState(false);
+  // 守着「打印一张试试」：用 ref 而不是只看 state，state 的更新要等下一次渲染才生效，
+  // 同一个事件循环里的第二次点击读到的还是旧值，光靠 state 挡不住几乎同时的两次点击。
+  const isPrintingSampleRef = useRef(false);
+  const [isCreatingCanvas, setIsCreatingCanvas] = useState(false);
+  // 守着「新建自由设计模板」：原因同上——双击按钮会在主进程回应第一次调用之前就发出第二次，
+  // 光靠 state 挡不住，得建出两个空白模板才反应过来。
+  const isCreatingCanvasRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -72,6 +81,29 @@ export function useTemplates({
     [load],
   );
 
+  /**
+   * 新建空白的自由设计模板：选中它，直接进设计器。
+   * 建好之前再点一下什么也不做，不然双击按钮会建出两个空白模板。
+   */
+  const createCanvas = useCallback(async () => {
+    if (isCreatingCanvasRef.current) {
+      return;
+    }
+    isCreatingCanvasRef.current = true;
+    setIsCreatingCanvas(true);
+    try {
+      const created = await window.api.createCanvasTemplate();
+      await load();
+      setSelectedId(created.id);
+      setDraft(structuredClone(created));
+    } catch (error) {
+      reportError('新建自由设计模板', error);
+    } finally {
+      isCreatingCanvasRef.current = false;
+      setIsCreatingCanvas(false);
+    }
+  }, [load]);
+
   const startEdit = useCallback(
     (id: string) => {
       const template = templates.find((candidate) => candidate.id === id);
@@ -99,6 +131,30 @@ export function useTemplates({
     }
   }, [draft, load, activeTemplateId, onActiveTemplateChanged]);
 
+  /**
+   * 「打印一张试试」：按预览内容打印草稿，结果用提示条说。
+   * 在调模板时连点按钮会打出好几张一样的草稿，所以打印未完成前，再点一下什么也不做。
+   */
+  const printSample = useCallback(
+    async (raw: string) => {
+      if (!draft || isPrintingSampleRef.current) {
+        return;
+      }
+      isPrintingSampleRef.current = true;
+      setIsPrintingSample(true);
+      try {
+        const notice = describeSamplePrint(await window.api.printSample(raw, draft), Date.now());
+        notices.push(notice.tone, notice.message);
+      } catch (error) {
+        reportError('打印一张试试', error);
+      } finally {
+        isPrintingSampleRef.current = false;
+        setIsPrintingSample(false);
+      }
+    },
+    [draft],
+  );
+
   const remove = useCallback(
     async (id: string) => {
       try {
@@ -124,9 +180,13 @@ export function useTemplates({
     select: setSelectedId,
     activate,
     duplicate,
+    createCanvas,
+    isCreatingCanvas,
     startEdit,
     changeDraft: setDraft,
     saveDraft,
+    printSample,
+    isPrintingSample,
     cancelEdit: () => setDraft(null),
     remove,
   };

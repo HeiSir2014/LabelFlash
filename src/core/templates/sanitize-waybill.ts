@@ -1,5 +1,6 @@
 import { PAPER_LIMITS_MM } from '../../shared/paper-sizes';
 import { isValidFieldName } from '../scan/rule-model';
+import { asLoose, bool, clamp, type Loose, pick } from './sanitize-primitives';
 import { TEXT_ALIGNS } from './template-model';
 import {
   RULE_STYLES,
@@ -12,8 +13,6 @@ import {
   type WaybillParagraph,
   type WaybillTemplate,
 } from './waybill-model';
-
-type Loose = Record<string, unknown>;
 
 /** 新加的一段文字、新拆出来的格子用的默认值（编辑器也用）。 */
 export const DEFAULT_PARAGRAPH: WaybillParagraph = { text: '', fontSizeMm: 3, bold: false, wrap: true };
@@ -125,28 +124,13 @@ function sanitizeParagraph(value: unknown): WaybillParagraph {
   };
 }
 
-function asLoose(value: unknown): Loose {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Loose) : {};
-}
-
 function sanitizeShowIf(value: unknown): string {
   const field = typeof value === 'string' ? value.trim() : '';
   return isValidFieldName(field) ? field : '';
 }
 
-function bool(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-function clamp(value: unknown, min: number, max: number, fallback: number): number {
-  const number = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-  return Math.min(max, Math.max(min, number));
-}
-
-function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
-  return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
-}
-
+// 面单的 sanitizeText 和标签模板不同：这里的控制字符包含换行（面单格子里的文字一段一行，
+// 多行靠多个段落表示，不允许在单段里换行），所以不能和标签共用同一份实现，留在本文件里。
 // biome-ignore lint/suspicious/noControlCharactersInRegex: 专门用来去掉控制字符（面单上的文字不允许换行）
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g;
 

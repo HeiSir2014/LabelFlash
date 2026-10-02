@@ -9,12 +9,27 @@ export interface RenderWarnings {
   barcodeOmitted: boolean;
   /** 面单：缩到最小字号仍放不下、被截断的格子数。 */
   overflowCells: number;
+  /** 自由设计模板的打印前检查：每条写清楚是哪个元素、怎么了。标签和面单是空的。 */
+  issues: readonly string[];
 }
 
-export const NO_RENDER_WARNINGS: RenderWarnings = { qrOmitted: false, barcodeOmitted: false, overflowCells: 0 };
+export const NO_RENDER_WARNINGS: RenderWarnings = {
+  qrOmitted: false,
+  barcodeOmitted: false,
+  overflowCells: 0,
+  issues: [],
+};
 
-/** 给操作员看的提示，每条说清楚少了什么、怎么办。 */
+/**
+ * 给操作员看的提示，每条说清楚少了什么、怎么办。
+ * 标签、面单的 qrOmitted/barcodeOmitted/overflowCells 是笼统的「有没有」，issues 是空的，用通用文案；
+ * 自由设计模板反过来：每个元素的问题已经在 issues 里写清楚是哪个、怎么了，这时通用文案反而是重复的噪音，
+ * 而且笼统文案只会说「条码放不下」，可能是别的元素出的问题，对不上号——issues 非空时只显示 issues。
+ */
 export function renderWarningTexts(warnings: RenderWarnings): string[] {
+  if (warnings.issues.length > 0) {
+    return [...warnings.issues];
+  }
   const texts: string[] = [];
   if (warnings.qrOmitted) {
     texts.push('内容太长，二维码放不下，这张标签不印二维码');

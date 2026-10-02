@@ -165,6 +165,111 @@ test('prints a courier waybill with a built-in waybill template', async ({ elect
   ]);
 });
 
+// 自由设计模板：本机接口列出它用到的字段，按这些字段打到装着 60×40 的那台。
+test('prints a canvas template through the local API', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x180': '面单机B' } });
+  const base = await apiBase(page);
+  const headers = await createKey(page);
+  const template = 'templates/builtin-canvas-tag';
+  const listed = (await (await fetch(`${base}/v1/templates`, { headers })).json()) as {
+    templates: { name: string; fieldsMode: string; fieldNames: string[] }[];
+  };
+  expect(listed.templates.find((item) => item.name === template)).toMatchObject({
+    fieldsMode: 'PICKED',
+    fieldNames: ['编码', '颜色', '尺码', '货架号'],
+  });
+
+  const fields = [
+    { name: '编码', value: 'CL5640-TK' },
+    { name: '颜色', value: '图片色' },
+    { name: '尺码', value: 'XL' },
+  ];
+  const created = await fetch(`${base}/v1/printJobs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ template, fields, content: 'CL5640-TK-图片色-XL' }),
+  });
+  expect(created.status).toBe(200);
+  await waitAllSent(base, headers, 1);
+  expect(await fakePrints(app)).toEqual([
+    { printerName: '标签机A', raw: 'CL5640-TK-图片色-XL', paper: '60x40', templateId: 'builtin:canvas-tag' },
+  ]);
+});
+
+// 自己设计的自由设计模板：本机接口列出它用到的字段，按它打到这种纸的打印机。
+test('prints a canvas template made in the designer through the local API', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x180': '面单机B' } });
+  const created = await callApi(page, 'createCanvasTemplate');
+  await callApi(page, 'saveTemplate', {
+    ...created,
+    name: '价签',
+    elements: [
+      {
+        id: 'price',
+        name: '价格',
+        kind: 'text',
+        x: 2,
+        y: 2,
+        width: 40,
+        height: 10,
+        rotation: 0,
+        locked: false,
+        text: '￥{价格}',
+        fontSizeMm: 6,
+        bold: true,
+        align: 'left',
+        valign: 'middle',
+        fit: 'shrink',
+        inverse: false,
+      },
+      {
+        id: 'code',
+        name: '商品码',
+        kind: 'barcode',
+        x: 2,
+        y: 20,
+        width: 50,
+        height: 15,
+        rotation: 0,
+        locked: false,
+        symbology: 'ean13',
+        value: '{商品码}',
+        showText: true,
+        textSizeMm: 2.5,
+      },
+    ],
+  });
+  const base = await apiBase(page);
+  const headers = await createKey(page);
+  const template = `templates/${created.id.replace(':', '-')}`;
+  const listed = (await (await fetch(`${base}/v1/templates`, { headers })).json()) as {
+    templates: { name: string; fieldsMode: string; fieldNames: string[] }[];
+  };
+  expect(listed.templates.find((item) => item.name === template)).toMatchObject({
+    fieldsMode: 'PICKED',
+    fieldNames: ['价格', '商品码'],
+  });
+  const response = await fetch(`${base}/v1/printJobs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      template,
+      fields: [
+        { name: '价格', value: '59.90' },
+        { name: '商品码', value: '6901234567892' },
+      ],
+      content: '6901234567892',
+    }),
+  });
+  expect(response.status).toBe(200);
+  await waitAllSent(base, headers, 1);
+  expect(await fakePrints(app)).toEqual([
+    { printerName: '标签机A', raw: '6901234567892', paper: '60x40', templateId: created.id },
+  ]);
+});
+
 test('prints a batch of 300 labels on two papers, each printer in submission order', async ({ electronApp }) => {
   const { app, page } = await electronApp.launch({ fakePrinters: PRINTERS });
   const waybill = await createWaybillTemplate(page);
@@ -206,6 +311,53 @@ test('renders a PDF on the paper of the template', async ({ electronApp }) => {
   const mediaBox = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/.exec(pdf);
   expect(Number(mediaBox?.[1])).toBeCloseTo(170.08, 0);
   expect(Number(mediaBox?.[2])).toBeCloseTo(113.39, 0);
+});
+
+// 自由设计模板里的图片转成 1 位 BMP 后按打印点数线性增长；本机接口导出 PDF 用 PDF_DPI=1200，
+// 100×100 的纸铺满一张图能到 3MB 以上的 HTML。标签窗口曾经用 data: URL 加载这段 HTML，
+// Chromium 对 data: URL 有大小限制（实测约 1.9MB 就 ERR_FAILED），这张图稳定超过那个上限。
+test('renders a PDF for a canvas template with a large image on 100x100 paper', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  const created = await callApi(page, 'createCanvasTemplate');
+  const pixelSide = 8;
+  const pixels = Buffer.from(
+    Uint8Array.from({ length: pixelSide * pixelSide }, (_, index) => (index % 2 === 0 ? 20 : 235)),
+  ).toString('base64');
+  await callApi(page, 'saveTemplate', {
+    ...created,
+    name: '大图片',
+    paper: { widthMm: 100, heightMm: 100 },
+    elements: [
+      {
+        id: 'photo',
+        name: '图片',
+        kind: 'image',
+        x: 2,
+        y: 2,
+        width: 96,
+        height: 96,
+        rotation: 0,
+        locked: false,
+        pixels,
+        pixelWidth: pixelSide,
+        pixelHeight: pixelSide,
+        mode: 'dither',
+        threshold: 128,
+      },
+    ],
+  });
+  const base = await apiBase(page);
+  const headers = await createKey(page);
+  const template = `templates/${created.id.replace(':', '-')}`;
+  const response = await fetch(`${base}/v1/${template}:render`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ fields: [{ name: '占位', value: '1' }] }),
+  });
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toBe('application/pdf');
+  const pdf = Buffer.from(await response.arrayBuffer()).toString('latin1');
+  expect(pdf.startsWith('%PDF')).toBe(true);
 });
 
 test('asks the operator before a website may use it, and forgets it when revoked', async ({ electronApp }) => {

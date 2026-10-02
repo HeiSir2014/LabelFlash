@@ -3,6 +3,8 @@ import { sanitizePaper } from '../../shared/paper-sizes';
 import { isValidFieldName } from '../scan/rule-model';
 import { GENERIC_TEMPLATE } from './builtin-templates';
 import { PLATFORM_TWO_PART } from './builtin-waybills';
+import { sanitizeCanvasElements } from './sanitize-canvas';
+import { asLoose, bool, clamp, type Loose, pick, sanitizeText } from './sanitize-primitives';
 import { sanitizeWaybillLayout } from './sanitize-waybill';
 import {
   type BottomLine,
@@ -18,12 +20,11 @@ import {
   QR_LAYOUTS,
   type QrContent,
   type QrLabelTemplate,
+  TEMPLATE_KINDS,
   TEMPLATE_LIMITS,
   TEXT_ALIGNS,
   type TextStyle,
 } from './template-model';
-
-type Loose = Record<string, unknown>;
 
 /** 模板原来一行指定字段都没有时，新行的默认样式。 */
 const DEFAULT_SLOT_STYLE: TextStyle = { fontSizeMm: 3.2, bold: true };
@@ -40,7 +41,7 @@ export function sanitizeTemplate(
   labelFallback: QrLabelTemplate = GENERIC_TEMPLATE,
 ): LabelTemplate {
   const input = asLoose(value);
-  const kind = input['kind'] === 'waybill' ? 'waybill' : 'label';
+  const kind = pick(input['kind'], TEMPLATE_KINDS, 'label');
   // 旧模板（1.0.x）没有纸张字段：按 60×40 读出。
   const paper = sanitizePaper(input['paper'], fallback.paper ?? DEFAULT_PAPER);
   const base = {
@@ -53,6 +54,17 @@ export function sanitizeTemplate(
   if (kind === 'waybill') {
     const layoutFallback = fallback.kind === 'waybill' ? fallback : PLATFORM_TWO_PART;
     return { kind, ...base, ...sanitizeWaybillLayout(input, layoutFallback) };
+  }
+  if (kind === 'canvas') {
+    // 元素列表缺失或类型不对时，和其他字段一样回退到 fallback 本身的值；但纸张可能换小了，
+    // 仍要经 sanitizeCanvasElements 按新纸张重新收边，不能把 fallback 的元素原样搬过来（旧元素可能落在新纸外），
+    // 也不能直接共享 fallback 的数组引用。
+    const source = Array.isArray(input['elements'])
+      ? input['elements']
+      : fallback.kind === 'canvas'
+        ? fallback.elements
+        : [];
+    return { kind, ...base, elements: sanitizeCanvasElements(source, paper) };
   }
   return sanitizeLabel(input, base, fallback.kind === 'label' ? fallback : labelFallback);
 }
@@ -169,34 +181,6 @@ function sanitizeNote(value: unknown, fallback: NoteConfig): NoteConfig {
     text: sanitizeText(input['text'], TEMPLATE_LIMITS.noteLength, fallback.text),
     placement: pick(input['placement'], NOTE_PLACEMENTS, fallback.placement),
   };
-}
-
-function asLoose(value: unknown): Loose {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Loose) : {};
-}
-
-function bool(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-function clamp(value: unknown, min: number, max: number, fallback: number): number {
-  const number = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-  return Math.min(max, Math.max(min, number));
-}
-
-function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
-  return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
-}
-
-// biome-ignore lint/suspicious/noControlCharactersInRegex: 专门用来去掉控制字符（保留换行）
-const CONTROL_CHARACTERS = /[\u0000-\u0009\u000b-\u001f\u007f]/g;
-
-/** 去掉控制字符（保留换行，备注允许多行）并截断长度。 */
-function sanitizeText(value: unknown, maxLength: number, fallback: string): string {
-  if (typeof value !== 'string') {
-    return fallback;
-  }
-  return value.replace(CONTROL_CHARACTERS, '').slice(0, maxLength);
 }
 
 /** 打印机名只保存、只比较，交给系统命令之前主进程会先核对它在系统里存在；空白或超长当作不指定。 */

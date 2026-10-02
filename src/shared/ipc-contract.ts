@@ -2,6 +2,7 @@ import type { LookupTableData, LookupTableInfo } from '../core/lookup/lookup-mod
 import type { Delivery } from '../core/notify/delivery';
 import type { RuleKind, ScanRule } from '../core/scan/rule-model';
 import type { RuleSetting } from '../core/scan/rule-settings';
+import type { CanvasTemplate } from '../core/templates/canvas-model';
 import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
@@ -21,6 +22,7 @@ export const IpcChannel = {
   Preview: 'label:preview',
   PreviewTemplate: 'label:preview-template',
   Print: 'label:print',
+  PrintSample: 'label:print-sample',
   PrintTest: 'printer:test',
   ListPrinters: 'printer:list',
   PrinterStatus: 'printer:status',
@@ -33,6 +35,7 @@ export const IpcChannel = {
   UpdateSettings: 'settings:update',
   ListTemplates: 'templates:list',
   DuplicateTemplate: 'templates:duplicate',
+  CreateCanvasTemplate: 'templates:create-canvas',
   SaveTemplate: 'templates:save',
   DeleteTemplate: 'templates:delete',
   ListRules: 'rules:list',
@@ -145,6 +148,8 @@ export interface LabelFlashApi {
   print(raw: string, options: PrintOptions): Promise<PrintResult>;
   /** 测试页按 paperKey（这台打印机负责的纸，例如 100x180）的尺寸打印。 */
   printTest(printerName: string, paperKey: string): Promise<PrintResult>;
+  /** 模板页「打印一张试试」：按预览内容打印没保存的草稿；不写打印记录、不占防重复窗口。 */
+  printSample(raw: string, template: LabelTemplate): Promise<PrintResult>;
   listPrinters(): Promise<PrinterInfo[]>;
   printerStatus(printerName: string): Promise<PrinterReadiness | null>;
   /** 驱动默认纸张和 paperKey（这台打印机应该装的纸）是否一致；驱动资料短时缓存，打开打印首选项后重新读取。 */
@@ -160,6 +165,8 @@ export interface LabelFlashApi {
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   listTemplates(): Promise<LabelTemplate[]>;
   duplicateTemplate(sourceId: string): Promise<LabelTemplate>;
+  /** 新建空白的自由设计模板（默认纸张），返回它；没有参数，页面不能指定内容。 */
+  createCanvasTemplate(): Promise<CanvasTemplate>;
   saveTemplate(template: LabelTemplate): Promise<LabelTemplate>;
   /** 删除后若它正在使用，自动切回标准模板；返回最新设置。 */
   deleteTemplate(id: string): Promise<AppSettings>;

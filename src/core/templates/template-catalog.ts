@@ -1,4 +1,6 @@
+import { DEFAULT_PAPER } from '../../shared/label-paper';
 import { BUILT_IN_TEMPLATES, currentTemplateId, GENERIC_TEMPLATE } from './builtin-templates';
+import type { CanvasTemplate } from './canvas-model';
 import { sanitizeTemplate } from './sanitize-template';
 import { CUSTOM_TEMPLATE_PREFIX, isBuiltInTemplateId, type LabelTemplate, TEMPLATE_LIMITS } from './template-model';
 
@@ -8,6 +10,9 @@ export interface TemplateRepository {
   save(template: LabelTemplate): void;
   remove(id: string): void;
 }
+
+/** 新建的自由设计模板的名字：进了设计器在右栏「模板」里改。 */
+export const NEW_CANVAS_TEMPLATE_NAME = '新的自由设计';
 
 export type TemplateErrorCode = 'BUILT_IN_READ_ONLY' | 'NOT_FOUND';
 
@@ -52,6 +57,20 @@ export class TemplateCatalog {
     };
     this.repository.save(copy);
     return copy;
+  }
+
+  /** 新建空白的自由设计模板（默认纸张、没有元素），存成自定义模板，接着在设计器里编辑。 */
+  createCanvas(): CanvasTemplate {
+    const template: CanvasTemplate = {
+      kind: 'canvas',
+      id: `${CUSTOM_TEMPLATE_PREFIX}${this.createId()}`,
+      name: NEW_CANVAS_TEMPLATE_NAME,
+      paper: { ...DEFAULT_PAPER },
+      printer: null,
+      elements: [],
+    };
+    this.repository.save(template);
+    return template;
   }
 
   save(id: string, value: unknown): LabelTemplate {

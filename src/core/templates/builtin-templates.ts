@@ -1,4 +1,5 @@
 import { DEFAULT_PAPER } from '../../shared/label-paper';
+import { BUILT_IN_CANVAS_TEMPLATES } from './builtin-canvas';
 import { BUILT_IN_WAYBILLS } from './builtin-waybills';
 import {
   BUILT_IN_TEMPLATE_PREFIX,
@@ -104,6 +105,7 @@ export const BUILT_IN_TEMPLATES: readonly LabelTemplate[] = [
     note: note({ visible: true, text: '{日期} {时间}', placement: 'bottom', fontSizeMm: 2.4 }),
   },
   ...BUILT_IN_WAYBILLS,
+  ...BUILT_IN_CANVAS_TEMPLATES,
 ];
 
 export const DEFAULT_TEMPLATE_ID = GENERIC_TEMPLATE.id;

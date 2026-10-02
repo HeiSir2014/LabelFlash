@@ -13,8 +13,8 @@ export interface TemplateUse extends PrinterTarget {
 }
 
 /**
- * 分配表要看的模板。内置面单人人都有，没设为当前模板、也没被规则指定时算「可选」：
- * 它的纸照样列出来（订单系统经本机接口用它时在这里分配），但没有打印机不标红，不用面单的人不会看到一片红。
+ * 分配表要看的模板。内置面单、内置自由设计模板人人都有，没设为当前模板、也没被规则指定时算「可选」：
+ * 它的纸照样列出来（订单系统经本机接口用它时在这里分配），但没有打印机不标红，不用的人不会看到一片红。
  */
 export function templateUses(
   templates: readonly LabelTemplate[],
@@ -35,7 +35,7 @@ export function templateUses(
     paper: template.paper,
     printer: template.printer,
     optional:
-      template.kind === 'waybill' &&
+      template.kind !== 'label' &&
       isBuiltInTemplateId(template.id) &&
       template.id !== activeTemplateId &&
       !bound.has(template.id),

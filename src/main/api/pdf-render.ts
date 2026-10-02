@@ -20,13 +20,19 @@ export async function renderLabelPdf(
   fields: ScanField[],
   content: string,
 ): Promise<Uint8Array> {
-  const { html, ...warnings } = renderLabelHtml(
+  const { html, diagnostics, ...warnings } = renderLabelHtml(
     { scan: fieldsScan(content, fields), template, printedAt: Date.now() },
     PDF_DPI,
   );
   const texts = renderWarningTexts(warnings);
   if (texts.length > 0) {
     console.warn(`[LocalApi] PDF of "${content}" with template "${template.name}": ${texts.join('；')}`);
+  }
+  // diagnostics 是条码库的原始英文错误：每次生成 PDF 最多记一次，排查条码问题时去日志里找原始消息。
+  if (diagnostics.length > 0) {
+    console.warn(
+      `[LocalApi] PDF of "${content}" with template "${template.name}" diagnostics: ${diagnostics.join('；')}`,
+    );
   }
   const { widthMm, heightMm } = template.paper;
   return withLabelWindow(html, AbortSignal.timeout(PDF_RENDER_TIMEOUT_MS), (contents) =>

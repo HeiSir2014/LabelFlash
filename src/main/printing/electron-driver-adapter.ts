@@ -51,12 +51,18 @@ export class ElectronDriverAdapter implements PrinterDriver {
       });
     }
     // 二维码按这台打印机的分辨率对齐打印点；读不到（或 1 秒内没读到）按 203dpi。
-    const { html, ...warnings } = renderLabelHtml(job, await this.profiles.dpiOf(printerName));
+    const { html, diagnostics, ...warnings } = renderLabelHtml(job, await this.profiles.dpiOf(printerName));
     // 打印照常进行，但少印的部分（条码、二维码、截断的格子）要留在日志里：本机接口来的面单没人看预览。
     const texts = renderWarningTexts(warnings);
     if (texts.length > 0) {
       console.warn(
         `[ElectronDriverAdapter] "${job.scan.raw}" on ${printerName} with template "${job.template.name}": ${texts.join('；')}`,
+      );
+    }
+    // diagnostics 是条码库的原始英文错误：每次打印最多记一次，排查条码问题时去日志里找原始消息，不用去猜。
+    if (diagnostics.length > 0) {
+      console.warn(
+        `[ElectronDriverAdapter] "${job.scan.raw}" on ${printerName} with template "${job.template.name}" diagnostics: ${diagnostics.join('；')}`,
       );
     }
     // 超时（PrintQueue 触发 abort）时立刻销毁打印窗口，避免隐藏窗口堆积。

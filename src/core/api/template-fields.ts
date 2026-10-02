@@ -1,3 +1,4 @@
+import type { CanvasTemplate } from '../templates/canvas-model';
 import { NOTE_VARIABLES, variableNames } from '../templates/note-text';
 import type { LabelTemplate, QrLabelTemplate } from '../templates/template-model';
 import { isSplit, type WaybillTemplate, walkNodes } from '../templates/waybill-model';
@@ -13,6 +14,9 @@ const FIXED_VARIABLE_NAMES: ReadonlySet<string> = new Set(NOTE_VARIABLES.map((va
 
 /** 给第三方看的「这个模板要哪些字段」；隐藏的二维码、备注里的变量不算。 */
 export function templateFields(template: LabelTemplate): TemplateFields {
+  if (template.kind === 'canvas') {
+    return { mode: 'PICKED', names: withoutFixed(canvasVariables(template)) };
+  }
   if (template.kind === 'waybill') {
     return { mode: 'PICKED', names: withoutFixed(waybillVariables(template)) };
   }
@@ -59,4 +63,30 @@ function waybillVariables(template: WaybillTemplate): string[] {
 
 function withoutFixed(names: readonly string[]): string[] {
   return [...new Set(names.filter((name) => !FIXED_VARIABLE_NAMES.has(name)))];
+}
+
+/** 自由设计模板每个元素（文字、条码、二维码、表格每格）里用到的变量，按上下层顺序。 */
+function canvasVariables(template: CanvasTemplate): string[] {
+  const names: string[] = [];
+  for (const element of template.elements) {
+    switch (element.kind) {
+      case 'text':
+        names.push(...variableNames(element.text));
+        break;
+      case 'barcode':
+      case 'qr':
+        names.push(...variableNames(element.value));
+        break;
+      case 'table':
+        for (const row of element.cells) {
+          for (const cell of row) {
+            names.push(...variableNames(cell.text));
+          }
+        }
+        break;
+      default:
+        break;
+    }
+  }
+  return names;
 }

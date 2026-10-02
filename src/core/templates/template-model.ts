@@ -1,4 +1,6 @@
 import type { PaperSize } from '../../shared/paper-sizes';
+import type { CanvasTemplate } from './canvas-model';
+import { sanitizeCanvasElements } from './sanitize-canvas';
 import type { WaybillTemplate } from './waybill-model';
 
 /** 标签模板：结构化数据（不是任意 HTML），可校验、可持久化，打印和预览共用。纸张尺寸由模板自己决定。 */
@@ -98,9 +100,17 @@ export interface QrLabelTemplate extends TemplateBase {
   note: NoteConfig;
 }
 
-/** label = 标签模板；waybill = 快递面单（格子版式，见 waybill-model.ts）。数据库里的旧模板没有 kind，按 label 读。 */
-export type LabelTemplate = QrLabelTemplate | WaybillTemplate;
+/** label = 标签模板；waybill = 快递面单（格子版式）；canvas = 自由设计（元素版式）。数据库里的旧模板没有 kind，按 label 读。 */
+export type LabelTemplate = QrLabelTemplate | WaybillTemplate | CanvasTemplate;
 export type TemplateKind = LabelTemplate['kind'];
+
+/**
+ * 和 TemplateKind 对应的清单，sanitizeTemplate 校验输入的 kind 时用它。穷尽检查靠 TEMPLATE_KIND_SET：
+ * 它是 `Record<TemplateKind, true>`，TemplateKind 多一个或少一个取值，这一行都会报类型错误
+ * （只用 `satisfies readonly TemplateKind[]` 查数组只能挡多写，挡不住漏写）。
+ */
+const TEMPLATE_KIND_SET = { label: true, waybill: true, canvas: true } satisfies Record<TemplateKind, true>;
+export const TEMPLATE_KINDS: readonly TemplateKind[] = Object.keys(TEMPLATE_KIND_SET) as TemplateKind[];
 
 export const TEMPLATE_LIMITS = {
   paddingMm: { min: 0, max: 6 },
@@ -149,10 +159,16 @@ export function fullTextWidthMm(template: QrLabelTemplate): number {
 /**
  * 换一种纸打同一个模板（测试页按打印机负责的纸打印、编辑器换纸张）：二维码跟着纸张缩小，并夹到新纸张的上限内。
  * 面单模板只换纸张：版面的最后一行（商家自定义区）在排版时吸收高度差。
+ * 自由设计模板：元素位置和大小用 sanitizeCanvasElements 夹到新纸张内——layoutCanvas 只负责排版，
+ * 不会把超出纸张的元素挪回来，换到更小的纸时元素会被裁掉一截，所以必须在这里夹一遍。
  */
 export function withPaper<T extends LabelTemplate>(template: T, paper: PaperSize): T {
   if (template.kind === 'waybill') {
+    // 面单：版面的最后一行（商家自定义区）在排版时吸收高度差，只需要换纸张。
     return { ...template, paper: { ...paper } };
+  }
+  if (template.kind === 'canvas') {
+    return { ...template, paper: { ...paper }, elements: sanitizeCanvasElements(template.elements, paper) } as T;
   }
   return withLabelPaper(template, paper) as T;
 }

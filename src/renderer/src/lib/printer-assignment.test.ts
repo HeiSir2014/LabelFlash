@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { CANVAS_TAG } from '../../../core/templates/builtin-canvas';
 import { GENERIC_TEMPLATE } from '../../../core/templates/builtin-templates';
 import { PLATFORM_TWO_PART } from '../../../core/templates/builtin-waybills';
 import {
@@ -96,6 +97,11 @@ describe('optional templates', () => {
   test('never treats a custom waybill as optional', () => {
     const copy = { ...PLATFORM_TWO_PART, id: 'custom:w1' };
     expect(templateUses([copy], null, [])[0]?.optional).toBe(false);
+  });
+
+  test('treats an unused built-in canvas template as optional', () => {
+    expect(templateUses([CANVAS_TAG], null, [])[0]?.optional).toBe(true);
+    expect(templateUses([CANVAS_TAG], CANVAS_TAG.id, [])[0]?.optional).toBe(false);
   });
 });
 

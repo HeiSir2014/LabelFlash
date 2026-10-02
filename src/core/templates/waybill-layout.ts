@@ -25,8 +25,10 @@ export const CELL_PADDING_MM = { x: 0.8, y: 0.5 } as const;
 /**
  * 每一行只排到可用宽度的 98%：字宽表是按 100px 大字量的，小字号下 macOS 渲染会把一整行撑宽一点
  * （CI 实测 11.3px 的地址行比估算宽 0.8%，超出 0.5px 被格子边缘裁掉）。留 2% 吸收这类取整误差。
+ * 导出给 `canvas-html.ts` 的条码号码宽度检查用：那边用的也是 `textWidthMm` 这同一张估算字宽表，
+ * 同样的误差同样需要这 2% 的余量，不能各算各的。
  */
-const LINE_WIDTH_SLACK = 0.02;
+export const LINE_WIDTH_SLACK = 0.02;
 /** 线至少 0.25mm（203dpi 上 2 个点）：1 个点（0.125mm）的线在热敏纸上时断时续；高分辨率时按毫米算，不会更细。 */
 const MIN_LINE_MM = 0.25;
 /** 放不下时字号最多缩到原来的 60%，再小就截断：远看还认得出是哪一行。 */
@@ -239,7 +241,7 @@ function fieldText(name: string, context: Pick<LayoutContext, 'scan'>): string {
   return context.scan.fields.find((field) => field.name === name)?.value ?? '';
 }
 
-interface FittedText {
+export interface FittedText {
   lines: TextLine[];
   overflow: boolean;
 }
@@ -259,6 +261,19 @@ export function fitParagraphs(paragraphs: readonly WaybillParagraph[], widthMm: 
     }
   }
   return clampLines(linesAt(paragraphs, widthMm, MIN_TEXT_SCALE).lines, widthMm, heightMm);
+}
+
+/**
+ * 和 fitParagraphs 一样，但宽度先打 LINE_WIDTH_SLACK 的折扣：字宽表是估算的，小字号下
+ * macOS 渲染的实际行宽比估算宽一点（CI 实测偏宽 0.8%），不留余量会被格子或框的边缘裁掉。
+ * 画布模板的文字框、表格格子复用这份折扣，不用各自再定义一遍。
+ */
+export function fitParagraphsInBox(
+  paragraphs: readonly WaybillParagraph[],
+  widthMm: number,
+  heightMm: number,
+): FittedText {
+  return fitParagraphs(paragraphs, widthMm * (1 - LINE_WIDTH_SLACK), heightMm);
 }
 
 export function blockHeightMm(lines: readonly TextLine[]): number {

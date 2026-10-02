@@ -1,6 +1,6 @@
 import { type RefObject, useEffect, useState } from 'react';
+import { PX_PER_MM } from '../lib/canvas-view';
 
-const PX_PER_MM = 96 / 25.4;
 /** 容器再小也不把标签缩到一半以下，否则字段看不清。 */
 const MIN_SCALE = 0.5;
 

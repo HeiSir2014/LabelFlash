@@ -18,7 +18,8 @@ import {
   textHeightMm,
 } from '../../core/templates/text-fit';
 import type { LabelJob } from '../../core/types';
-import type { RenderWarnings } from '../../shared/render-warnings';
+import { NO_RENDER_WARNINGS, type RenderWarnings } from '../../shared/render-warnings';
+import { renderCanvasHtml } from './canvas-html';
 import { escapeHtml, mm } from './html-text';
 import { DEFAULT_PRINTER_DPI, planQr } from './qr-code';
 import { renderWaybillHtml } from './waybill-html';
@@ -31,6 +32,8 @@ const MAX_LINES = { bottom: 3, noteBeside: 3, noteBottom: 2 } as const;
 /** 标签 HTML 和生成时发现的问题（标签模板只会有「二维码放不下」）。 */
 export interface RenderedLabel extends RenderWarnings {
   html: string;
+  /** 条码库给的原始错误（英文，写日志用，不给用户看）：标签模板没有条码，一直是空数组。 */
+  diagnostics: string[];
 }
 
 interface Paragraph {
@@ -52,10 +55,13 @@ interface FittedRow extends FieldRow {
  */
 export function renderLabelHtml(job: LabelJob, dpi: number = DEFAULT_PRINTER_DPI): RenderedLabel {
   const { template } = job;
+  if (template.kind === 'canvas') {
+    return renderCanvasHtml({ ...job, template }, dpi);
+  }
   if (template.kind === 'waybill') {
     return renderWaybillHtml({ ...job, template }, dpi);
   }
-  return { ...renderQrLabel({ ...job, template }, dpi), barcodeOmitted: false, overflowCells: 0 };
+  return { ...NO_RENDER_WARNINGS, diagnostics: [], ...renderQrLabel({ ...job, template }, dpi) };
 }
 
 function renderQrLabel(

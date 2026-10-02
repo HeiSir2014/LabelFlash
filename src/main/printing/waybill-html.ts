@@ -10,9 +10,10 @@ import {
 } from '../../core/templates/waybill-layout';
 import type { WaybillTemplate } from '../../core/templates/waybill-model';
 import type { LabelJob } from '../../core/types';
-import type { RenderWarnings } from '../../shared/render-warnings';
+import { NO_RENDER_WARNINGS, type RenderWarnings } from '../../shared/render-warnings';
+import { linearBarsPath, MIN_BAR_HEIGHT_MM, moduleDotsFor, QUIET_ZONE_MODULES, WAYBILL_MAX_MODULE_MM } from './barcode';
 import { encodeCode128 } from './code128';
-import { escapeHtml, mm } from './html-text';
+import { BARCODE_TEXT_GAP_MM, DASH_GAP_MM, DASH_MM, escapeHtml, mm } from './html-text';
 import { DEFAULT_PRINTER_DPI, dotMm, planQr } from './qr-code';
 
 /**
@@ -20,30 +21,17 @@ import { DEFAULT_PRINTER_DPI, dotMm, planQr } from './qr-code';
  * 浏览器只负责照着画（打印窗口不运行脚本）。预览和打印共用这一份。
  */
 
-/** 条码两侧的空白（静区）：标准要求至少 10 个模块，扫码枪才找得到条码的起止。 */
-const QUIET_ZONE_MODULES = 10;
-/**
- * 条码模块宽：203dpi 上 2–5 个点（0.25–0.625mm），其他分辨率按毫米换算。再窄扫码枪读不稳；
- * 上限照平台面单：二联的运单条码约 88mm 宽，15 位单号的模块约 0.6mm。
- */
-const MIN_MODULE_MM = 0.25;
-const MAX_MODULE_MM = 0.625;
-/** 号码和条码之间的空隙（mm）。 */
-const BARCODE_TEXT_GAP_MM = 0.4;
-/** 条码最矮 4mm：再矮手持扫码枪的扫描线不好对准，放不下就不印并提示，不印一条扫不出的条码。 */
-const MIN_BAR_HEIGHT_MM = 4;
 /** 条码下的号码稍微拉开字距，数字更好认。 */
 const BARCODE_TEXT_LETTER_SPACING_EM = 0.04;
 /** 二维码按 M 级容错：面单二维码内容短，M 级足够；放不下时 planQr 逐级降低。 */
 const QR_ERROR_LEVEL = 'M';
 /** 反白的黑底比格子四边各缩进这么多：上下相邻的两个黑块之间留出白缝，不连成一片。 */
 const INVERSE_INSET_MM = 0.4;
-/** 虚线：一段 1.2mm、空 0.8mm。 */
-const DASH_MM = 1.2;
-const DASH_GAP_MM = 0.8;
 
 export interface RenderedWaybill extends RenderWarnings {
   html: string;
+  /** 面单不经过 bwip-js，没有原始错误可记；一直是空数组，字段只是让面单、标签、自由设计的返回值长一个样。 */
+  diagnostics: string[];
 }
 
 export function renderWaybillHtml(
@@ -89,7 +77,9 @@ export function renderWaybillHtml(
 <body>${cells}${rules}</body>
 </html>`;
   return {
+    ...NO_RENDER_WARNINGS,
     html,
+    diagnostics: [],
     overflowCells: layout.overflowCells + omitted.cutNumbers,
     barcodeOmitted: omitted.barcode,
     qrOmitted: omitted.qr,
@@ -183,10 +173,8 @@ function barcodeSvg(
   }
   const lengthDots = Math.round((content.vertical ? rect.height : rect.width) / dot);
   const totalModules = code.modules + 2 * QUIET_ZONE_MODULES;
-  const minDots = Math.max(1, Math.round(MIN_MODULE_MM / dot));
-  const maxDots = Math.max(minDots, Math.round(MAX_MODULE_MM / dot));
-  const moduleDots = Math.min(maxDots, Math.floor(lengthDots / totalModules));
-  if (moduleDots < minDots) {
+  const moduleDots = moduleDotsFor(lengthDots, totalModules, dot, WAYBILL_MAX_MODULE_MM);
+  if (moduleDots === null) {
     return null;
   }
   const barsDots = code.modules * moduleDots;
@@ -203,14 +191,7 @@ function barcodeSvg(
   if (showText && numberWidthMm(content.value, content.textSizeMm) > rect.width - 2 * CELL_PADDING_MM.x) {
     omitted.cutNumbers += 1;
   }
-  let offset = 0;
-  let path = '';
-  code.widths.forEach((width, index) => {
-    if (index % 2 === 0) {
-      path += content.vertical ? `M0 ${offset}h1v${width}H0z` : `M${offset} 0h${width}v1H${offset}z`;
-    }
-    offset += width;
-  });
+  const path = linearBarsPath(code.widths, content.vertical);
   const viewBox = content.vertical ? `0 0 1 ${code.modules}` : `0 0 ${code.modules} 1`;
   const size = content.vertical
     ? `width:${mm(crossMm)};height:${mm(barsLengthMm)}`

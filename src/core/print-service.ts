@@ -320,6 +320,42 @@ export class PrintService {
     }
   }
 
+  /**
+   * 模板页「打印一张试试」：按预览内容和正在编辑的草稿打一张，看实际出纸的效果。
+   * 和预览一样识别、加工（看到的就是打出来的），加工步骤设为拦下的查询失败时和正式打印一样不打；
+   * 按草稿的纸张和打印机设置选打印机。不占防重复窗口、不写打印记录：这是在调模板，不是业务打印。
+   */
+  async printSample(raw: string, template: LabelTemplate): Promise<PrintResult> {
+    const preview = await this.preview(raw);
+    if (preview.status !== 'ok') {
+      return preview;
+    }
+    // preview() 固定传 NO_ENRICH_CONTEXT（没有图、没有手动字段）：图中文字识别这一步只会被跳过（skip），
+    // 不会拦下（block），所以这里只可能是 HTTP 查询失败，blocked.reason 不会是 TEXT_NOT_FOUND
+    // （见 scan/enrich.ts 的 imageText：context.images.length === 0 时直接 skip，不产生 blocked）。
+    if (preview.lookupFailure !== null) {
+      return { status: 'failed', reason: 'LOOKUP_FAILED', detail: preview.lookupFailure };
+    }
+    const choice = await this.deps.choosePrinter(template);
+    if (choice.printerName === null) {
+      return { status: 'no-printer', paperKey: choice.paperKey, missingPrinter: choice.missingPrinter };
+    }
+    const printerName = choice.printerName;
+    const { scan } = preview;
+    try {
+      await this.deps.queue.enqueue(printerName, (signal) =>
+        this.deps.adapter.print(printerName, this.createJob(scan, template), signal),
+      );
+      // 调试用：只记打到哪、什么纸、什么模板种类，不记标签内容（内容可能是顾客信息）。
+      console.info(`[PrintService] sample printed on ${printerName} (${paperKey(template.paper)}, ${template.kind})`);
+      // 不写记录，没有记录编号：和测试页一样给一个固定的说明性编号。
+      return { status: 'printed', jobId: 'sample', scan };
+    } catch (error) {
+      console.error('[PrintService] sample print failed', error);
+      return failed(toPrintFailure(error));
+    }
+  }
+
   /** 超时说明结果不确定（可能已出纸或仍在排队）：按已打印处理，避免重扫出第二张；确认没出纸再强制补打。 */
   private settleFailedReservation(raw: string, failure: PrintFailure): void {
     if (failure.reason === 'PRINT_TIMEOUT') {

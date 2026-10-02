@@ -15,6 +15,7 @@ import { formatPaperName, parsePaperKey } from '../../../shared/paper-sizes';
 import { PRINT_TIMEOUT_SECONDS } from '../../../shared/print-timing';
 import { VOICE_CUE_TEXT } from '../../../shared/voice';
 import type { ConfigPage } from './app-view';
+import type { NoticeTone } from './notices';
 
 /** 防重复窗口的说法和手机扫码页共用一份（见 src/shared/duration-text.ts）。 */
 export { formatWindow };
@@ -203,6 +204,35 @@ export function describeNoPrinter(paperKey: string, missingPrinter: string | nul
         : `模板指定的 ${missingPrinter} 不在这台电脑上，${paper} 也还没有打印机`,
     link: { page: 'printers', label: '去指定打印机' },
   };
+}
+
+/** 「打印一张试试」下一步该点哪个按钮：设计器里只有这一个按钮，不是状态条上的「重试打印」「强制补打」「去指定打印机」。 */
+const SAMPLE_PRINT_RETRY = '处理好后再点「打印一张试试」';
+
+/**
+ * 「打印一张试试」的结果：用提示条说，用词和状态条一致（成功是「已发送打印」，不说「打印成功」）；
+ * 但下一步指向设计器真实有的按钮——状态条上「重试打印」「强制补打」「去指定打印机」这几个，设计器里都没有，
+ * 所以超时、未就绪、查询失败、没有打印机这几种单独给说法，其余（找不到打印机、驱动报错等）沿用状态条的说法。
+ */
+export function describeSamplePrint(result: PrintResult, now: number): { tone: NoticeTone; message: string } {
+  if (result.status === 'no-printer') {
+    const paper = formatPaperName(parsePaperKey(result.paperKey) ?? DEFAULT_PAPER);
+    const missing = result.missingPrinter === null ? '' : `模板指定的 ${result.missingPrinter} 不在这台电脑上，`;
+    return { tone: 'warning', message: `${missing}${paper} 还没有打印机：在「配置 › 打印机」里给这种纸指定打印机` };
+  }
+  if (result.status === 'failed' && result.reason === 'PRINT_TIMEOUT') {
+    return { tone: 'error', message: '打印机没有响应，可能已经出纸；确认后再点「打印一张试试」' };
+  }
+  if (result.status === 'failed' && result.reason === 'PRINTER_NOT_READY') {
+    return { tone: 'error', message: `${result.detail ?? '打印机当前无法打印'}，${SAMPLE_PRINT_RETRY}` };
+  }
+  if (result.status === 'failed' && result.reason === 'LOOKUP_FAILED') {
+    const detail = result.detail ?? '接口没有返回需要的数据';
+    return { tone: 'error', message: `数据查询失败，没有打印：${detail}；${SAMPLE_PRINT_RETRY}` };
+  }
+  const view = describeResult(result, now);
+  const tone: NoticeTone = view.tone === 'success' ? 'info' : view.tone;
+  return { tone, message: view.detail === '' ? view.title : `${view.title}：${view.detail}` };
 }
 
 export const IPC_ERROR_VIEW: FeedbackStatusView = {

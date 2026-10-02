@@ -8,10 +8,12 @@ interface NumberFieldProps {
   step: number;
   unit?: string;
   onChange: (value: number) => void;
+  /** 失焦时除了恢复非法输入，还要做的事：设计器属性栏用它结束撤销历史的合并（见 canvas-history 的 mergeKey）。 */
+  onBlur?: () => void;
 }
 
 /** 输入过程中只提交范围内的合法数字；失焦时把非法输入恢复成当前值。 */
-export function NumberField({ label, value, min, max, step, unit = 'mm', onChange }: NumberFieldProps) {
+export function NumberField({ label, value, min, max, step, unit = 'mm', onChange, onBlur }: NumberFieldProps) {
   const id = useId();
   const [draft, setDraft] = useState(String(value));
 
@@ -38,7 +40,10 @@ export function NumberField({ label, value, min, max, step, unit = 'mm', onChang
               onChange(parsed);
             }
           }}
-          onBlur={() => setDraft(String(value))}
+          onBlur={() => {
+            setDraft(String(value));
+            onBlur?.();
+          }}
         />
         <span className="form-row__unit">{unit}</span>
       </span>
@@ -147,9 +152,11 @@ interface TextInputProps {
   /** 候选列表（`<datalist>`）的 id：仍可输入候选之外的内容。 */
   list?: string;
   onChange: (value: string) => void;
+  /** 失焦时要做的事：设计器属性栏用它结束撤销历史的合并（见 canvas-history 的 mergeKey）。 */
+  onBlur?: () => void;
 }
 
-export function TextInput({ label, value, maxLength, placeholder, list, onChange }: TextInputProps) {
+export function TextInput({ label, value, maxLength, placeholder, list, onChange, onBlur }: TextInputProps) {
   const id = useId();
   return (
     <div className="form-row">
@@ -166,6 +173,7 @@ export function TextInput({ label, value, maxLength, placeholder, list, onChange
         list={list}
         autoComplete="off"
         onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
       />
     </div>
   );

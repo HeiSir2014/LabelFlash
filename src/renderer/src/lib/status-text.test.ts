@@ -6,6 +6,7 @@ import {
   describeJobMeta,
   describeJobStatus,
   describeResult,
+  describeSamplePrint,
   describeScan,
   describeSource,
   formatAgo,
@@ -323,5 +324,59 @@ describe('describeJobStatus', () => {
 describe('describeSource', () => {
   test('names jobs submitted through the local api', () => {
     expect(describeSource('api')).toBe('本机接口');
+  });
+});
+
+describe('describeSamplePrint', () => {
+  test('says the sample was sent, with the first fields', () => {
+    expect(describeSamplePrint({ status: 'printed', jobId: 'sample', scan: SCAN }, NOW)).toEqual({
+      tone: 'info',
+      message: '已发送打印：CL5640-TK · 图片色 · XL',
+    });
+  });
+
+  test('says which paper has no printer, pointing at the printers page instead of a button the designer has', () => {
+    expect(describeSamplePrint({ status: 'no-printer', paperKey: '60x40', missingPrinter: null }, NOW)).toEqual({
+      tone: 'warning',
+      message: '60×40 标签 还没有打印机：在「配置 › 打印机」里给这种纸指定打印机',
+    });
+  });
+
+  test('names the printer the template specified when it is missing from this computer', () => {
+    expect(
+      describeSamplePrint({ status: 'no-printer', paperKey: '60x40', missingPrinter: '热敏标签机A' }, NOW),
+    ).toEqual({
+      tone: 'warning',
+      message:
+        '模板指定的 热敏标签机A 不在这台电脑上，60×40 标签 还没有打印机：在「配置 › 打印机」里给这种纸指定打印机',
+    });
+  });
+
+  test('says the printer may already have printed instead of pointing at "强制补打"', () => {
+    expect(describeSamplePrint({ status: 'failed', reason: 'PRINT_TIMEOUT' }, NOW)).toEqual({
+      tone: 'error',
+      message: '打印机没有响应，可能已经出纸；确认后再点「打印一张试试」',
+    });
+  });
+
+  test('keeps the not-ready reason and points back at the sample button instead of "重试打印"', () => {
+    expect(describeSamplePrint({ status: 'failed', reason: 'PRINTER_NOT_READY', detail: '打印机离线' }, NOW)).toEqual({
+      tone: 'error',
+      message: '打印机离线，处理好后再点「打印一张试试」',
+    });
+  });
+
+  test('says a failed lookup did not print, keeps the reason, and points back at the sample button', () => {
+    expect(describeSamplePrint({ status: 'failed', reason: 'LOOKUP_FAILED', detail: '查询超时' }, NOW)).toEqual({
+      tone: 'error',
+      message: '数据查询失败，没有打印：查询超时；处理好后再点「打印一张试试」',
+    });
+  });
+
+  test('reports a printer failure as an error', () => {
+    expect(describeSamplePrint({ status: 'failed', reason: 'PRINTER_NOT_FOUND' }, NOW)).toEqual({
+      tone: 'error',
+      message: '找不到打印机：系统里找不到这台打印机，刷新打印机列表后重新选择',
+    });
   });
 });

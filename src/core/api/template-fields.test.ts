@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { CANVAS_TAG } from '../templates/builtin-canvas';
 import { DEPPON_TWO_PART, PLATFORM_TWO_PART } from '../templates/builtin-waybills';
 import type { QrLabelTemplate } from '../templates/template-model';
 import { PICK_TEMPLATE } from '../testing/templates';
@@ -57,5 +58,9 @@ describe('templateFields', () => {
 
   test('lists the Deppon routing fields', () => {
     expect(templateFields(DEPPON_TWO_PART).names).toEqual(expect.arrayContaining(['路由站1', '路由码4', '末端码']));
+  });
+
+  test('lists the variables a canvas template uses, in order and without duplicates', () => {
+    expect(templateFields(CANVAS_TAG)).toEqual({ mode: 'PICKED', names: ['编码', '颜色', '尺码', '货架号'] });
   });
 });

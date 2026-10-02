@@ -212,6 +212,14 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.Print, (raw, options) =>
     deps.service.submit({ raw: requireRaw(raw), ...requirePrintOptions(options) }),
   );
+  // 「打印一张试试」：草稿和预览一样先校验（不可信的输入）；按钮只在设计器里有，只接受自由设计模板（最小权限）。
+  handle(IpcChannel.PrintSample, (raw, template) => {
+    const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, GENERIC_TEMPLATE);
+    if (draft.kind !== 'canvas') {
+      throw new Error(`label:print-sample only accepts canvas templates, got kind "${draft.kind}"`);
+    }
+    return deps.service.printSample(requireRaw(raw), draft);
+  });
   // 打印机名不在这里核对：找不到时由适配器返回 PRINTER_NOT_FOUND，和正式打印一样显示在界面上。
   handle(IpcChannel.PrintTest, (printerName, key) =>
     deps.service.printTest(requireString(printerName, 'printerName'), paperOf(requirePaperKey(key))),
@@ -256,6 +264,8 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.UpdateSettings, (patch) => updateSettings(requireRecord(patch, 'settings patch')));
   handle(IpcChannel.ListTemplates, () => deps.templates.list());
   handle(IpcChannel.DuplicateTemplate, (sourceId) => deps.templates.duplicate(requireTemplateId(sourceId)));
+  // 没有参数：主进程自己建空白模板，页面传不进任何内容（新通道只给最小能力）。
+  handle(IpcChannel.CreateCanvasTemplate, () => deps.templates.createCanvas());
   handle(IpcChannel.SaveTemplate, (template) => {
     const record = requireRecord(template, 'template');
     const saved = deps.templates.save(requireTemplateId(record['id']), record);
@@ -385,17 +395,20 @@ function renderPreview(result: PreviewResult, { template, isBound }: PrintTempla
       paper: null,
     };
   }
-  const { html, qrOmitted, barcodeOmitted, overflowCells } = renderLabelHtml(
-    { scan: result.scan, template, printedAt: Date.now() },
-    dpi,
-  );
+  // diagnostics 是条码库的原始英文错误，写打印日志用；预览每次扫码、每次改模板都会重新渲染一次，
+  // 这里只取界面要显示的 warnings，diagnostics 留在原地不传给界面（渲染器收不到，也就不会在预览上露出来）。
+  const {
+    html,
+    diagnostics: _diagnostics,
+    ...warnings
+  } = renderLabelHtml({ scan: result.scan, template, printedAt: Date.now() }, dpi);
   return {
     result,
     html,
     templateId: template.id,
     templateName: template.name,
     isTemplateBound: isBound,
-    warnings: { qrOmitted, barcodeOmitted, overflowCells },
+    warnings,
     paper: template.paper,
   };
 }

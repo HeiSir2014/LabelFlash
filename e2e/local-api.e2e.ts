@@ -313,6 +313,53 @@ test('renders a PDF on the paper of the template', async ({ electronApp }) => {
   expect(Number(mediaBox?.[2])).toBeCloseTo(113.39, 0);
 });
 
+// 自由设计模板里的图片转成 1 位 BMP 后按打印点数线性增长；本机接口导出 PDF 用 PDF_DPI=1200，
+// 100×100 的纸铺满一张图能到 3MB 以上的 HTML。标签窗口曾经用 data: URL 加载这段 HTML，
+// Chromium 对 data: URL 有大小限制（实测约 1.9MB 就 ERR_FAILED），这张图稳定超过那个上限。
+test('renders a PDF for a canvas template with a large image on 100x100 paper', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
+  const created = await callApi(page, 'createCanvasTemplate');
+  const pixelSide = 8;
+  const pixels = Buffer.from(
+    Uint8Array.from({ length: pixelSide * pixelSide }, (_, index) => (index % 2 === 0 ? 20 : 235)),
+  ).toString('base64');
+  await callApi(page, 'saveTemplate', {
+    ...created,
+    name: '大图片',
+    paper: { widthMm: 100, heightMm: 100 },
+    elements: [
+      {
+        id: 'photo',
+        name: '图片',
+        kind: 'image',
+        x: 2,
+        y: 2,
+        width: 96,
+        height: 96,
+        rotation: 0,
+        locked: false,
+        pixels,
+        pixelWidth: pixelSide,
+        pixelHeight: pixelSide,
+        mode: 'dither',
+        threshold: 128,
+      },
+    ],
+  });
+  const base = await apiBase(page);
+  const headers = await createKey(page);
+  const template = `templates/${created.id.replace(':', '-')}`;
+  const response = await fetch(`${base}/v1/${template}:render`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ fields: [{ name: '占位', value: '1' }] }),
+  });
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toBe('application/pdf');
+  const pdf = Buffer.from(await response.arrayBuffer()).toString('latin1');
+  expect(pdf.startsWith('%PDF')).toBe(true);
+});
+
 test('asks the operator before a website may use it, and forgets it when revoked', async ({ electronApp }) => {
   const { page } = await electronApp.launch({ fakePrinters: PRINTERS });
   const base = await apiBase(page);

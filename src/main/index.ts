@@ -2,14 +2,25 @@ import { randomUUID } from 'node:crypto';
 import { hostname, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net } from 'electron';
+import {
+  app,
+  type BrowserWindow,
+  dialog,
+  Menu,
+  Notification,
+  nativeImage,
+  net,
+  powerMonitor,
+  utilityProcess,
+} from 'electron';
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
+import { batchIdFor } from '../core/batch/batch-model';
 import { DedupGuard } from '../core/dedup-guard';
 import { SubmittedJobs } from '../core/diagnosis/submitted-jobs';
 import { NO_DRIVER_HINTS } from '../core/drivers/driver-hints';
 import { PrintQueue } from '../core/print-queue';
-import { PrintService } from '../core/print-service';
+import { BATCH_RULE, fieldsScan, PrintService } from '../core/print-service';
 import { effectiveCommandSet } from '../core/printer-commands/command-set';
 import { type PrinterChoice, resolvePrinter, responsiblePaper } from '../core/printing/resolve-printer';
 import { type EnrichDeps, enrich } from '../core/scan/enrich';
@@ -32,6 +43,10 @@ import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
+import { batchQuitDialogText, canceledJobRecords, shouldConfirmBatchQuit, waitForBatchIdle } from './batch/batch-quit';
+import { BatchStation } from './batch/batch-station';
+import batchReaderPath from './batch/reader-worker?modulePath';
+import { TableReaderHost } from './batch/table-reader-host';
 import { BUILD_NUMBER } from './build-info';
 import { createDiagnosisSystem } from './diagnosis/create-diagnosis-system';
 import { DiagnosisStation } from './diagnosis/diagnosis-station';
@@ -60,6 +75,7 @@ import { AlertThrottle } from './printing/alert-throttle';
 import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { FakeDriverAdapter, FakePrinters, parseFakePrinters } from './printing/fake-printers';
+import { renderLabelHtml } from './printing/label-html';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
 import { PrinterCommands } from './printing/printer-commands-station';
 import type { PrinterDriver } from './printing/printer-driver';
@@ -67,6 +83,7 @@ import { queryDriverName } from './printing/printer-identity';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { PrinterProfiles } from './printing/printer-profiles';
 import { createReadinessProbe, type PrinterReadiness, PrinterStatusMonitor } from './printing/printer-status';
+import { DEFAULT_PRINTER_DPI } from './printing/qr-code';
 import { createRawSender } from './printing/raw-sender';
 import { RelaunchIntents, UPDATED_ARG } from './relaunch-intent';
 import { createHttpStepRunner } from './scan/http-step';
@@ -96,11 +113,23 @@ const OCR_INTRA_THREADS = 4;
 const OCR_RECOGNITION_BATCH_SIZE = 8;
 const DATABASE_FILE_NAME = 'labelflash.db';
 const VOICE_CACHE_DIR_NAME = 'voice-cache';
+/** 读一个表格最多等这么久：20MB 的 .xlsx 在普通办公电脑上几秒读完，30 秒还没完多半是压缩炸弹或坏文件。 */
+const TABLE_READ_TIMEOUT_MS = 30_000;
+/** 读表格子进程的堆上限：一万行的表格解开后几十 MB；超过 512MB 只可能是压缩炸弹，V8 结束进程，按「读不出」处理。 */
+const TABLE_READER_HEAP_MB = 512;
+/** 任务管理器、进程列表里显示的子进程名。 */
+const TABLE_READER_SERVICE_NAME = `${BRAND.productNameAscii} table reader`;
+/** 退出确认之后，取消批次时最多等正在打的那一张结束多久：打印机正常的话一张几秒钟就打完，
+ *  等这么久还没结束多半是驱动卡住了，不能让退出程序跟着一起卡住。 */
+const BATCH_CANCEL_SETTLE_TIMEOUT_MS = 5_000;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: AppTray | null = null;
 let database: DatabaseSync | null = null;
 let isQuitting = false;
+// 操作系统正在关机、注销（而不是操作员自己退出程序）：批量打印还有没打的也不弹确认，不能挡着关机。
+// Windows 走 session-end（before-quit 根本不会触发，见下面的处理），这里主要是给 macOS/Linux 用。
+let isSystemShutdown = false;
 
 /** 仅开发 / E2E 测试可用：把数据目录指到临时目录，测试之间互不干扰。安装版忽略它。 */
 const USER_DATA_OVERRIDE_ENV = 'CDL_LABELFLASH_USER_DATA';
@@ -135,8 +164,12 @@ function showMainWindow(): void {
   bringToFront(mainWindow, process.platform);
 }
 
+/**
+ * 托盘菜单「退出」：只触发 app.quit()，isQuitting 由 before-quit 的处理器在退出真的要发生时才设置
+ * ——批量打印还有没打的会先弹确认，选了「取消」的话退出不会真的发生，这时不能已经把 isQuitting
+ * 设成了 true（会导致关窗口不再藏进托盘，退出明明被取消了，托盘行为却已经坏掉）。
+ */
 function quit(): void {
-  isQuitting = true;
   app.quit();
 }
 
@@ -479,6 +512,66 @@ async function bootstrap(): Promise<void> {
     onRecorded: (job, scan) => outbox.enqueueResult(job, scan),
   });
   service.restore();
+  // 批量打印：表格在隔离的子进程里读（不可信的文件 + 第三方解析库，见 batch/table-reader-host.ts）。
+  const tableReader = new TableReaderHost({
+    fork: () => {
+      const child = utilityProcess.fork(batchReaderPath, [], {
+        serviceName: TABLE_READER_SERVICE_NAME,
+        execArgv: [`--max-old-space-size=${TABLE_READER_HEAP_MB}`],
+      });
+      return {
+        postMessage: (request) => child.postMessage(request),
+        onMessage: (listener) => {
+          child.on('message', listener);
+        },
+        onExit: (listener) => {
+          child.on('exit', listener);
+        },
+        kill: () => {
+          child.kill();
+        },
+      };
+    },
+    timeoutMs: TABLE_READ_TIMEOUT_MS,
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => clearTimeout(timer);
+    },
+    log: (line) => console.warn(line),
+  });
+  const batch = new BatchStation({
+    readTable: (request) => tableReader.read(request),
+    findTemplate: (id) => templates.get(id),
+    printFields: (input) => service.printFields(input),
+    dpiFor: async (template) => {
+      const { printerName } = await choosePrinter(template);
+      return printerName !== null && (await isInstalled(printerName))
+        ? profiles.dpiOf(printerName)
+        : DEFAULT_PRINTER_DPI;
+    },
+    render: (template, label, dpi) => {
+      // diagnostics 是条码库的原始英文错误：预览和检查不用（打印时适配器另写日志）。
+      const {
+        html,
+        diagnostics: _diagnostics,
+        ...warnings
+      } = renderLabelHtml(
+        { scan: fieldsScan(label.content, label.fields, BATCH_RULE), template, printedAt: Date.now() },
+        dpi,
+      );
+      return { html, warnings, paper: template.paper };
+    },
+    failedJobs: (batchId, row) => jobs.listBatchFailures(batchId, row),
+    createTableId: randomUUID,
+    createBatchId: () => batchIdFor(new Date(), randomUUID().slice(0, 4)),
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => clearTimeout(timer);
+    },
+    onStatus: (status) => sendToMainWindow(IpcChannel.BatchStatusChanged, status),
+    onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
+    now: () => Date.now(),
+  });
   const voice = new VoiceClips(join(dataPath, VOICE_CACHE_DIR_NAME), synthesizeWithEdge);
   // 后台预热全部播报语：之后扫码时直接播缓存，不等在线合成。
   const warmVoice = () => {
@@ -576,12 +669,79 @@ async function bootstrap(): Promise<void> {
     onStatus: (apiStatus) => sendToMainWindow(IpcChannel.LocalApiStatusChanged, apiStatus),
     onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
   });
-  // 在 before-quit 就告诉手机「程序已退出」：到 will-quit 时进程马上结束，消息可能来不及发出。
-  app.on('before-quit', () => mobile.quit());
+  // macOS/Linux 关机、注销时 before-quit 也会触发（Windows 不会，走的是下面的 session-end）：
+  // 这种情况下不弹确认，不能挡着系统关机。powerMonitor 没有「关机被取消」的事件，收到这个信号
+  // 之后就不再复位——真被取消的情况很少见，顶多是这之后一次正常退出也跳过了确认，不是大问题。
+  // macOS 上 shutdown 和 before-quit 谁先触发尚未在真机上验证过，上线前要用真的 Mac 测一次。
+  powerMonitor.on('shutdown', () => {
+    isSystemShutdown = true;
+  });
+
+  // 退出的副作用（告诉手机「已退出」、isQuitting 影响关窗口是不是藏进托盘）必须等退出真的要发生了
+  // 才做：都归到这一个 before-quit 处理器里，不能分散在几个各管各的处理器里——那样的话，批量打印的
+  // 确认框选了「取消」之后，其他处理器仍然会在同一次 before-quit 里各自跑一遍，副作用照样发生，
+  // 退出明明被取消了，托盘行为却已经坏掉。
+  let readyToQuit = false;
+  app.on('before-quit', (event) => {
+    if (readyToQuit) {
+      isQuitting = true;
+      mobile.quit();
+      return;
+    }
+    const pending = batch.pendingQuit();
+    if (pending === null || !shouldConfirmBatchQuit(pending.labels.length, isSystemShutdown)) {
+      readyToQuit = true;
+      isQuitting = true;
+      mobile.quit();
+      return;
+    }
+    event.preventDefault();
+    showMainWindow();
+    const { message, detail } = batchQuitDialogText(pending.labels.length);
+    const options = {
+      type: 'warning' as const,
+      buttons: ['取消', '仍要退出'],
+      defaultId: 0,
+      cancelId: 0,
+      message,
+      detail,
+    };
+    // 用异步版本：确认框开着的这段时间，打印和 IPC 照常响应（同步版本会冻住整个主进程）。
+    void (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options)).then(
+      async ({ response }) => {
+        if (response !== 1) {
+          return;
+        }
+        // 弹确认框的这段时间批次可能还在打：重新查一遍，只记下这一刻真的还没轮到的——
+        // 不能用弹框之前的旧名单，那时候「没打」的几张可能这期间已经打完或者失败了。
+        const stillPending = batch.pendingQuit();
+        if (stillPending !== null) {
+          // 先取消、等正在打的那一张真的结束（它自己的打印结果已经有记录了），再记 CANCELED、
+          // 最后才退出：不然要么这一张会在被标成「没打」之后又打出来，要么退出时它还没打完。
+          batch.cancel();
+          await waitForBatchIdle(() => batch.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS);
+          for (const record of canceledJobRecords(
+            stillPending.batchId,
+            stillPending.template,
+            stillPending.labels,
+            randomUUID,
+            Date.now,
+          )) {
+            jobs.append(record);
+          }
+        }
+        readyToQuit = true;
+        isQuitting = true;
+        mobile.quit();
+        app.quit();
+      },
+    );
+  });
 
   registerIpc({
     service,
     adapter,
+    batch,
     jobs,
     settings,
     templates,
@@ -710,7 +870,8 @@ async function bootstrap(): Promise<void> {
       isUpdateReady: updater.current.state === 'ready',
       // 托盘建不起来时关窗就是退出，不会有「关在托盘里」。
       hiddenSince: tray === null ? null : hiddenSince,
-      pendingPrints: printQueue.pending + localApi.pendingJobs,
+      // 批量打印还有没打的（暂停中的也算）时不静默更新：重启会丢掉这一批剩下的。
+      pendingPrints: printQueue.pending + localApi.pendingJobs + batch.pendingLabels,
       isMobileOn: mobile.status().state !== 'off',
       now: Date.now(),
     };
@@ -745,9 +906,6 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', showMainWindow);
-  app.on('before-quit', () => {
-    isQuitting = true;
-  });
   app
     .whenReady()
     .then(bootstrap)

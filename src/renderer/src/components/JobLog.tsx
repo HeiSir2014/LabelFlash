@@ -28,6 +28,11 @@ interface JobLogProps {
   reprintModeOf: (job: JobRecord) => ReprintMode;
   onReview: (job: JobRecord) => void;
   onReprint: (job: JobRecord) => void;
+  /** 只看这一批（批次号）；null = 全部。 */
+  batchFilter: string | null;
+  onFilterBatch: (batchId: string | null) => void;
+  /** 重打这一批失败的标签（打开批量打印页看进度）。 */
+  onRetryBatch: (batchId: string) => void;
 }
 
 export function JobLog({
@@ -45,6 +50,9 @@ export function JobLog({
   reprintModeOf,
   onReview,
   onReprint,
+  batchFilter,
+  onFilterBatch,
+  onRetryBatch,
 }: JobLogProps) {
   const isSearching = search.trim() !== '';
 
@@ -63,6 +71,17 @@ export function JobLog({
           {NUMBER_FORMAT.format(total)} / {NUMBER_FORMAT.format(historyLimit)}
         </span>
       </div>
+      {batchFilter !== null && (
+        <div className="job-log__batch">
+          <span className="job-log__batch-name">批次 {batchFilter}</span>
+          <button type="button" className="button button--small" onClick={() => onRetryBatch(batchFilter)}>
+            重打失败的
+          </button>
+          <button type="button" className="button button--small button--quiet" onClick={() => onFilterBatch(null)}>
+            显示全部
+          </button>
+        </div>
+      )}
       {hasNewJobs && (
         <button type="button" className="button button--small job-log__new" onClick={onShowNewJobs}>
           有新记录，回到最新
@@ -72,6 +91,7 @@ export function JobLog({
         {jobs.map((job) => {
           const status = describeJobStatus(job);
           const meta = describeJobMeta(job, callerOf(job));
+          const batchId = job.batch?.id;
           return (
             <li key={job.id} className="job-row">
               <div className="job-row__main">
@@ -84,14 +104,31 @@ export function JobLog({
               <div className="job-row__meta" title={meta}>
                 {meta}
               </div>
-              {reprintModeOf(job) !== 'unavailable' && (
+              {(reprintModeOf(job) !== 'unavailable' || (batchId !== undefined && batchFilter === null)) && (
                 <div className="job-row__actions">
-                  <button type="button" className="button button--small button--quiet" onClick={() => onReview(job)}>
-                    预览
-                  </button>
-                  <button type="button" className="button button--small" onClick={() => onReprint(job)}>
-                    重打
-                  </button>
+                  {batchId !== undefined && batchFilter === null && (
+                    <button
+                      type="button"
+                      className="button button--small button--quiet"
+                      onClick={() => onFilterBatch(batchId)}
+                    >
+                      这一批
+                    </button>
+                  )}
+                  {reprintModeOf(job) !== 'unavailable' && (
+                    <>
+                      <button
+                        type="button"
+                        className="button button--small button--quiet"
+                        onClick={() => onReview(job)}
+                      >
+                        预览
+                      </button>
+                      <button type="button" className="button button--small" onClick={() => onReprint(job)}>
+                        重打
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </li>
@@ -111,7 +148,13 @@ export function JobLog({
         )}
       </ol>
       {jobs.length === 0 && (
-        <p className="empty">{isSearching ? `没有包含「${search.trim()}」的记录` : '还没有打印记录。扫一张标签试试'}</p>
+        <p className="empty">
+          {batchFilter !== null
+            ? '这一批还没有打印记录'
+            : isSearching
+              ? `没有包含「${search.trim()}」的记录`
+              : '还没有打印记录。扫一张标签试试'}
+        </p>
       )}
     </div>
   );

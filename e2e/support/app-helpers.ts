@@ -166,3 +166,30 @@ export async function recordClipboard(app: ElectronApplication): Promise<() => P
   });
   return () => app.evaluate(() => [...((globalThis as { e2eCopied?: string[] }).e2eCopied ?? [])]);
 }
+
+/**
+ * 用这台电脑的系统字体真实渲染一份标签 HTML，列出被框边缘裁掉的行：测试自己开一个能跑脚本的隐藏窗口来量
+ * （打印窗口禁用了脚本），用 Range 量文字本身的宽度（带小数），比这一行的可用宽度宽就是被裁掉了。
+ * 每项写出文字、两者的宽度和字号，方便对照字宽表。
+ */
+export function clippedLines(app: ElectronApplication, html: string): Promise<string[]> {
+  return app.evaluate(async ({ BrowserWindow }, source) => {
+    const window = new BrowserWindow({ show: false });
+    try {
+      await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(source)}`);
+      return (await window.webContents.executeJavaScript(
+        `[...document.querySelectorAll('.line, .code__text')].flatMap((line) => {
+          const range = document.createRange();
+          range.selectNodeContents(line);
+          const text = range.getBoundingClientRect().width;
+          const box = line.getBoundingClientRect().width;
+          return text > box + 0.5
+            ? [line.textContent + ' | 文字 ' + text.toFixed(2) + 'px | 可用 ' + box.toFixed(2) + 'px | 字号 ' + getComputedStyle(line).fontSize]
+            : [];
+        })`,
+      )) as string[];
+    } finally {
+      window.destroy();
+    }
+  }, html);
+}

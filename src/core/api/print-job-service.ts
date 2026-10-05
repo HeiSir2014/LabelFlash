@@ -242,10 +242,12 @@ function failureOf(result: PrintResult): PrintJobFailure | null {
     case 'no-printer':
       return { reason: 'NO_PRINTER', message: FAILURE_MESSAGES.NO_PRINTER };
     case 'failed': {
-      // 查询失败只出现在加工步骤里，本机接口不执行加工步骤；万一出现按驱动错误处理。
-      // 本机接口不执行加工步骤，这两种不会出现；映射只为穷尽。
+      // LOOKUP_FAILED / TEXT_NOT_FOUND 只出现在加工步骤里、CANCELED 只出现在批量打印退出时：
+      // 本机接口都不会走到这几种，按驱动错误处理，映射只为穷尽。
       const reason =
-        result.reason === 'LOOKUP_FAILED' || result.reason === 'TEXT_NOT_FOUND' ? 'PRINT_ERROR' : result.reason;
+        result.reason === 'LOOKUP_FAILED' || result.reason === 'TEXT_NOT_FOUND' || result.reason === 'CANCELED'
+          ? 'PRINT_ERROR'
+          : result.reason;
       return { reason, message: result.detail ?? FAILURE_MESSAGES[reason] };
     }
     // 本机接口不用扫码防重复、不走识别规则：这两种不会出现，按驱动错误处理，不让任务卡住。

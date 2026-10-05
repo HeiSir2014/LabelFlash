@@ -4,6 +4,8 @@ import { useId } from 'react';
 export interface SampleContent {
   value: string;
   onChange: (value: string) => void;
+  /** 正在按模板库的示例数据预览（「用这个模板」之后、改预览内容之前）。 */
+  isLibrarySample: boolean;
 }
 
 interface SampleInputProps {
@@ -17,8 +19,12 @@ export function SampleInput({ sample, isCompact = false }: SampleInputProps) {
   const id = useId();
   return (
     <div className={isCompact ? 'sample-input sample-input--compact' : 'sample-input'}>
-      <label className="sample-input__label" htmlFor={id}>
-        预览内容
+      <label
+        className="sample-input__label"
+        htmlFor={id}
+        title={sample.isLibrarySample ? '按模板库的示例数据预览；扫码或改这里就换成按内容识别' : undefined}
+      >
+        {sample.isLibrarySample ? '预览内容 · 示例数据' : '预览内容'}
       </label>
       <textarea
         id={id}

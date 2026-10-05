@@ -1,3 +1,4 @@
+import type { BatchPlan } from '../core/batch/batch-model';
 import type { LookupTableData, LookupTableInfo } from '../core/lookup/lookup-model';
 import type { Delivery } from '../core/notify/delivery';
 import type { PrinterAction, PrinterCommandConfig } from '../core/printer-commands/command-model';
@@ -6,6 +7,7 @@ import type { RuleSetting } from '../core/scan/rule-settings';
 import type { CanvasTemplate } from '../core/templates/canvas-model';
 import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
+import type { BatchCheckResult, BatchPreviewResult, BatchStartResult, BatchStatus, BatchTableResult } from './batch';
 import type { CheckVerdict, DiagnosisCheckId, FixOutcome, FixRequest } from './diagnosis';
 import type { PaperCheck } from './driver-paper';
 import type { JobPage, JobQuery } from './job-history';
@@ -17,7 +19,8 @@ import type { PrinterReadiness } from './printer-readiness';
 import type { RenderWarnings } from './render-warnings';
 import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
-import type { UpdateStatus } from './update-status';
+import type { LibraryPreview } from './template-library';
+import type { InstallUpdateResult, UpdateStatus } from './update-status';
 import type { VoiceCue } from './voice';
 import type { WindowChrome } from './window-chrome';
 
@@ -44,6 +47,8 @@ export const IpcChannel = {
   ListTemplates: 'templates:list',
   DuplicateTemplate: 'templates:duplicate',
   CreateCanvasTemplate: 'templates:create-canvas',
+  ListTemplateLibrary: 'templates:library',
+  CreateTemplateFromLibrary: 'templates:create-from-library',
   SaveTemplate: 'templates:save',
   DeleteTemplate: 'templates:delete',
   ListRules: 'rules:list',
@@ -97,6 +102,18 @@ export const IpcChannel = {
   DecideApiOrigin: 'api:origins:decide',
   FirewallStatus: 'api:firewall:status',
   AddFirewallRule: 'api:firewall:add',
+  BatchOpenFile: 'batch:open-file',
+  BatchReadDropped: 'batch:read-dropped',
+  BatchPaste: 'batch:paste',
+  BatchPreview: 'batch:preview',
+  BatchCheck: 'batch:check',
+  BatchStart: 'batch:start',
+  BatchPause: 'batch:pause',
+  BatchResume: 'batch:resume',
+  BatchCancel: 'batch:cancel',
+  BatchRetryFailed: 'batch:retry-failed',
+  BatchStatus: 'batch:status',
+  BatchStatusChanged: 'batch:status-changed',
 } as const;
 
 /** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
@@ -150,14 +167,20 @@ export interface AppInfo {
 
 export interface LabelFlashApi {
   preview(raw: string): Promise<LabelPreview>;
-  /** 模板编辑时的实时预览：用未保存的草稿模板渲染。 */
-  previewTemplate(raw: string, template: LabelTemplate): Promise<LabelPreview>;
+  /**
+   * 模板编辑时的实时预览：用未保存的草稿模板渲染。librarySampleId 是模板库的编号时按那个模板的示例数据预览，
+   * 不识别 raw（「用这个模板」复制出来、还没改过预览内容）。
+   */
+  previewTemplate(raw: string, template: LabelTemplate, librarySampleId?: string | null): Promise<LabelPreview>;
   /** 打到哪台打印机由主进程按模板决定（模板指定 → 纸张分配）；这种纸没有打印机时返回 no-printer。 */
   print(raw: string, options: PrintOptions): Promise<PrintResult>;
   /** 测试页按 paperKey（这台打印机负责的纸，例如 100x180）的尺寸打印。 */
   printTest(printerName: string, paperKey: string): Promise<PrintResult>;
-  /** 模板页「打印一张试试」：按预览内容打印没保存的草稿；不写打印记录、不占防重复窗口。 */
-  printSample(raw: string, template: LabelTemplate): Promise<PrintResult>;
+  /**
+   * 模板页「打印一张试试」：按预览内容打印没保存的草稿；不写打印记录、不占防重复窗口。
+   * librarySampleId 和 previewTemplate 的一样：预览用的是示例数据时，打的也是示例数据。
+   */
+  printSample(raw: string, template: LabelTemplate, librarySampleId?: string | null): Promise<PrintResult>;
   listPrinters(): Promise<PrinterInfo[]>;
   printerStatus(printerName: string): Promise<PrinterReadiness | null>;
   /** 驱动默认纸张和 paperKey（这台打印机应该装的纸）是否一致；驱动资料短时缓存，打开打印首选项后重新读取。 */
@@ -188,6 +211,10 @@ export interface LabelFlashApi {
   duplicateTemplate(sourceId: string): Promise<LabelTemplate>;
   /** 新建空白的自由设计模板（默认纸张），返回它；没有参数，页面不能指定内容。 */
   createCanvasTemplate(): Promise<CanvasTemplate>;
+  /** 模板库：每个模板的说明和按示例数据排好的 HTML（缩略图）。没有参数。 */
+  listTemplateLibrary(): Promise<LibraryPreview[]>;
+  /** 把模板库里的一个模板复制成自定义模板，返回它；只收模板库的编号（library:xxx）。 */
+  createTemplateFromLibrary(libraryId: string): Promise<CanvasTemplate>;
   saveTemplate(template: LabelTemplate): Promise<LabelTemplate>;
   /** 删除后若它正在使用，自动切回标准模板；返回最新设置。 */
   deleteTemplate(id: string): Promise<AppSettings>;
@@ -232,8 +259,8 @@ export interface LabelFlashApi {
   openShop(): Promise<void>;
   getUpdateStatus(): Promise<UpdateStatus>;
   checkForUpdates(): Promise<void>;
-  /** 仅在新版本已下载（ready）时有效：重启并安装。 */
-  installUpdate(): Promise<void>;
+  /** 仅在新版本已下载（ready）时有效：重启并安装。批量打印还在打或暂停中时拒绝，见 InstallUpdateResult。 */
+  installUpdate(): Promise<InstallUpdateResult>;
   onUpdateStatus(listener: (status: UpdateStatus) => void): () => void;
   /** 当前音色、语速下这句播报的 mp3；离线且没有缓存时为 null。 */
   getVoiceClip(cue: VoiceCue): Promise<Uint8Array | null>;
@@ -267,6 +294,27 @@ export interface LabelFlashApi {
   getFirewallStatus(): Promise<FirewallStatus>;
   /** 弹管理员确认，添加防火墙规则；返回之后查到的状态（操作员拒绝时仍是 missing）。 */
   addFirewallRule(): Promise<FirewallStatus>;
+  /** 主进程弹出打开对话框选 .xlsx / .csv，在隔离的子进程里读；.xls 给出另存为的提示。 */
+  openBatchFile(): Promise<BatchTableResult>;
+  /** 拖进窗口的文件：界面读成字节交来（不传路径），主进程认类型、在子进程里读。 */
+  readDroppedBatchFile(name: string, bytes: Uint8Array): Promise<BatchTableResult>;
+  /** 粘贴从 Excel 复制的表格（Tab 分隔，第一行是列名）。 */
+  pasteBatchTable(text: string): Promise<BatchTableResult>;
+  /** 第 rowIndex 行（从 0 数）打出来的样子，序号按勾选的行算。 */
+  previewBatchRow(plan: BatchPlan, rowIndex: number): Promise<BatchPreviewResult>;
+  /** 把要打的每一行排一遍，列出打不全的行；又开始了一次检查时这一次返回 null。 */
+  checkBatch(plan: BatchPlan): Promise<BatchCheckResult | null>;
+  startBatch(plan: BatchPlan): Promise<BatchStartResult>;
+  /** 打完正在打的这一张后暂停。 */
+  pauseBatch(): Promise<void>;
+  resumeBatch(): Promise<void>;
+  /** 不再交新的标签；正在打的这一张照常打完。 */
+  cancelBatch(): Promise<void>;
+  /** 按打印记录重打这一批失败的标签；row 不为 null 时只重打那一行（从 1 数）。 */
+  retryBatchFailures(batchId: string, row: number | null): Promise<BatchStartResult>;
+  getBatchStatus(): Promise<BatchStatus | null>;
+  /** 批量打印的进度（合并推送，状态变化立即推）。 */
+  onBatchStatus(listener: (status: BatchStatus | null) => void): () => void;
 }
 
 export interface WindowControlsApi {

@@ -1,3 +1,6 @@
+import type { BatchPlan } from '../core/batch/batch-model';
+import { BATCH_ID_PATTERN } from '../core/batch/batch-model';
+import { parseBatchPlan } from '../core/batch/parse-batch-plan';
 import type { RequestedDiagnosisFix } from '../core/diagnosis/diagnosis-model';
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { isPrinterAction, type PrinterAction, type PrinterCommandConfig } from '../core/printer-commands/command-model';
@@ -5,6 +8,7 @@ import { parseCommandConfig } from '../core/printer-commands/sanitize-command-co
 import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-model';
+import { LIBRARY_TEMPLATE_ID_PATTERN } from '../core/templates/library/library-model';
 import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
 import { type DiagnosisCheckId, isDiagnosisCheckId, isDiagnosisFixId } from '../shared/diagnosis';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
@@ -102,6 +106,14 @@ export function requireTemplateId(value: unknown): string {
   return value;
 }
 
+/** 模板库里模板的编号（library:xxx）；模板库里有没有这个模板由 TemplateCatalog / findLibraryEntry 核对。 */
+export function requireLibraryTemplateId(value: unknown): string {
+  if (typeof value !== 'string' || !LIBRARY_TEMPLATE_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid library template id');
+  }
+  return value;
+}
+
 /** 纸张键（例如 100x180，见 src/shared/paper-sizes.ts）；返回统一写法。 */
 export function requirePaperKey(value: unknown): string {
   const paper = typeof value === 'string' ? parsePaperKey(value) : null;
@@ -148,6 +160,7 @@ export function requireJobQuery(value: unknown): JobQuery {
   const limit = query['limit'];
   const search = query['search'];
   const before = query['before'];
+  const batchId = query['batchId'];
   if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > MAX_JOB_PAGE_SIZE) {
     throw new TypeError('Invalid job query limit');
   }
@@ -157,7 +170,10 @@ export function requireJobQuery(value: unknown): JobQuery {
   if (before !== undefined && (typeof before !== 'number' || !Number.isInteger(before))) {
     throw new TypeError('Invalid job query cursor');
   }
-  return { limit, search, before };
+  if (batchId !== undefined && (typeof batchId !== 'string' || !BATCH_ID_PATTERN.test(batchId))) {
+    throw new TypeError('Invalid job query batch');
+  }
+  return { limit, search, before, batchId };
 }
 
 /** 程序密钥的编号：生成时用的 UUID。 */
@@ -185,6 +201,22 @@ export function requireWebOrigin(value: unknown): string {
   return value;
 }
 
+/** 批量打印的设置：逐项核对（见 core/batch/parse-batch-plan.ts）。 */
+export function requireBatchPlan(value: unknown): BatchPlan {
+  const plan = parseBatchPlan(value);
+  if (plan === null) {
+    throw new TypeError('Invalid batch plan');
+  }
+  return plan;
+}
+
+export function requireBatchId(value: unknown): string {
+  if (typeof value !== 'string' || !BATCH_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid batch id');
+  }
+  return value;
+}
+
 /** 标签机指令的设置：每一项都要有、都合法（core 的严格校验），不纠正。 */
 export function requirePrinterCommandConfig(value: unknown): PrinterCommandConfig {
   const config = parseCommandConfig(value);
@@ -197,6 +229,22 @@ export function requirePrinterCommandConfig(value: unknown): PrinterCommandConfi
 export function requirePrinterAction(value: unknown): PrinterAction {
   if (!isPrinterAction(value)) {
     throw new TypeError('Invalid printer action');
+  }
+  return value;
+}
+
+/** 界面读出来的文件字节（拖进窗口的文件）：只收 Uint8Array，长度有上限。 */
+export function requireBytes(value: unknown, name: string, maxBytes: number): Uint8Array {
+  if (!(value instanceof Uint8Array) || value.length > maxBytes) {
+    throw new TypeError(`Invalid ${name}`);
+  }
+  return value;
+}
+
+/** 从 0 数的下标（行号等）。 */
+export function requireIndex(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`Invalid ${name}`);
   }
   return value;
 }

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { type HttpStep, STEP_LIMITS } from '../../src/core/scan/enrich-model';
+import { TEMPLATE_LIBRARY } from '../../src/core/templates/library/template-library';
 import type { FakeDiagnosisSpec, FakePrinterSpec } from '../../src/main/printing/fake-printers';
 import { RECENT_DELIVERY_COUNT } from '../../src/shared/ipc-contract';
 import { HISTORY_LIMIT_RANGE } from '../../src/shared/settings';
@@ -13,6 +14,7 @@ import {
   blurActiveElement,
   callApi,
   clickSwitch,
+  fakePrints,
   openConfig,
   recordClipboard,
   scan,
@@ -29,6 +31,7 @@ import {
   capturePng,
   formatBounds,
   isSameRectangle,
+  pushBatchStatus,
   pushUpdateStatus,
   resize,
   SIZE_1024,
@@ -44,8 +47,9 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的 V01–V48）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
- * 结果写进 manifest.json，供验收页面逐项展示和确认，标签机指令是 V80–V83，诊断是 V84–V86。
+ * 视觉验收（设计文档 §8.2 的验收项，V01 起；模板库是 V50–V55，批量打印是 V60–V63，标签机指令是 V80–V83，
+ * 诊断是 V84–V86）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
 const OUT_DIR = join(APP_ROOT, 'test-results', 'visual-acceptance');
@@ -227,6 +231,31 @@ async function openDiagnosisPanel(page: Page): Promise<Locator> {
   return panel;
 }
 
+/** V60–V62：一台 60×40 的假标签机，每张打 300ms（V62 要在打完之前暂停）。 */
+const BATCH_PRINTERS: FakePrinterSpec[] = [
+  {
+    name: '标签机A',
+    paper: { widthMm: 60, heightMm: 40, dpi: 203 },
+    readiness: { ready: true },
+    printDelayMs: 300,
+  },
+];
+/** V61：12 行，第 5 行缺颜色（标黄）；表里没有「货架号」（对列标红）。 */
+const BATCH_CSV = [
+  '编码,颜色,尺码,备注',
+  ...Array.from({ length: 12 }, (_, index) => `CL${5640 + index},${index === 4 ? '' : '图片色'},XL,第 ${index + 1} 箱`),
+].join('\n');
+/** V62：只按序号打这么多张，暂停时还剩很多。 */
+const BATCH_SERIAL_COUNT = 30;
+
+async function openBatchPage(page: Page): Promise<void> {
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A' } });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await page.getByRole('button', { name: '批量打印' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '批量打印' })).toBeVisible();
+}
+
 /** 复制通用模板，改成指定的纸张（和打印机）后保存；返回新模板的 id。 */
 async function saveCopyOnPaper(
   page: Page,
@@ -353,20 +382,20 @@ const ITEMS: Item[] = [
         label: '常态',
         prepare: async ({ page }) => {
           if ((await page.locator('.config-center').count()) > 0) {
-            await page.locator('.config-button').click();
+            await page.locator('.config-button:not(.batch-button)').click();
             await expect(page.locator('.config-center')).toHaveCount(0);
           }
           await page.locator('.title-bar__name').hover();
         },
       },
-      { label: '悬停', prepare: async ({ page }) => page.locator('.config-button').hover() },
+      { label: '悬停', prepare: async ({ page }) => page.locator('.config-button:not(.batch-button)').hover() },
       {
         label: '按下（配置中心打开时）',
         prepare: async ({ page }) => {
           if ((await page.locator('.config-center').count()) === 0) {
-            await page.locator('.config-button').click();
+            await page.locator('.config-button:not(.batch-button)').click();
           }
-          await expect(page.locator('.config-button')).toHaveAttribute('aria-pressed', 'true');
+          await expect(page.locator('.config-button:not(.batch-button)')).toHaveAttribute('aria-pressed', 'true');
         },
       },
     ],
@@ -711,7 +740,7 @@ const ITEMS: Item[] = [
     points: '红绿灯区域、全屏时标题栏；配置中心快捷键显示 ⌘,；退出全屏后窗口回到进入全屏前的位置',
     sizes: [SIZE_1280],
     custom: async (ctx, record) => {
-      const title = await ctx.page.locator('.config-button').getAttribute('title');
+      const title = await ctx.page.locator('.config-button:not(.batch-button)').getAttribute('title');
       ctx.notes.push(`「配置」按钮的悬停提示：${title}`);
       if (process.platform !== 'darwin') {
         ctx.notes.push('不是 macOS：本项在 Mac 上复验');
@@ -1289,6 +1318,78 @@ const ITEMS: Item[] = [
     },
   },
   {
+    id: 'V60',
+    title: '批量打印 · 刚打开',
+    points:
+      '页头「← 返回工作台」和标题「批量打印」；五段（模板、数据、对列、序号与份数、预览）自上而下，没有数据时预览段只有一句说明；底部操作条「打印 0 张」灰掉；标题栏「批量打印」是按下状态，「配置」不是；1024 宽时标题栏不换行、不溢出',
+    launch: { fakePrinters: BATCH_PRINTERS },
+    setup: async ({ page }) => {
+      await openBatchPage(page);
+    },
+  },
+  {
+    id: 'V61',
+    title: '批量打印 · 导入后的对列和预览',
+    points:
+      '数据行「batch.csv · 12 行 · 4 列」；对列表里 {货架号} 标红并说明可以不填；第 5 行（缺颜色）整行标黄、悬停能看到「缺：颜色」；表头固定，列多时表格自己横向滚动、页面不变宽；右侧是当前行的真实预览（吊牌），上方「上一张 / 下一张」；预览段顶部「共 12 行 · 打 12 张 · 1 行有问题（标黄）」；1024 宽时表格和预览上下排列',
+    launch: { fakePrinters: BATCH_PRINTERS },
+    setup: async ({ app, page, userData }) => {
+      const path = join(userData, 'batch.csv');
+      await writeFile(path, BATCH_CSV, 'utf8');
+      await stubOpenDialog(app, path);
+      await openBatchPage(page);
+      // 工作台一直挂载在后面（只是不显示），同名的「模板」控件不止一个：只认批量打印页里的。
+      await page
+        .locator('.batch-page')
+        .getByLabel('模板', { exact: true })
+        .selectOption({ label: '吊牌（自由设计示例）' });
+      await page.getByRole('button', { name: '选择文件…' }).click();
+      await expect(page.getByText('batch.csv · 12 行 · 4 列')).toBeVisible();
+      // 检查条码和排版期间汇总后面带着「正在检查…」：等它查完再截图。
+      await expect(page.locator('.batch-preview__summary')).toHaveText('共 12 行 · 打 12 张 · 1 行有问题（标黄）');
+      await page.getByRole('heading', { level: 2, name: '5 预览' }).scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    id: 'V62',
+    title: '批量打印 · 暂停中',
+    points:
+      '底部操作条：「已暂停（点继续接着打）· 已发送 n / 30 张」、进度条、「继续」（主按钮）「取消」；标题栏「批量打印」按钮上的进度「n/30」用等宽数字；提示条不盖住操作条',
+    launch: { fakePrinters: BATCH_PRINTERS },
+    setup: async ({ app, page }) => {
+      await openBatchPage(page);
+      await page.getByRole('button', { name: '只按序号打' }).click();
+      await page.getByLabel('张数').fill(String(BATCH_SERIAL_COUNT));
+      await page.getByRole('button', { name: `打印 ${BATCH_SERIAL_COUNT} 张` }).click();
+      // 进度是合并推送的，文字可能跳过某个数：按假打印机实际收到的张数等。
+      await expect.poll(async () => (await fakePrints(app)).length).toBeGreaterThanOrEqual(2);
+      await page.getByRole('button', { name: '暂停' }).click();
+      await expect(page.locator('.batch-actions').getByRole('status')).toContainText('已暂停');
+    },
+  },
+  {
+    id: 'V63',
+    title: '标题栏 · 批量打印按钮的进度数字很长',
+    points:
+      '一批 2 万张、打到 19999 张时，标题栏「批量打印」按钮上的「19999/20000」不换行、不挤出标题栏；1024 宽时同样不溢出',
+    sizes: [SIZE_1024, SIZE_1280],
+    setup: async ({ page, window }) => {
+      await pushBatchStatus(window, {
+        batchId: '20261002-143501-a1b2',
+        state: 'running',
+        total: 20000,
+        sent: 19999,
+        failed: 0,
+        pauseReason: null,
+        failures: [],
+        templateName: '通用',
+        tableId: null,
+        isActive: true,
+      });
+      await expect(page.getByRole('button', { name: '批量打印' })).toContainText('19999/20000');
+    },
+  },
+  {
     id: 'V45',
     title: '模板 · 自由设计 · 设计器（1280px）',
     points:
@@ -1353,6 +1454,84 @@ const ITEMS: Item[] = [
       { label: '矩形', prepare: ({ page }) => selectLayer(page, '矩形（矩形）') },
       { label: '表格', prepare: ({ page }) => selectLayer(page, '颜色尺码（表格）') },
     ],
+  },
+  {
+    id: 'V50',
+    title: '模板库 · 全部',
+    points:
+      '左栏八项（全部 18、服装吊牌 3、价签 3、商品条码 3、鞋盒标 2、食品标签 2、珠宝 / 小商品 2、仓储 3），个数右对齐、等宽数字，「全部」是按下状态；右边「纸张」下拉和一行说明；缩略图网格：每张卡片缩略图框一样高、纸居中、有细边框，30×20 不放大，100×150 整张可见；名字、纸张和说明、「用这个模板」按钮在各卡片里对齐；1024 宽时少放几列、没有横向滚动；底部「18 个模板」「返回列表」；面包屑「模板 › 从模板库新建」',
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+    },
+  },
+  {
+    id: 'V51',
+    title: '模板库 · 仓储（大纸张的缩略图）',
+    points:
+      '「仓储」按下；三张卡片：货架 / 库位标（100×100，库位号大字、Code128）、资产标签（50×30，反白标题、表格、二维码）、箱标（100×150，表格、条码、二维码、备注折行），缩略图都没有被裁；纸张下拉只有全部纸张、50×30mm、100×100mm、100×150mm',
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+      await libraryCategory(page, '仓储').click();
+    },
+  },
+  {
+    id: 'V52',
+    title: '模板库 · 按纸张筛选（40×30）',
+    points: '「全部」下选 40×30mm：三张卡片（简洁价签、EAN-13 商品条码、小商品标），来自三个分类；底部「3 个模板」',
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+      await page.getByRole('region', { name: '模板库' }).getByLabel('纸张').selectOption('40x30');
+    },
+  },
+  {
+    id: 'V53',
+    title: '模板库 · 键盘焦点',
+    points: '用 Tab 走到的分类按钮、「用这个模板」按钮都有清楚的焦点框，没有被卡片边框或网格裁掉',
+    sizes: [SIZE_1280],
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+    },
+    shots: [
+      {
+        label: '分类按钮',
+        prepare: async ({ page }) => {
+          await libraryCategory(page, '全部').focus();
+          await page.keyboard.press('Tab');
+        },
+      },
+      {
+        label: '「用这个模板」',
+        prepare: async ({ page }) => {
+          const buttons = page.getByRole('region', { name: '模板库' }).getByRole('button', { name: '用这个模板' });
+          await buttons.nth(1).focus();
+          await page.keyboard.press('Shift+Tab');
+        },
+      },
+    ],
+  },
+  {
+    id: 'V54',
+    title: '模板库 · 用这个模板后进设计器',
+    points:
+      '复制「服装合格证」进设计器：画布是示例数据（反白「合 格 证」、参数表格线对齐、二维码、等级和安全类别、「零售价 ¥399.00」），工具条「预览内容 · 示例数据」；底部打印前检查「没有发现问题」；面包屑「编辑：服装合格证」；1024 宽时设计器同 V46',
+    setup: async ({ page }) => {
+      await openConfig(page, '模板');
+      await useLibraryTemplate(page, '服装合格证');
+    },
+  },
+  {
+    id: 'V55',
+    title: '模板库 · 逐个模板',
+    points:
+      '每个模板复制进设计器后的画布一张（示例数据）：所有文字、条码号码、表格、二维码都在纸内没有被裁；条码两侧留白、号码在条下居中；反白块的字在黑底中间；和缩略图一致；打印前检查「没有发现问题」',
+    sizes: [SIZE_1280],
+    setup: async ({ page }) => {
+      await openConfig(page, '模板');
+    },
+    shots: TEMPLATE_LIBRARY.map(({ template }) => ({
+      label: template.name,
+      prepare: ({ page }) => useLibraryTemplate(page, template.name),
+    })),
   },
   {
     id: 'V80',
@@ -1483,6 +1662,34 @@ async function openCanvasDesigner(page: Page): Promise<void> {
   await page.locator('.template-item', { hasText: '吊牌（自由设计示例）' }).click();
   await page.getByRole('button', { name: '复制' }).click();
   await expect(page.getByRole('region', { name: '设计器' })).toBeVisible();
+}
+
+/** V50–V55：打开模板库，等缩略图出来。 */
+async function openTemplateLibrary(page: Page): Promise<void> {
+  await openConfig(page, '模板');
+  await page.getByRole('button', { name: '从模板库新建' }).click();
+  await expect(page.getByRole('region', { name: '模板库' }).getByRole('article')).toHaveCount(TEMPLATE_LIBRARY.length);
+}
+
+/** 模板库左栏的一个分类（名字后面跟着个数）。 */
+function libraryCategory(page: Page, label: string) {
+  return page.getByRole('navigation', { name: '模板库分类' }).getByRole('button', { name: new RegExp(`^${label}`) });
+}
+
+/** V54、V55：从模板库复制 name 进设计器（已在设计器里时先回到列表）。 */
+async function useLibraryTemplate(page: Page, name: string): Promise<void> {
+  const designer = page.getByRole('region', { name: '设计器' });
+  if (await designer.isVisible()) {
+    await page.getByRole('button', { name: '返回列表' }).click();
+  }
+  await page.getByRole('button', { name: '从模板库新建' }).click();
+  await page
+    .getByRole('region', { name: '模板库' })
+    .getByRole('article', { name, exact: true })
+    .getByRole('button', { name: '用这个模板' })
+    .click();
+  await expect(designer).toBeVisible();
+  await expect(page.getByRole('region', { name: '打印前检查' })).toContainText('没有发现问题');
 }
 
 /** 在图层列表里点选一个元素（名字形如「编码条码（条码）」）。 */

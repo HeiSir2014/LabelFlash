@@ -8,10 +8,12 @@ const EMPTY_PAGE: JobPage = { jobs: [], nextCursor: null, total: 0 };
 /** 打印记录只按页加载（容量可达百万级），搜索交给数据库的全文索引。 */
 export function useJobLog() {
   const [search, setSearch] = useState('');
+  const [batchId, setBatchId] = useState<string | null>(null);
   const [page, setPage] = useState<JobPage>(EMPTY_PAGE);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasNewJobs, setHasNewJobs] = useState(false);
   const searchRef = useRef(search);
+  const batchRef = useRef(batchId);
   // 加载过更早的记录（不止第一页）：这时刷新会把列表拉回第一页，操作员正在翻的内容就没了。
   const isPagedRef = useRef(false);
   useEffect(() => {
@@ -19,11 +21,15 @@ export function useJobLog() {
   }, [page]);
   const requestId = useRef(0);
 
-  const loadFirstPage = useCallback(async (query: string) => {
+  const loadFirstPage = useCallback(async (query: string, batch: string | null) => {
     requestId.current += 1;
     const id = requestId.current;
     try {
-      const first = await window.api.listJobs({ limit: JOB_PAGE_SIZE, search: query });
+      const first = await window.api.listJobs({
+        limit: JOB_PAGE_SIZE,
+        search: query,
+        ...(batch === null ? {} : { batchId: batch }),
+      });
       if (id === requestId.current) {
         setPage(first);
         setHasNewJobs(false);
@@ -35,11 +41,12 @@ export function useJobLog() {
 
   useEffect(() => {
     searchRef.current = search;
-    const timer = window.setTimeout(() => void loadFirstPage(search), SEARCH_DEBOUNCE_MS);
+    batchRef.current = batchId;
+    const timer = window.setTimeout(() => void loadFirstPage(search, batchId), SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [search, loadFirstPage]);
+  }, [search, batchId, loadFirstPage]);
 
-  const refresh = useCallback(() => loadFirstPage(searchRef.current), [loadFirstPage]);
+  const refresh = useCallback(() => loadFirstPage(searchRef.current, batchRef.current), [loadFirstPage]);
 
   // 本机接口打的标签不经过界面：主进程写了打印记录后推送，这里跟着刷新（不播报）。
   // 翻到后面几页时不自动刷新，只提示有新记录，由操作员点了再回到第一页。
@@ -66,6 +73,7 @@ export function useJobLog() {
         limit: JOB_PAGE_SIZE,
         search: searchRef.current,
         before: page.nextCursor,
+        ...(batchRef.current === null ? {} : { batchId: batchRef.current }),
       });
       if (id === requestId.current) {
         setPage((current) => ({
@@ -89,6 +97,8 @@ export function useJobLog() {
     hasNewJobs,
     search,
     setSearch,
+    batchId,
+    setBatchId,
     refresh,
     loadMore,
   };

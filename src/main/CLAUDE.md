@@ -48,6 +48,7 @@
 - **页面尺寸** `page-size.ts`：按模板的纸张算 `webContents.print` 的 pageSize。
 - **决定打印机**：规则在 core 的 `printing/resolve-printer.ts`，主进程只提供本机打印机列表（`PrinterDriver.knownPrinterNames`）。读打印机列表要用主窗口，启动时窗口还没建好，检测和预读在窗口建好之后再做。
 - **假打印机** `fake-printers.ts`：环境变量 `CDL_LABELFLASH_FAKE_PRINTERS`（只对未打包的程序生效）换掉适配器、驱动纸张查询和状态探测，E2E 和视觉验收用。
+- **模板库** `library-previews.ts`：按每个模板的示例数据排出缩略图 HTML（`renderLabelHtml`，203dpi），`templates:library` 每次现排、不缓存；`library-html.test.ts` 核对每个模板在 203、300dpi 都印得出并做 HTML 快照。预览、试打带模板库编号时，`ipc.ts` 的 `librarySampleOf` 按编号取示例数据（页面不能交字段）。
 - **标签机指令** `printer-commands-station.ts`：核对打印机在系统列表里 → 认指令集（手动 / 在线驱动清单 / 驱动名）→ 按范围把关 → 保存（设置的 `printerCommands`）→ 经 `raw-sender.ts` 发送一次。发送方式：Windows 探测进程、macOS `lp -o raw`（参数数组，字节走标准输入）、其他平台「不支持」。驱动名在 `printer-identity.ts`（macOS 取 `printer-make-and-model`）。不经 `PrintService`、不写打印记录，每次发送写日志。假打印机记下收到的指令文字（`rawJobs`）。
 
 ## 其他子系统
@@ -76,6 +77,15 @@
 - **macOS**：`command-runner.ts` 跑命令（参数数组、英文环境、关 stdin、独立会话——CUPS 要密码时不会去终端上等）；改 CUPS 的先以当前用户做，`Forbidden` 时返回 needs-admin，操作员点管理员按钮后经 `osascript … with administrator privileges`（命令、提示经 argv，`shellCommand` 逐个单引号转义）。Get-Jobs 用自己的 ipptool 测试文件（`CUPS_GET_JOBS_TEST`），用时写进临时目录、用完删掉。
 - **账本**：`ElectronDriverAdapter` 和 5a 的 RAW 下发在任务进了系统队列后 `SubmittedJobs.record`，只在内存里。
 - **接缝**：5a（指令集、走纸、校准）和 5c（重装驱动）只经 `seams.ts` 的两个接口，`index.ts` 里接上；5c 合并前 `drivers` 是 null，按钮不出现。
+
+## 批量打印（`batch/`）
+
+设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 5 节。
+
+- **读表格在子进程里**（Chromium 两条法则）：`table-reader-host.ts` 每读一个文件 `utilityProcess.fork` 一个子进程（入口 `reader-worker.ts`，由 `index.ts` 以 `?modulePath` 引入、单独打包），30 秒超时、512MB 堆上限，读完就结束；子进程只收字节（不给路径），只回文字的二维数组，主进程再核对形状和上限（`readReply`），表头规则走 core 的 `tableFromRecords`。读取逻辑在 `table-file.ts`（不 import electron，用 `bun test` 测，`testing/minimal-xlsx.ts` 生成测试用的 .xlsx）。`.xls` 按扩展名和文件头拒绝。
+- **`batch-station.ts`**：只留最近一张表；预览、检查（把每行排一遍找出条码印不了的，分段让出主线程，新的检查开始时放弃旧的）和打印用同一份 HTML；同一时间只有一批在打；进度最多 0.25 秒推一次（`batch:status-changed`），状态变化立即推，同时推 `jobs:changed`。
+- **拖进窗口的文件**：界面读成字节经 `batch:read-dropped` 交来，主进程不接受任何路径（打开对话框选的文件由主进程自己读）。
+- **静默更新**：批量打印还有没打的（含暂停中的）时不静默更新。
 
 ## 本机接口（`api/`）
 
@@ -139,3 +149,4 @@
 - **bundle 自包含**：`electron.vite.config.ts` 用 `externalizeDeps: false`，把依赖打进 bundle。
 - **可选原生模块**：`bufferutil`、`utf-8-validate` 必须保持 external。如果被 Vite 换成空对象，WebSocket 发大于 48 字节的帧时会报错，语音合成就坏了。
 - **检查**：新增依赖后跑 `bun run verify:bundle`。它确认 bundle 只引用 Electron 内置模块和这两个可选模块。
+- **子进程入口**：读表格的子进程用 `?modulePath` 引入（electron-vite 单独打包），产物也在 `out/main/` 下，`verify:bundle` 一并检查。

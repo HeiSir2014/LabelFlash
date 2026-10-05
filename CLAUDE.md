@@ -72,7 +72,7 @@ CI（GitHub Actions）会在 PR 和 `master` 上跑：windows-latest 上 check�
 ```
 src/core      业务层：纯 TypeScript，不依赖 Electron / Node / SQLite
 src/shared    主进程和界面共用：IPC 契约、设置的校验、品牌、常量
-src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）、标签机指令（printing/printer-commands-station.ts）
+src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）、批量打印（batch/）、标签机指令（printing/printer-commands-station.ts）
 src/preload   contextBridge，只暴露类型化 API
 src/renderer  界面：React 19，MVVM（lib → view-models → components）
 scripts       构建脚本（bundle 检查、图标、安装包、中转服务的构建与发布）
@@ -96,7 +96,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 - **测试**：新功能、修 bug 都先写失败的测试。测试名用英文描述行为；纯逻辑放进可测的模块（core、`lib/`、主进程里不依赖 Electron 的文件）。
 - **用词**：界面文字和播报用词保持一致，只说程序确知的事。例如驱动回调成功只代表任务进了打印队列，所以写「已发送打印」，不写「打印成功」。
 - **出错**：不吞异常。主进程把错误和上下文写进日志，界面给出中文提示和下一步该怎么做。
-- **依赖**：不随意引入新依赖，先用现有的：运行时有 electron-log、electron-updater、msedge-tts、qrcode、bwip-js（自由设计模板的条码编码），以及电脑、中转服务、扫码页共用的 @msgpack/msgpack（手机扫码的线上编码）；开发时有 sharp、Playwright、Biome，以及只打进手机扫码页的 zxing-wasm。
+- **依赖**：不随意引入新依赖，先用现有的：运行时有 electron-log、electron-updater、msedge-tts、qrcode、bwip-js（自由设计模板的条码编码）、read-excel-file（批量打印读 .xlsx，只在读表格的子进程里用），以及电脑、中转服务、扫码页共用的 @msgpack/msgpack（手机扫码的线上编码）；开发时有 sharp、Playwright、Biome，以及只打进手机扫码页的 zxing-wasm。
 
 ## 命名与措辞限制
 

@@ -13,10 +13,12 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 
 const api: LabelFlashApi = {
   preview: (raw) => ipcRenderer.invoke(IpcChannel.Preview, raw),
-  previewTemplate: (raw, template) => ipcRenderer.invoke(IpcChannel.PreviewTemplate, raw, template),
+  previewTemplate: (raw, template, librarySampleId = null) =>
+    ipcRenderer.invoke(IpcChannel.PreviewTemplate, raw, template, librarySampleId),
   print: (raw, options) => ipcRenderer.invoke(IpcChannel.Print, raw, options),
   printTest: (printerName, paperKey) => ipcRenderer.invoke(IpcChannel.PrintTest, printerName, paperKey),
-  printSample: (raw, template) => ipcRenderer.invoke(IpcChannel.PrintSample, raw, template),
+  printSample: (raw, template, librarySampleId = null) =>
+    ipcRenderer.invoke(IpcChannel.PrintSample, raw, template, librarySampleId),
   listPrinters: () => ipcRenderer.invoke(IpcChannel.ListPrinters),
   printerStatus: (printerName) => ipcRenderer.invoke(IpcChannel.PrinterStatus, printerName),
   checkDriverPaper: (printerName, paperKey) => ipcRenderer.invoke(IpcChannel.CheckDriverPaper, printerName, paperKey),
@@ -35,6 +37,8 @@ const api: LabelFlashApi = {
   listTemplates: () => ipcRenderer.invoke(IpcChannel.ListTemplates),
   duplicateTemplate: (sourceId) => ipcRenderer.invoke(IpcChannel.DuplicateTemplate, sourceId),
   createCanvasTemplate: () => ipcRenderer.invoke(IpcChannel.CreateCanvasTemplate),
+  listTemplateLibrary: () => ipcRenderer.invoke(IpcChannel.ListTemplateLibrary),
+  createTemplateFromLibrary: (libraryId) => ipcRenderer.invoke(IpcChannel.CreateTemplateFromLibrary, libraryId),
   saveTemplate: (template) => ipcRenderer.invoke(IpcChannel.SaveTemplate, template),
   deleteTemplate: (id) => ipcRenderer.invoke(IpcChannel.DeleteTemplate, id),
   listRules: () => ipcRenderer.invoke(IpcChannel.ListRules),
@@ -83,6 +87,18 @@ const api: LabelFlashApi = {
   decideApiOrigin: (origin, allow) => ipcRenderer.invoke(IpcChannel.DecideApiOrigin, origin, allow),
   getFirewallStatus: () => ipcRenderer.invoke(IpcChannel.FirewallStatus),
   addFirewallRule: () => ipcRenderer.invoke(IpcChannel.AddFirewallRule),
+  openBatchFile: () => ipcRenderer.invoke(IpcChannel.BatchOpenFile),
+  readDroppedBatchFile: (name, bytes) => ipcRenderer.invoke(IpcChannel.BatchReadDropped, name, bytes),
+  pasteBatchTable: (text) => ipcRenderer.invoke(IpcChannel.BatchPaste, text),
+  previewBatchRow: (plan, rowIndex) => ipcRenderer.invoke(IpcChannel.BatchPreview, plan, rowIndex),
+  checkBatch: (plan) => ipcRenderer.invoke(IpcChannel.BatchCheck, plan),
+  startBatch: (plan) => ipcRenderer.invoke(IpcChannel.BatchStart, plan),
+  pauseBatch: () => ipcRenderer.invoke(IpcChannel.BatchPause),
+  resumeBatch: () => ipcRenderer.invoke(IpcChannel.BatchResume),
+  cancelBatch: () => ipcRenderer.invoke(IpcChannel.BatchCancel),
+  retryBatchFailures: (batchId, row) => ipcRenderer.invoke(IpcChannel.BatchRetryFailed, batchId, row),
+  getBatchStatus: () => ipcRenderer.invoke(IpcChannel.BatchStatus),
+  onBatchStatus: (listener) => subscribe(IpcChannel.BatchStatusChanged, listener),
 };
 
 const windowControls: WindowControlsApi = {

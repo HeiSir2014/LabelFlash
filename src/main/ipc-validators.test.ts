@@ -1,13 +1,19 @@
 import { describe, expect, test } from 'bun:test';
+import type { BatchPlan } from '../core/batch/batch-model';
 import {
   MAX_IPC_STRING_LENGTH,
   MAX_RAW_INPUT_LENGTH,
   requireApiKeyId,
   requireApiKeyName,
+  requireBatchId,
+  requireBatchPlan,
   requireBoolean,
+  requireBytes,
   requireDiagnosisCheck,
   requireDiagnosisFixRequest,
+  requireIndex,
   requireJobQuery,
+  requireLibraryTemplateId,
   requireLookupTableId,
   requireMobilePhoneId,
   requirePaperKey,
@@ -80,6 +86,8 @@ describe('ipc validators', () => {
     expect(() => requireJobQuery({ limit: 501 })).toThrow(TypeError);
     expect(() => requireJobQuery({ limit: 10, before: 1.5 })).toThrow(TypeError);
     expect(() => requireJobQuery({ limit: 10, search: 3 })).toThrow(TypeError);
+    expect(requireJobQuery({ limit: 10, batchId: '20261002-143501-a1b2' }).batchId).toBe('20261002-143501-a1b2');
+    expect(() => requireJobQuery({ limit: 10, batchId: 'x' })).toThrow('Invalid job query batch');
   });
 
   test('requirePaperKey accepts width x height keys only, in their normal form', () => {
@@ -96,6 +104,13 @@ describe('ipc validators', () => {
     );
     expect(() => requireTemplateId('../../etc')).toThrow(TypeError);
     expect(() => requireTemplateId('custom:')).toThrow(TypeError);
+  });
+
+  test('requireLibraryTemplateId accepts library ids only', () => {
+    expect(requireLibraryTemplateId('library:price-simple')).toBe('library:price-simple');
+    expect(() => requireLibraryTemplateId('custom:abc')).toThrow(TypeError);
+    expect(() => requireLibraryTemplateId('library:../x')).toThrow(TypeError);
+    expect(() => requireLibraryTemplateId(42)).toThrow(TypeError);
   });
 
   test('requireVoiceCue accepts known cues only', () => {
@@ -138,6 +153,27 @@ describe('ipc validators', () => {
     expect(requireWebOrigin('https://erp.example.com')).toBe('https://erp.example.com');
     expect(() => requireWebOrigin('null')).toThrow(TypeError);
     expect(() => requireWebOrigin(7)).toThrow(TypeError);
+  });
+
+  test('batch plans, ids, byte arrays and row indexes are checked', () => {
+    const plan: BatchPlan = {
+      templateId: 'builtin:generic',
+      data: { kind: 'serial-only', count: 3 },
+      mapping: {},
+      serial: { enabled: true, prefix: '', start: 1, step: 1, digits: 0, suffix: '', column: null },
+      copies: { kind: 'fixed', count: 1 },
+      rows: null,
+    };
+    expect(requireBatchPlan(plan)).toEqual(plan);
+    expect(() => requireBatchPlan({ ...plan, templateId: 'x' })).toThrow('Invalid batch plan');
+    expect(requireBatchId('20261002-143501-a1b2')).toBe('20261002-143501-a1b2');
+    expect(() => requireBatchId('20261002')).toThrow('Invalid batch id');
+    expect(requireBytes(new Uint8Array(2), 'file', 2)).toHaveLength(2);
+    expect(() => requireBytes(new Uint8Array(3), 'file', 2)).toThrow('Invalid file');
+    expect(() => requireBytes('abc', 'file', 2)).toThrow('Invalid file');
+    expect(requireIndex(0, 'row index')).toBe(0);
+    expect(() => requireIndex(-1, 'row index')).toThrow('Invalid row index');
+    expect(() => requireIndex(1.5, 'row index')).toThrow('Invalid row index');
   });
 
   test('requirePrinterCommandConfig accepts only a complete, valid config', () => {

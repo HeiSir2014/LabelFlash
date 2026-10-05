@@ -1,6 +1,7 @@
 import { DEFAULT_PAPER } from '../../shared/label-paper';
 import { BUILT_IN_TEMPLATES, currentTemplateId, GENERIC_TEMPLATE } from './builtin-templates';
 import type { CanvasTemplate } from './canvas-model';
+import { findLibraryEntry } from './library/template-library';
 import { sanitizeTemplate } from './sanitize-template';
 import { CUSTOM_TEMPLATE_PREFIX, isBuiltInTemplateId, type LabelTemplate, TEMPLATE_LIMITS } from './template-model';
 
@@ -68,6 +69,24 @@ export class TemplateCatalog {
       paper: { ...DEFAULT_PAPER },
       printer: null,
       elements: [],
+    };
+    this.repository.save(template);
+    return template;
+  }
+
+  /**
+   * 从模板库新建：把模板库里的模板复制成自定义模板（名字照抄，不加「副本」：它本来就是起点），接着在设计器里改。
+   * 模板库的模板不在 list() 里，只能经这里复制后使用。
+   * @throws TemplateError NOT_FOUND：模板库里没有这个编号。
+   */
+  createFromLibrary(libraryId: string): CanvasTemplate {
+    const entry = findLibraryEntry(libraryId);
+    if (entry === null) {
+      throw new TemplateError('NOT_FOUND', `Library template ${libraryId} does not exist`);
+    }
+    const template: CanvasTemplate = {
+      ...structuredClone(entry.template),
+      id: `${CUSTOM_TEMPLATE_PREFIX}${this.createId()}`,
     };
     this.repository.save(template);
     return template;

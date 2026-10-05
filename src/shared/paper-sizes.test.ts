@@ -48,6 +48,11 @@ describe('presets', () => {
     }
   });
 
+  test('include the 30x20 label for jewellery and small goods', () => {
+    expect(formatPaperName({ widthMm: 30, heightMm: 20 })).toBe('30×20 标签');
+    expect(parsePaperKey('30x20')).toEqual({ widthMm: 30, heightMm: 20 });
+  });
+
   test('keys are unique', () => {
     const keys = PAPER_PRESETS.map(paperKey);
     expect(new Set(keys).size).toBe(keys.length);
@@ -66,6 +71,11 @@ describe('sanitizePaper', () => {
 
   test('keeps a valid size and rounds to 0.1mm', () => {
     expect(sanitizePaper({ widthMm: 100.04, heightMm: 150 }, fallback)).toEqual({ widthMm: 100, heightMm: 150 });
+  });
+
+  // 最小的常用热敏标签：珠宝、小商品的 30×20。
+  test('keeps a 30x20 label', () => {
+    expect(sanitizePaper({ widthMm: 30, heightMm: 20 }, fallback)).toEqual({ widthMm: 30, heightMm: 20 });
   });
 
   test('falls back when the size is missing or out of range', () => {

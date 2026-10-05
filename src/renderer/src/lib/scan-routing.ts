@@ -12,15 +12,18 @@ const TEST_BOXES: ReadonlyMap<ConfigPage, ScanTarget> = new Map([
   ['templates', 'template-sample'],
 ]);
 
-/** 焦点不在输入框时，扫码枪打出的字符送到哪里（配置中心里永远不打印）。 */
+/** 焦点不在输入框时，扫码枪打出的字符送到哪里（配置中心、批量打印页里永远不打印）。 */
 export function scanTargetFor(view: AppView): ScanTarget {
   if (view.kind === 'workbench') {
     return 'scan-box';
   }
+  if (view.kind === 'batch') {
+    return 'sink';
+  }
   return TEST_BOXES.get(view.page) ?? 'sink';
 }
 
-/** F2 打印和扫码框的自动回焦只在工作台生效：配置中心里管理员在填表，焦点留在他放的位置。 */
+/** F2 打印和扫码框的自动回焦只在工作台生效：配置中心、批量打印页里管理员在填表，焦点留在他放的位置。 */
 export function isWorkbenchActive(view: AppView): boolean {
   return view.kind === 'workbench';
 }

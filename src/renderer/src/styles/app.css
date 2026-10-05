@@ -1149,7 +1149,7 @@ textarea {
 }
 
 .driver-section__catalog--warning {
-  color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 .driver-section__catalog--error {

@@ -93,7 +93,8 @@ const REASON_STATUS: ReadonlyMap<string, ReasonStatus> = new Map([
   ['door-open', { detail: '机盖未关', issue: 'doorOpen' }],
   ['cover-open', { detail: '机盖未关', issue: 'doorOpen' }],
   ['offline', { detail: '打印机离线', issue: 'offline' }],
-  ['connecting-to-device', { detail: '连不上打印机', issue: 'offline' }],
+  // connecting-to-device 不算：CUPS 正在重新连接后端（USB、网络）时常见，是瞬时状态，一般自己就恢复了，
+  // 当成故障报的话，正常的重连也会被当成需要处理的问题。
   ['marker-supply-empty', { detail: '碳带或墨粉耗尽', issue: 'other' }],
   ['toner-empty', { detail: '碳带或墨粉耗尽', issue: 'other' }],
 ]);

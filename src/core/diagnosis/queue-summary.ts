@@ -19,8 +19,21 @@ const STOPPED_FLAGS: ReadonlySet<JobFlag> = new Set<JobFlag>([
   'stopped',
 ]);
 
-export function isStuck(job: QueueJob, nowMs: number): boolean {
-  return job.flags.some((flag) => STOPPED_FLAGS.has(flag)) || nowMs - job.submittedAtMs > STUCK_JOB_AGE_MS;
+/**
+ * 驱动明确报错、暂停这类状态，不管队列有没有在推进都算卡住；否则只在等了太久、且没有任何任务在
+ * printing（队列里没有东西在走）时才算——大批量打印时，排在后面的任务提交时间也早就过了门槛，
+ * 但驱动正在一张张处理、队列在推进，不该被单张等了多久误判成卡住。
+ * jobs 不传时只看这一张自己（独立判断，兼容单张调用）。
+ */
+export function isStuck(job: QueueJob, nowMs: number, jobs: readonly QueueJob[] = [job]): boolean {
+  if (job.flags.some((flag) => STOPPED_FLAGS.has(flag))) {
+    return true;
+  }
+  const isQueueActive = jobs.some((item) => item.flags.includes('printing'));
+  if (isQueueActive) {
+    return false;
+  }
+  return nowMs - job.submittedAtMs > STUCK_JOB_AGE_MS;
 }
 
 /** 用户名不分大小写，去掉 Windows 可能带的「域名\」前缀。 */
@@ -56,7 +69,7 @@ export function summarizeQueue(
   windows: readonly SubmittedWindow[],
   nowMs: number,
 ): QueueSummary {
-  const stuck = facts.jobs.filter((job) => isStuck(job, nowMs));
+  const stuck = facts.jobs.filter((job) => isStuck(job, nowMs, facts.jobs));
   const own = facts.jobs.filter((job) => isOwnJob(job, facts.currentUser, windows));
   const oldest = stuck.reduce<number | null>(
     (earliest, job) => (earliest === null || job.submittedAtMs < earliest ? job.submittedAtMs : earliest),

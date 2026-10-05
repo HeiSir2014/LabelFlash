@@ -49,6 +49,18 @@ describe('readinessFromReasons', () => {
     });
     expect(readinessFromReasons(['none'])).toEqual({ ready: true });
   });
+
+  // connecting-to-device 是 CUPS 正在重新连接后端（USB、网络）时的瞬时状态，常常自己就恢复了：
+  // 不当成「连不上打印机」的故障去报，省得正常重连的这一下被当成需要处理的问题。
+  test('treats connecting-to-device as transient, not a fault', () => {
+    expect(readinessFromReasons(['connecting-to-device'])).toEqual({ ready: true });
+    // 和真正的故障一起出现时，故障还是要报。
+    expect(readinessFromReasons(['connecting-to-device', 'media-empty-error'])).toEqual({
+      ready: false,
+      detail: '缺纸',
+      issue: 'paperOut',
+    });
+  });
 });
 
 describe('USB on macOS', () => {

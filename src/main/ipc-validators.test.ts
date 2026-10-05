@@ -5,6 +5,8 @@ import {
   requireApiKeyId,
   requireApiKeyName,
   requireBoolean,
+  requireDiagnosisCheck,
+  requireDiagnosisFixRequest,
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
@@ -165,5 +167,29 @@ describe('ipc validators', () => {
     const patch = { autoPrint: false, printerCommands: { 标签机A: { commandSet: 'tspl' } } };
     expect(requireSettingsPatch(patch)).toEqual({ autoPrint: false });
     expect(() => requireSettingsPatch('x')).toThrow(TypeError);
+  });
+});
+
+describe('diagnosis validators', () => {
+  test('accepts only known checks', () => {
+    expect(requireDiagnosisCheck('queue')).toBe('queue');
+    expect(() => requireDiagnosisCheck('rm -rf')).toThrow('Invalid diagnosis check');
+  });
+
+  test('parses a fix request into a paper size and rejects anything else', () => {
+    expect(
+      requireDiagnosisFixRequest({ printerName: '标签机A', fix: 'set-driver-paper', admin: true, paperKey: '60x40' }),
+    ).toEqual({ printerName: '标签机A', fix: 'set-driver-paper', admin: true, paper: { widthMm: 60, heightMm: 40 } });
+    expect(
+      requireDiagnosisFixRequest({ printerName: null, fix: 'restart-spooler', admin: true, paperKey: null }),
+    ).toEqual({ printerName: null, fix: 'restart-spooler', admin: true, paper: null });
+    expect(() =>
+      requireDiagnosisFixRequest({ printerName: 'A', fix: 'change-command-set', admin: false, paperKey: null }),
+    ).toThrow('Invalid diagnosis fix');
+    expect(() => requireDiagnosisFixRequest({ printerName: 'A', fix: 'feed', admin: 'yes', paperKey: null })).toThrow();
+    expect(() =>
+      requireDiagnosisFixRequest({ printerName: 'A', fix: 'feed', admin: false, paperKey: 'big' }),
+    ).toThrow();
+    expect(() => requireDiagnosisFixRequest([])).toThrow();
   });
 });

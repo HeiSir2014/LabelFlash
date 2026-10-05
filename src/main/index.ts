@@ -10,6 +10,7 @@ import { SubmittedJobs } from '../core/diagnosis/submitted-jobs';
 import { NO_DRIVER_HINTS } from '../core/drivers/driver-hints';
 import { PrintQueue } from '../core/print-queue';
 import { PrintService } from '../core/print-service';
+import { effectiveCommandSet } from '../core/printer-commands/command-set';
 import { type PrinterChoice, resolvePrinter } from '../core/printing/resolve-printer';
 import { type EnrichDeps, enrich } from '../core/scan/enrich';
 import { recognize } from '../core/scan/recognize';
@@ -31,6 +32,11 @@ import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
 import { BUILD_NUMBER } from './build-info';
+import { createDiagnosisSystem } from './diagnosis/create-diagnosis-system';
+import { DiagnosisStation } from './diagnosis/diagnosis-station';
+import { diagnosisPlatformOf } from './diagnosis/diagnosis-system';
+import { FakeDiagnosis, FakeLabelCommands } from './diagnosis/fake-diagnosis';
+import type { LabelCommandsSeam } from './diagnosis/seams';
 import { addFirewallRule, firewallStatus } from './firewall';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
@@ -50,7 +56,7 @@ import { missingOcrFiles, ocrFiles } from './ocr/ocr-files';
 import { OCR_SAMPLES_DIR_NAME, OCR_SAMPLES_KEPT, OcrSamples } from './ocr/ocr-samples';
 import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
-import { queryDriverPaper } from './printing/driver-paper';
+import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { FakeDriverAdapter, FakePrinters, parseFakePrinters } from './printing/fake-printers';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
@@ -353,6 +359,50 @@ async function bootstrap(): Promise<void> {
     clock: systemClock,
     submitted: submittedJobs,
   });
+  // 仅开发 / E2E：假打印机也能诊断（见 diagnosis/fake-diagnosis.ts），安装版不会走到这里。
+  const fakeDiagnosis =
+    fakeSpecs && fakePrinters
+      ? new FakeDiagnosis(diagnosisPlatformOf(process.platform), fakeSpecs, fakePrinters, submittedJobs, systemClock)
+      : null;
+  if (fakeDiagnosis) {
+    (globalThis as { e2eFakeDiagnosis?: FakeDiagnosis }).e2eFakeDiagnosis = fakeDiagnosis;
+  }
+  // 5a（标签机指令）的发送入口：诊断的「指令集」「走一张纸」「纸张校准」都经这个接缝，不直接碰 PrinterCommands。
+  const labelCommands: LabelCommandsSeam = fakeSpecs
+    ? new FakeLabelCommands(fakeSpecs)
+    : {
+        effectiveCommandSet: async (name) => {
+          const view = await printerCommands.describe(name);
+          return effectiveCommandSet(view.config.commandSet, view.detected) ?? 'none';
+        },
+        send: async (name, action) => {
+          const result = await printerCommands.run(name, action);
+          switch (result.status) {
+            case 'sent':
+              return { kind: 'done' };
+            case 'not-sent':
+              return { kind: 'failed', detail: result.reason };
+            case 'invalid':
+              return { kind: 'failed', detail: result.issue };
+            case 'failed':
+              return { kind: 'failed', detail: result.detail };
+          }
+        },
+      };
+  const diagnosis = new DiagnosisStation({
+    system: fakeDiagnosis ?? createDiagnosisSystem(process.platform, probeHost),
+    // 系统打印机列表（读它要用主窗口；诊断由界面触发，那时窗口一定在）。
+    isKnownPrinter: (name) => adapter.hasPrinter(name),
+    driverPaper: (name) => profiles.fresh(name),
+    forgetProfile: (name) => profiles.forget(name),
+    openPreferences: fakeDiagnosis ? (name) => fakeDiagnosis.openPreferences(name) : openPrinterPreferences,
+    submitted: submittedJobs,
+    commands: labelCommands,
+    // 5c（驱动安装）的计划把这里换成它的实现；在那之前「重新安装驱动」不出现。
+    drivers: null,
+    clock: systemClock,
+    log: (message) => console.info(message),
+  });
   /** 要检测状态的打印机：纸张分配和模板指定里出现的（交给探测进程前再核对系统里有）。 */
   const assignedPrinterNames = (): string[] => [
     ...new Set([
@@ -537,6 +587,7 @@ async function bootstrap(): Promise<void> {
       },
     }),
     status,
+    diagnosis,
     appInfo: {
       productName: BRAND.productName,
       brandOwner: BRAND.owner,

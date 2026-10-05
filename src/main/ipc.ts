@@ -32,14 +32,19 @@ import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
 import { NO_RENDER_WARNINGS } from '../shared/render-warnings';
 import type { AppSettings } from '../shared/settings';
 import type { LocalApi } from './api/local-api';
+import type { DiagnosisStation } from './diagnosis/diagnosis-station';
 import { logFailures } from './ipc-errors';
 import {
   requireApiKeyId,
   requireApiKeyName,
   requireBoolean,
+  requireDiagnosisCheck,
+  requireDiagnosisFixRequest,
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
+  requireNullablePaper,
+  requireNullablePrinterName,
   requirePaperKey,
   requirePositiveInteger,
   requirePrinterAction,
@@ -106,6 +111,8 @@ export interface IpcDeps {
   localApi: LocalApi;
   /** 每台打印机的驱动纸张和分辨率（短时缓存）。 */
   profiles: PrinterProfiles;
+  /** 打印机页的「诊断」。 */
+  diagnosis: DiagnosisStation;
   /** 标签机指令（printing/printer-commands-station.ts）。 */
   printerCommands: PrinterCommands;
   getWindow: () => BrowserWindow | null;
@@ -243,6 +250,15 @@ export function registerIpc(deps: IpcDeps): void {
     // 操作员可能刚改了纸张：界面随后重新检查时要读到新的设置。
     deps.profiles.forget(name);
   });
+  // 打印机名在 DiagnosisStation 里核对（不在系统列表里的不交给系统命令）；这里只核对形状。
+  handle(IpcChannel.DiagnosisCheck, (printerName, check, key) =>
+    deps.diagnosis.check(
+      requireNullablePrinterName(printerName),
+      requireDiagnosisCheck(check),
+      requireNullablePaper(key),
+    ),
+  );
+  handle(IpcChannel.DiagnosisFix, (request) => deps.diagnosis.fix(requireDiagnosisFixRequest(request)));
   // 先做不用等系统的校验，再核对打印机在系统列表里（只发给系统里有的打印机）。
   handle(IpcChannel.PrinterCommands, async (printerName) =>
     deps.printerCommands.describe(await requireKnownPrinter(printerName)),

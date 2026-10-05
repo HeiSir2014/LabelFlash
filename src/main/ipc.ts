@@ -35,6 +35,7 @@ import type { LocalApi } from './api/local-api';
 import type { DriverStation } from './drivers/driver-station';
 import { logFailures } from './ipc-errors';
 import {
+  guardInstallUpdate,
   requireApiKeyId,
   requireApiKeyName,
   requireBoolean,
@@ -361,7 +362,10 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.OpenShop, () => shell.openExternal(BRAND.shop.url));
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
-  handle(IpcChannel.InstallUpdate, () => deps.updater.install('front'));
+  handle(IpcChannel.InstallUpdate, () => {
+    guardInstallUpdate(deps.drivers.isInstalling);
+    return deps.updater.install('front');
+  });
   handle(IpcChannel.VoiceClip, (cue) => {
     // 音色和语速取主进程当前设置，不信任页面传入。
     const { name, ratePercent } = deps.settings.current.voice;

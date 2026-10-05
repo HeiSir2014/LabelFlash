@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, open, rm } from 'node:fs/promises';
+import { mkdtemp, open, readdir, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { DownloadError, type DownloadFailure, type InstallerDownloader } from '../../core/drivers/driver-install-flow';
 import type { FetchFunction } from './catalog-client';
@@ -8,8 +8,8 @@ import type { FetchFunction } from './catalog-client';
 export const DOWNLOAD_TOTAL_TIMEOUT_MS = 30 * 60_000;
 /** 60 秒没有收到任何数据就当断线：网络慢时数据会一直来，只是慢。 */
 export const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
-/** 每次下载一个新的临时目录；discard 只删这个前缀的目录。 */
-const TEMP_DIR_PREFIX = 'cdl-labelflash-driver-';
+/** 每次下载一个新的临时目录；discard 和启动时的清理都只认这个前缀。 */
+export const TEMP_DIR_PREFIX = 'cdl-labelflash-driver-';
 
 export interface DownloaderDeps {
   /** 生产环境是 Electron 的 net.fetch（走系统代理）；E2E 换成内存里的假文件。 */
@@ -50,6 +50,42 @@ export function createInstallerDownloader(deps: DownloaderDeps): InstallerDownlo
       await rm(dir, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * 启动时清一遍上次没清干净的下载临时目录：程序被强制结束（崩溃、被杀、断电）时，正常流程里的
+ * discard() 没机会跑，残留的目录会一直占着系统临时目录。这些目录是本程序自己建的、在系统临时目录下，
+ * 删除不需要用户同意（项目「删除前先征得同意」的规则针对用户数据、安装目录和更新缓存，不包括这里）。
+ * 只删前缀匹配的目录，不动同目录下别的文件；读不到目录或删不掉某一个都不报错，不挡启动。
+ */
+export async function cleanupOldDownloads(
+  tempRoot: string,
+  log: (line: string) => void = () => undefined,
+): Promise<void> {
+  let entries: string[];
+  try {
+    entries = (await readdir(tempRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith(TEMP_DIR_PREFIX))
+      .map((entry) => entry.name);
+  } catch (error) {
+    log(`[drivers] could not list ${tempRoot} to clean up old downloads: ${describeError(error)}`);
+    return;
+  }
+  await Promise.all(
+    entries.map(async (name) => {
+      const dir = join(tempRoot, name);
+      try {
+        await rm(dir, { recursive: true, force: true });
+        log(`[drivers] removed a leftover download folder from a previous run: ${dir}`);
+      } catch (error) {
+        log(`[drivers] could not remove leftover folder ${dir}: ${describeError(error)}`);
+      }
+    }),
+  );
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function fetchToFile(

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  guardInstallUpdate,
   MAX_IPC_STRING_LENGTH,
   MAX_RAW_INPUT_LENGTH,
   requireApiKeyId,
@@ -174,5 +175,15 @@ describe('requireDriverDeviceKey', () => {
     expect(requireDriverDeviceKey('usb-1234-abcd-0a1b2c3d')).toBe('usb-1234-abcd-0a1b2c3d');
     expect(() => requireDriverDeviceKey('https://example.invalid/x.exe')).toThrow();
     expect(() => requireDriverDeviceKey(7)).toThrow();
+  });
+});
+
+describe('guardInstallUpdate', () => {
+  test('blocks installing an update while a driver install is running', () => {
+    expect(() => guardInstallUpdate(true)).toThrow('正在安装驱动');
+  });
+
+  test('allows installing an update when no driver install is running', () => {
+    expect(() => guardInstallUpdate(false)).not.toThrow();
   });
 });

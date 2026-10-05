@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { DownloadError } from '../../core/drivers/driver-install-flow';
 import { createTempDir, removeTempDir } from '../storage/testing/temp-dir';
 import type { FetchFunction } from './catalog-client';
-import { createInstallerDownloader } from './installer-downloader';
+import { cleanupOldDownloads, createInstallerDownloader, TEMP_DIR_PREFIX } from './installer-downloader';
 
 const INSTALLER_URL = 'https://example.invalid/drivers/x1-setup.exe';
 const BYTES = new TextEncoder().encode('MZ 示例安装包'.repeat(200));
@@ -136,5 +137,22 @@ describe('createInstallerDownloader', () => {
   test('refuses to delete anything outside its own temporary folders', async () => {
     const file = { path: `${tempRoot}/elsewhere/a.exe`, sizeBytes: 1, sha256: '' };
     await expect(downloader(async () => new Response('')).discard(file)).rejects.toThrow();
+  });
+});
+
+describe('cleanupOldDownloads', () => {
+  test('removes leftover download folders from a previous run, leaving anything else alone', async () => {
+    const leftover = join(tempRoot, `${TEMP_DIR_PREFIX}leftover123`);
+    await mkdir(leftover, { recursive: true });
+    await writeFile(join(leftover, 'driver-installer.exe'), 'x');
+    await mkdir(join(tempRoot, 'something-else'), { recursive: true });
+
+    await cleanupOldDownloads(tempRoot);
+
+    expect(await readdir(tempRoot)).toEqual(['something-else']);
+  });
+
+  test('does not throw when the temp directory cannot be read', async () => {
+    await expect(cleanupOldDownloads(join(tempRoot, 'does-not-exist'))).resolves.toBeUndefined();
   });
 });

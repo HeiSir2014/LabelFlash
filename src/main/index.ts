@@ -38,7 +38,7 @@ import { SqliteCatalogStateStore } from './drivers/catalog-state-store';
 import { systemDriverPorts } from './drivers/driver-ports';
 import { DriverStation } from './drivers/driver-station';
 import { FakeDrivers, parseFakeDrivers, testCatalogKey } from './drivers/fake-drivers';
-import { createInstallerDownloader } from './drivers/installer-downloader';
+import { cleanupOldDownloads, createInstallerDownloader } from './drivers/installer-downloader';
 import { addFirewallRule, firewallStatus } from './firewall';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
@@ -530,6 +530,8 @@ async function bootstrap(): Promise<void> {
   const driverPlatform: DriverPlatform | null =
     fakeDrivers !== null || process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : null;
   const driverLog = (line: string) => console.info(line);
+  // 上次没来得及关掉程序（崩溃、被杀、断电）时，下载到一半的临时目录可能没删干净：启动时清一遍。
+  void cleanupOldDownloads(app.getPath('temp'), driverLog);
   const systemPorts = systemDriverPorts(driverPlatform, driverLog);
   const drivers = new DriverStation({
     platform: driverPlatform,

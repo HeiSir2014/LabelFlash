@@ -217,3 +217,13 @@ export function requireDriverDeviceKey(value: unknown): string {
   }
   return value;
 }
+
+/**
+ * 正在装驱动时不让「重启更新」结束程序：提权安装是系统在跑，程序退出后没人等它结束，装到一半也没法恢复。
+ * 装完（成功或失败）再点一次「重启更新」就行。
+ */
+export function guardInstallUpdate(isInstalling: boolean): void {
+  if (isInstalling) {
+    throw new Error('正在安装驱动，请等它装完（成功或失败）后再重启更新');
+  }
+}

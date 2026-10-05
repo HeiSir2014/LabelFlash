@@ -1,0 +1,1 @@
+{"user":"shop","total":3,"jobs":[{"id":11,"document":"CL5640-TK-图片色-XL","user":"shop","status":"Error, Printing","submittedMs":1790000000000},{"id":12,"document":"CL5641-TK-黑色-L","user":"shop","status":"Normal","submittedMs":1790000001000},{"id":13,"document":"月报.pdf","user":"SHOPPC\\boss","status":"Paused","submittedMs":1789999000000}]}

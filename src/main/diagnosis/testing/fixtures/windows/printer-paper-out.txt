@@ -1,0 +1,1 @@
+{"status":"PaperOut","portName":"USB001","driverName":"热敏标签机驱动"}

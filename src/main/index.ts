@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { hostname, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net } from 'electron';
+import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net, shell } from 'electron';
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
 import { NO_DRIVER_HINTS } from '../core/drivers/driver-hints';
+import type { DriverPlatform } from '../core/drivers/install-plan';
 import { PrintQueue } from '../core/print-queue';
 import { PrintService } from '../core/print-service';
 import { type PrinterChoice, resolvePrinter } from '../core/printing/resolve-printer';
@@ -17,6 +18,7 @@ import { TemplateCatalog } from '../core/templates/template-catalog';
 import type { LabelTemplate } from '../core/templates/template-model';
 import { type PrinterInfo, systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
+import { DRIVER_CATALOG_PUBLIC_KEYS } from '../shared/driver-catalog-keys';
 import { IpcChannel } from '../shared/ipc-contract';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
 import { phonePrinterLabel } from '../shared/printer-summary';
@@ -31,6 +33,13 @@ import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
 import { BUILD_NUMBER } from './build-info';
 import { BUILD_DEFAULT_DRIVER_CATALOG_URL } from './drivers/build-defaults';
+import { CatalogClient } from './drivers/catalog-client';
+import { trustedKeys } from './drivers/catalog-signature';
+import { SqliteCatalogStateStore } from './drivers/catalog-state-store';
+import { systemDriverPorts } from './drivers/driver-ports';
+import { DriverStation } from './drivers/driver-station';
+import { FakeDrivers, parseFakeDrivers, testCatalogKey } from './drivers/fake-drivers';
+import { createInstallerDownloader } from './drivers/installer-downloader';
 import { addFirewallRule, firewallStatus } from './firewall';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
@@ -510,6 +519,48 @@ async function bootstrap(): Promise<void> {
   // 在 before-quit 就告诉手机「程序已退出」：到 will-quit 时进程马上结束，消息可能来不及发出。
   app.on('before-quit', () => mobile.quit());
 
+  // 驱动安装（打印机页的「驱动」一节）。E2E 换掉设备检测、安装包下载、签名核对和提权安装（见 drivers/fake-drivers.ts），
+  // 清单照样真实下载、真实验签。安装版不读这些环境变量。
+  const fakeDriverSpec = parseFakeDrivers(process.env, app.isPackaged);
+  const fakeDrivers = fakeDriverSpec ? new FakeDrivers(fakeDriverSpec, fakePrinters) : null;
+  if (fakeDrivers) {
+    console.info('[drivers] using fake devices and installers');
+    (globalThis as { e2eFakeDrivers?: FakeDrivers }).e2eFakeDrivers = fakeDrivers;
+  }
+  const driverPlatform: DriverPlatform | null =
+    fakeDrivers !== null || process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : null;
+  const driverLog = (line: string) => console.info(line);
+  const systemPorts = systemDriverPorts(driverPlatform, driverLog);
+  const drivers = new DriverStation({
+    platform: driverPlatform,
+    catalog: new CatalogClient({
+      url: () => settings.current.driverCatalogUrl ?? BUILD_DEFAULT_DRIVER_CATALOG_URL,
+      fetch: (url, init) => net.fetch(url, init),
+      keys: trustedKeys({ ...DRIVER_CATALOG_PUBLIC_KEYS, ...testCatalogKey(process.env, app.isPackaged) }),
+      store: new SqliteCatalogStateStore(database),
+      clock: systemClock,
+      userAgent,
+      log: driverLog,
+    }),
+    devices: fakeDrivers?.deviceSource() ?? systemPorts.devices,
+    flow: {
+      downloader: createInstallerDownloader({
+        fetch: fakeDrivers?.fetch() ?? ((url, init) => net.fetch(url, init)),
+        tempRoot: app.getPath('temp'),
+        userAgent,
+      }),
+      verifier: fakeDrivers?.verifier() ?? systemPorts.verifier,
+      installer: fakeDrivers?.installer() ?? systemPorts.installer,
+      listPrinters: () => adapter.knownPrinterNames(),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      clock: systemClock,
+    },
+    openExternal: (url) => shell.openExternal(url),
+    onStatus: (status) => sendToMainWindow(IpcChannel.DriverStatusChanged, status),
+    clock: systemClock,
+    log: driverLog,
+  });
+
   registerIpc({
     service,
     adapter,
@@ -547,6 +598,7 @@ async function bootstrap(): Promise<void> {
     voice,
     mobile,
     localApi,
+    drivers,
     profiles,
     printerCommands,
     getWindow: () => mainWindow,
@@ -582,6 +634,9 @@ async function bootstrap(): Promise<void> {
       }
       if (JSON.stringify(next.webhooks) !== JSON.stringify(previous.webhooks)) {
         outbox.endpointsChanged();
+      }
+      if (next.driverCatalogUrl !== previous.driverCatalogUrl) {
+        drivers.catalogUrlChanged();
       }
       mobile.settingsChanged(next, previous);
       await localApi.settingsChanged(next, previous);
@@ -641,7 +696,8 @@ async function bootstrap(): Promise<void> {
       isUpdateReady: updater.current.state === 'ready',
       // 托盘建不起来时关窗就是退出，不会有「关在托盘里」。
       hiddenSince: tray === null ? null : hiddenSince,
-      pendingPrints: printQueue.pending + localApi.pendingJobs,
+      // 正在装驱动也算有事没做完：静默更新会结束本程序，装到一半的提权安装就没人等了。
+      pendingPrints: printQueue.pending + localApi.pendingJobs + (drivers.isInstalling ? 1 : 0),
       isMobileOn: mobile.status().state !== 'off',
       now: Date.now(),
     };
@@ -657,6 +713,7 @@ async function bootstrap(): Promise<void> {
     void localApi.stop();
     outbox.stop();
     status.stop();
+    drivers.cancelInstall();
     probeHost?.dispose();
     tray?.destroy();
     closeDatabase();

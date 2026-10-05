@@ -5,6 +5,7 @@ import {
   requireApiKeyId,
   requireApiKeyName,
   requireBoolean,
+  requireDriverDeviceKey,
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
@@ -165,5 +166,13 @@ describe('ipc validators', () => {
     const patch = { autoPrint: false, printerCommands: { 标签机A: { commandSet: 'tspl' } } };
     expect(requireSettingsPatch(patch)).toEqual({ autoPrint: false });
     expect(() => requireSettingsPatch('x')).toThrow(TypeError);
+  });
+});
+
+describe('requireDriverDeviceKey', () => {
+  test('accepts device keys and rejects anything else', () => {
+    expect(requireDriverDeviceKey('usb-1234-abcd-0a1b2c3d')).toBe('usb-1234-abcd-0a1b2c3d');
+    expect(() => requireDriverDeviceKey('https://example.invalid/x.exe')).toThrow();
+    expect(() => requireDriverDeviceKey(7)).toThrow();
   });
 });

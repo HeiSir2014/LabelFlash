@@ -52,6 +52,12 @@ describe('FakePrinters', () => {
       reason: 'PRINTER_NOT_FOUND',
     });
   });
+
+  test('adds a printer, as if a driver had just been installed', async () => {
+    const printers = new FakePrinters([]);
+    printers.add({ name: '示例标签机', paper: null, readiness: null });
+    expect((await printers.listPrinters()).map((printer) => printer.name)).toEqual(['示例标签机']);
+  });
 });
 
 describe('FakePrinters (printer commands)', () => {

@@ -81,6 +81,12 @@ const api: LabelFlashApi = {
   decideApiOrigin: (origin, allow) => ipcRenderer.invoke(IpcChannel.DecideApiOrigin, origin, allow),
   getFirewallStatus: () => ipcRenderer.invoke(IpcChannel.FirewallStatus),
   addFirewallRule: () => ipcRenderer.invoke(IpcChannel.AddFirewallRule),
+  getDriverStatus: () => ipcRenderer.invoke(IpcChannel.GetDriverStatus),
+  detectDrivers: (force) => ipcRenderer.invoke(IpcChannel.DetectDrivers, force),
+  installDriver: (deviceKey) => ipcRenderer.invoke(IpcChannel.InstallDriver, deviceKey),
+  cancelDriverInstall: () => ipcRenderer.invoke(IpcChannel.CancelDriverInstall),
+  openDriverDownloadPage: (deviceKey) => ipcRenderer.invoke(IpcChannel.OpenDriverDownloadPage, deviceKey),
+  onDriverStatus: (listener) => subscribe(IpcChannel.DriverStatusChanged, listener),
 };
 
 const windowControls: WindowControlsApi = {

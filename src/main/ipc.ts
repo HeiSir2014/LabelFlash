@@ -32,11 +32,13 @@ import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
 import { NO_RENDER_WARNINGS } from '../shared/render-warnings';
 import type { AppSettings } from '../shared/settings';
 import type { LocalApi } from './api/local-api';
+import type { DriverStation } from './drivers/driver-station';
 import { logFailures } from './ipc-errors';
 import {
   requireApiKeyId,
   requireApiKeyName,
   requireBoolean,
+  requireDriverDeviceKey,
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
@@ -104,6 +106,8 @@ export interface IpcDeps {
   voice: VoiceClips;
   mobile: MobileStation;
   localApi: LocalApi;
+  /** 驱动安装（打印机页的「驱动」一节）。 */
+  drivers: DriverStation;
   /** 每台打印机的驱动纸张和分辨率（短时缓存）。 */
   profiles: PrinterProfiles;
   /** 标签机指令（printing/printer-commands-station.ts）。 */
@@ -387,6 +391,13 @@ export function registerIpc(deps: IpcDeps): void {
   );
   handle(IpcChannel.FirewallStatus, () => deps.localApi.checkFirewall());
   handle(IpcChannel.AddFirewallRule, () => deps.localApi.addFirewallRule());
+  handle(IpcChannel.GetDriverStatus, () => deps.drivers.status());
+  handle(IpcChannel.DetectDrivers, (force) => deps.drivers.detect(requireBoolean(force, 'force')));
+  handle(IpcChannel.InstallDriver, (deviceKey) => deps.drivers.install(requireDriverDeviceKey(deviceKey)));
+  handle(IpcChannel.CancelDriverInstall, () => deps.drivers.cancelInstall());
+  handle(IpcChannel.OpenDriverDownloadPage, (deviceKey) =>
+    deps.drivers.openDownloadPage(requireDriverDeviceKey(deviceKey)),
+  );
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());
   on(IpcChannel.WindowToggleMaximize, () => {

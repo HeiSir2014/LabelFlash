@@ -1,3 +1,4 @@
+import { DEVICE_KEY_PATTERN } from '../core/drivers/detected-device';
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { isPrinterAction, type PrinterAction, type PrinterCommandConfig } from '../core/printer-commands/command-model';
 import { parseCommandConfig } from '../core/printer-commands/sanitize-command-config';
@@ -207,4 +208,12 @@ export function requireSettingsPatch(value: unknown): Record<string, unknown> {
   const patch = requireRecord(value, 'settings patch');
   const { printerCommands: _ignored, ...rest } = patch;
   return rest;
+}
+
+/** 设备编号来自主进程的检测结果（usb-厂商号-产品号-摘要）；界面传不进地址或路径。 */
+export function requireDriverDeviceKey(value: unknown): string {
+  if (typeof value !== 'string' || !DEVICE_KEY_PATTERN.test(value)) {
+    throw new TypeError('Invalid driver device key');
+  }
+  return value;
 }

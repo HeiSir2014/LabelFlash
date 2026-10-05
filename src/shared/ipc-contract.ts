@@ -7,6 +7,7 @@ import type { CanvasTemplate } from '../core/templates/canvas-model';
 import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { PaperCheck } from './driver-paper';
+import type { DriverStatus } from './drivers';
 import type { JobPage, JobQuery } from './job-history';
 import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from './local-api';
 import type { MobileStatus } from './mobile-status';
@@ -94,6 +95,12 @@ export const IpcChannel = {
   DecideApiOrigin: 'api:origins:decide',
   FirewallStatus: 'api:firewall:status',
   AddFirewallRule: 'api:firewall:add',
+  GetDriverStatus: 'drivers:status',
+  DetectDrivers: 'drivers:detect',
+  InstallDriver: 'drivers:install',
+  CancelDriverInstall: 'drivers:cancel-install',
+  OpenDriverDownloadPage: 'drivers:open-download-page',
+  DriverStatusChanged: 'drivers:status-changed',
 } as const;
 
 /** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
@@ -259,6 +266,16 @@ export interface LabelFlashApi {
   getFirewallStatus(): Promise<FirewallStatus>;
   /** 弹管理员确认，添加防火墙规则；返回之后查到的状态（操作员拒绝时仍是 missing）。 */
   addFirewallRule(): Promise<FirewallStatus>;
+  getDriverStatus(): Promise<DriverStatus>;
+  /** 读驱动清单（force：重新下载）并检测缺驱动的 USB 设备。 */
+  detectDrivers(force: boolean): Promise<DriverStatus>;
+  /** 给「驱动」一节列出的一台设备装驱动（只能按设备编号，不能指定地址）；进度经 onDriverStatus 推送。 */
+  installDriver(deviceKey: string): Promise<DriverStatus>;
+  /** 取消下载（开始提权安装之后取消不了）。 */
+  cancelDriverInstall(): Promise<void>;
+  /** 用系统浏览器打开清单里这台设备的官方下载页（地址来自签过名的清单）。 */
+  openDriverDownloadPage(deviceKey: string): Promise<void>;
+  onDriverStatus(listener: (status: DriverStatus) => void): () => void;
 }
 
 export interface WindowControlsApi {

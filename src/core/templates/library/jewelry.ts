@@ -15,9 +15,9 @@ export const JEWELRY_TEMPLATES: readonly LibraryEntry[] = [
     elements: [
       text('name', '品名', [2, 2, 15, 4], '{品名}', { fontSizeMm: 2.4, bold: true }),
       text('material', '材质重量', [2, 6.5, 15, 3.5], '{材质} {重量}', { fontSizeMm: 2 }),
-      text('price', '价格', [2, 10.5, 15, 5], '¥{价格}', { fontSizeMm: 3.4, bold: true }),
+      text('price', '价格', [2, 10, 15, 5], '¥{价格}', { fontSizeMm: 3.4, bold: true }),
       qr('qr', '编码二维码', [17.5, 2, 10.5, 10.5], '{编码}'),
-      text('code', '编码', [2, 15.5, 26, 3], '{编码}', { fontSizeMm: 2 }),
+      text('code', '编码', [2, 15, 26, 3], '{编码}', { fontSizeMm: 2 }),
     ],
     sample: {
       content: 'JW260001',

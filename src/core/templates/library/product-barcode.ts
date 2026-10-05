@@ -12,7 +12,7 @@ export const PRODUCT_BARCODE_TEMPLATES: readonly LibraryEntry[] = [
     elements: [
       text('name', '品名', [2, 2, 36, 5], '{品名}', { bold: true, align: 'center' }),
       barcode('barcode', '商品码', [2, 8, 36, 16], 'ean13', '{商品码}'),
-      text('spec', '规格', [2, 24.5, 36, 4], '{规格}', { fontSizeMm: 2.6, align: 'center' }),
+      text('spec', '规格', [2, 24, 36, 4], '{规格}', { fontSizeMm: 2.6, align: 'center' }),
     ],
     sample: { content: SAMPLE_EAN13, fields: { 品名: '纯棉袜子', 商品码: SAMPLE_EAN13, 规格: '均码 3双装' } },
   }),
@@ -40,7 +40,7 @@ export const PRODUCT_BARCODE_TEMPLATES: readonly LibraryEntry[] = [
       text('code', '货号', [2, 7.5, 56, 4.5], '货号 {编码}'),
       text('spec', '颜色尺码', [2, 12.5, 56, 4.5], '颜色 {颜色}   尺码 {尺码}'),
       barcode('barcode', '货号条码', [2, 18, 56, 16], 'code128', '{编码}', 2.5),
-      text('price', '价格', [2, 34.5, 56, 4], '¥{价格}', { bold: true, align: 'right' }),
+      text('price', '价格', [2, 34, 56, 4], '¥{价格}', { bold: true, align: 'right' }),
     ],
     sample: {
       content: 'CL5640-TK',

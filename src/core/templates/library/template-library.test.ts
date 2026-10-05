@@ -27,6 +27,13 @@ const EXPECTED_COUNTS: Readonly<Record<string, number>> = {
   jewelry: 2,
   warehouse: 3,
 };
+/** 设计文档第 4 节定的版式边距。 */
+const MARGIN_MM = 2;
+/**
+ * 「样衣吊牌」复用内置吊牌示例（builtin:canvas-tag）的元素，不重写坐标：那套元素的下边距是 1.8mm，
+ * 改它会牵动设计器示例、视觉验收等多处，不在模板库这次改动范围（设计文档第 4 节已注明）。
+ */
+const MARGIN_EXCEPTIONS: ReadonlySet<string> = new Set(['library:garment-sample-tag']);
 /** 设计文档第 4 节要覆盖的纸张。 */
 const EXPECTED_PAPERS = ['30x20', '40x30', '50x30', '60x40', '70x50', '100x100', '100x150'];
 /** 热敏标签机常见的两种分辨率：条码模块、文字、格线取整到点之后，两种都要排得下。 */
@@ -115,6 +122,20 @@ describe('template library', () => {
 
       test('uses only the shared field names', () => {
         expect(templateFields(template).names.filter((name) => !LIBRARY_FIELD_NAMES.includes(name))).toEqual([]);
+      });
+
+      // 版式边距 2mm（关键取舍 8）：按元素写的框（不是排版后取整到打印点的框）量，避免打印点取整的误差。
+      test('keeps a margin of at least 2mm on every edge', () => {
+        if (MARGIN_EXCEPTIONS.has(template.id)) {
+          return;
+        }
+        const { widthMm, heightMm } = template.paper;
+        for (const element of template.elements) {
+          expect(element.x).toBeGreaterThanOrEqual(MARGIN_MM);
+          expect(element.y).toBeGreaterThanOrEqual(MARGIN_MM);
+          expect(widthMm - (element.x + element.width)).toBeGreaterThanOrEqual(MARGIN_MM);
+          expect(heightMm - (element.y + element.height)).toBeGreaterThanOrEqual(MARGIN_MM);
+        }
       });
 
       // 示例数据排出来：每个元素都在（没有「这一张没有内容」）、不靠近纸边、文字表格都放得下。

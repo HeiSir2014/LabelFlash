@@ -75,7 +75,7 @@ export const GARMENT_TEMPLATES: readonly LibraryEntry[] = [
       text('code', '编码', [2, 2, 46, 6], '{编码}', { fontSizeMm: 4.5, bold: true }),
       text('spec', '颜色尺码', [2, 8.5, 46, 4], '{颜色}  {尺码}'),
       barcode('barcode', '编码条码', [2, 13, 46, 12], 'code128', '{编码}', 2.2),
-      text('shelf', '货架号', [2, 25.5, 46, 3], '货架号 {货架号}', { fontSizeMm: 2.4 }),
+      text('shelf', '货架号', [2, 25, 46, 3], '货架号 {货架号}', { fontSizeMm: 2.4 }),
     ],
     sample: { content: SAMPLE_LABEL_RAW, fields: GARMENT_FIELDS },
   }),

@@ -1328,7 +1328,7 @@ const ITEMS: Item[] = [
     id: 'V80',
     title: '打印机 · 标签机指令（认出 TSPL，已发送）',
     points:
-      '「标签机A」一行右侧「测试页」「标签机指令」两个按钮同高，后者按下；下面展开浅底面板：指令集「自动（TSPL）」和一句认出的依据；浓度、速度、设置纸张（纸宽、纸高、纸张类型、间隙）、打印方向、出纸方式逐行对齐，TSPL 不显示分辨率；单向提示完整换行；「保存并发送」主按钮；四个动作按钮一行（窄时换行，不溢出）；绿色「设置已发送到打印机（TSPL）…」；1024 宽时面板不撑宽页面、没有横向滚动',
+      '「标签机A」一行右侧「测试页」「标签机指令」两个按钮同高，后者按下；下面展开浅底面板：指令集「自动（TSPL）」和一句认出的依据；浓度、速度、设置纸张（纸宽、纸高、纸张类型、间隙）、打印方向、出纸方式逐行对齐，TSPL 不显示分辨率；单向提示完整换行；「保存并发送」主按钮；四个动作按钮一行（窄时换行，不溢出）；绿色「设置已发出（TSPL）…」；1024 宽时面板不撑宽页面、没有横向滚动',
     launch: { fakePrinters: COMMAND_PRINTERS },
     setup: async ({ page }) => {
       const panel = await openPrinterCommands(page, '标签机A');
@@ -1339,7 +1339,7 @@ const ITEMS: Item[] = [
       await clickSwitch(page, '设置纸张');
       await panel.getByLabel('出纸方式').selectOption('tear');
       await panel.getByRole('button', { name: '保存并发送' }).click();
-      await expect(panel.getByRole('status')).toContainText('设置已发送到打印机（TSPL）');
+      await expect(panel.getByRole('status')).toContainText('设置已发出（TSPL）');
     },
   },
   {

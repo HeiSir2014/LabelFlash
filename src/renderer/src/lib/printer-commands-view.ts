@@ -252,6 +252,14 @@ const NOT_SENT_TEXTS: Readonly<Record<NotSentReason, string>> = {
   'nothing-to-send': '各项都是「不改」，没有要发送的设置',
 };
 
+/** failureText 里几种开头的说法，保存成功但没发出去时要换成「设置已保存，但没有发到打印机」，不重复说一遍「失败」。 */
+const FAILURE_LEAD_PATTERN = /^(发送失败|没有发出去|不确定有没有发出去)：/;
+
+/** 保存已经成功、只是没发出去：和纯动作的失败分开说，操作员不用怀疑设置有没有存住。 */
+function withSavedButNotSent(text: string): string {
+  return `设置已保存，但没有发到打印机：${text.replace(FAILURE_LEAD_PATTERN, '')}`;
+}
+
 function failureText(reason: RawSendFailureKind, detail: string): string {
   switch (reason) {
     case 'not-found':
@@ -279,15 +287,18 @@ export function describeCommandResult(result: PrinterCommandResult, request: Com
         tone: 'ok',
         text:
           request === 'save'
-            ? `设置已发送到打印机（${COMMAND_SET_NAMES[result.commandSet]}）。指令是单向的：打一张看看效果`
-            : `${ACTION_NAMES[request]}指令已发送到打印机`,
+            ? `设置已发出（${COMMAND_SET_NAMES[result.commandSet]}）。指令是单向的：打一张看看效果`
+            : `${ACTION_NAMES[request]}指令已发出`,
       };
     case 'not-sent':
       return { tone: 'info', text: `${request === 'save' ? '已保存。' : ''}${NOT_SENT_TEXTS[result.reason]}` };
     case 'invalid':
       return { tone: 'error', text: result.issue };
-    case 'failed':
-      return { tone: 'error', text: failureText(result.reason, result.detail) };
+    case 'failed': {
+      const text = failureText(result.reason, result.detail);
+      // 保存设置和发出去是两步：第一步已经成功，不能让操作员以为设置也没保住。
+      return { tone: 'error', text: request === 'save' ? withSavedButNotSent(text) : text };
+    }
   }
 }
 

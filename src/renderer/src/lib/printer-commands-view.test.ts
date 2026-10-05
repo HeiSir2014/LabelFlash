@@ -117,11 +117,11 @@ describe('describeCommandResult', () => {
   test('says the settings were sent, not that they took effect', () => {
     expect(describeCommandResult({ status: 'sent', commandSet: 'tspl' }, 'save')).toEqual({
       tone: 'ok',
-      text: '设置已发送到打印机（TSPL）。指令是单向的：打一张看看效果',
+      text: '设置已发出（TSPL）。指令是单向的：打一张看看效果',
     });
     expect(describeCommandResult({ status: 'sent', commandSet: 'zpl' }, 'calibrate')).toEqual({
       tone: 'ok',
-      text: '纸张校准指令已发送到打印机',
+      text: '纸张校准指令已发出',
     });
   });
 
@@ -137,13 +137,28 @@ describe('describeCommandResult', () => {
     );
   });
 
-  test('gives the next step for each failure', () => {
+  test('gives the next step for each action failure', () => {
     const failed = (reason: 'raw-rejected' | 'uncertain' | 'error', detail = 'x') =>
-      describeCommandResult({ status: 'failed', reason, detail }, 'save');
+      describeCommandResult({ status: 'failed', reason, detail }, 'feed');
     expect(failed('raw-rejected')).toMatchObject({ tone: 'error' });
     expect(failed('raw-rejected').text).toContain('驱动不接受直接发送的指令');
     expect(failed('uncertain').text.startsWith('不确定有没有发出去')).toBe(true);
     expect(failed('error', 'lp: busy').text).toBe('发送失败：lp: busy。检查打印机是否开着、连好，再试一次');
+  });
+
+  // 保存已经成功，只是没发出去：不能让操作员以为设置也丢了，措辞要分开说。
+  test('says the config was saved even when sending it failed', () => {
+    const failed = (reason: 'raw-rejected' | 'uncertain' | 'error', detail = 'x') =>
+      describeCommandResult({ status: 'failed', reason, detail }, 'save');
+    expect(failed('raw-rejected').text).toBe(
+      '设置已保存，但没有发到打印机：这台打印机的驱动不接受直接发送的指令。装热敏标签机厂家的驱动后再试；只想正常打印的话，把指令集改成「不发指令」',
+    );
+    expect(failed('uncertain').text).toBe(
+      '设置已保存，但没有发到打印机：系统的打印服务没有及时回应。看看打印机有没有动作，再决定要不要重发',
+    );
+    expect(failed('error', 'lp: busy').text).toBe(
+      '设置已保存，但没有发到打印机：lp: busy。检查打印机是否开着、连好，再试一次',
+    );
   });
 });
 

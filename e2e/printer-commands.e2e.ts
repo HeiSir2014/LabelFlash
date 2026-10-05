@@ -42,7 +42,7 @@ test('sends TSPL settings once on save, actions on demand, and nothing before ea
   await expect(panel.getByLabel('纸宽')).toHaveValue('60');
   await panel.getByLabel('出纸方式').selectOption('tear');
   await panel.getByRole('button', { name: '保存并发送' }).click();
-  await expect(panel.getByRole('status')).toHaveText('设置已发送到打印机（TSPL）。指令是单向的：打一张看看效果');
+  await expect(panel.getByRole('status')).toHaveText('设置已发出（TSPL）。指令是单向的：打一张看看效果');
   expect(await fakeRawJobs(app)).toEqual([
     {
       printerName: TSPL_PRINTER.name,
@@ -51,7 +51,7 @@ test('sends TSPL settings once on save, actions on demand, and nothing before ea
   ]);
 
   await panel.getByRole('button', { name: '纸张校准' }).click();
-  await expect(panel.getByRole('status')).toHaveText('纸张校准指令已发送到打印机');
+  await expect(panel.getByRole('status')).toHaveText('纸张校准指令已发出');
   expect((await fakeRawJobs(app)).at(-1)?.text).toBe('GAPDETECT\r\n');
 
   // 设置只在保存时发：回到工作台打一张，不再带指令。
@@ -76,7 +76,7 @@ test('asks twice before restoring factory settings', async ({ electronApp }) => 
   await panel.getByRole('button', { name: '恢复出厂设置' }).click();
   await panel.getByRole('button', { name: '确认恢复出厂？' }).click();
   await dialog.getByRole('button', { name: '恢复出厂设置' }).click();
-  await expect(panel.getByRole('status')).toHaveText('恢复出厂设置指令已发送到打印机');
+  await expect(panel.getByRole('status')).toHaveText('恢复出厂设置指令已发出');
   expect(await fakeRawJobs(app)).toEqual([{ printerName: TSPL_PRINTER.name, text: 'INITIALPRINTER\r\n' }]);
 });
 
@@ -96,7 +96,7 @@ test('does not guess a command set it cannot recognise, and sends ZPL once chose
   await panel.getByLabel('浓度').selectOption('15');
   await expect(panel.getByLabel('分辨率').locator('option:checked')).toHaveText('按驱动（600dpi）');
   await panel.getByRole('button', { name: '保存并发送' }).click();
-  await expect(panel.getByRole('status')).toHaveText('设置已发送到打印机（ZPL）。指令是单向的：打一张看看效果');
+  await expect(panel.getByRole('status')).toHaveText('设置已发出（ZPL）。指令是单向的：打一张看看效果');
   expect(await fakeRawJobs(app)).toEqual([{ printerName: OFFICE_PRINTER.name, text: '~SD15\n^XA\n^JUS\n^XZ\n' }]);
 
   // 主进程只发给系统打印机列表里有的打印机。

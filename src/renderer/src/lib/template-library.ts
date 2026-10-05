@@ -80,10 +80,12 @@ export function thumbnailScale(paper: PaperSize): number {
   );
 }
 
-/** 「用这个模板」后预览内容绑着的模板库示例：哪个自定义模板是从哪个模板库模板复制来的。 */
+/** 「用这个模板」后预览内容绑着的模板库示例：哪个自定义模板是从哪个模板库模板复制来的，以及示例的完整内容。 */
 export interface LibrarySampleBinding {
   templateId: string;
   libraryId: string;
+  /** 示例数据的完整内容：绑定生效时「预览内容」显示它，不随扫码变。 */
+  content: string;
 }
 
 /**

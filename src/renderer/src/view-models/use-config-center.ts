@@ -83,13 +83,14 @@ export function useConfigCenter({
 
   // 模板页预览选中的模板或草稿，套用备注下拉框的选择（草稿除外：正在编辑的就是备注本身）。
   const noteOverride = settings?.noteOverride ?? DEFAULT_SETTINGS.noteOverride;
-  const sample = useSampleContent(latestScanRaw);
   const selectedTemplate = useMemo(
     () => (templates.selected ? applyNoteOverride(templates.selected, noteOverride) : null),
     [templates.selected, noteOverride],
   );
   const previewedTemplate =
     page === 'templates' && !templates.isLibraryOpen ? (templates.draft ?? selectedTemplate) : null;
+  // 模板库示例绑的是复制出的那个模板：sample 要知道正在预览哪个模板，换了模板就回到按内容识别。
+  const sample = useSampleContent(latestScanRaw, previewedTemplate?.id ?? null);
   // 复制出的那个模板（草稿或保存后选中）才用模板库示例；回到列表点别的模板，按预览内容识别。
   const librarySampleId = librarySampleIdFor(sample.library, previewedTemplate?.id ?? null);
   const templatePreview = useTemplatePreview(sample.value, previewedTemplate, '', librarySampleId);
@@ -146,7 +147,7 @@ export function useConfigCenter({
   const createFromLibrary = async (item: LibraryPreview) => {
     const created = await templates.createFromLibrary(item.id);
     if (created !== null) {
-      sample.showLibrarySample({ templateId: created.id, libraryId: item.id }, item.sampleContent);
+      sample.showLibrarySample({ templateId: created.id, libraryId: item.id, content: item.sampleContent });
     }
   };
 

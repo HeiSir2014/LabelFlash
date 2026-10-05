@@ -76,7 +76,7 @@ describe('thumbnailScale', () => {
 });
 
 describe('librarySampleIdFor', () => {
-  const binding = { templateId: 'custom:t1', libraryId: 'library:price-simple' };
+  const binding = { templateId: 'custom:t1', libraryId: 'library:price-simple', content: '6901234567892' };
 
   test('applies the library sample only to the template copied from it', () => {
     expect(librarySampleIdFor(binding, 'custom:t1')).toBe('library:price-simple');

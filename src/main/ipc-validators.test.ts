@@ -176,20 +176,26 @@ describe('diagnosis validators', () => {
     expect(() => requireDiagnosisCheck('rm -rf')).toThrow('Invalid diagnosis check');
   });
 
-  test('parses a fix request into a paper size and rejects anything else', () => {
-    expect(
-      requireDiagnosisFixRequest({ printerName: '标签机A', fix: 'set-driver-paper', admin: true, paperKey: '60x40' }),
-    ).toEqual({ printerName: '标签机A', fix: 'set-driver-paper', admin: true, paper: { widthMm: 60, heightMm: 40 } });
-    expect(
-      requireDiagnosisFixRequest({ printerName: null, fix: 'restart-spooler', admin: true, paperKey: null }),
-    ).toEqual({ printerName: null, fix: 'restart-spooler', admin: true, paper: null });
-    expect(() =>
-      requireDiagnosisFixRequest({ printerName: 'A', fix: 'change-command-set', admin: false, paperKey: null }),
-    ).toThrow('Invalid diagnosis fix');
-    expect(() => requireDiagnosisFixRequest({ printerName: 'A', fix: 'feed', admin: 'yes', paperKey: null })).toThrow();
-    expect(() =>
-      requireDiagnosisFixRequest({ printerName: 'A', fix: 'feed', admin: false, paperKey: 'big' }),
-    ).toThrow();
+  // M2：纸张不是请求的一部分（主进程自己按设置和模板查），渲染进程传了也不会被读取。
+  test('parses a fix request without reading any paper from it, and rejects anything else', () => {
+    expect(requireDiagnosisFixRequest({ printerName: '标签机A', fix: 'set-driver-paper', admin: true })).toEqual({
+      printerName: '标签机A',
+      fix: 'set-driver-paper',
+      admin: true,
+    });
+    expect(requireDiagnosisFixRequest({ printerName: null, fix: 'restart-spooler', admin: true })).toEqual({
+      printerName: null,
+      fix: 'restart-spooler',
+      admin: true,
+    });
+    expect(() => requireDiagnosisFixRequest({ printerName: 'A', fix: 'change-command-set', admin: false })).toThrow(
+      'Invalid diagnosis fix',
+    );
+    expect(() => requireDiagnosisFixRequest({ printerName: 'A', fix: 'feed', admin: 'yes' })).toThrow();
     expect(() => requireDiagnosisFixRequest([])).toThrow();
+    // 多传的 paperKey 被忽略，不是校验错误，也不会出现在结果里。
+    expect(
+      requireDiagnosisFixRequest({ printerName: 'A', fix: 'feed', admin: false, paperKey: '60x40' }),
+    ).not.toHaveProperty('paper');
   });
 });

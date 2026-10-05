@@ -30,8 +30,6 @@ export interface DiagnosisItem {
 export interface DiagnosisView {
   /** null = 只查后台打印服务（系统列不出打印机的时候）。 */
   printerName: string | null;
-  /** 这台打印机负责的纸；没有时为 null。 */
-  paperKey: string | null;
   items: DiagnosisItem[];
   /** 正在做的修复（同一时间只做一个）。 */
   busyFix: DiagnosisFixId | null;
@@ -73,9 +71,9 @@ function mapItem(
 }
 
 /** 新的一轮：打印机的六项；只查后台打印服务时只有一项。 */
-export function startDiagnosis(printerName: string | null, paperKey: string | null): DiagnosisView {
+export function startDiagnosis(printerName: string | null): DiagnosisView {
   const checks: readonly DiagnosisCheckId[] = printerName === null ? ['spooler'] : DIAGNOSIS_CHECKS;
-  return { printerName, paperKey, items: checks.map(newItem), busyFix: null };
+  return { printerName, items: checks.map(newItem), busyFix: null };
 }
 
 export function withChecking(view: DiagnosisView, check: DiagnosisCheckId): DiagnosisView {

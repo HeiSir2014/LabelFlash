@@ -165,14 +165,10 @@ export interface LabelFlashApi {
   /** 打开驱动的「打印首选项」窗口；窗口关闭后才完成。 */
   openPrinterPreferences(printerName: string): Promise<void>;
   /**
-   * 诊断一项。printerName 为 null 时只能查后台打印服务（系统列不出打印机的时候）；
-   * paperKey 是这台打印机负责的纸，没有负责的纸为 null（驱动纸张一项跳过）。
+   * 诊断一项。printerName 为 null 时只能查后台打印服务（系统列不出打印机的时候）。
+   * 这台打印机负责的纸由主进程自己按设置和模板查（驱动纸张一项要用），不经这个调用传。
    */
-  runDiagnosisCheck(
-    printerName: string | null,
-    check: DiagnosisCheckId,
-    paperKey: string | null,
-  ): Promise<CheckVerdict>;
+  runDiagnosisCheck(printerName: string | null, check: DiagnosisCheckId): Promise<CheckVerdict>;
   /** 做一个修复；要管理员权限的会弹系统的确认框。返回做了什么，是否解决由随后的重新检查说。 */
   applyDiagnosisFix(request: FixRequest): Promise<FixOutcome>;
   /** 「标签机指令」面板：保存的设置、「自动」认出的指令集、驱动名和驱动报告的分辨率。只接受系统里有的打印机。 */

@@ -93,13 +93,23 @@ export type ActionResult =
    */
   | { kind: 'partial'; detail: string };
 
-/** 主进程校验过的修复请求（paperKey 已换成纸张）。 */
+/**
+ * 完整的修复请求：`paper` 是这台打印机负责的纸，只给 `set-driver-paper` 用。
+ * 只由 `DiagnosisStation.fix` 在内部构造——按打印机名现查设置和模板算出来（见
+ * `core/printing/resolve-printer.ts` 的 `responsiblePaper`），不是从 IPC 收来的（见 `RequestedDiagnosisFix`）。
+ */
 export interface DiagnosisFixRequest {
   printerName: string | null;
   fix: DiagnosisFixId;
   admin: boolean;
   paper: PaperSize | null;
 }
+
+/**
+ * IPC 校验过、但纸张还没算出来的修复请求：渲染进程只能说要修哪台打印机的哪一项、要不要管理员权限，
+ * 写哪种纸由主进程自己查（M2：这台打印机负责的纸不收渲染进程报来的纸张键）。
+ */
+export type RequestedDiagnosisFix = Omit<DiagnosisFixRequest, 'paper'>;
 
 /** 系统命令输出的上限：输出不可信（打印机名、文档名来自别的程序），条数和字数都限住。 */
 export const DIAGNOSIS_LIMITS = {

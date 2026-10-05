@@ -1,4 +1,4 @@
-import type { DiagnosisFixRequest } from '../core/diagnosis/diagnosis-model';
+import type { RequestedDiagnosisFix } from '../core/diagnosis/diagnosis-model';
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { isPrinterAction, type PrinterAction, type PrinterCommandConfig } from '../core/printer-commands/command-model';
 import { parseCommandConfig } from '../core/printer-commands/sanitize-command-config';
@@ -11,7 +11,7 @@ import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
 import { isWebOrigin, normalizeApiKeyName } from '../shared/local-api';
 import { isRandomId } from '../shared/mobile-protocol';
-import { type PaperSize, paperKey, parsePaperKey } from '../shared/paper-sizes';
+import { paperKey, parsePaperKey } from '../shared/paper-sizes';
 import { isRecord } from '../shared/settings';
 import { isVoiceCue, type VoiceCue } from '../shared/voice';
 
@@ -223,20 +223,11 @@ export function requireNullablePrinterName(value: unknown): string | null {
   return value === null ? null : requireString(value, 'printerName');
 }
 
-/** 纸张键可以为 null；不为 null 时换成纸张。 */
-export function requireNullablePaper(value: unknown): PaperSize | null {
-  if (value === null) {
-    return null;
-  }
-  const paper = parsePaperKey(requirePaperKey(value));
-  if (paper === null) {
-    throw new TypeError('Invalid paper key');
-  }
-  return paper;
-}
-
-/** 修复请求：修复项是枚举，管理员是布尔；要取消哪些任务、写什么纸张都由主进程自己查，请求里没有。 */
-export function requireDiagnosisFixRequest(value: unknown): DiagnosisFixRequest {
+/**
+ * 修复请求：修复项是枚举，管理员是布尔；要取消哪些任务、写什么纸张都由主进程自己查，请求里没有
+ * （M2：纸张不收渲染进程报来的纸张键，DiagnosisStation.fix 按打印机名现查设置和模板）。
+ */
+export function requireDiagnosisFixRequest(value: unknown): RequestedDiagnosisFix {
   const record = requireRecord(value, 'diagnosis fix request');
   const fix = record['fix'];
   if (!isDiagnosisFixId(fix)) {
@@ -246,6 +237,5 @@ export function requireDiagnosisFixRequest(value: unknown): DiagnosisFixRequest 
     printerName: requireNullablePrinterName(record['printerName']),
     fix,
     admin: requireBoolean(record['admin'], 'admin'),
-    paper: requireNullablePaper(record['paperKey']),
   };
 }

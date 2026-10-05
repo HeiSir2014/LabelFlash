@@ -43,7 +43,6 @@ import {
   requireJobQuery,
   requireLookupTableId,
   requireMobilePhoneId,
-  requireNullablePaper,
   requireNullablePrinterName,
   requirePaperKey,
   requirePositiveInteger,
@@ -251,12 +250,8 @@ export function registerIpc(deps: IpcDeps): void {
     deps.profiles.forget(name);
   });
   // 打印机名在 DiagnosisStation 里核对（不在系统列表里的不交给系统命令）；这里只核对形状。
-  handle(IpcChannel.DiagnosisCheck, (printerName, check, key) =>
-    deps.diagnosis.check(
-      requireNullablePrinterName(printerName),
-      requireDiagnosisCheck(check),
-      requireNullablePaper(key),
-    ),
+  handle(IpcChannel.DiagnosisCheck, (printerName, check) =>
+    deps.diagnosis.check(requireNullablePrinterName(printerName), requireDiagnosisCheck(check)),
   );
   handle(IpcChannel.DiagnosisFix, (request) => deps.diagnosis.fix(requireDiagnosisFixRequest(request)));
   // 先做不用等系统的校验，再核对打印机在系统列表里（只发给系统里有的打印机）。

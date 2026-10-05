@@ -1,4 +1,4 @@
-import type { ActionResult, DiagnosisFixRequest } from '../../core/diagnosis/diagnosis-model';
+import type { ActionResult, DiagnosisFixRequest, RequestedDiagnosisFix } from '../../core/diagnosis/diagnosis-model';
 import { adminPolicy, fixOutcome } from '../../core/diagnosis/fixes';
 import { summarizeQueue } from '../../core/diagnosis/queue-summary';
 import type { SubmittedJobs } from '../../core/diagnosis/submitted-jobs';
@@ -24,6 +24,11 @@ export interface DiagnosisStationDeps {
   isKnownPrinter(printerName: string): Promise<boolean>;
   /** 现读驱动纸张（PrinterProfiles.fresh）。 */
   driverPaper(printerName: string): Promise<DriverPaper | null>;
+  /**
+   * 这台打印机负责的纸（按设置的纸张分配、模板指定现查，见 core/printing/resolve-printer.ts 的
+   * responsiblePaper）；没有负责的纸为 null。M2：不收渲染进程报来的纸张键，自己查。
+   */
+  responsiblePaper(printerName: string): PaperSize | null;
   /** 改了驱动设置之后丢掉缓存（PrinterProfiles.forget）。 */
   forgetProfile(printerName: string): void;
   /** 打开打印首选项（driver-paper.ts 的 openPrinterPreferences；假打印机模式下只记下来）。 */
@@ -48,8 +53,8 @@ export class DiagnosisStation {
 
   constructor(private readonly deps: DiagnosisStationDeps) {}
 
-  /** 查一项。printerName 为 null 时只能查后台打印服务；expected 是这台打印机负责的纸。 */
-  async check(printerName: string | null, check: DiagnosisCheckId, expected: PaperSize | null): Promise<CheckVerdict> {
+  /** 查一项。printerName 为 null 时只能查后台打印服务。 */
+  async check(printerName: string | null, check: DiagnosisCheckId): Promise<CheckVerdict> {
     const { system } = this.deps;
     if (printerName === null) {
       if (check !== 'spooler') {
@@ -67,31 +72,34 @@ export class DiagnosisStation {
       // 点「诊断」之后打印机被拔掉或删了：这不是程序错误，说清楚就行。
       return this.logged(printerName, missingPrinterVerdict(check));
     }
-    return this.logged(printerName, await this.checkListed(printerName, check, expected));
+    return this.logged(printerName, await this.checkListed(printerName, check));
   }
 
   /** 做一个修复。请求不合策略、打印机不在列表里、缺纸张：程序错误，直接抛（IPC 会写日志并告诉界面）。 */
-  async fix(request: DiagnosisFixRequest): Promise<FixOutcome> {
+  async fix(requested: RequestedDiagnosisFix): Promise<FixOutcome> {
     const { system } = this.deps;
-    const policy = adminPolicy(system.platform, request.fix);
+    const policy = adminPolicy(system.platform, requested.fix);
     const isAllowed =
-      policy === 'optional' || (policy === 'always' && request.admin) || (policy === 'never' && !request.admin);
+      policy === 'optional' || (policy === 'always' && requested.admin) || (policy === 'never' && !requested.admin);
     if (!isAllowed) {
-      throw new Error(`Fix "${request.fix}" with admin=${request.admin} is not allowed on ${system.platform}`);
+      throw new Error(`Fix "${requested.fix}" with admin=${requested.admin} is not allowed on ${system.platform}`);
     }
     // 重启后台打印服务不针对某一台打印机（run() 里也不用 printerName）：服务挂了时，
     // 诊断面板打开的那台打印机本来就可能已经不在系统列表里了，不该因此拒绝重启。
-    const isSystemFix = request.fix === 'restart-spooler';
+    const isSystemFix = requested.fix === 'restart-spooler';
     const isListed =
-      isSystemFix || (request.printerName !== null && (await this.deps.isKnownPrinter(request.printerName)));
+      isSystemFix || (requested.printerName !== null && (await this.deps.isKnownPrinter(requested.printerName)));
     if (!isListed) {
-      throw new Error(`Fix "${request.fix}" needs a printer that is in the system list`);
+      throw new Error(`Fix "${requested.fix}" needs a printer that is in the system list`);
     }
     if (this.isFixing) {
       throw new Error('Another diagnosis fix is still running');
     }
     this.isFixing = true;
     try {
+      // 纸张由主进程按设置和模板自己算，不收渲染进程报来的纸张键（M2）。
+      const paper = requested.printerName === null ? null : this.deps.responsiblePaper(requested.printerName);
+      const request: DiagnosisFixRequest = { ...requested, paper };
       const result = await this.run(request);
       const detail = result.kind === 'failed' ? ` ${result.detail}` : '';
       this.deps.log(
@@ -103,11 +111,7 @@ export class DiagnosisStation {
     }
   }
 
-  private async checkListed(
-    printerName: string,
-    check: DiagnosisCheckId,
-    expected: PaperSize | null,
-  ): Promise<CheckVerdict> {
+  private async checkListed(printerName: string, check: DiagnosisCheckId): Promise<CheckVerdict> {
     const { system, commands } = this.deps;
     const noted = <T extends { kind: string }>(facts: T): T => this.noteUnknown(printerName, check, facts);
     switch (check) {
@@ -128,12 +132,14 @@ export class DiagnosisStation {
           this.deps.submitted.windowsFor(printerName),
           this.deps.clock.now(),
         );
-      case 'paper':
+      case 'paper': {
+        const expected = this.deps.responsiblePaper(printerName);
         return paperVerdict(
           expected === null ? null : await this.deps.driverPaper(printerName),
           expected,
           system.platform,
         );
+      }
       case 'commands':
         return commandsVerdict(
           commands === null ? null : await commands.effectiveCommandSet(printerName),

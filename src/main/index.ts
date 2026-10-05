@@ -11,7 +11,7 @@ import { NO_DRIVER_HINTS } from '../core/drivers/driver-hints';
 import { PrintQueue } from '../core/print-queue';
 import { PrintService } from '../core/print-service';
 import { effectiveCommandSet } from '../core/printer-commands/command-set';
-import { type PrinterChoice, resolvePrinter } from '../core/printing/resolve-printer';
+import { type PrinterChoice, resolvePrinter, responsiblePaper } from '../core/printing/resolve-printer';
 import { type EnrichDeps, enrich } from '../core/scan/enrich';
 import { recognize } from '../core/scan/recognize';
 import { RuleCatalog } from '../core/scan/rule-catalog';
@@ -406,6 +406,8 @@ async function bootstrap(): Promise<void> {
     // 系统打印机列表（读它要用主窗口；诊断由界面触发，那时窗口一定在）。
     isKnownPrinter: (name) => adapter.hasPrinter(name),
     driverPaper: (name) => profiles.fresh(name),
+    // M2：这台打印机负责的纸由主进程按设置和模板自己查，不收渲染进程报来的纸张键。
+    responsiblePaper: (name) => responsiblePaper(name, settings.current.paperPrinters, templates.list()),
     forgetProfile: (name) => profiles.forget(name),
     openPreferences: fakeDiagnosis ? (name) => fakeDiagnosis.openPreferences(name) : openPrinterPreferences,
     submitted: submittedJobs,

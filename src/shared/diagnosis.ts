@@ -52,15 +52,17 @@ export interface CheckVerdict {
   fixes: FixOffer[];
 }
 
-/** 界面交给主进程的修复请求（主进程逐项校验，见 ipc-validators.ts 的 requireDiagnosisFixRequest）。 */
+/**
+ * 界面交给主进程的修复请求（主进程逐项校验，见 ipc-validators.ts 的 requireDiagnosisFixRequest）。
+ * 「自动设置驱动纸张」要写哪种纸由主进程自己按设置和模板查（见 core/printing/resolve-printer.ts 的
+ * responsiblePaper），不经这个请求传：界面只说要修哪台打印机的哪一项、要不要管理员权限。
+ */
 export interface FixRequest {
   /** null 只用于「重启后台打印服务」：系统列不出打印机的时候。 */
   printerName: string | null;
   fix: DiagnosisFixId;
   /** 点的是不是「（需要管理员权限）」的按钮。 */
   admin: boolean;
-  /** 这台打印机负责的纸（纸张键，例如 60x40）；只有「自动设置驱动纸张」用，其余为 null。 */
-  paperKey: string | null;
 }
 
 /**

@@ -40,6 +40,24 @@ export function resolvePrinter(
     : { printerName: assigned, reason: 'template-missing', missingPrinter: target.printer };
 }
 
+/**
+ * 这台打印机负责哪种纸：先看纸张分配表（某种纸分配给了它），再看有没有模板直接指定它；都没有为 null。
+ * 给诊断的「自动设置驱动纸张」用：目标纸张由主进程按设置和模板自己算出来，不收渲染进程报来的纸张键——
+ * 打印机可以改名、设置可以被改，渲染进程算出来的「负责的纸」不能当作权威答案去改驱动的默认设置。
+ */
+export function responsiblePaper(
+  printerName: string,
+  paperPrinters: Readonly<Record<string, string>>,
+  templates: readonly PrinterTarget[],
+): PaperSize | null {
+  const assignedKey = Object.entries(paperPrinters).find(([, name]) => name === printerName)?.[0];
+  const assignedPaper = assignedKey === undefined ? null : parsePaperKey(assignedKey);
+  if (assignedPaper !== null) {
+    return assignedPaper;
+  }
+  return templates.find((template) => template.printer === printerName)?.paper ?? null;
+}
+
 function findAssigned(paper: PaperSize, paperPrinters: Readonly<Record<string, string>>): string | null {
   const exact = paperPrinters[paperKey(paper)];
   if (exact !== undefined) {

@@ -161,7 +161,7 @@ export function PrinterList({
                   type="button"
                   className="button button--small button--quiet"
                   aria-expanded={diagnosis.view?.printerName === printer.name}
-                  onClick={() => diagnosis.open(printer.name, expectedKey)}
+                  onClick={() => diagnosis.open(printer.name)}
                 >
                   诊断
                 </button>
@@ -225,7 +225,7 @@ export function PrinterList({
       )}
       {!isLoading && printers.length === 0 && (
         <div className="printer-empty-actions">
-          <button type="button" className="button button--small" onClick={() => diagnosis.open(null, null)}>
+          <button type="button" className="button button--small" onClick={() => diagnosis.open(null)}>
             检查后台打印服务
           </button>
         </div>

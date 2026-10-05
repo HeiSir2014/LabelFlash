@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolvePrinter } from './resolve-printer';
+import { resolvePrinter, responsiblePaper } from './resolve-printer';
 
 const LABEL = { paper: { widthMm: 60, heightMm: 40 }, printer: null };
 const WAYBILL = { paper: { widthMm: 100, heightMm: 180 }, printer: null };
@@ -62,5 +62,24 @@ describe('resolvePrinter', () => {
     const assigned = { '100x149.8': '面单机甲', '100x150.8': '面单机乙' };
     const target = { paper: { widthMm: 100, heightMm: 150.6 }, printer: null };
     expect(resolvePrinter(target, assigned, []).printerName).toBe('面单机乙');
+  });
+});
+
+// 诊断的「自动设置驱动纸张」要知道一台打印机负责哪种纸，但只信主进程自己按设置算出来的结果，
+// 不收渲染进程报来的纸张键：一台打印机可以被改名、设置可以被改，渲染进程说的不一定作数。
+describe('responsiblePaper', () => {
+  test('prefers the paper assignment over a template that names the printer', () => {
+    expect(responsiblePaper('标签机A', ASSIGNED, [{ ...WAYBILL, printer: '标签机A' }])).toEqual({
+      widthMm: 60,
+      heightMm: 40,
+    });
+  });
+
+  test('falls back to a template that names the printer when no paper is assigned to it', () => {
+    expect(responsiblePaper('面单机C', {}, [{ ...WAYBILL, printer: '面单机C' }])).toEqual(WAYBILL.paper);
+  });
+
+  test('is null when nothing assigns or names this printer', () => {
+    expect(responsiblePaper('没人用的打印机', ASSIGNED, [WAYBILL])).toBeNull();
   });
 });

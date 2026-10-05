@@ -25,7 +25,7 @@ import { reportError } from '../lib/notices';
 export interface DiagnosisControls {
   view: DiagnosisView | null;
   /** 开始诊断一台打印机（printerName 为 null：只查后台打印服务）。 */
-  open(printerName: string | null, paperKey: string | null): void;
+  open(printerName: string | null): void;
   close(): void;
   rerun(): void;
   applyFix(check: DiagnosisCheckId, offer: FixOffer): void;
@@ -41,11 +41,12 @@ function failedCheck(check: DiagnosisCheckId): CheckVerdict {
 /**
  * 按顺序一项一项调主进程（一项查完再查下一项，面板上逐项出结果）。
  * 每次开始、关闭加一轮：旧的一轮还在路上时，回来的结果不写进新的一轮。
+ * 这台打印机负责的纸由主进程自己按设置和模板查（M2），这里不算、也不传。
  */
 export function useDiagnosis(): DiagnosisControls {
   const [view, setView] = useState<DiagnosisView | null>(null);
   const runRef = useRef(0);
-  // 最新的面板状态：修复时要用它的打印机和纸张。在 effect 里更新，不在渲染过程中改 ref。
+  // 最新的面板状态：修复时要用它的打印机。在 effect 里更新，不在渲染过程中改 ref。
   const viewRef = useRef<DiagnosisView | null>(null);
   useEffect(() => {
     viewRef.current = view;
@@ -56,7 +57,7 @@ export function useDiagnosis(): DiagnosisControls {
   }, []);
 
   const runChecks = useCallback(
-    async (run: number, printerName: string | null, paperKey: string | null, checks: readonly DiagnosisCheckId[]) => {
+    async (run: number, printerName: string | null, checks: readonly DiagnosisCheckId[]) => {
       for (const check of checks) {
         if (runRef.current !== run) {
           return;
@@ -64,7 +65,7 @@ export function useDiagnosis(): DiagnosisControls {
         update((current) => withChecking(current, check));
         let verdict: CheckVerdict;
         try {
-          verdict = await window.api.runDiagnosisCheck(printerName, check, paperKey);
+          verdict = await window.api.runDiagnosisCheck(printerName, check);
         } catch (error) {
           reportError('诊断打印机', error);
           verdict = failedCheck(check);
@@ -79,14 +80,13 @@ export function useDiagnosis(): DiagnosisControls {
   );
 
   const open = useCallback(
-    (printerName: string | null, paperKey: string | null) => {
+    (printerName: string | null) => {
       runRef.current += 1;
-      const next = startDiagnosis(printerName, paperKey);
+      const next = startDiagnosis(printerName);
       setView(next);
       void runChecks(
         runRef.current,
         printerName,
-        paperKey,
         next.items.map((item) => item.check),
       );
     },
@@ -101,7 +101,7 @@ export function useDiagnosis(): DiagnosisControls {
   const rerun = useCallback(() => {
     const current = viewRef.current;
     if (current !== null) {
-      open(current.printerName, current.paperKey);
+      open(current.printerName);
     }
   }, [open]);
 
@@ -111,12 +111,7 @@ export function useDiagnosis(): DiagnosisControls {
       update((latest) => withFixStarted(latest, fix));
       let outcome: FixOutcome;
       try {
-        outcome = await window.api.applyDiagnosisFix({
-          printerName: current.printerName,
-          fix,
-          admin,
-          paperKey: current.paperKey,
-        });
+        outcome = await window.api.applyDiagnosisFix({ printerName: current.printerName, fix, admin });
       } catch (error) {
         reportError('修复打印机问题', error);
         outcome = { status: 'failed', message: `没做成：${INTERNAL_ERROR}` };
@@ -128,7 +123,7 @@ export function useDiagnosis(): DiagnosisControls {
       if (outcome.status === 'done' || outcome.status === 'rolled-back') {
         const checks = checksAfterFix(current, fix);
         update((latest) => withRequeued(latest, checks));
-        await runChecks(run, current.printerName, current.paperKey, checks);
+        await runChecks(run, current.printerName, checks);
       }
     },
     [runChecks, update],

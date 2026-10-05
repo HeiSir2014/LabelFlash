@@ -51,7 +51,7 @@ const COMMANDS: CheckVerdict = {
 const DONE: FixOutcome = { status: 'done', message: '走纸指令已发送（进了打印队列）' };
 
 function finished(...verdicts: CheckVerdict[]) {
-  let view = startDiagnosis('标签机A', '60x40');
+  let view = startDiagnosis('标签机A');
   for (const verdict of verdicts) {
     view = withVerdict(view, verdict);
   }
@@ -60,7 +60,7 @@ function finished(...verdicts: CheckVerdict[]) {
 
 describe('startDiagnosis', () => {
   test('lists all six checks for a printer and only the print service without one', () => {
-    expect(startDiagnosis('标签机A', '60x40').items.map((item) => item.check)).toEqual([
+    expect(startDiagnosis('标签机A').items.map((item) => item.check)).toEqual([
       'spooler',
       'printer',
       'usb',
@@ -68,13 +68,13 @@ describe('startDiagnosis', () => {
       'paper',
       'commands',
     ]);
-    expect(startDiagnosis(null, null).items.map((item) => item.check)).toEqual(['spooler']);
+    expect(startDiagnosis(null).items.map((item) => item.check)).toEqual(['spooler']);
   });
 });
 
 describe('diagnosisSummary', () => {
   test('shows progress, then problems, unknowns and what waits for the operator', () => {
-    const started = withChecking(startDiagnosis('标签机A', '60x40'), 'spooler');
+    const started = withChecking(startDiagnosis('标签机A'), 'spooler');
     expect(diagnosisSummary(started)).toBe('正在检查（0/6）…');
     const done = finished(
       pass('spooler'),
@@ -111,9 +111,9 @@ describe('fixes', () => {
   });
 
   test('rechecks only the affected checks that this panel has', () => {
-    expect(checksAfterFix(startDiagnosis('标签机A', null), 'cancel-own-jobs')).toEqual(['queue']);
-    expect(checksAfterFix(startDiagnosis(null, null), 'restart-spooler')).toEqual(['spooler']);
-    expect(checksAfterFix(startDiagnosis('标签机A', null), 'feed')).toEqual([]);
+    expect(checksAfterFix(startDiagnosis('标签机A'), 'cancel-own-jobs')).toEqual(['queue']);
+    expect(checksAfterFix(startDiagnosis(null), 'restart-spooler')).toEqual(['spooler']);
+    expect(checksAfterFix(startDiagnosis('标签机A'), 'feed')).toEqual([]);
   });
 
   test('a requeued check loses its old verdict but keeps the outcome message', () => {
@@ -165,7 +165,7 @@ describe('feed confirmation', () => {
 
 describe('itemBadge', () => {
   test('shows waiting and checking before a verdict arrives', () => {
-    const view = withChecking(startDiagnosis('标签机A', null), 'spooler');
+    const view = withChecking(startDiagnosis('标签机A'), 'spooler');
     expect(view.items.map((item) => itemBadge(item).text).slice(0, 2)).toEqual(['正在查…', '等待']);
   });
 });

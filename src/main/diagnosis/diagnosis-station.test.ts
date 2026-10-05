@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import type { ActionResult, DiagnosisFixRequest } from '../../core/diagnosis/diagnosis-model';
+import type { ActionResult, RequestedDiagnosisFix } from '../../core/diagnosis/diagnosis-model';
 import { SubmittedJobs } from '../../core/diagnosis/submitted-jobs';
 import { FakeClock } from '../../core/testing/fake-clock';
+import type { PaperSize } from '../../shared/paper-sizes';
 import { type FakePrinterSpec, FakePrinters } from '../printing/fake-printers';
 import { DiagnosisStation } from './diagnosis-station';
 import { FakeDiagnosis, FakeLabelCommands } from './fake-diagnosis';
@@ -13,6 +14,7 @@ function setup(
   spec: Partial<FakePrinterSpec> = {},
   drivers: DriverReinstallSeam | null = null,
   platform: 'windows' | 'mac' = 'windows',
+  responsiblePaper: PaperSize | null = null,
 ) {
   const clock = new FakeClock();
   const specs: FakePrinterSpec[] = [
@@ -27,6 +29,8 @@ function setup(
     system,
     isKnownPrinter: async (name) => specs.some((item) => item.name === name),
     driverPaper: (name) => printers.driverPaper(name),
+    // 主进程自己按设置和模板算出这台打印机负责的纸，不收渲染进程报来的纸张键（见 core/printing/resolve-printer.ts）。
+    responsiblePaper: () => responsiblePaper,
     forgetProfile: (name) => forgotten.push(name),
     openPreferences: (name) => system.openPreferences(name),
     submitted,
@@ -38,14 +42,14 @@ function setup(
   return { station, system, forgotten, logs };
 }
 
-function request(overrides: Partial<DiagnosisFixRequest>): DiagnosisFixRequest {
-  return { printerName: '标签机A', fix: 'cancel-own-jobs', admin: false, paper: null, ...overrides };
+function request(overrides: Partial<RequestedDiagnosisFix>): RequestedDiagnosisFix {
+  return { printerName: '标签机A', fix: 'cancel-own-jobs', admin: false, ...overrides };
 }
 
 describe('DiagnosisStation.check', () => {
   test('runs each check against the system and logs the verdict', async () => {
     const { station, logs } = setup({ diagnosis: { stuckJobs: { ours: 1, others: 0 } } });
-    expect(await station.check('标签机A', 'queue', null)).toMatchObject({
+    expect(await station.check('标签机A', 'queue')).toMatchObject({
       status: 'fail',
       detail: '有 1 个任务卡在队列里（最早的已经等了 5 分钟），都是本程序发的',
     });
@@ -55,7 +59,7 @@ describe('DiagnosisStation.check', () => {
   // 安全底线：打印机名来自界面，不在系统列表里的不交给任何系统命令。
   test('does not touch the system for a printer that is not listed', async () => {
     const { station } = setup();
-    expect(await station.check('别的打印机', 'queue', null)).toMatchObject({
+    expect(await station.check('别的打印机', 'queue')).toMatchObject({
       status: 'fail',
       detail: '系统打印机列表里已经没有这台了',
     });
@@ -63,15 +67,15 @@ describe('DiagnosisStation.check', () => {
 
   test('checks only the print service when no printer is given', async () => {
     const { station } = setup({ diagnosis: { spooler: 'stopped' } });
-    expect(await station.check(null, 'spooler', null)).toMatchObject({ status: 'fail' });
-    await expect(station.check(null, 'queue', null)).rejects.toThrow('needs a printer');
+    expect(await station.check(null, 'spooler')).toMatchObject({ status: 'fail' });
+    await expect(station.check(null, 'queue')).rejects.toThrow('needs a printer');
   });
 
   // 后台打印服务停了时系统打印机列表可能是空的：这一项不能因为「这台不在列表里」就说「已经没有这台了」，
   // 不然服务挂了反而查不出服务挂了，「重启后台打印服务」按钮也按不到。
   test('checks the print service even for a printer that has left the system list', async () => {
     const { station } = setup({ diagnosis: { spooler: 'stopped' } });
-    const verdict = await station.check('别的打印机', 'spooler', null);
+    const verdict = await station.check('别的打印机', 'spooler');
     expect(verdict).toMatchObject({ status: 'fail', detail: '后台打印服务没有运行：所有打印都发不出去' });
     expect(verdict.fixes.map((fix) => fix.id)).toEqual(['restart-spooler']);
   });
@@ -79,24 +83,24 @@ describe('DiagnosisStation.check', () => {
   // macOS 上这台打印机不在列表里时，不拿一个可能不存在的队列名去问 CUPS：只查服务本身。
   test('asks only about the service on macOS when the printer is not listed', async () => {
     const { station } = setup({}, null, 'mac');
-    const verdict = await station.check('别的打印机', 'spooler', null);
+    const verdict = await station.check('别的打印机', 'spooler');
     expect(verdict).toMatchObject({ status: 'pass', detail: '打印系统（CUPS）在运行' });
   });
 
   test('offers a driver reinstall only through the 5c seam', async () => {
     const notReady = { readiness: { ready: false as const, detail: '打印机报错', issue: 'other' as const } };
-    const without = await setup(notReady).station.check('标签机A', 'printer', null);
+    const without = await setup(notReady).station.check('标签机A', 'printer');
     expect(without.fixes.map((fix) => fix.id)).toEqual(['open-preferences']);
     const drivers: DriverReinstallSeam = {
       canReinstall: async () => true,
       reinstall: async (): Promise<ActionResult> => ({ kind: 'done' }),
     };
-    const withSeam = await setup(notReady, drivers).station.check('标签机A', 'printer', null);
+    const withSeam = await setup(notReady, drivers).station.check('标签机A', 'printer');
     expect(withSeam.fixes.map((fix) => fix.id)).toEqual(['open-preferences', 'reinstall-driver']);
   });
 
   test('skips the paper check for a printer that holds no paper', async () => {
-    expect(await setup().station.check('标签机A', 'paper', null)).toMatchObject({ status: 'skipped' });
+    expect(await setup().station.check('标签机A', 'paper')).toMatchObject({ status: 'skipped' });
   });
 });
 
@@ -104,18 +108,18 @@ describe('DiagnosisStation.fix', () => {
   test('cancels only our jobs, found again at the time of the fix', async () => {
     const { station } = setup({ diagnosis: { stuckJobs: { ours: 2, others: 1 } } });
     expect(await station.fix(request({}))).toEqual({ status: 'done', message: '已请求取消本程序的 2 个任务' });
-    expect(await station.check('标签机A', 'queue', null)).toMatchObject({
+    expect(await station.check('标签机A', 'queue')).toMatchObject({
       detail: '有 1 个任务卡在队列里（最早的已经等了 5 分钟），认不出是本程序发的',
     });
   });
 
-  test('sets the driver paper and forgets the cached profile', async () => {
-    const { station, forgotten } = setup({ paper: { widthMm: 100, heightMm: 150, dpi: 203 } });
-    expect(await station.fix(request({ fix: 'set-driver-paper', admin: true, paper: LABEL }))).toMatchObject({
+  test('sets the driver paper (derived from settings, not from the request) and forgets the cached profile', async () => {
+    const { station, forgotten } = setup({ paper: { widthMm: 100, heightMm: 150, dpi: 203 } }, null, 'windows', LABEL);
+    expect(await station.fix(request({ fix: 'set-driver-paper', admin: true }))).toMatchObject({
       status: 'done',
     });
     expect(forgotten).toEqual(['标签机A']);
-    expect(await station.check('标签机A', 'paper', LABEL)).toMatchObject({ status: 'pass' });
+    expect(await station.check('标签机A', 'paper')).toMatchObject({ status: 'pass' });
   });
 
   test('reports a declined admin prompt', async () => {
@@ -145,7 +149,7 @@ describe('DiagnosisStation.fix', () => {
     expect(await station.fix(request({ printerName: null, fix: 'restart-spooler', admin: true }))).toMatchObject({
       status: 'done',
     });
-    expect(await station.check(null, 'spooler', null)).toMatchObject({ status: 'pass' });
+    expect(await station.check(null, 'spooler')).toMatchObject({ status: 'pass' });
   });
 
   // 诊断面板打开的是具体某台打印机，但服务挂了之后系统列表里可能已经没有它：重启服务不该因此被拒绝。

@@ -39,7 +39,7 @@ import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
-import { batchQuitDialogText, canceledJobRecords, shouldConfirmBatchQuit } from './batch/batch-quit';
+import { batchQuitDialogText, canceledJobRecords, shouldConfirmBatchQuit, waitForBatchIdle } from './batch/batch-quit';
 import { BatchStation } from './batch/batch-station';
 import batchReaderPath from './batch/reader-worker?modulePath';
 import { TableReaderHost } from './batch/table-reader-host';
@@ -107,6 +107,9 @@ const TABLE_READ_TIMEOUT_MS = 30_000;
 const TABLE_READER_HEAP_MB = 512;
 /** 任务管理器、进程列表里显示的子进程名。 */
 const TABLE_READER_SERVICE_NAME = `${BRAND.productNameAscii} table reader`;
+/** 退出确认之后，取消批次时最多等正在打的那一张结束多久：打印机正常的话一张几秒钟就打完，
+ *  等这么久还没结束多半是驱动卡住了，不能让退出程序跟着一起卡住。 */
+const BATCH_CANCEL_SETTLE_TIMEOUT_MS = 5_000;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: AppTray | null = null;
@@ -149,8 +152,12 @@ function showMainWindow(): void {
   bringToFront(mainWindow, process.platform);
 }
 
+/**
+ * 托盘菜单「退出」：只触发 app.quit()，isQuitting 由 before-quit 的处理器在退出真的要发生时才设置
+ * ——批量打印还有没打的会先弹确认，选了「取消」的话退出不会真的发生，这时不能已经把 isQuitting
+ * 设成了 true（会导致关窗口不再藏进托盘，退出明明被取消了，托盘行为却已经坏掉）。
+ */
 function quit(): void {
-  isQuitting = true;
   app.quit();
 }
 
@@ -568,26 +575,34 @@ async function bootstrap(): Promise<void> {
     onStatus: (apiStatus) => sendToMainWindow(IpcChannel.LocalApiStatusChanged, apiStatus),
     onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
   });
-  // 在 before-quit 就告诉手机「程序已退出」：到 will-quit 时进程马上结束，消息可能来不及发出。
-  app.on('before-quit', () => mobile.quit());
-
   // macOS/Linux 关机、注销时 before-quit 也会触发（Windows 不会，走的是下面的 session-end）：
-  // 这种情况下不弹确认，不能挡着系统关机。
+  // 这种情况下不弹确认，不能挡着系统关机。powerMonitor 没有「关机被取消」的事件，收到这个信号
+  // 之后就不再复位——真被取消的情况很少见，顶多是这之后一次正常退出也跳过了确认，不是大问题。
+  // macOS 上 shutdown 和 before-quit 谁先触发尚未在真机上验证过，上线前要用真的 Mac 测一次。
   powerMonitor.on('shutdown', () => {
     isSystemShutdown = true;
   });
-  // 退出时批量打印还有没打到的：弹确认，操作员选「仍要退出」才记下来（CANCELED）再真正退出。
-  // 已经确认过一次就不用再弹第二次（这次 before-quit 处理完会重新调用 app.quit()）。
-  let batchQuitConfirmed = false;
+
+  // 退出的副作用（告诉手机「已退出」、isQuitting 影响关窗口是不是藏进托盘）必须等退出真的要发生了
+  // 才做：都归到这一个 before-quit 处理器里，不能分散在几个各管各的处理器里——那样的话，批量打印的
+  // 确认框选了「取消」之后，其他处理器仍然会在同一次 before-quit 里各自跑一遍，副作用照样发生，
+  // 退出明明被取消了，托盘行为却已经坏掉。
+  let readyToQuit = false;
   app.on('before-quit', (event) => {
-    if (batchQuitConfirmed) {
+    if (readyToQuit) {
+      isQuitting = true;
+      mobile.quit();
       return;
     }
     const pending = batch.pendingQuit();
     if (pending === null || !shouldConfirmBatchQuit(pending.labels.length, isSystemShutdown)) {
+      readyToQuit = true;
+      isQuitting = true;
+      mobile.quit();
       return;
     }
     event.preventDefault();
+    showMainWindow();
     const { message, detail } = batchQuitDialogText(pending.labels.length);
     const options = {
       type: 'warning' as const,
@@ -597,15 +612,36 @@ async function bootstrap(): Promise<void> {
       message,
       detail,
     };
-    const response = mainWindow ? dialog.showMessageBoxSync(mainWindow, options) : dialog.showMessageBoxSync(options);
-    if (response !== 1) {
-      return;
-    }
-    for (const record of canceledJobRecords(pending.batchId, pending.template, pending.labels, randomUUID, Date.now)) {
-      jobs.append(record);
-    }
-    batchQuitConfirmed = true;
-    app.quit();
+    // 用异步版本：确认框开着的这段时间，打印和 IPC 照常响应（同步版本会冻住整个主进程）。
+    void (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options)).then(
+      async ({ response }) => {
+        if (response !== 1) {
+          return;
+        }
+        // 弹确认框的这段时间批次可能还在打：重新查一遍，只记下这一刻真的还没轮到的——
+        // 不能用弹框之前的旧名单，那时候「没打」的几张可能这期间已经打完或者失败了。
+        const stillPending = batch.pendingQuit();
+        if (stillPending !== null) {
+          // 先取消、等正在打的那一张真的结束（它自己的打印结果已经有记录了），再记 CANCELED、
+          // 最后才退出：不然要么这一张会在被标成「没打」之后又打出来，要么退出时它还没打完。
+          batch.cancel();
+          await waitForBatchIdle(() => batch.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS);
+          for (const record of canceledJobRecords(
+            stillPending.batchId,
+            stillPending.template,
+            stillPending.labels,
+            randomUUID,
+            Date.now,
+          )) {
+            jobs.append(record);
+          }
+        }
+        readyToQuit = true;
+        isQuitting = true;
+        mobile.quit();
+        app.quit();
+      },
+    );
   });
 
   registerIpc({
@@ -773,9 +809,6 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', showMainWindow);
-  app.on('before-quit', () => {
-    isQuitting = true;
-  });
   app
     .whenReady()
     .then(bootstrap)

@@ -18,6 +18,10 @@ import { OPTIONAL_NATIVE_MODULES } from './scripts/bundle-policy';
  */
 const DEFAULT_RELAY_URL_ENV = 'CDL_LABELFLASH_DEFAULT_RELAY_URL';
 /**
+ * 驱动清单的默认地址，和中转地址一样构建时注入（代码里不写域名）。见 src/main/drivers/build-defaults.ts。
+ */
+const DEFAULT_DRIVER_CATALOG_URL_ENV = 'CDL_LABELFLASH_DEFAULT_DRIVER_CATALOG_URL';
+/**
  * CI 的构建号：electron-builder 从同一个环境变量 BUILD_NUMBER 读取，写进文件版本；这里注入给「关于」和日志。
  * 见 src/main/build-info.ts。
  */
@@ -27,6 +31,7 @@ export default defineConfig({
   main: {
     define: {
       [DEFAULT_RELAY_URL_ENV]: JSON.stringify(process.env[DEFAULT_RELAY_URL_ENV] ?? ''),
+      [DEFAULT_DRIVER_CATALOG_URL_ENV]: JSON.stringify(process.env[DEFAULT_DRIVER_CATALOG_URL_ENV] ?? ''),
       CDL_LABELFLASH_BUILD_NUMBER: JSON.stringify(process.env[BUILD_NUMBER_ENV] ?? ''),
     },
     build: {

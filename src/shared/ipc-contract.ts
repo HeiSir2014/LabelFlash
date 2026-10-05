@@ -141,6 +141,8 @@ export interface AppInfo {
   logsDir: string;
   /** 安装包自带的手机扫码中转地址（设置里没填时用它）；自己构建、没有注入时为 null。 */
   defaultRelayUrl: string | null;
+  /** 安装包自带的驱动清单地址（设置里没填时用它）；自己构建、没有注入时为 null。 */
+  defaultDriverCatalogUrl: string | null;
   /** 这台电脑能识别标签图上的字（加工步骤「图中文字识别」）；macOS 这一版和缺文件时为 false。 */
   canReadImageText: boolean;
 }

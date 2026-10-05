@@ -56,11 +56,12 @@ jobs:
       - run: bun install --frozen-lockfile
       # 安装包里的 OCR 扩展静态链接的 ONNX Runtime（/MT）：dist:win 从本仓库的预发布版本下载、核对 SHA-256，
       # 不在这里编（发布它的是 onnxruntime.yml，见 scripts/ocr/build-onnxruntime.ts）。
-      # 手机扫码的默认中转地址：代码里不写域名，官方安装包从仓库的 Actions 变量注入（见 electron.vite.config.ts）。
-      # check 作业不注入：E2E 要验证「没有默认地址」时的提示。
+      # 手机扫码的默认中转地址、驱动清单的默认地址：代码里不写域名，官方安装包从仓库的 Actions 变量注入
+      # （见 electron.vite.config.ts）。check 作业不注入：E2E 要验证「没有默认地址」时的提示。
       - run: bun run dist:win
         env:
           CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
+          CDL_LABELFLASH_DEFAULT_DRIVER_CATALOG_URL: ${{ vars.LABELFLASH_DEFAULT_DRIVER_CATALOG_URL }}
       - uses: actions/upload-artifact@v4
         with:
           name: CDL-LabelFlash-windows
@@ -81,6 +82,7 @@ jobs:
       - run: bun run dist:mac
         env:
           CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
+          CDL_LABELFLASH_DEFAULT_DRIVER_CATALOG_URL: ${{ vars.LABELFLASH_DEFAULT_DRIVER_CATALOG_URL }}
           # 不去钥匙串里找证书：没有开发者证书，签名固定用 ad-hoc。
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           # electron-builder 在 PR 里默认不签名（防止把证书交给别人的 PR）。这里只有 ad-hoc 签名、不涉及任何证书，
@@ -105,6 +107,7 @@ jobs:
       contents: write
     env:
       CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
+      CDL_LABELFLASH_DEFAULT_DRIVER_CATALOG_URL: ${{ vars.LABELFLASH_DEFAULT_DRIVER_CATALOG_URL }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -129,9 +132,21 @@ jobs:
             echo "::error::仓库的 Actions 变量 LABELFLASH_DEFAULT_RELAY_URL 没有设置，官方安装包会没有默认中转地址。"
             exit 1
           fi
+          if [ -z "$CDL_LABELFLASH_DEFAULT_DRIVER_CATALOG_URL" ]; then
+            echo "::error::仓库的 Actions 变量 LABELFLASH_DEFAULT_DRIVER_CATALOG_URL 没有设置，官方安装包会没有驱动清单地址。"
+            exit 1
+          fi
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
+      # 官方安装包必须内置驱动清单的公钥，否则任何清单都核对不过（生成和填写见 docs/driver-catalog.md）。
+      - name: Check the embedded driver catalog key
+        shell: bash
+        run: |
+          if ! bun -e "import { DRIVER_CATALOG_PUBLIC_KEYS as keys } from './src/shared/driver-catalog-keys.ts'; process.exit(Object.keys(keys).length > 0 ? 0 : 1)"; then
+            echo "::error::src/shared/driver-catalog-keys.ts 里没有公钥：官方安装包装不了驱动。"
+            exit 1
+          fi
       # 发布说明取自 CHANGELOG.md 里这个版本的一节；没写就不发布。
       - name: Release notes from CHANGELOG.md
         shell: bash
@@ -158,6 +173,7 @@ jobs:
       - run: bun run release:win
         env:
           CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
+          CDL_LABELFLASH_DEFAULT_DRIVER_CATALOG_URL: ${{ vars.LABELFLASH_DEFAULT_DRIVER_CATALOG_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   release-macos:
@@ -174,6 +190,7 @@ jobs:
       - run: bun run dist:mac
         env:
           CDL_LABELFLASH_DEFAULT_RELAY_URL: ${{ vars.LABELFLASH_DEFAULT_RELAY_URL }}
+          CDL_LABELFLASH_DEFAULT_DRIVER_CATALOG_URL: ${{ vars.LABELFLASH_DEFAULT_DRIVER_CATALOG_URL }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       # 没有自动更新（见 electron-builder.yml），只传 pkg，由 gh 直接上传到草稿。
       - name: Upload the package to the draft

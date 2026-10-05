@@ -30,6 +30,7 @@ import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
 import { BUILD_NUMBER } from './build-info';
+import { BUILD_DEFAULT_DRIVER_CATALOG_URL } from './drivers/build-defaults';
 import { addFirewallRule, firewallStatus } from './firewall';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
@@ -539,6 +540,7 @@ async function bootstrap(): Promise<void> {
       dataPath,
       logsDir,
       defaultRelayUrl: BUILD_DEFAULT_RELAY_URL,
+      defaultDriverCatalogUrl: BUILD_DEFAULT_DRIVER_CATALOG_URL,
       canReadImageText: canReadImages(),
     },
     updater,

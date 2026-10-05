@@ -6,6 +6,7 @@ import { defaultRuleSettings, type RuleSetting, sanitizeRuleSettings } from '../
 import { currentTemplateId, DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { DEFAULT_NOTE_OVERRIDE, type NoteOverride } from '../core/templates/note-override';
 import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
+import { sanitizeCatalogUrl } from './driver-catalog-url';
 import { DEFAULT_PAPER } from './label-paper';
 import { isWebOrigin } from './local-api';
 import { DEFAULT_OCR_MODEL_TIER, isOcrModelTier, type OcrModelTier } from './ocr-model';
@@ -44,6 +45,11 @@ export interface AppSettings {
    * 规则见 src/shared/relay-url.ts。
    */
   mobileRelayUrl: string | null;
+  /**
+   * 驱动清单的地址；null 表示用安装包自带的地址（官方安装包构建时注入，自己构建的没有）。
+   * 规则见 src/shared/driver-catalog-url.ts。清单必须带内置公钥能核对的签名才会用，地址只决定从哪里下载。
+   */
+  driverCatalogUrl: string | null;
   /**
    * 操作员指定的本机接口端口；null = 不指定。指定了就优先用它，被别的程序占用时照样自动换（见 apiPortOrder），
    * 界面上提示换成了哪个。
@@ -103,6 +109,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   scanLineGapMs: SCAN_LINE_GAP_RANGE.default,
   webhooks: [],
   mobileRelayUrl: null,
+  driverCatalogUrl: null,
   apiPort: null,
   apiLastPort: null,
   apiInstanceId: null,
@@ -145,6 +152,8 @@ export function sanitizeSettings(value: unknown): AppSettings {
     webhooks: sanitizeWebhooks(input['webhooks']),
     // 不合法的地址当作没填，回到默认地址：填错一次不该让手机扫码一直连不上。
     mobileRelayUrl: sanitizeRelayUrl(input['mobileRelayUrl']),
+    // 不合法的地址当作没填，回到安装包自带的地址。
+    driverCatalogUrl: sanitizeCatalogUrl(input['driverCatalogUrl']),
     apiPort: sanitizeApiPort(input['apiPort']),
     apiLastPort: sanitizeApiPort(input['apiLastPort']),
     apiInstanceId: sanitizeInstanceId(input['apiInstanceId']),

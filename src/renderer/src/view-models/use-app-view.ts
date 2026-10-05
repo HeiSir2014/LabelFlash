@@ -130,15 +130,23 @@ export function useAppView({ platform, canOpen, editor, onClosed }: AppViewOptio
     [requestLeave, fadeOutConfig],
   );
 
-  /** 打开批量打印页（标题栏按钮、拖进文件、打印记录里重打一批）；配置中心里有未保存的修改时先确认。 */
-  const openBatch = useCallback(() => {
-    if (canOpen) {
-      requestLeave(() => {
-        fadeOutConfig();
-        setView(BATCH_VIEW);
-      });
-    }
-  }, [canOpen, requestLeave, fadeOutConfig]);
+  /**
+   * 打开批量打印页（标题栏按钮、拖进文件、打印记录里重打一批）；配置中心里有未保存的修改时先确认。
+   * onOpened 在页面真的切过去之后才调用（确认框还没答、或者 canOpen 是 false 时都不会调用）：
+   * 拖进来的文件要读、要重打的那一批要开始，都不能在操作员还没决定要不要离开当前页面时就先做了。
+   */
+  const openBatch = useCallback(
+    (onOpened?: () => void) => {
+      if (canOpen) {
+        requestLeave(() => {
+          fadeOutConfig();
+          setView(BATCH_VIEW);
+          onOpened?.();
+        });
+      }
+    },
+    [canOpen, requestLeave, fadeOutConfig],
+  );
 
   const isOpen = view.kind === 'config';
   const toggle = useCallback(() => (isOpen ? close() : open()), [isOpen, close, open]);

@@ -193,10 +193,8 @@ export function App() {
     historyLimit,
   });
   // 把 .xlsx / .csv 拖进窗口：打开批量打印页并读这个文件（.xls 等由主进程说明为什么不行）。
-  useFileDrop((file) => {
-    appView.openBatch();
-    batch.dropFile(file);
-  }, settings !== null);
+  // 读文件放进 openBatch 的回调里：操作员在编辑器里取消了「离开」，或者设置还没读到，就不读这个文件。
+  useFileDrop((file) => appView.openBatch(() => batch.dropFile(file)), settings !== null);
 
   // 手机扫码：浮层只在工作台上显示；在配置中心里点按钮会先回到工作台（经过未保存修改的确认）。
   const mobile = useMobileStation({ onJobsChanged: () => void jobLog.refresh() });
@@ -362,9 +360,9 @@ export function App() {
               batchFilter={jobLog.batchId}
               onFilterBatch={jobLog.setBatchId}
               onRetryBatch={(batchId) => {
-                // 打开批量打印页：进度、失败的原因（例如模板删了不能重打）都在那里看。
-                appView.openBatch();
-                void batch.retryFailed(batchId, null);
+                // 打开批量打印页：进度、失败的原因（例如模板删了不能重打）都在那里看。重打放进回调里：
+                // 和拖文件一样，操作员取消了「离开」就不重打。
+                appView.openBatch(() => void batch.retryFailed(batchId, null));
               }}
             />
           }

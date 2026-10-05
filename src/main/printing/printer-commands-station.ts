@@ -64,24 +64,31 @@ export class PrinterCommands {
    */
   async apply(printerName: string, config: PrinterCommandConfig): Promise<PrinterCommandResult> {
     await this.requirePrinter(printerName);
-    const saved = this.deps.configs();
-    if (!Object.hasOwn(saved, printerName) && Object.keys(saved).length >= MAX_PRINTER_COMMAND_ENTRIES) {
+    const before = this.deps.configs();
+    if (!Object.hasOwn(before, printerName) && Object.keys(before).length >= MAX_PRINTER_COMMAND_ENTRIES) {
       return { status: 'invalid', issue: `最多为 ${MAX_PRINTER_COMMAND_ENTRIES} 台打印机保存指令设置` };
     }
+    // target() 会 await 查驱动名、驱动分辨率：这段时间里别的打印机可能已经存盘，
+    // 存盘前必须重新读一次 configs()，不能用进入这个方法时的旧快照，否则会覆盖掉那次存盘。
     const target = await this.target(printerName, config);
     if (target.commandSet === null) {
-      this.deps.saveConfigs(withPrinterConfig(saved, printerName, config));
+      this.saveConfig(printerName, config);
       return { status: 'not-sent', reason: target.reason };
     }
     const build = buildSetup(target.commandSet, config, target.dpi);
     if (!build.ok) {
       return { status: 'invalid', issue: build.issue };
     }
-    this.deps.saveConfigs(withPrinterConfig(saved, printerName, config));
+    this.saveConfig(printerName, config);
     if (build.text === '') {
       return { status: 'not-sent', reason: 'nothing-to-send' };
     }
     return this.send(printerName, target.commandSet, 'setup', build.text);
+  }
+
+  /** 存盘前重新读一次最新的设置，和另一台打印机并发 apply() 时不会互相覆盖。 */
+  private saveConfig(printerName: string, config: PrinterCommandConfig): void {
+    this.deps.saveConfigs(withPrinterConfig(this.deps.configs(), printerName, config));
   }
 
   /** 按保存的设置（指令集、纸型）执行一个动作。 */

@@ -23,6 +23,8 @@ interface HarnessOptions {
   hints?: () => DriverHints;
   sendResult?: RawSendResult;
   driverDpi?: number | null;
+  /** 让某台打印机的 driverNameOf 故意拖延，凑出两个 apply() 交叠执行的时机（并发测试用）。 */
+  driverNameDelayMs?: Readonly<Record<string, number>>;
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -34,7 +36,13 @@ function harness(options: HarnessOptions = {}) {
     saveConfigs: (next) => {
       state.configs = next;
     },
-    driverNameOf: async (name) => DRIVER_NAMES.get(name) ?? null,
+    driverNameOf: async (name) => {
+      const delay = options.driverNameDelayMs?.[name];
+      if (delay !== undefined) {
+        await Bun.sleep(delay);
+      }
+      return DRIVER_NAMES.get(name) ?? null;
+    },
     driverDpi: async () => (options.driverDpi === undefined ? DRIVER_DPI : options.driverDpi),
     hints: options.hints ?? (() => NO_DRIVER_HINTS),
     sender: {
@@ -160,6 +168,20 @@ describe('PrinterCommands.apply', () => {
       detail: 'win32:1804 StartDocPrinter failed',
     });
     expect(logs.some((line) => line.includes('raw-rejected'))).toBe(true);
+  });
+
+  // apply() 的 target() 中间有 await（认指令集要查驱动名）：这段时间里另一台打印机的 apply() 可能已经存盘，
+  // 不能让这一次用进入时读到的旧快照覆盖掉它。
+  test('does not lose a concurrent apply to a different printer', async () => {
+    const { station, state } = harness({ driverNameDelayMs: { [LABEL_PRINTER]: 20 } });
+    const slow = station.apply(LABEL_PRINTER, { ...DEFAULT_COMMAND_CONFIG, commandSet: 'auto', density: 8 });
+    // 让出一个微任务，确保 slow 已经读过 configs() 的快照、正等着 driverNameOf。
+    await Bun.sleep(0);
+    await station.apply(OFFICE_PRINTER, { ...DEFAULT_COMMAND_CONFIG, commandSet: 'none', density: 5 });
+    await slow;
+    expect(Object.keys(state.configs).sort()).toEqual([LABEL_PRINTER, OFFICE_PRINTER].sort());
+    expect(state.configs[LABEL_PRINTER]?.density).toBe(8);
+    expect(state.configs[OFFICE_PRINTER]?.density).toBe(5);
   });
 
   test('refuses to save commands for more printers than the settings hold', async () => {

@@ -1,4 +1,4 @@
-import { PAPER_LIMITS_MM } from '../../shared/paper-sizes';
+import { PAPER_LIMITS_MM, TENTHS_PER_MM } from '../../shared/paper-sizes';
 import {
   COMMAND_DPI_CHOICES,
   COMMAND_SET_CHOICES,
@@ -21,9 +21,6 @@ type Loose = Record<string, unknown>;
 
 /** 每一项读出来的值：undefined = 不合法（缺了、类型不对、超出范围）；null = 不改。 */
 type ReadFields = { [K in keyof PrinterCommandConfig]: PrinterCommandConfig[K] | undefined };
-
-/** 毫米数保留一位小数：和纸张键的精度一致。 */
-const TENTHS_PER_MM = 10;
 
 function asLoose(value: unknown): Loose | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Loose) : null;

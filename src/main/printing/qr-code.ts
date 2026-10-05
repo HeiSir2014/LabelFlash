@@ -1,12 +1,14 @@
 import QRCode, { type BitMatrix } from 'qrcode';
 import { QR_ERROR_LEVELS, type QrErrorLevel } from '../../core/templates/template-model';
+import { DEFAULT_PRINTER_DPI } from '../../shared/printer-commands';
+
+export { DEFAULT_PRINTER_DPI };
 
 /**
- * 热敏标签机最常见的分辨率 203dpi（打印头一个点 ≈ 0.125mm）；驱动报告了分辨率时按驱动的（例如 300dpi）。
- * 二维码每个模块取整数个点：模块边缘落在点与点之间，打出来宽窄一致、边缘清晰；
+ * 二维码每个模块取整数个点（按 DEFAULT_PRINTER_DPI，打印头一个点 ≈ 0.125mm）：模块边缘落在点与点之间，
+ * 打出来宽窄一致、边缘清晰；驱动报告了分辨率时按驱动的（例如 300dpi）。
  * 不是整数个点时，有的模块多一个点、有的少一个点，扫码枪容易读错。
  */
-export const DEFAULT_PRINTER_DPI = 203;
 const MM_PER_INCH = 25.4;
 /** 在 203dpi 上：模块至少 2 个点（约 0.25mm），再小扫码枪和手机都很难稳定识别。 */
 export const MIN_MODULE_DOTS = 2;

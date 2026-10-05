@@ -18,17 +18,16 @@ import {
 } from '../../../core/printer-commands/command-model';
 import { effectiveCommandSet } from '../../../core/printer-commands/command-set';
 import type { PaperSize } from '../../../shared/paper-sizes';
-import type {
-  NotSentReason,
-  PrinterCommandResult,
-  PrinterCommandsView,
-  RawSendFailureKind,
+import {
+  DEFAULT_PRINTER_DPI,
+  type NotSentReason,
+  type PrinterCommandResult,
+  type PrinterCommandsView,
+  type RawSendFailureKind,
 } from '../../../shared/printer-commands';
 
 /** 下拉框里「不改」对应的值。 */
 export const UNCHANGED = '';
-/** 读不到驱动分辨率时按 203dpi：和打印、主进程换算时一样。 */
-const FALLBACK_DPI = 203;
 /** 失败时系统给的说明最多显示这么多字，完整的在日志里。 */
 const MAX_DETAIL_CHARS = 80;
 
@@ -197,7 +196,7 @@ export function speedOptions(set: CommandSet): SelectOption[] {
 }
 
 export function dpiOptions(driverDpi: number | null): SelectOption[] {
-  const fallback = driverDpi === null ? `读不到，按 ${FALLBACK_DPI}dpi` : `${driverDpi}dpi`;
+  const fallback = driverDpi === null ? `读不到，按 ${DEFAULT_PRINTER_DPI}dpi` : `${driverDpi}dpi`;
   return [
     { value: UNCHANGED, label: `按驱动（${fallback}）` },
     ...COMMAND_DPI_CHOICES.map((dpi) => ({ value: String(dpi), label: `${dpi}dpi` })),

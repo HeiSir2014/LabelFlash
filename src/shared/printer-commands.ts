@@ -1,6 +1,12 @@
 import type { CommandSet, DetectedCommandSet, PrinterCommandConfig } from '../core/printer-commands/command-model';
 
 /**
+ * 热敏标签机最常见的分辨率 203dpi；读不到驱动报告的分辨率时按它换算或显示。
+ * 主进程（二维码、标签机指令）和界面（标签机指令面板的「按驱动」选项）共用同一个值，不要各自定义。
+ */
+export const DEFAULT_PRINTER_DPI = 203;
+
+/**
  * 发不出去的原因。Windows 按 winspool 的错误码分：找不到打印机、没有权限、驱动不收 RAW；
  * not-sent = 探测进程重启时这条还没排到（连行都没被读到），确定没发出去；
  * uncertain = 排到了但探测进程没有及时回应，不知道发没发出去；unsupported = 这个平台不能直接发；其余为 error。

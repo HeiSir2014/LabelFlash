@@ -1,3 +1,4 @@
+import { TENTHS_PER_MM } from '../../shared/paper-sizes';
 import type { MediaSetup, PrinterAction, PrinterCommandConfig } from './command-model';
 
 /**
@@ -5,8 +6,6 @@ import type { MediaSetup, PrinterAction, PrinterCommandConfig } from './command-
  * 纸张用手册的公制写法（SIZE m mm,n mm；GAP m mm,n mm；BLINE m mm,n mm）：不换算打印点，也就不需要分辨率。
  */
 const LINE_END = '\r\n';
-/** 毫米数保留一位小数：和纸张键的精度一致（0.1mm）。 */
-const TENTHS_PER_MM = 10;
 /** DIRECTION 的 0 和 1 相差 180°；0 当「正常」，哪个是出厂方向要真机核对（计划的真机验收）。 */
 const DIRECTION_NORMAL = 0;
 const DIRECTION_ROTATED = 1;

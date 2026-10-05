@@ -9,9 +9,13 @@ import {
 } from '../../core/printer-commands/command-model';
 import { detectCommandSet, effectiveCommandSet } from '../../core/printer-commands/command-set';
 import { buildAction, buildSetup } from '../../core/printer-commands/printer-commands';
-import type { NotSentReason, PrinterCommandResult, PrinterCommandsView } from '../../shared/printer-commands';
+import {
+  DEFAULT_PRINTER_DPI,
+  type NotSentReason,
+  type PrinterCommandResult,
+  type PrinterCommandsView,
+} from '../../shared/printer-commands';
 import { MAX_PRINTER_COMMAND_ENTRIES } from '../../shared/settings';
-import { DEFAULT_PRINTER_DPI } from './qr-code';
 import { asciiBytes, type RawSender } from './raw-sender';
 
 export interface PrinterCommandsDeps {

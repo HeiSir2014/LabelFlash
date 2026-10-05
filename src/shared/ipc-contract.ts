@@ -159,14 +159,20 @@ export interface AppInfo {
 
 export interface LabelFlashApi {
   preview(raw: string): Promise<LabelPreview>;
-  /** 模板编辑时的实时预览：用未保存的草稿模板渲染。 */
-  previewTemplate(raw: string, template: LabelTemplate): Promise<LabelPreview>;
+  /**
+   * 模板编辑时的实时预览：用未保存的草稿模板渲染。librarySampleId 是模板库的编号时按那个模板的示例数据预览，
+   * 不识别 raw（「用这个模板」复制出来、还没改过预览内容）。
+   */
+  previewTemplate(raw: string, template: LabelTemplate, librarySampleId?: string | null): Promise<LabelPreview>;
   /** 打到哪台打印机由主进程按模板决定（模板指定 → 纸张分配）；这种纸没有打印机时返回 no-printer。 */
   print(raw: string, options: PrintOptions): Promise<PrintResult>;
   /** 测试页按 paperKey（这台打印机负责的纸，例如 100x180）的尺寸打印。 */
   printTest(printerName: string, paperKey: string): Promise<PrintResult>;
-  /** 模板页「打印一张试试」：按预览内容打印没保存的草稿；不写打印记录、不占防重复窗口。 */
-  printSample(raw: string, template: LabelTemplate): Promise<PrintResult>;
+  /**
+   * 模板页「打印一张试试」：按预览内容打印没保存的草稿；不写打印记录、不占防重复窗口。
+   * librarySampleId 和 previewTemplate 的一样：预览用的是示例数据时，打的也是示例数据。
+   */
+  printSample(raw: string, template: LabelTemplate, librarySampleId?: string | null): Promise<PrintResult>;
   listPrinters(): Promise<PrinterInfo[]>;
   printerStatus(printerName: string): Promise<PrinterReadiness | null>;
   /** 驱动默认纸张和 paperKey（这台打印机应该装的纸）是否一致；驱动资料短时缓存，打开打印首选项后重新读取。 */

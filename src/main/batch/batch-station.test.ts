@@ -268,6 +268,21 @@ describe('BatchStation printing', () => {
     expect(station.pendingQuit()).toBeNull();
   });
 
+  // 退出确认不是用来追着操作员要答案的：批次被操作员自己取消之后，剩下没打的是他自己的决定，
+  // 不该在之后随便一次退出（哪怕是打印机列表加载完之类完全无关的时机）又弹一次确认。
+  test('has nothing pending once the batch is canceled, even with labels left unattempted', async () => {
+    const held: { resolve: ((result: PrintResult) => void) | null } = { resolve: null };
+    const { station } = createStation({
+      printFields: () => new Promise((resolve) => (held.resolve = resolve)),
+    });
+    const tableId = await loaded(station);
+    station.start(planFor(tableId));
+    station.cancel();
+    held.resolve?.(PRINTED);
+    await station.whenIdle();
+    expect(station.pendingQuit()).toBeNull();
+  });
+
   // 表格重新导入过、或对列设置没跟着改：对着一张不存在的列展开，每一行都会报同一个问题，不如一次说清楚。
   test('refuses to start when a mapped, copies or serial column is missing from the table', async () => {
     const { station } = createStation();

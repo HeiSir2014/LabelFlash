@@ -300,12 +300,12 @@ export class BatchStation {
   }
 
   /**
-   * 退出程序前要确认的：当前这一批还没轮到的标签（不含正在打的那一张——它已经交给了打印机，
-   * 可能已经出纸，不能当成「没打」）。没有正在打的批次，或者已经没有剩下的，返回 null，
-   * 调用方（主进程的退出确认）直接照常退出，不用再多判断一次。
+   * 退出程序前要确认的：当前这一批正在打或暂停中时，还没轮到的标签（不含正在打的那一张——
+   * 它已经交给了打印机，可能已经出纸，不能当成「没打」）。批次已经打完、被操作员取消，或者
+   * 没有正在打的批次，都返回 null——那些剩下的标签已经是操作员自己决定的结果，不用每次退出都问。
    */
   pendingQuit(): { batchId: string; template: LabelTemplate; labels: readonly BatchLabel[] } | null {
-    if (this.current === null) {
+    if (this.current === null || !this.current.run.isActive) {
       return null;
     }
     const labels = this.current.run.unattemptedLabels();

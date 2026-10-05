@@ -13,10 +13,12 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 
 const api: LabelFlashApi = {
   preview: (raw) => ipcRenderer.invoke(IpcChannel.Preview, raw),
-  previewTemplate: (raw, template) => ipcRenderer.invoke(IpcChannel.PreviewTemplate, raw, template),
+  previewTemplate: (raw, template, librarySampleId = null) =>
+    ipcRenderer.invoke(IpcChannel.PreviewTemplate, raw, template, librarySampleId),
   print: (raw, options) => ipcRenderer.invoke(IpcChannel.Print, raw, options),
   printTest: (printerName, paperKey) => ipcRenderer.invoke(IpcChannel.PrintTest, printerName, paperKey),
-  printSample: (raw, template) => ipcRenderer.invoke(IpcChannel.PrintSample, raw, template),
+  printSample: (raw, template, librarySampleId = null) =>
+    ipcRenderer.invoke(IpcChannel.PrintSample, raw, template, librarySampleId),
   listPrinters: () => ipcRenderer.invoke(IpcChannel.ListPrinters),
   printerStatus: (printerName) => ipcRenderer.invoke(IpcChannel.PrinterStatus, printerName),
   checkDriverPaper: (printerName, paperKey) => ipcRenderer.invoke(IpcChannel.CheckDriverPaper, printerName, paperKey),
@@ -33,6 +35,8 @@ const api: LabelFlashApi = {
   listTemplates: () => ipcRenderer.invoke(IpcChannel.ListTemplates),
   duplicateTemplate: (sourceId) => ipcRenderer.invoke(IpcChannel.DuplicateTemplate, sourceId),
   createCanvasTemplate: () => ipcRenderer.invoke(IpcChannel.CreateCanvasTemplate),
+  listTemplateLibrary: () => ipcRenderer.invoke(IpcChannel.ListTemplateLibrary),
+  createTemplateFromLibrary: (libraryId) => ipcRenderer.invoke(IpcChannel.CreateTemplateFromLibrary, libraryId),
   saveTemplate: (template) => ipcRenderer.invoke(IpcChannel.SaveTemplate, template),
   deleteTemplate: (id) => ipcRenderer.invoke(IpcChannel.DeleteTemplate, id),
   listRules: () => ipcRenderer.invoke(IpcChannel.ListRules),

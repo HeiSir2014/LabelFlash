@@ -408,7 +408,21 @@ export function App() {
               onCancel: templates.cancelEdit,
               onCreateCanvas: () => void templates.createCanvas(),
               isCreatingCanvas: templates.isCreatingCanvas,
-              onPrintSample: () => void templates.printSample(config.templatePage.sample.value),
+              library: templates.isLibraryOpen
+                ? {
+                    items: config.templateLibrary.items,
+                    hasError: config.templateLibrary.hasError,
+                    view: config.templateLibrary.view,
+                    category: config.templateLibrary.category,
+                    onCategory: config.templateLibrary.selectCategory,
+                    onPaper: config.templateLibrary.selectPaper,
+                    onUse: (item) => void config.templateLibrary.createFromLibrary(item),
+                    isCreating: templates.isCreatingFromLibrary,
+                    onClose: templates.closeLibrary,
+                  }
+                : null,
+              onOpenLibrary: templates.openLibrary,
+              onPrintSample: () => void templates.printSample(config.templatePage.sample.value, config.librarySampleId),
               isPrintingSample: templates.isPrintingSample,
               printers: printers.printers,
               paperPrinters,

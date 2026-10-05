@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { type HttpStep, STEP_LIMITS } from '../../src/core/scan/enrich-model';
+import { TEMPLATE_LIBRARY } from '../../src/core/templates/library/template-library';
 import type { FakePrinterSpec } from '../../src/main/printing/fake-printers';
 import { RECENT_DELIVERY_COUNT } from '../../src/shared/ipc-contract';
 import { HISTORY_LIMIT_RANGE } from '../../src/shared/settings';
@@ -46,8 +47,9 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的验收项，V01 起）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
- * 结果写进 manifest.json，供验收页面逐项展示和确认；批量打印是 V60–V63，标签机指令是 V80–V83。
+ * 视觉验收（设计文档 §8.2 的验收项，V01 起；模板库是 V50–V55，批量打印是 V60–V63，标签机指令是 V80–V83）：
+ * 每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
 const OUT_DIR = join(APP_ROOT, 'test-results', 'visual-acceptance');
@@ -1424,6 +1426,84 @@ const ITEMS: Item[] = [
     ],
   },
   {
+    id: 'V50',
+    title: '模板库 · 全部',
+    points:
+      '左栏八项（全部 18、服装吊牌 3、价签 3、商品条码 3、鞋盒标 2、食品标签 2、珠宝 / 小商品 2、仓储 3），个数右对齐、等宽数字，「全部」是按下状态；右边「纸张」下拉和一行说明；缩略图网格：每张卡片缩略图框一样高、纸居中、有细边框，30×20 不放大，100×150 整张可见；名字、纸张和说明、「用这个模板」按钮在各卡片里对齐；1024 宽时少放几列、没有横向滚动；底部「18 个模板」「返回列表」；面包屑「模板 › 从模板库新建」',
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+    },
+  },
+  {
+    id: 'V51',
+    title: '模板库 · 仓储（大纸张的缩略图）',
+    points:
+      '「仓储」按下；三张卡片：货架 / 库位标（100×100，库位号大字、Code128）、资产标签（50×30，反白标题、表格、二维码）、箱标（100×150，表格、条码、二维码、备注折行），缩略图都没有被裁；纸张下拉只有全部纸张、50×30mm、100×100mm、100×150mm',
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+      await libraryCategory(page, '仓储').click();
+    },
+  },
+  {
+    id: 'V52',
+    title: '模板库 · 按纸张筛选（40×30）',
+    points: '「全部」下选 40×30mm：三张卡片（简洁价签、EAN-13 商品条码、小商品标），来自三个分类；底部「3 个模板」',
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+      await page.getByRole('region', { name: '模板库' }).getByLabel('纸张').selectOption('40x30');
+    },
+  },
+  {
+    id: 'V53',
+    title: '模板库 · 键盘焦点',
+    points: '用 Tab 走到的分类按钮、「用这个模板」按钮都有清楚的焦点框，没有被卡片边框或网格裁掉',
+    sizes: [SIZE_1280],
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+    },
+    shots: [
+      {
+        label: '分类按钮',
+        prepare: async ({ page }) => {
+          await libraryCategory(page, '全部').focus();
+          await page.keyboard.press('Tab');
+        },
+      },
+      {
+        label: '「用这个模板」',
+        prepare: async ({ page }) => {
+          const buttons = page.getByRole('region', { name: '模板库' }).getByRole('button', { name: '用这个模板' });
+          await buttons.nth(1).focus();
+          await page.keyboard.press('Shift+Tab');
+        },
+      },
+    ],
+  },
+  {
+    id: 'V54',
+    title: '模板库 · 用这个模板后进设计器',
+    points:
+      '复制「服装合格证」进设计器：画布是示例数据（反白「合 格 证」、参数表格线对齐、二维码、等级和安全类别、「零售价 ¥399.00」），工具条「预览内容 · 示例数据」；底部打印前检查「没有发现问题」；面包屑「编辑：服装合格证」；1024 宽时设计器同 V46',
+    setup: async ({ page }) => {
+      await openConfig(page, '模板');
+      await useLibraryTemplate(page, '服装合格证');
+    },
+  },
+  {
+    id: 'V55',
+    title: '模板库 · 逐个模板',
+    points:
+      '每个模板复制进设计器后的画布一张（示例数据）：所有文字、条码号码、表格、二维码都在纸内没有被裁；条码两侧留白、号码在条下居中；反白块的字在黑底中间；和缩略图一致；打印前检查「没有发现问题」',
+    sizes: [SIZE_1280],
+    setup: async ({ page }) => {
+      await openConfig(page, '模板');
+    },
+    shots: TEMPLATE_LIBRARY.map(({ template }) => ({
+      label: template.name,
+      prepare: ({ page }) => useLibraryTemplate(page, template.name),
+    })),
+  },
+  {
     id: 'V80',
     title: '打印机 · 标签机指令（认出 TSPL，已发送）',
     points:
@@ -1505,6 +1585,34 @@ async function openCanvasDesigner(page: Page): Promise<void> {
   await page.locator('.template-item', { hasText: '吊牌（自由设计示例）' }).click();
   await page.getByRole('button', { name: '复制' }).click();
   await expect(page.getByRole('region', { name: '设计器' })).toBeVisible();
+}
+
+/** V50–V55：打开模板库，等缩略图出来。 */
+async function openTemplateLibrary(page: Page): Promise<void> {
+  await openConfig(page, '模板');
+  await page.getByRole('button', { name: '从模板库新建' }).click();
+  await expect(page.getByRole('region', { name: '模板库' }).getByRole('article')).toHaveCount(TEMPLATE_LIBRARY.length);
+}
+
+/** 模板库左栏的一个分类（名字后面跟着个数）。 */
+function libraryCategory(page: Page, label: string) {
+  return page.getByRole('navigation', { name: '模板库分类' }).getByRole('button', { name: new RegExp(`^${label}`) });
+}
+
+/** V54、V55：从模板库复制 name 进设计器（已在设计器里时先回到列表）。 */
+async function useLibraryTemplate(page: Page, name: string): Promise<void> {
+  const designer = page.getByRole('region', { name: '设计器' });
+  if (await designer.isVisible()) {
+    await page.getByRole('button', { name: '返回列表' }).click();
+  }
+  await page.getByRole('button', { name: '从模板库新建' }).click();
+  await page
+    .getByRole('region', { name: '模板库' })
+    .getByRole('article', { name, exact: true })
+    .getByRole('button', { name: '用这个模板' })
+    .click();
+  await expect(designer).toBeVisible();
+  await expect(page.getByRole('region', { name: '打印前检查' })).toContainText('没有发现问题');
 }
 
 /** 在图层列表里点选一个元素（名字形如「编码条码（条码）」）。 */

@@ -11,6 +11,7 @@ import {
   requireBytes,
   requireIndex,
   requireJobQuery,
+  requireLibraryTemplateId,
   requireLookupTableId,
   requireMobilePhoneId,
   requirePaperKey,
@@ -101,6 +102,13 @@ describe('ipc validators', () => {
     );
     expect(() => requireTemplateId('../../etc')).toThrow(TypeError);
     expect(() => requireTemplateId('custom:')).toThrow(TypeError);
+  });
+
+  test('requireLibraryTemplateId accepts library ids only', () => {
+    expect(requireLibraryTemplateId('library:price-simple')).toBe('library:price-simple');
+    expect(() => requireLibraryTemplateId('custom:abc')).toThrow(TypeError);
+    expect(() => requireLibraryTemplateId('library:../x')).toThrow(TypeError);
+    expect(() => requireLibraryTemplateId(42)).toThrow(TypeError);
   });
 
   test('requireVoiceCue accepts known cues only', () => {

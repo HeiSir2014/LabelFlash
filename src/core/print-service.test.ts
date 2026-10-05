@@ -505,6 +505,19 @@ describe('PrintService.printSample', () => {
     expect((await service.printSample(RAW, draft)).status).toBe('printed');
     expect(adapter.printed[0]?.printerName).toBe('A');
   });
+
+  // 模板库复制出的模板：按它的示例数据打，不识别预览内容（这里的预览内容是空白，识别的话会是「无法识别」）。
+  test('prints the library sample instead of recognising the preview content', async () => {
+    const { service, adapter, store } = createHarness();
+    const sample = { content: '6901234567892', fields: [{ name: '品名', value: '纯棉袜子' }] };
+    expect((await service.printSample('   ', draft, sample)).status).toBe('printed');
+    expect(adapter.printed[0]).toMatchObject({
+      raw: '6901234567892',
+      templateId: 'custom:draft',
+      fields: [{ name: '品名', value: '纯棉袜子' }],
+    });
+    expect(store.listRecent(10)).toEqual([]);
+  });
 });
 
 describe('PrintService printer choice', () => {

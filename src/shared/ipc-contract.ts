@@ -18,6 +18,7 @@ import type { PrinterReadiness } from './printer-readiness';
 import type { RenderWarnings } from './render-warnings';
 import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
+import type { LibraryPreview } from './template-library';
 import type { InstallUpdateResult, UpdateStatus } from './update-status';
 import type { VoiceCue } from './voice';
 import type { WindowChrome } from './window-chrome';
@@ -43,6 +44,8 @@ export const IpcChannel = {
   ListTemplates: 'templates:list',
   DuplicateTemplate: 'templates:duplicate',
   CreateCanvasTemplate: 'templates:create-canvas',
+  ListTemplateLibrary: 'templates:library',
+  CreateTemplateFromLibrary: 'templates:create-from-library',
   SaveTemplate: 'templates:save',
   DeleteTemplate: 'templates:delete',
   ListRules: 'rules:list',
@@ -161,14 +164,20 @@ export interface AppInfo {
 
 export interface LabelFlashApi {
   preview(raw: string): Promise<LabelPreview>;
-  /** 模板编辑时的实时预览：用未保存的草稿模板渲染。 */
-  previewTemplate(raw: string, template: LabelTemplate): Promise<LabelPreview>;
+  /**
+   * 模板编辑时的实时预览：用未保存的草稿模板渲染。librarySampleId 是模板库的编号时按那个模板的示例数据预览，
+   * 不识别 raw（「用这个模板」复制出来、还没改过预览内容）。
+   */
+  previewTemplate(raw: string, template: LabelTemplate, librarySampleId?: string | null): Promise<LabelPreview>;
   /** 打到哪台打印机由主进程按模板决定（模板指定 → 纸张分配）；这种纸没有打印机时返回 no-printer。 */
   print(raw: string, options: PrintOptions): Promise<PrintResult>;
   /** 测试页按 paperKey（这台打印机负责的纸，例如 100x180）的尺寸打印。 */
   printTest(printerName: string, paperKey: string): Promise<PrintResult>;
-  /** 模板页「打印一张试试」：按预览内容打印没保存的草稿；不写打印记录、不占防重复窗口。 */
-  printSample(raw: string, template: LabelTemplate): Promise<PrintResult>;
+  /**
+   * 模板页「打印一张试试」：按预览内容打印没保存的草稿；不写打印记录、不占防重复窗口。
+   * librarySampleId 和 previewTemplate 的一样：预览用的是示例数据时，打的也是示例数据。
+   */
+  printSample(raw: string, template: LabelTemplate, librarySampleId?: string | null): Promise<PrintResult>;
   listPrinters(): Promise<PrinterInfo[]>;
   printerStatus(printerName: string): Promise<PrinterReadiness | null>;
   /** 驱动默认纸张和 paperKey（这台打印机应该装的纸）是否一致；驱动资料短时缓存，打开打印首选项后重新读取。 */
@@ -192,6 +201,10 @@ export interface LabelFlashApi {
   duplicateTemplate(sourceId: string): Promise<LabelTemplate>;
   /** 新建空白的自由设计模板（默认纸张），返回它；没有参数，页面不能指定内容。 */
   createCanvasTemplate(): Promise<CanvasTemplate>;
+  /** 模板库：每个模板的说明和按示例数据排好的 HTML（缩略图）。没有参数。 */
+  listTemplateLibrary(): Promise<LibraryPreview[]>;
+  /** 把模板库里的一个模板复制成自定义模板，返回它；只收模板库的编号（library:xxx）。 */
+  createTemplateFromLibrary(libraryId: string): Promise<CanvasTemplate>;
   saveTemplate(template: LabelTemplate): Promise<LabelTemplate>;
   /** 删除后若它正在使用，自动切回标准模板；返回最新设置。 */
   deleteTemplate(id: string): Promise<AppSettings>;

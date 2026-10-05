@@ -54,6 +54,8 @@
   --config-label-width: 120px;
   /* 模板页左侧列表：放得下最长的内置模板名和「使用中」徽标 */
   --template-list-width: 320px;
+  /* 模板库左栏：放得下「珠宝 / 小商品」和个数 */
+  --template-library-nav-width: 184px;
   /* 识别规则页右侧「试一试」的宽度 */
   --tester-width: 360px;
   /* 设计器：左边元素栏放得下「二维码」三个字的按钮；右边属性栏放得下标签列和一个数字框 */
@@ -83,6 +85,7 @@
     --config-nav-width: 160px;
     /* 1024 宽的窗口里画布还要占一半以上 */
     --designer-panel-width: 260px;
+    --template-library-nav-width: 160px;
   }
 }
 

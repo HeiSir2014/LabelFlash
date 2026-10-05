@@ -47,6 +47,7 @@
 - **页面尺寸** `page-size.ts`：按模板的纸张算 `webContents.print` 的 pageSize。
 - **决定打印机**：规则在 core 的 `printing/resolve-printer.ts`，主进程只提供本机打印机列表（`PrinterDriver.knownPrinterNames`）。读打印机列表要用主窗口，启动时窗口还没建好，检测和预读在窗口建好之后再做。
 - **假打印机** `fake-printers.ts`：环境变量 `CDL_LABELFLASH_FAKE_PRINTERS`（只对未打包的程序生效）换掉适配器、驱动纸张查询和状态探测，E2E 和视觉验收用。
+- **模板库** `library-previews.ts`：按每个模板的示例数据排出缩略图 HTML（`renderLabelHtml`，203dpi），`templates:library` 每次现排、不缓存；`library-html.test.ts` 核对每个模板在 203、300dpi 都印得出并做 HTML 快照。预览、试打带模板库编号时，`ipc.ts` 的 `librarySampleOf` 按编号取示例数据（页面不能交字段）。
 - **标签机指令** `printer-commands-station.ts`：核对打印机在系统列表里 → 认指令集（手动 / 在线驱动清单 / 驱动名）→ 按范围把关 → 保存（设置的 `printerCommands`）→ 经 `raw-sender.ts` 发送一次。发送方式：Windows 探测进程、macOS `lp -o raw`（参数数组，字节走标准输入）、其他平台「不支持」。驱动名在 `printer-identity.ts`（macOS 取 `printer-make-and-model`）。不经 `PrintService`、不写打印记录，每次发送写日志。假打印机记下收到的指令文字（`rawJobs`）。
 
 ## 其他子系统

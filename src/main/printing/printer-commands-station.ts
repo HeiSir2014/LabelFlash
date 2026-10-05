@@ -22,8 +22,11 @@ export interface PrinterCommandsDeps {
   driverNameOf(printerName: string): Promise<string | null>;
   /** 驱动报告的分辨率；读不到为 null。 */
   driverDpi(printerName: string): Promise<number | null>;
-  /** 按型号认指令集的在线驱动清单（5c 之前是 NO_DRIVER_HINTS）。 */
-  hints: DriverHints;
+  /**
+   * 按型号认指令集的在线驱动清单（5c 之前是 NO_DRIVER_HINTS）。取值函数：5c 的清单下载完、装好驱动之后
+   * 才会有内容，不能在构造时取一次就定住，每次用到都要重新取。
+   */
+  hints(): DriverHints;
   sender: RawSender;
   /** 系统打印机列表里有这台（安全底线：只发给它们）。 */
   hasPrinter(printerName: string): Promise<boolean>;
@@ -49,7 +52,7 @@ export class PrinterCommands {
     ]);
     return {
       config: configFor(this.deps.configs(), printerName),
-      detected: await detectCommandSet(driverName, this.deps.hints),
+      detected: await detectCommandSet(driverName, this.deps.hints()),
       driverName,
       driverDpi,
     };
@@ -109,7 +112,7 @@ export class PrinterCommands {
     }
     const detected =
       config.commandSet === 'auto'
-        ? await detectCommandSet(await this.deps.driverNameOf(printerName), this.deps.hints)
+        ? await detectCommandSet(await this.deps.driverNameOf(printerName), this.deps.hints())
         : null;
     const commandSet = effectiveCommandSet(config.commandSet, detected);
     if (commandSet === null) {

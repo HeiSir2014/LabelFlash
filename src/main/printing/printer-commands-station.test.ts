@@ -19,7 +19,8 @@ const MEDIA: MediaSetup = { widthMm: 60, heightMm: 40, sensing: 'gap', gapMm: 2 
 const DRIVER_DPI = 203;
 
 interface HarnessOptions {
-  hints?: DriverHints;
+  /** 和真实用法一样传取值函数：每次用到都重新取，晚接入的在线驱动清单不用重启就生效。 */
+  hints?: () => DriverHints;
   sendResult?: RawSendResult;
   driverDpi?: number | null;
 }
@@ -35,7 +36,7 @@ function harness(options: HarnessOptions = {}) {
     },
     driverNameOf: async (name) => DRIVER_NAMES.get(name) ?? null,
     driverDpi: async () => (options.driverDpi === undefined ? DRIVER_DPI : options.driverDpi),
-    hints: options.hints ?? NO_DRIVER_HINTS,
+    hints: options.hints ?? (() => NO_DRIVER_HINTS),
     sender: {
       send: async (printerName, data) => {
         sent.push({ printerName, text: Buffer.from(data).toString('latin1') });
@@ -126,10 +127,27 @@ describe('PrinterCommands.apply', () => {
     const hints: DriverHints = {
       modelForDriverName: () => ({ modelId: 'x', brand: '示例', model: 'X1', commandSet: 'epl', canInstall: false }),
     };
-    const { station } = harness({ hints });
+    const { station } = harness({ hints: () => hints });
     expect(await station.apply(OFFICE_PRINTER, { ...DEFAULT_COMMAND_CONFIG, density: 8 })).toEqual({
       status: 'sent',
       commandSet: 'epl',
+    });
+  });
+
+  // hints 是取值函数：5c 的驱动清单下载完成后晚接入，不用重启站点或重建 PrinterCommands 就能生效。
+  test('reads hints fresh every time instead of once at construction', async () => {
+    let current: DriverHints = NO_DRIVER_HINTS;
+    const { station } = harness({ hints: () => current });
+    expect(await station.apply(OFFICE_PRINTER, { ...DEFAULT_COMMAND_CONFIG, density: 8 })).toEqual({
+      status: 'not-sent',
+      reason: 'unknown-command-set',
+    });
+    current = {
+      modelForDriverName: () => ({ modelId: 'x', brand: '示例', model: 'X1', commandSet: 'zpl', canInstall: false }),
+    };
+    expect(await station.apply(OFFICE_PRINTER, { ...DEFAULT_COMMAND_CONFIG, density: 8 })).toEqual({
+      status: 'sent',
+      commandSet: 'zpl',
     });
   });
 

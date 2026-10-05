@@ -338,7 +338,8 @@ async function bootstrap(): Promise<void> {
     driverNameOf: (name) => (fakePrinters ? fakePrinters.driverName(name) : queryDriverName(name, probeHost)),
     driverDpi: async (name) => (await profiles.get(name))?.dpi ?? null,
     // 5c（驱动安装）的在线驱动清单接进来之前，「自动」只按驱动名认。
-    hints: NO_DRIVER_HINTS,
+    // 取值函数：5c 的在线驱动清单接进来后替换这里，不用重启主进程或重建 PrinterCommands 就能生效。
+    hints: () => NO_DRIVER_HINTS,
     sender: fakePrinters
       ? { send: (name, data) => fakePrinters.sendRaw(name, data) }
       : createRawSender(process.platform, probeHost),

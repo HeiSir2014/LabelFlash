@@ -255,3 +255,38 @@ describe('migration 6', () => {
     db.close();
   });
 });
+
+describe('migration 7', () => {
+  test('adds the PDF columns and keeps every row', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, MIGRATIONS.slice(0, 6));
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES ('a', 1, 'CL5640', 'P', 'desktop', 'printed', 0)",
+    ).run();
+    migrate(db);
+    expect({ ...db.prepare("SELECT seq, pdf_file, pdf_bitmap FROM jobs WHERE id = 'a'").get() }).toEqual({
+      seq: 1,
+      pdf_file: null,
+      pdf_bitmap: null,
+    });
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, pdf_file, pdf_page, pdf_piece, pdf_bitmap) VALUES ('b', 2, '面单.pdf 第 1 页第 2 张', 'P', 'pdf', 'printed', 0, '面单.pdf', 1, 2, 'k')",
+    ).run();
+    expect({ ...db.prepare("SELECT pdf_page, pdf_piece FROM jobs WHERE id = 'b'").get() }).toEqual({
+      pdf_page: 1,
+      pdf_piece: 2,
+    });
+    const hits = db.prepare('SELECT rowid FROM jobs_search WHERE jobs_search MATCH \'"面单.pdf"\'').all();
+    expect(hits.map((row) => row['rowid'])).toEqual([2]);
+    db.close();
+  });
+
+  test('refuses a page or piece number below 1', () => {
+    const db = openDatabase(':memory:');
+    const insert = db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, pdf_file, pdf_page, pdf_piece, pdf_bitmap) VALUES ('c', 3, 'x', 'P', 'pdf', 'printed', 0, 'x.pdf', 0, 1, 'k')",
+    );
+    expect(() => insert.run()).toThrow();
+    db.close();
+  });
+});

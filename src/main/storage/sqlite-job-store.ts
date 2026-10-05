@@ -12,7 +12,8 @@ const JOB_COLUMNS = `
   jobs.source, jobs.status, jobs.forced, jobs.failure_reason AS failureReason, jobs.paper,
   jobs.template_id AS templateId, jobs.fields, jobs.caller,
   jobs.batch_id AS batchId, jobs.batch_row AS batchRow, jobs.batch_copy AS batchCopy,
-  jobs.template_fingerprint AS templateFingerprint`;
+  jobs.template_fingerprint AS templateFingerprint,
+  jobs.pdf_file AS pdfFile, jobs.pdf_page AS pdfPage, jobs.pdf_piece AS pdfPiece, jobs.pdf_bitmap AS pdfBitmap`;
 /** trigram 索引至少需要 3 个字符；更短的搜索词退回 LIKE（LIMIT 保证找够一页就停）。 */
 const FTS_MIN_QUERY_LENGTH = 3;
 /** 调小容量时每批删除的行数；批与批之间让出主线程，避免卡住打印。 */
@@ -44,9 +45,9 @@ export class SqliteJobStore implements JobStore {
     this.capacity = assertCapacity(capacity);
     this.insertJob = db.prepare(`
       INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id, fields, caller,
-        batch_id, batch_row, batch_copy, template_fingerprint)
+        batch_id, batch_row, batch_copy, template_fingerprint, pdf_file, pdf_page, pdf_piece, pdf_bitmap)
       VALUES (:id, :createdAt, :raw, :printerName, :source, :status, :forced, :failureReason, :paper, :templateId, :fields, :caller,
-        :batchId, :batchRow, :batchCopy, :templateFingerprint)`);
+        :batchId, :batchRow, :batchCopy, :templateFingerprint, :pdfFile, :pdfPage, :pdfPiece, :pdfBitmap)`);
     // 插入后使用：只保留 seq 落在最新 capacity 个序号内的记录，走主键，开销与容量无关。
     this.trimBehind = db.prepare('DELETE FROM jobs WHERE seq <= :lastSeq - :capacity');
     this.trimOldestBatch = db.prepare(`
@@ -67,7 +68,7 @@ export class SqliteJobStore implements JobStore {
     this.selectLastPrinted = db.prepare(`
       SELECT raw, MAX(created_at) AS printedAt
       FROM jobs
-      WHERE status = 'printed' AND created_at >= :since AND caller IS NULL AND batch_id IS NULL
+      WHERE status = 'printed' AND created_at >= :since AND caller IS NULL AND batch_id IS NULL AND pdf_bitmap IS NULL
       GROUP BY raw`);
     this.selectById = db.prepare(`SELECT ${JOB_COLUMNS} FROM jobs WHERE jobs.id = :id`);
     // 按批次翻页：搜索只在这一批里用 LIKE（一批最多 2 万张，不需要全文索引）。
@@ -113,6 +114,10 @@ export class SqliteJobStore implements JobStore {
         batchRow: job.batch?.row ?? null,
         batchCopy: job.batch?.copy ?? null,
         templateFingerprint: job.templateFingerprint ?? null,
+        pdfFile: job.pdf?.file ?? null,
+        pdfPage: job.pdf?.page ?? null,
+        pdfPiece: job.pdf?.piece ?? null,
+        pdfBitmap: job.pdf?.bitmap ?? null,
       });
       return Number(this.trimBehind.run({ lastSeq: lastInsertRowid, capacity: this.capacity }).changes);
     });
@@ -158,8 +163,8 @@ export class SqliteJobStore implements JobStore {
   }
 
   /**
-   * 扫码防重复窗口的恢复：只算扫码打的。本机接口、按字段重打（带调用方）和批量打印（带批次号）都不用这个窗口，
-   * 否则重启后扫到和批量打过的同样内容会被当成重复。
+   * 扫码防重复窗口的恢复：只算扫码打的。本机接口、按字段重打（带调用方）、批量打印（带批次号）和 PDF 打印（带位图编号）
+   * 都不用这个窗口，否则重启后扫到和它们打过的同样内容会被当成重复。
    */
   listLastPrinted(since: number): LastPrinted[] {
     return this.selectLastPrinted.all({ since }).map((row) => ({
@@ -242,6 +247,15 @@ function toJobRecord(row: Row): JobRecord {
   }
   if (row['templateFingerprint'] !== null) {
     job.templateFingerprint = readString(row, 'templateFingerprint');
+  }
+  // 位图编号在，其余三项也必须在：readString / readInteger 遇到 NULL 抛错，坏行不当成合法记录。
+  if (row['pdfBitmap'] !== null) {
+    job.pdf = {
+      file: readString(row, 'pdfFile'),
+      page: readInteger(row, 'pdfPage'),
+      piece: readInteger(row, 'pdfPiece'),
+      bitmap: readString(row, 'pdfBitmap'),
+    };
   }
   return job;
 }

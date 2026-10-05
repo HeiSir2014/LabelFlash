@@ -19,6 +19,14 @@ export interface BatchRef {
   copy: number;
 }
 
+/** PDF 打印的一块：哪个文件、第几页、这一页的第几张（都从 1 数），和缓存里那张黑白位图的编号（预览、重打用，保留 7 天）。 */
+export interface PdfRef {
+  file: string;
+  page: number;
+  piece: number;
+  bitmap: string;
+}
+
 /** 打印请求不带打印机：主进程按模板决定（见 printing/resolve-printer.ts）。 */
 export interface PrintRequest {
   raw: string;
@@ -33,6 +41,8 @@ export interface PrintRequest {
   manualFields?: Readonly<Record<string, string>>;
   /** 批量打印的一张（含从打印记录重打批量打的）；其他入口没有。 */
   batch?: BatchRef;
+  /** PDF 打印的一块（含从打印记录重打的）；其他入口没有。 */
+  pdf?: PdfRef;
 }
 
 export const PRINT_FAILURE_REASONS = [
@@ -131,6 +141,8 @@ export interface JobRecord {
   /** 批量打印用的模板指纹（templateFingerprint，字段 + 纸张）：重打时核对模板有没有改过，
    *  改过（哪怕编号没变）就拒绝按旧样子重打。只有批量打印来源有。 */
   templateFingerprint?: string;
+  /** PDF 打印的一块：文件、页码、第几张、位图编号；其他来源没有。 */
+  pdf?: PdfRef;
 }
 
 export interface Clock {

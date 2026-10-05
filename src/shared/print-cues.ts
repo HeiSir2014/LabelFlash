@@ -62,5 +62,8 @@ function failureCue(reason: PrintFailureReason, issue: PrinterIssue | null): Voi
       return 'lookupFailed';
     case 'TEXT_NOT_FOUND':
       return 'textNotFound';
+    // 批量打印退出时记下的「没打到」：这是事后写的记录，不是播报的时候，不会真的播出来；映射只为穷尽。
+    case 'CANCELED':
+      return 'failed';
   }
 }

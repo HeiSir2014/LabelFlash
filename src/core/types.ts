@@ -44,6 +44,8 @@ export const PRINT_FAILURE_REASONS = [
   'LOOKUP_FAILED',
   /** 加工步骤「图中文字识别」设为「拦下不打印」时没认出（例如货架号）。 */
   'TEXT_NOT_FOUND',
+  /** 批量打印还没打到的标签，操作员选择了在退出程序时不等它们：这些行从来没有交给过打印机。 */
+  'CANCELED',
 ] as const;
 export type PrintFailureReason = (typeof PRINT_FAILURE_REASONS)[number];
 

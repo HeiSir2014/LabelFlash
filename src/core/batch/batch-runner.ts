@@ -195,24 +195,52 @@ export class BatchRun {
     };
   }
 
-  /** 查询用的完整快照：按需调用，失败名单最多给最近 MAX_SNAPSHOT_FAILURES 条。 */
+  /**
+   * 查询用的完整快照：按需调用，失败名单最多给最近 MAX_SNAPSHOT_FAILURES 条，最近失败的排在最前面——
+   * 和 failedLabels()、failedReasons() 用的是同一个顺序，操作员一眼就能看到最新出的问题。
+   */
   snapshot(): BatchSnapshot {
-    return { ...this.progress(), failures: this.failures.slice(-MAX_SNAPSHOT_FAILURES) };
+    return { ...this.progress(), failures: this.failures.slice(-MAX_SNAPSHOT_FAILURES).reverse() };
   }
 
   /**
-   * 这一批里失败的标签（按行号筛选，null = 全部），按原始标签表里的顺序：从失败记录的 (row, copy)
-   * 找回当时打印用的完整标签（字段、内容）。不受历史保留条数限制——这份名单只要这个 BatchRun
-   * 还在内存里（这次会话还没打别的批）就是完整的，重打失败的优先用它，不必查打印记录表。
+   * 这一批里失败的标签（按行号筛选，null = 全部），从失败记录的 (row, copy) 找回当时打印用的完整标签
+   * （字段、内容）。不受历史保留条数限制——这份名单只要这个 BatchRun 还在内存里（这次会话还没打别的批）
+   * 就是完整的，重打失败的优先用它，不必查打印记录表。最近失败的排在最前面。
    */
   failedLabels(row: number | null): BatchLabel[] {
     if (this.failures.length === 0) {
       return [];
     }
-    const wanted = new Set(
-      this.failures.filter((failure) => row === null || failure.row === row).map((failure) => key(failure)),
-    );
-    return this.labels.filter((label) => wanted.has(key(label)));
+    const labelByKey = new Map(this.labels.map((label) => [key(label), label]));
+    return this.failures
+      .filter((failure) => row === null || failure.row === row)
+      .reverse()
+      .flatMap((failure) => {
+        const label = labelByKey.get(key(failure));
+        return label === undefined ? [] : [label];
+      });
+  }
+
+  /**
+   * 这一批里失败的 (行, 份, 原因)，按行号筛选（null = 全部），不截断：和 failedLabels 配合用，
+   * 需要完整、准确失败名单时用它（例如 BatchStation 合并多次重打之后还没解决的失败，snapshot() 的
+   * 500 条上限不够看）。最近失败的排在最前面。
+   */
+  failedReasons(row: number | null): BatchFailure[] {
+    return this.failures
+      .filter((failure) => row === null || failure.row === row)
+      .map((failure) => ({ ...failure }))
+      .reverse();
+  }
+
+  /**
+   * 还没真正交给打印队列的标签：取消、暂停，或者退出程序时，这些是确定没打过的。正在打的那一张
+   * （inFlight）不算在内——它已经交出去了，可能已经进了打印队列甚至已经出纸，不能当成「没打」。
+   */
+  unattemptedLabels(): BatchLabel[] {
+    const from = this.inFlight ? this.next + 1 : this.next;
+    return this.labels.slice(from);
   }
 
   /** 用方法读状态：循环里隔着 await 读 this.state，TypeScript 的收窄会误以为它没变。 */

@@ -214,6 +214,16 @@ describe('migration 6', () => {
     db.close();
   });
 
+  // CANCELED：批量打印退出时还没打到的那些行，从来没交给过打印机。
+  test('accepts the CANCELED failure reason for batch labels never sent to the printer', () => {
+    const db = openDatabase(':memory:');
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason, batch_id, batch_row, batch_copy) VALUES ('c', 1, 'X', 'P', 'batch', 'failed', 0, 'CANCELED', '20261002-143501-a1b2', 5, 1)",
+    ).run();
+    expect(db.prepare("SELECT failure_reason FROM jobs WHERE id = 'c'").get()?.['failure_reason']).toBe('CANCELED');
+    db.close();
+  });
+
   // 和迁移 3 的同一条规则：重建表之后，自增计数接着旧表走，删掉的旧序号不会被新记录复用。
   test('keeps counting sequence numbers from where the old table stopped, even after a delete', () => {
     const db = new DatabaseSync(':memory:');

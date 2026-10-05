@@ -21,6 +21,8 @@ export type BatchPreviewResult = { status: 'ok'; preview: BatchRowPreview } | { 
 /** 把每一行排一遍才看得出的问题（条码不合码制、二维码放不下、文字被截断）。 */
 export interface BatchCheckResult {
   problems: RowProblem[];
+  /** 这次根本没能检查（模板、表格对不上，或者设置本身打印不了）时的原因：problems 固定是空的。 */
+  issue?: string;
 }
 
 /** 界面看到的一批的进度：失败只带前 BATCH_STATUS_FAILURES 条（BatchRun.snapshot() 另有自己的上限，这里更严）。 */

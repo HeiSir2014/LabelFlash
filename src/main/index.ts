@@ -2,7 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { hostname, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net, utilityProcess } from 'electron';
+import {
+  app,
+  type BrowserWindow,
+  dialog,
+  Menu,
+  Notification,
+  nativeImage,
+  net,
+  powerMonitor,
+  utilityProcess,
+} from 'electron';
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { batchIdFor } from '../core/batch/batch-model';
@@ -29,6 +39,7 @@ import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
+import { batchQuitDialogText, canceledJobRecords, shouldConfirmBatchQuit } from './batch/batch-quit';
 import { BatchStation } from './batch/batch-station';
 import batchReaderPath from './batch/reader-worker?modulePath';
 import { TableReaderHost } from './batch/table-reader-host';
@@ -101,6 +112,9 @@ let mainWindow: BrowserWindow | null = null;
 let tray: AppTray | null = null;
 let database: DatabaseSync | null = null;
 let isQuitting = false;
+// 操作系统正在关机、注销（而不是操作员自己退出程序）：批量打印还有没打的也不弹确认，不能挡着关机。
+// Windows 走 session-end（before-quit 根本不会触发，见下面的处理），这里主要是给 macOS/Linux 用。
+let isSystemShutdown = false;
 
 /** 仅开发 / E2E 测试可用：把数据目录指到临时目录，测试之间互不干扰。安装版忽略它。 */
 const USER_DATA_OVERRIDE_ENV = 'CDL_LABELFLASH_USER_DATA';
@@ -455,6 +469,7 @@ async function bootstrap(): Promise<void> {
     },
     onStatus: (status) => sendToMainWindow(IpcChannel.BatchStatusChanged, status),
     onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
+    now: () => Date.now(),
   });
   const voice = new VoiceClips(join(dataPath, VOICE_CACHE_DIR_NAME), synthesizeWithEdge);
   // 后台预热全部播报语：之后扫码时直接播缓存，不等在线合成。
@@ -555,6 +570,43 @@ async function bootstrap(): Promise<void> {
   });
   // 在 before-quit 就告诉手机「程序已退出」：到 will-quit 时进程马上结束，消息可能来不及发出。
   app.on('before-quit', () => mobile.quit());
+
+  // macOS/Linux 关机、注销时 before-quit 也会触发（Windows 不会，走的是下面的 session-end）：
+  // 这种情况下不弹确认，不能挡着系统关机。
+  powerMonitor.on('shutdown', () => {
+    isSystemShutdown = true;
+  });
+  // 退出时批量打印还有没打到的：弹确认，操作员选「仍要退出」才记下来（CANCELED）再真正退出。
+  // 已经确认过一次就不用再弹第二次（这次 before-quit 处理完会重新调用 app.quit()）。
+  let batchQuitConfirmed = false;
+  app.on('before-quit', (event) => {
+    if (batchQuitConfirmed) {
+      return;
+    }
+    const pending = batch.pendingQuit();
+    if (pending === null || !shouldConfirmBatchQuit(pending.labels.length, isSystemShutdown)) {
+      return;
+    }
+    event.preventDefault();
+    const { message, detail } = batchQuitDialogText(pending.labels.length);
+    const options = {
+      type: 'warning' as const,
+      buttons: ['取消', '仍要退出'],
+      defaultId: 0,
+      cancelId: 0,
+      message,
+      detail,
+    };
+    const response = mainWindow ? dialog.showMessageBoxSync(mainWindow, options) : dialog.showMessageBoxSync(options);
+    if (response !== 1) {
+      return;
+    }
+    for (const record of canceledJobRecords(pending.batchId, pending.template, pending.labels, randomUUID, Date.now)) {
+      jobs.append(record);
+    }
+    batchQuitConfirmed = true;
+    app.quit();
+  });
 
   registerIpc({
     service,

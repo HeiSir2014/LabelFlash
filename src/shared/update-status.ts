@@ -8,3 +8,7 @@ export type UpdateStatus =
   | { state: 'downloading'; version: string; percent: number }
   | { state: 'ready'; version: string }
   | { state: 'error' };
+
+/** 点「重启更新」的结果：批量打印还在打或暂停中时拒绝安装（quitAndInstall 会在确认框之前就
+ *  把安装程序拉起来，没法像退出那样先弹确认），operator 要先打完或取消这一批。 */
+export type InstallUpdateResult = { status: 'ok' } | { status: 'refused'; issue: string };

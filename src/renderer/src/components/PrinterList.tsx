@@ -6,7 +6,9 @@ import { filterPrinters } from '../lib/list-filters';
 import { describePaperCheck } from '../lib/paper-text';
 import { expectedPaperKey, type PaperRow, type Responsibilities } from '../lib/printer-assignment';
 import { describeResult } from '../lib/status-text';
+import type { PrinterCommandsModel } from '../view-models/use-printer-commands';
 import type { PrinterProfile } from '../view-models/use-printer-profiles';
+import { PrinterCommandsPanel } from './PrinterCommandsPanel';
 
 const LABEL_PAPER_KEY = paperKey(DEFAULT_PAPER);
 
@@ -25,6 +27,8 @@ interface PrinterListProps {
   onOpenPreferences: (printerName: string) => void;
   onRefresh: () => void;
   onTestPrint: (printerName: string, paperKey: string) => Promise<PrintResult | null>;
+  /** 每台打印机下面展开的「标签机指令」。 */
+  commands: PrinterCommandsModel;
 }
 
 /** 工作台右侧的打印机页：上面按纸张分配打印机，下面列出本机所有打印机和各自负责什么。 */
@@ -40,6 +44,7 @@ export function PrinterList({
   onOpenPreferences,
   onRefresh,
   onTestPrint,
+  commands,
 }: PrinterListProps) {
   const [query, setQuery] = useState('');
   const [testMessages, setTestMessages] = useState<Record<string, string>>({});
@@ -137,13 +142,23 @@ export function PrinterList({
                 <span className="printer-row__name">{printer.displayName}</span>
                 {duties.length > 0 && <PrinterState readiness={readiness} />}
               </span>
-              <button
-                type="button"
-                className="button button--small button--quiet"
-                onClick={() => void runTest(printer.name, expectedKey ?? LABEL_PAPER_KEY)}
-              >
-                测试页
-              </button>
+              <span className="printer-row__actions">
+                <button
+                  type="button"
+                  className="button button--small button--quiet"
+                  onClick={() => void runTest(printer.name, expectedKey ?? LABEL_PAPER_KEY)}
+                >
+                  测试页
+                </button>
+                <button
+                  type="button"
+                  className="button button--small button--quiet"
+                  aria-expanded={commands.openName === printer.name}
+                  onClick={() => commands.toggle(printer.name)}
+                >
+                  标签机指令
+                </button>
+              </span>
               {duties.length > 0 && <p className="printer-row__message">负责：{duties.join('；')}</p>}
               {paperView?.tone === 'ok' && <p className="printer-row__message">{paperView.text}</p>}
               {paperView?.tone === 'warning' && (
@@ -160,6 +175,9 @@ export function PrinterList({
                 </div>
               )}
               {testMessages[printer.name] && <p className="printer-row__message">{testMessages[printer.name]}</p>}
+              {commands.openName === printer.name && (
+                <PrinterCommandsPanel model={commands} displayName={printer.displayName} />
+              )}
             </li>
           );
         })}

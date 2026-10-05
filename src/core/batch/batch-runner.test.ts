@@ -168,9 +168,10 @@ describe('BatchRun', () => {
       pauseReason: 'consecutive-failures',
       sent: 0,
       failed: 2,
+      // 最近失败的排在最前面。
       failures: [
-        { row: 1, copy: 1, reason: 'PRINT_ERROR' },
         { row: 2, copy: 1, reason: 'PRINT_ERROR' },
+        { row: 1, copy: 1, reason: 'PRINT_ERROR' },
       ],
     });
     run.resume();
@@ -298,10 +299,11 @@ describe('BatchRun', () => {
       pauseReason: 'consecutive-failures-after-timeout',
       sent: 0,
       failed: 3,
+      // 最近失败的排在最前面。
       failures: [
-        { row: 1, copy: 1, reason: 'PRINT_TIMEOUT' },
-        { row: 2, copy: 1, reason: 'PRINT_TIMEOUT' },
         { row: 3, copy: 1, reason: 'PRINT_TIMEOUT' },
+        { row: 2, copy: 1, reason: 'PRINT_TIMEOUT' },
+        { row: 1, copy: 1, reason: 'PRINT_TIMEOUT' },
       ],
     });
     run.resume();
@@ -324,6 +326,7 @@ describe('BatchRun.failedLabels', () => {
     expect(run.failedLabels(null)).toEqual([]);
   });
 
+  // 最近失败的排在最前面：行 3 比行 1 后失败，所以排在它前面。
   test('finds the original labels of failed rows and copies, optionally for one row', async () => {
     const { run, release, finished } = gatedRun(3);
     await settle();
@@ -333,8 +336,58 @@ describe('BatchRun.failedLabels', () => {
     await settle();
     await release({ status: 'failed', reason: 'PRINT_TIMEOUT' });
     await finished;
-    expect(run.failedLabels(null).map((label) => label.row)).toEqual([1, 3]);
+    expect(run.failedLabels(null).map((label) => label.row)).toEqual([3, 1]);
     expect(run.failedLabels(3).map((label) => label.row)).toEqual([3]);
     expect(run.failedLabels(2)).toEqual([]);
+  });
+});
+
+describe('BatchRun.failedReasons', () => {
+  test('gives the same rows as failedLabels, with their reason, most recent first', async () => {
+    const { run, release, finished } = gatedRun(3);
+    await settle();
+    await release({ status: 'failed', reason: 'PRINT_ERROR' });
+    await settle();
+    await release();
+    await settle();
+    await release({ status: 'failed', reason: 'PRINT_TIMEOUT' });
+    await finished;
+    expect(run.failedReasons(null)).toEqual([
+      { row: 3, copy: 1, reason: 'PRINT_TIMEOUT' },
+      { row: 1, copy: 1, reason: 'PRINT_ERROR' },
+    ]);
+    expect(run.failedReasons(1)).toEqual([{ row: 1, copy: 1, reason: 'PRINT_ERROR' }]);
+  });
+});
+
+describe('BatchRun.unattemptedLabels', () => {
+  test('is empty once the run is done', async () => {
+    const run = new BatchRun('20261002-143501-a1b2', labels(2), {
+      print: async () => PRINTED,
+      onChange: () => undefined,
+    });
+    await run.run();
+    expect(run.unattemptedLabels()).toEqual([]);
+  });
+
+  // 退出时正在打的那一张已经交出去了（可能已经出纸），不算「没打过」；它之后的才是确定没打的。
+  test('excludes the label in flight and everything already sent, but not the ones after it', async () => {
+    const { run, release, finished } = gatedRun(4);
+    await settle();
+    expect(run.unattemptedLabels().map((label) => label.row)).toEqual([2, 3, 4]);
+    run.cancel();
+    expect(run.unattemptedLabels().map((label) => label.row)).toEqual([2, 3, 4]);
+    await release();
+    await finished;
+    expect(run.unattemptedLabels().map((label) => label.row)).toEqual([2, 3, 4]);
+  });
+
+  // 暂停生效之后（上一张已经交出去、这一张还没交）：剩下的才是确定没打过的。
+  test('reflects exactly what has not been sent yet, even while paused', async () => {
+    const { run, release } = gatedRun(2);
+    await settle();
+    run.pause();
+    await release();
+    expect(run.unattemptedLabels().map((label) => label.row)).toEqual([2]);
   });
 });

@@ -33,7 +33,12 @@ const ZIP_MAGIC: readonly number[] = [0x50, 0x4b, 0x03, 0x04];
 /**
  * 压缩炸弹的上限：.xlsx 本质是 ZIP，压缩率能把几百 MB 的内容压成几十 KB。read-excel-file 会把整个文件解压进
  * 内存，分配的 Buffer 不受子进程 --max-old-space-size 的堆上限约束（Buffer 的底层内存在 V8 堆外），
- * 只能在真正解压之前，自己读 ZIP 的中央目录（不解压，只读每个条目声明的大小）先拦一道。
+ * 只能在真正解压之前，自己核对 ZIP 里声明的大小先拦一道。
+ *
+ * 这里只看「本地文件头」（每个条目自己带的头），不看「中央目录」（文件末尾汇总的一份目录）：
+ * read-excel-file 的 unzipper-esm 是按本地文件头流式解压的，根本不读中央目录——中央目录可以随便写、
+ * 甚至整个不存在，解压库都不在乎。只核对中央目录等于没核对，精心构造的文件能把真实情况全部瞒在
+ * 本地文件头里，中央目录声称多小都行。
  */
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 /** 正常的 .xlsx 解压后远小于这个数：一万行、一百列、每格 1000 字的理论上限也就几亿字节；200MB 留足余量。 */
@@ -41,66 +46,61 @@ const MAX_XLSX_UNCOMPRESSED_BYTES = 200 * BYTES_PER_MEGABYTE;
 /** 正常的 .xlsx 内部文件不会有几千个（通常几十个）：用它顺带挡住「海量空文件」式的压缩炸弹。 */
 const MAX_XLSX_ZIP_ENTRIES = 5_000;
 const ZIP_BOMB_ISSUE = `文件太大：解压后的内容超过 ${MAX_XLSX_UNCOMPRESSED_BYTES / BYTES_PER_MEGABYTE}MB，可能不是正常的 Excel 文件。可以在 Excel 里「另存为」CSV 再试`;
-/** ZIP 的「目录结束记录」最短 22 字节，后面最多跟着 65535 字节的注释。 */
-const EOCD_MIN_SIZE = 22;
-const MAX_ZIP_COMMENT_LENGTH = 0xffff;
-const EOCD_SIGNATURE = 0x06054b50;
+const LOCAL_HEADER_SIGNATURE = 0x04034b50;
 const CENTRAL_DIR_SIGNATURE = 0x02014b50;
-/** 中央目录的固定部分长度：文件名、扩展字段、注释的长度跟在后面（都是变长的）。 */
-const CENTRAL_DIR_ENTRY_FIXED_SIZE = 46;
+/** 本地文件头的固定部分长度：文件名、扩展字段的长度跟在后面（都是变长的），再往后紧跟着这个条目的数据。 */
+const LOCAL_HEADER_FIXED_SIZE = 30;
+/**
+ * 通用标志位第 3 位（0 起数，即 0x0008）：这一条目的压缩大小、CRC 另外存在数据后面的「数据描述符」里，
+ * 本地文件头上的大小字段只是占位的 0。不在不整个重新解析（找下一个已知签名）的前提下，没法安全跳过
+ * 这个条目有多大，直接按「可疑」拦下——真正的 Excel 不会用这种边写边算大小的流式写法。
+ */
+const DATA_DESCRIPTOR_FLAG = 0x0008;
 /** ZIP64 格式里，大小字段放不下时用这个哨兵值，实际大小在扩展字段里；这里不解析扩展字段，直接按「太大」处理。 */
 const ZIP64_SENTINEL = 0xffffffff;
 
 /**
- * 不解压，只读 ZIP 的「目录结束记录」和「中央目录」，核对里面声明的解压后总大小、文件个数。
- * 读不出中央目录（文件本身损坏，不是来捣乱的）时不拦：留给 readSheet 自己的错误处理。
+ * 从头顺序走一遍本地文件头，核对每个条目、累计声明的解压后大小。走到中央目录的签名就算正常结束；
+ * 条目数超限、单个或累计声明的大小超限、用了数据描述符、或者结构跟预期的不一样（不是本地文件头，
+ * 也不是中央目录，包括没有中央目录、文件在条目中间就断掉），都按「太大或可疑」拦下——
+ * 宁可错拦一个真文件，也不要在看不懂结构时放行。
  */
 function zipBombIssue(bytes: Uint8Array): string | null {
-  const eocd = findEndOfCentralDirectory(bytes);
-  if (eocd === null) {
-    return null;
-  }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const totalEntries = view.getUint16(eocd + 10, true);
-  if (totalEntries > MAX_XLSX_ZIP_ENTRIES) {
-    return ZIP_BOMB_ISSUE;
-  }
-  let offset = view.getUint32(eocd + 16, true);
+  let offset = 0;
   let uncompressedTotal = 0;
-  for (let entry = 0; entry < totalEntries; entry += 1) {
-    if (
-      offset + CENTRAL_DIR_ENTRY_FIXED_SIZE > bytes.length ||
-      view.getUint32(offset, true) !== CENTRAL_DIR_SIGNATURE
-    ) {
-      // 结构跟预期的不一样：这不是我们要防的「声明了巨大体积」那种构造，交给 readSheet 判断是不是单纯损坏了。
+  let entries = 0;
+  while (offset + 4 <= bytes.length) {
+    const signature = view.getUint32(offset, true);
+    if (signature === CENTRAL_DIR_SIGNATURE) {
       return null;
     }
-    const uncompressedSize = view.getUint32(offset + 24, true);
-    const filenameLength = view.getUint16(offset + 28, true);
-    const extraLength = view.getUint16(offset + 30, true);
-    const commentLength = view.getUint16(offset + 32, true);
-    if (uncompressedSize === ZIP64_SENTINEL) {
+    if (signature !== LOCAL_HEADER_SIGNATURE || offset + LOCAL_HEADER_FIXED_SIZE > bytes.length) {
+      return ZIP_BOMB_ISSUE;
+    }
+    entries += 1;
+    if (entries > MAX_XLSX_ZIP_ENTRIES) {
+      return ZIP_BOMB_ISSUE;
+    }
+    const flags = view.getUint16(offset + 6, true);
+    const compressedSize = view.getUint32(offset + 18, true);
+    const uncompressedSize = view.getUint32(offset + 22, true);
+    const filenameLength = view.getUint16(offset + 26, true);
+    const extraLength = view.getUint16(offset + 28, true);
+    if ((flags & DATA_DESCRIPTOR_FLAG) !== 0 && compressedSize === 0 && uncompressedSize === 0) {
+      return ZIP_BOMB_ISSUE;
+    }
+    if (uncompressedSize === ZIP64_SENTINEL || compressedSize === ZIP64_SENTINEL) {
       return ZIP_BOMB_ISSUE;
     }
     uncompressedTotal += uncompressedSize;
     if (uncompressedTotal > MAX_XLSX_UNCOMPRESSED_BYTES) {
       return ZIP_BOMB_ISSUE;
     }
-    offset += CENTRAL_DIR_ENTRY_FIXED_SIZE + filenameLength + extraLength + commentLength;
+    offset += LOCAL_HEADER_FIXED_SIZE + filenameLength + extraLength + compressedSize;
   }
-  return null;
-}
-
-/** 从末尾往前找「目录结束记录」的签名；注释最长 65535 字节，超出这个范围就不再找了。 */
-function findEndOfCentralDirectory(bytes: Uint8Array): number | null {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const start = Math.max(0, bytes.length - EOCD_MIN_SIZE - MAX_ZIP_COMMENT_LENGTH);
-  for (let index = bytes.length - EOCD_MIN_SIZE; index >= start; index -= 1) {
-    if (view.getUint32(index, true) === EOCD_SIGNATURE) {
-      return index;
-    }
-  }
-  return null;
+  // 扫到文件末尾都没遇到中央目录：结构跟正常的 ZIP 不一样，不放行。
+  return ZIP_BOMB_ISSUE;
 }
 
 function startsWith(bytes: Uint8Array, magic: readonly number[]): boolean {

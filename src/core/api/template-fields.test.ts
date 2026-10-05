@@ -3,7 +3,7 @@ import { CANVAS_TAG } from '../templates/builtin-canvas';
 import { DEPPON_TWO_PART, PLATFORM_TWO_PART } from '../templates/builtin-waybills';
 import type { QrLabelTemplate } from '../templates/template-model';
 import { PICK_TEMPLATE } from '../testing/templates';
-import { templateFields } from './template-fields';
+import { templateFields, templateFingerprint } from './template-fields';
 
 const SLOT = { prefix: '', fontSizeMm: 3, bold: false };
 
@@ -62,5 +62,29 @@ describe('templateFields', () => {
 
   test('lists the variables a canvas template uses, in order and without duplicates', () => {
     expect(templateFields(CANVAS_TAG)).toEqual({ mode: 'PICKED', names: ['编码', '颜色', '尺码', '货架号'] });
+  });
+});
+
+// 批量打印重打失败的标签时用：模板的字段或纸张变了（哪怕编号没变），印出来的东西可能跟当初不一样了，
+// 重打前要能查出来，拒绝按旧样子重打。
+describe('templateFingerprint', () => {
+  test('stays the same when nothing relevant changed', () => {
+    expect(templateFingerprint(CANVAS_TAG)).toBe(templateFingerprint({ ...CANVAS_TAG }));
+  });
+
+  test('changes when the fields it uses change', () => {
+    const changed = withParts({
+      fieldsArea: {
+        ...PICK_TEMPLATE.fieldsArea,
+        mode: 'pick',
+        slots: [{ ...SLOT, field: '一个新字段' }],
+      },
+    });
+    expect(templateFingerprint(changed)).not.toBe(templateFingerprint(PICK_TEMPLATE));
+  });
+
+  test('changes when the paper size changes', () => {
+    const changed = { ...CANVAS_TAG, paper: { ...CANVAS_TAG.paper, widthMm: CANVAS_TAG.paper.widthMm + 1 } };
+    expect(templateFingerprint(changed)).not.toBe(templateFingerprint(CANVAS_TAG));
   });
 });

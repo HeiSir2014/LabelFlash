@@ -52,6 +52,40 @@ describe('FakePrinters', () => {
       reason: 'PRINTER_NOT_FOUND',
     });
   });
+
+  // E2E 测暂停、取消：每张要花一点时间，按钮才点得到正在打的批次。
+  test('takes the configured time for each print', async () => {
+    const printers = new FakePrinters([{ ...SPEC[0], name: '慢标签机', printDelayMs: 50 } as FakePrinterSpec]);
+    const started = performance.now();
+    await printers.print('慢标签机', JOB, new AbortController().signal);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(45);
+    expect(printers.printed).toHaveLength(1);
+  });
+});
+
+describe('FakePrinters (printer commands)', () => {
+  test('reports the driver name and records raw commands as text', async () => {
+    const printers = new FakePrinters([
+      { ...SPEC[0], name: '标签机A', driverName: 'Label Printer TSPL' } as FakePrinterSpec,
+    ]);
+    expect(await printers.driverName('标签机A')).toBe('Label Printer TSPL');
+    expect(await printers.driverName('没有这台')).toBeNull();
+    expect(await printers.sendRaw('标签机A', Buffer.from('FORMFEED\r\n'))).toEqual({ ok: true });
+    expect(printers.rawJobs).toEqual([{ printerName: '标签机A', text: 'FORMFEED\r\n' }]);
+  });
+
+  test('fails raw commands the way the spec says and records nothing', async () => {
+    const printers = new FakePrinters([{ ...SPEC[0], name: '面单机B', rawFailure: 'raw-rejected' } as FakePrinterSpec]);
+    expect(await printers.sendRaw('面单机B', Buffer.from('~PH\n'))).toMatchObject({
+      ok: false,
+      failure: { kind: 'raw-rejected' },
+    });
+    expect(await printers.sendRaw('没有这台', Buffer.from('~PH\n'))).toMatchObject({
+      ok: false,
+      failure: { kind: 'not-found' },
+    });
+    expect(printers.rawJobs).toEqual([]);
+  });
 });
 
 describe('FakeDriverAdapter', () => {

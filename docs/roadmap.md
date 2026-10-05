@@ -37,7 +37,7 @@
 | macOS 签名、公证与自动更新：需要 Apple 开发者账号（Developer ID Application 签程序、Developer ID Installer 签 pkg），公证后下载即可打开；有签名后加 zip 目标和 `latest-mac.yml`，打开 macOS 的自动更新（`update-settings.ts` 的 `initialUpdateStatus`） | 建议 | 待确认：是否申请 Apple 开发者账号 |
 | macOS 纸张尺寸：已在家用喷墨打印机（A4 纸）上确认能出纸，CUPS 任务纸张为 A4，与装纸一致，还不能说明模板纸张是否生效。接标签机后用同样方法查看 CUPS 任务纸张；如不是模板的纸张，再改为显式指定 CUPS 的 `media` | 必须 | 待 macOS 标签机真机验证 |
 | 二维码按打印点对齐：每个模块取整数个打印点，矢量 SVG + crispEdges；分辨率取打印机驱动报告的值（读不到按 203dpi），模块的最小、最大尺寸按毫米定 | 建议 | ✅ 1.0.1（203dpi）；按打印机分辨率随多台打印机一起完成，300dpi 机型待真机核对 |
-| RAW 指令直连（TSPL）：可选模式，尺寸、浓度、速度完全由程序控制，并能读取打印机状态；中文全部画成位图 | 建议（P2） | 待确认，需要先确认客户机型的指令集 |
+| 标签机指令（TSPL / ZPL / EPL）：每台打印机选指令集（自动按驱动名认，5c 的在线识别表接进来后先查表），设浓度、速度、纸张、方向、出纸方式，保存时发一次；纸张校准、走纸、自检页、恢复出厂设置。标签内容仍经驱动打印 | 必须 | 开发完成（`feature/printer-commands`），随 2.0.0 发布；设计：`docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 7.1 节。Windows 上单元测试（含真 PowerShell 编译 RAW 辅助类）、E2E、视觉验收 V80–V83 通过；热敏标签机真机（三种指令集各一台）、macOS `lp -o raw` 待人工验收。整张标签都用指令打（中文画成位图）、读打印机自身状态仍是以后的事 |
 | 标签学习、开机空走一张、浓度速度设置的操作指引 | 建议 | 待确认 |
 | 离线原因指引：按缺纸、离线等给出处理步骤 | 建议 | 待确认 |
 | 系统打印队列：查看、暂停、清空（当前用户权限即可） | 建议 | 待确认 |
@@ -51,6 +51,7 @@
 | 多入口共用、有上限的本地打印队列 | 建议（P2） | 手机扫码已共用 `PrintService` 的打印队列，每部手机有背压上限；其他入口待 Phase 2 |
 | 打印记录增加扫码人、设备字段 | 建议（P2） | Phase 2 |
 | 多台打印机、多种纸张：模板带纸张尺寸（含快递面单预设），按纸张分配打印机、模板可以单独指定 | 必须 | ✅ 第 1 个子项目已完成（`feature/multi-printer-paper`，版本号发版时填）；设计：`docs/superpowers/specs/2026-09-29-multi-printer-paper-design.md`；两台真打印机的实测待做 |
+| 批量打印：导入 .xlsx / .csv 或粘贴表格，模板变量对列、序号、份数，逐行预览（问题行标黄），按顺序打印、暂停 / 继续 / 取消、失败的单独重打；记录按批次筛选、整批重打失败的；Excel 在隔离的子进程里读 | 必须 | 开发完成（`feature/batch-printing`），随 2.0.0 发布；设计：`docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 5 节。Windows 上 E2E 和视觉验收 V60–V62 通过；真机批量打 100 张、macOS 待人工验收 |
 | 本机接口 HTTP（原「本地打印服务 + SDK」）：打印和只排版（PDF），批量、任务状态；网页在程序里确认授权（撤销前一直有效）+ 程序密钥；局域网默认开启、只认密钥，防火墙放行后才对局域网开放；端口记住、被占用才自动换；安装时加防火墙规则 | 必须 | ✅ 第 2 个子项目 2a 已完成（`feature/local-api`）；设计：`docs/superpowers/specs/2026-09-30-local-api-design.md`，接入说明：`docs/local-api.md`。Windows 上 E2E、视觉验收和安装包的防火墙步骤通过；另一台电脑带密钥调用、Chrome 网页调用、macOS 待人工验收 |
 | 手机扫码识别货架号：扫码页按二维码把整张标签摆正截下来，加密经中转发到电脑；电脑用程序自带的 OCR（PP-OCRv6 + ONNX Runtime，Rust 写的 Node-API 扩展，不依赖 Python 和系统语言包）读出所有文字，按正则取出货架号（优先区域先看，换了位置也找得到），作为字段补进这一张再打印；认不出时默认不打印，手机上重扫或手动输入 | 必须 | ✅ Windows 版在 1.1.0 发布（识别速度分「极速」「精准」两档，截图每个二维码边长 170 像素、置信度门槛 0.9）；设计：`docs/superpowers/specs/2026-09-30-ocr-engine-design.md`、`2026-09-30-shelf-number-design.md`。E2E（假 OCR 和真实 OCR）、扫码页浏览器测试（横着拍的标签）通过；真手机扫真标签待验收。macOS 这一版不带 OCR（ONNX Runtime 没有 Intel Mac 的预编译包，要另想办法） |
 | 本机接口 IPP（2b）：局域网里作为标准打印机接收 PDF，按页面尺寸转给对应的打印机；用 DNS-SD 广播（macOS 上 631 端口被 CUPS 占着） | 必须 | 待写设计文档 |

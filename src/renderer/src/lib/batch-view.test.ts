@@ -48,6 +48,8 @@ function status(overrides: Partial<BatchStatus> = {}): BatchStatus {
     pauseReason: null,
     failures: [],
     templateName: '吊牌',
+    tableId: TABLE.id,
+    isActive: true,
     ...overrides,
   };
 }
@@ -199,13 +201,22 @@ describe('maps', () => {
     expect(merged.get(2)).toEqual(['缺：颜色', '条码不印']);
   });
 
-  test('groups failures by row', () => {
+  test('groups failures by row when the status belongs to the currently loaded table', () => {
     const failures = [
       { row: 3, copy: 1, reason: 'PRINT_ERROR' as const },
       { row: 3, copy: 2, reason: 'PRINT_TIMEOUT' as const },
     ];
-    expect(failuresByRow(status({ failures })).get(3)).toHaveLength(2);
-    expect(failuresByRow(null).size).toBe(0);
+    expect(failuresByRow(status({ failures }), TABLE.id).get(3)).toHaveLength(2);
+    expect(failuresByRow(null, TABLE.id).size).toBe(0);
+  });
+
+  // 换了一张新表之后，旧批次的失败不该显示到新表的行上——行号凑巧对上也不行，操作员会以为
+  // 「重打」按的是新表的这一行，其实那是另一批、另一张表的记录。
+  test('ignores failures from a batch that used a different table (or no table at all)', () => {
+    const failures = [{ row: 3, copy: 1, reason: 'PRINT_ERROR' as const }];
+    expect(failuresByRow(status({ failures, tableId: 'some-other-table' }), TABLE.id).size).toBe(0);
+    expect(failuresByRow(status({ failures, tableId: null }), TABLE.id).size).toBe(0);
+    expect(failuresByRow(status({ failures, tableId: TABLE.id }), null).size).toBe(0);
   });
 
   test('turns mapping choices into option keys and back', () => {

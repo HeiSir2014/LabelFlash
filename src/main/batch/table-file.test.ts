@@ -4,8 +4,30 @@ import { BATCH_LIMITS } from '../../core/batch/batch-model';
 import { cellText, readTableBytes, tableFileKind, XLS_ISSUE } from './table-file';
 import { minimalXlsx } from './testing/minimal-xlsx';
 
-/** 不经过真正的压缩，直接拼出 ZIP 的「中央目录」和「目录结束记录」，中央目录从这段字节的开头算起（不含本地文件头）。 */
-function craftedZipClaiming(entries: readonly { uncompressedSize: number }[]): Uint8Array {
+/** 一个本地文件头（PK\x03\x04）加紧跟着的数据：read-excel-file 的 unzipper-esm 实际依据的是这个，不是中央目录。 */
+function localHeader(options: {
+  uncompressedSize: number;
+  compressedSize?: number;
+  flags?: number;
+  data?: Uint8Array;
+}): Uint8Array {
+  const filename = new TextEncoder().encode('x');
+  const compressedSize = options.compressedSize ?? options.uncompressedSize;
+  const data = options.data ?? new Uint8Array(compressedSize);
+  const buf = new Uint8Array(30 + filename.length + data.length);
+  const view = new DataView(buf.buffer);
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(6, options.flags ?? 0, true);
+  view.setUint32(18, compressedSize, true);
+  view.setUint32(22, options.uncompressedSize, true);
+  view.setUint16(26, filename.length, true);
+  buf.set(filename, 30);
+  buf.set(data, 30 + filename.length);
+  return buf;
+}
+
+/** 一段「看起来人畜无害」的中央目录 + 目录结束记录：用来证明解压库不看这里，只看本地文件头。 */
+function craftedCentralDirectory(entries: readonly { uncompressedSize: number }[]): Uint8Array {
   const filename = new TextEncoder().encode('x');
   const centralEntries = entries.map((entry) => {
     const buf = new Uint8Array(46 + filename.length);
@@ -23,13 +45,17 @@ function craftedZipClaiming(entries: readonly { uncompressedSize: number }[]): U
   eocdView.setUint16(10, entries.length, true);
   eocdView.setUint32(12, centralSize, true);
   eocdView.setUint32(16, 0, true);
-  const out = new Uint8Array(centralSize + eocd.length);
+  return concatAll([...centralEntries, eocd]);
+}
+
+function concatAll(parts: readonly Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
   let at = 0;
-  for (const entry of centralEntries) {
-    out.set(entry, at);
-    at += entry.length;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
   }
-  out.set(eocd, at);
   return out;
 }
 
@@ -116,8 +142,13 @@ describe('readTableBytes', () => {
     });
   });
 
+  // 结构上是一个正常、不大的 ZIP（本地文件头、数据、中央目录都对得上），不会被压缩炸弹的检查拦下；
+  // 但里面不是真的 Excel 内容，readSheet 自己会报错——这种「损坏」交给它的错误处理，不是这里的事。
   test('explains a file the library cannot read, with the library error as detail', async () => {
-    const result = await readTableBytes({ kind: 'xlsx', bytes: encode('PK\u0003\u0004 broken') }, sheetReader);
+    const data = encode('not real xlsx content');
+    const entry = localHeader({ uncompressedSize: data.length, compressedSize: data.length, data });
+    const bytes = concatAll([entry, craftedCentralDirectory([{ uncompressedSize: data.length }])]);
+    const result = await readTableBytes({ kind: 'xlsx', bytes }, sheetReader);
     expect(result).toMatchObject({ ok: false, issue: expect.stringContaining('读不出这个文件') });
     expect(result.ok ? '' : (result.detail ?? '')).not.toBe('');
   });
@@ -126,10 +157,11 @@ describe('readTableBytes', () => {
     expect(await readTableBytes({ kind: 'pdf' }, sheetReader)).toMatchObject({ ok: false });
   });
 
-  // 压缩炸弹：中央目录里直接声明一个巨大的解压后大小，不用真的解压就能拦住——
-  // 子进程的堆上限管不住 Buffer（分配在 V8 堆外），只能在交给 readSheet 之前自己核对declared大小。
-  test('refuses an xlsx whose central directory claims an absurd uncompressed size, without inflating it', async () => {
-    const bytes = craftedZipClaiming([{ uncompressedSize: 500 * 1024 * 1024 }]);
+  // 压缩炸弹：read-excel-file 的 unzipper-esm 按本地文件头（不是中央目录）流式解压，所以防护要核对
+  // 本地文件头里声明的大小，不用真的解压就能拦住——子进程的堆上限管不住 Buffer（分配在 V8 堆外）。
+  test('refuses an xlsx whose local header claims an absurd uncompressed size, without inflating it', async () => {
+    const entry = localHeader({ uncompressedSize: 500 * 1024 * 1024, compressedSize: 0, data: new Uint8Array(0) });
+    const bytes = concatAll([entry, craftedCentralDirectory([{ uncompressedSize: 500 * 1024 * 1024 }])]);
     let readSheetCalled = false;
     const refusingReader = async (buffer: Buffer) => {
       readSheetCalled = true;
@@ -140,9 +172,31 @@ describe('readTableBytes', () => {
     expect(readSheetCalled).toBe(false);
   });
 
-  test('refuses an xlsx whose central directory claims too many entries', async () => {
-    const bytes = craftedZipClaiming(Array.from({ length: 5_001 }, () => ({ uncompressedSize: 10 })));
+  test('refuses an xlsx with too many local entries', async () => {
+    const entries = Array.from({ length: 5_001 }, () => localHeader({ uncompressedSize: 0, data: new Uint8Array(0) }));
+    const bytes = concatAll([...entries, craftedCentralDirectory([])]);
     const result = await readTableBytes({ kind: 'xlsx', bytes }, sheetReader);
+    expect(result).toMatchObject({ ok: false, issue: expect.stringContaining('文件太大') });
+  });
+
+  // 中央目录只是个摆设：解压库按本地文件头流式处理，中央目录声称的大小再小也挡不住本地头里的「数据描述符」
+  // 标记——真实大小写在数据后面，本地头上看到的是占位的 0，没法在不整个重新解析的前提下安全跳过。
+  test('refuses a local entry that uses a data descriptor, even if the central directory claims it is tiny', async () => {
+    const DATA_DESCRIPTOR_FLAG = 0x0008;
+    const entry = localHeader({
+      uncompressedSize: 0,
+      compressedSize: 0,
+      flags: DATA_DESCRIPTOR_FLAG,
+      data: new Uint8Array(4),
+    });
+    const bytes = concatAll([entry, craftedCentralDirectory([{ uncompressedSize: 10 }])]);
+    const result = await readTableBytes({ kind: 'xlsx', bytes }, sheetReader);
+    expect(result).toMatchObject({ ok: false, issue: expect.stringContaining('文件太大') });
+  });
+
+  test('refuses a zip with no central directory at all', async () => {
+    const entry = localHeader({ uncompressedSize: 4, data: new Uint8Array(4) });
+    const result = await readTableBytes({ kind: 'xlsx', bytes: entry }, sheetReader);
     expect(result).toMatchObject({ ok: false, issue: expect.stringContaining('文件太大') });
   });
 });

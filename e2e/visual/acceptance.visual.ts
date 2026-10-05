@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer, type Server, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { type HttpStep, STEP_LIMITS } from '../../src/core/scan/enrich-model';
 import { TEMPLATE_LIBRARY } from '../../src/core/templates/library/template-library';
 import type { FakePrinterSpec } from '../../src/main/printing/fake-printers';
@@ -13,6 +13,8 @@ import {
   allowSlowScannerLines,
   blurActiveElement,
   callApi,
+  clickSwitch,
+  fakePrints,
   openConfig,
   recordClipboard,
   scan,
@@ -29,6 +31,7 @@ import {
   capturePng,
   formatBounds,
   isSameRectangle,
+  pushBatchStatus,
   pushUpdateStatus,
   resize,
   SIZE_1024,
@@ -44,7 +47,7 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的验收项，V01 起；模板库是 V50–V55，批量打印 V60–V62，PDF V70–V72）：
+ * 视觉验收（设计文档 §8.2 的验收项，V01 起；模板库是 V50–V55，批量打印是 V60–V63，标签机指令是 V80–V83）：
  * 每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
  * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
@@ -123,6 +126,40 @@ interface Item {
   ) => Promise<void>;
 }
 
+/** V80–V83：认得出指令集的标签机、驱动不收 RAW 的面单机、认不出的家用打印机。 */
+const COMMAND_PRINTERS: FakePrinterSpec[] = [
+  {
+    name: '标签机A',
+    paper: { widthMm: 60, heightMm: 40, dpi: 203 },
+    readiness: { ready: true },
+    driverName: 'Label Printer TSPL',
+  },
+  {
+    name: '面单机B',
+    paper: { widthMm: 100, heightMm: 150, dpi: 203 },
+    readiness: { ready: true },
+    driverName: 'Label Printer ZPL',
+    rawFailure: 'raw-rejected',
+  },
+  {
+    name: '家用打印机',
+    paper: { widthMm: 210, heightMm: 297, dpi: 600 },
+    readiness: null,
+    driverName: 'Office Inkjet',
+  },
+];
+
+/** 分配好纸张、打开打印机页，展开这台打印机的「标签机指令」。 */
+async function openPrinterCommands(page: Page, printerName: string): Promise<Locator> {
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x150': '面单机B' } });
+  await page.reload();
+  await openConfig(page, '打印机');
+  await page.locator('.printer-row', { hasText: printerName }).getByRole('button', { name: '标签机指令' }).click();
+  const panel = page.getByRole('region', { name: `${printerName} 的标签机指令` });
+  await expect(panel.getByLabel('指令集')).toBeVisible();
+  return panel;
+}
+
 interface ShotRecord {
   label: string;
   size: string;
@@ -163,6 +200,31 @@ const PAPER_PRINTERS: FakePrinterSpec[] = [
   { name: '面单机C', paper: { widthMm: 100, heightMm: 180, dpi: 300 }, readiness: { ready: true } },
   { name: '家用打印机', paper: { widthMm: 210, heightMm: 297, dpi: 600 }, readiness: null },
 ];
+
+/** V60–V62：一台 60×40 的假标签机，每张打 300ms（V62 要在打完之前暂停）。 */
+const BATCH_PRINTERS: FakePrinterSpec[] = [
+  {
+    name: '标签机A',
+    paper: { widthMm: 60, heightMm: 40, dpi: 203 },
+    readiness: { ready: true },
+    printDelayMs: 300,
+  },
+];
+/** V61：12 行，第 5 行缺颜色（标黄）；表里没有「货架号」（对列标红）。 */
+const BATCH_CSV = [
+  '编码,颜色,尺码,备注',
+  ...Array.from({ length: 12 }, (_, index) => `CL${5640 + index},${index === 4 ? '' : '图片色'},XL,第 ${index + 1} 箱`),
+].join('\n');
+/** V62：只按序号打这么多张，暂停时还剩很多。 */
+const BATCH_SERIAL_COUNT = 30;
+
+async function openBatchPage(page: Page): Promise<void> {
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A' } });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await page.getByRole('button', { name: '批量打印' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '批量打印' })).toBeVisible();
+}
 
 /** 复制通用模板，改成指定的纸张（和打印机）后保存；返回新模板的 id。 */
 async function saveCopyOnPaper(
@@ -290,20 +352,20 @@ const ITEMS: Item[] = [
         label: '常态',
         prepare: async ({ page }) => {
           if ((await page.locator('.config-center').count()) > 0) {
-            await page.locator('.config-button').click();
+            await page.locator('.config-button:not(.batch-button)').click();
             await expect(page.locator('.config-center')).toHaveCount(0);
           }
           await page.locator('.title-bar__name').hover();
         },
       },
-      { label: '悬停', prepare: async ({ page }) => page.locator('.config-button').hover() },
+      { label: '悬停', prepare: async ({ page }) => page.locator('.config-button:not(.batch-button)').hover() },
       {
         label: '按下（配置中心打开时）',
         prepare: async ({ page }) => {
           if ((await page.locator('.config-center').count()) === 0) {
-            await page.locator('.config-button').click();
+            await page.locator('.config-button:not(.batch-button)').click();
           }
-          await expect(page.locator('.config-button')).toHaveAttribute('aria-pressed', 'true');
+          await expect(page.locator('.config-button:not(.batch-button)')).toHaveAttribute('aria-pressed', 'true');
         },
       },
     ],
@@ -648,7 +710,7 @@ const ITEMS: Item[] = [
     points: '红绿灯区域、全屏时标题栏；配置中心快捷键显示 ⌘,；退出全屏后窗口回到进入全屏前的位置',
     sizes: [SIZE_1280],
     custom: async (ctx, record) => {
-      const title = await ctx.page.locator('.config-button').getAttribute('title');
+      const title = await ctx.page.locator('.config-button:not(.batch-button)').getAttribute('title');
       ctx.notes.push(`「配置」按钮的悬停提示：${title}`);
       if (process.platform !== 'darwin') {
         ctx.notes.push('不是 macOS：本项在 Mac 上复验');
@@ -1226,6 +1288,78 @@ const ITEMS: Item[] = [
     },
   },
   {
+    id: 'V60',
+    title: '批量打印 · 刚打开',
+    points:
+      '页头「← 返回工作台」和标题「批量打印」；五段（模板、数据、对列、序号与份数、预览）自上而下，没有数据时预览段只有一句说明；底部操作条「打印 0 张」灰掉；标题栏「批量打印」是按下状态，「配置」不是；1024 宽时标题栏不换行、不溢出',
+    launch: { fakePrinters: BATCH_PRINTERS },
+    setup: async ({ page }) => {
+      await openBatchPage(page);
+    },
+  },
+  {
+    id: 'V61',
+    title: '批量打印 · 导入后的对列和预览',
+    points:
+      '数据行「batch.csv · 12 行 · 4 列」；对列表里 {货架号} 标红并说明可以不填；第 5 行（缺颜色）整行标黄、悬停能看到「缺：颜色」；表头固定，列多时表格自己横向滚动、页面不变宽；右侧是当前行的真实预览（吊牌），上方「上一张 / 下一张」；预览段顶部「共 12 行 · 打 12 张 · 1 行有问题（标黄）」；1024 宽时表格和预览上下排列',
+    launch: { fakePrinters: BATCH_PRINTERS },
+    setup: async ({ app, page, userData }) => {
+      const path = join(userData, 'batch.csv');
+      await writeFile(path, BATCH_CSV, 'utf8');
+      await stubOpenDialog(app, path);
+      await openBatchPage(page);
+      // 工作台一直挂载在后面（只是不显示），同名的「模板」控件不止一个：只认批量打印页里的。
+      await page
+        .locator('.batch-page')
+        .getByLabel('模板', { exact: true })
+        .selectOption({ label: '吊牌（自由设计示例）' });
+      await page.getByRole('button', { name: '选择文件…' }).click();
+      await expect(page.getByText('batch.csv · 12 行 · 4 列')).toBeVisible();
+      // 检查条码和排版期间汇总后面带着「正在检查…」：等它查完再截图。
+      await expect(page.locator('.batch-preview__summary')).toHaveText('共 12 行 · 打 12 张 · 1 行有问题（标黄）');
+      await page.getByRole('heading', { level: 2, name: '5 预览' }).scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    id: 'V62',
+    title: '批量打印 · 暂停中',
+    points:
+      '底部操作条：「已暂停（点继续接着打）· 已发送 n / 30 张」、进度条、「继续」（主按钮）「取消」；标题栏「批量打印」按钮上的进度「n/30」用等宽数字；提示条不盖住操作条',
+    launch: { fakePrinters: BATCH_PRINTERS },
+    setup: async ({ app, page }) => {
+      await openBatchPage(page);
+      await page.getByRole('button', { name: '只按序号打' }).click();
+      await page.getByLabel('张数').fill(String(BATCH_SERIAL_COUNT));
+      await page.getByRole('button', { name: `打印 ${BATCH_SERIAL_COUNT} 张` }).click();
+      // 进度是合并推送的，文字可能跳过某个数：按假打印机实际收到的张数等。
+      await expect.poll(async () => (await fakePrints(app)).length).toBeGreaterThanOrEqual(2);
+      await page.getByRole('button', { name: '暂停' }).click();
+      await expect(page.locator('.batch-actions').getByRole('status')).toContainText('已暂停');
+    },
+  },
+  {
+    id: 'V63',
+    title: '标题栏 · 批量打印按钮的进度数字很长',
+    points:
+      '一批 2 万张、打到 19999 张时，标题栏「批量打印」按钮上的「19999/20000」不换行、不挤出标题栏；1024 宽时同样不溢出',
+    sizes: [SIZE_1024, SIZE_1280],
+    setup: async ({ page, window }) => {
+      await pushBatchStatus(window, {
+        batchId: '20261002-143501-a1b2',
+        state: 'running',
+        total: 20000,
+        sent: 19999,
+        failed: 0,
+        pauseReason: null,
+        failures: [],
+        templateName: '通用',
+        tableId: null,
+        isActive: true,
+      });
+      await expect(page.getByRole('button', { name: '批量打印' })).toContainText('19999/20000');
+    },
+  },
+  {
     id: 'V45',
     title: '模板 · 自由设计 · 设计器（1280px）',
     points:
@@ -1368,6 +1502,61 @@ const ITEMS: Item[] = [
       label: template.name,
       prepare: ({ page }) => useLibraryTemplate(page, template.name),
     })),
+  },
+  {
+    id: 'V80',
+    title: '打印机 · 标签机指令（认出 TSPL，已发送）',
+    points:
+      '「标签机A」一行右侧「测试页」「标签机指令」两个按钮同高，后者按下；下面展开浅底面板：指令集「自动（TSPL）」和一句认出的依据；浓度、速度、设置纸张（纸宽、纸高、纸张类型、间隙）、打印方向、出纸方式逐行对齐，TSPL 不显示分辨率；单向提示完整换行；「保存并发送」主按钮；四个动作按钮一行（窄时换行，不溢出）；绿色「设置已发出（TSPL）…」；1024 宽时面板不撑宽页面、没有横向滚动',
+    launch: { fakePrinters: COMMAND_PRINTERS },
+    setup: async ({ page }) => {
+      const panel = await openPrinterCommands(page, '标签机A');
+      await panel.getByLabel('浓度').selectOption('8');
+      await panel.getByLabel('速度').selectOption('4');
+      // 用 page 作范围：对 getByRole('region', …) 这样按名字过滤出来的动态定位器再叠一层 filter({ has }) 不可靠
+      // （Playwright 的已知限制），同一时间只有一台打印机的面板打开，用整页范围找这个开关没有歧义。
+      await clickSwitch(page, '设置纸张');
+      await panel.getByLabel('出纸方式').selectOption('tear');
+      await panel.getByRole('button', { name: '保存并发送' }).click();
+      await expect(panel.getByRole('status')).toContainText('设置已发出（TSPL）');
+    },
+  },
+  {
+    id: 'V81',
+    title: '打印机 · 标签机指令（认不出）',
+    points:
+      '指令集「自动（认不出）」，下面一句说明从驱动名认不出、请手动选择或选「不发指令」；没有设置项；四个动作按钮灰掉，下面说明原因；面板高度随内容收拢，不留大块空白',
+    launch: { fakePrinters: COMMAND_PRINTERS },
+    setup: async ({ page }) => {
+      const panel = await openPrinterCommands(page, '家用打印机');
+      await expect(panel.getByRole('button', { name: '纸张校准' })).toBeDisabled();
+    },
+  },
+  {
+    id: 'V82',
+    title: '打印机 · 标签机指令（发送失败）',
+    points:
+      '指令集「自动（ZPL）」；浓度选项到 30；「分辨率」一行显示「按驱动（203dpi）」；红色提示说明驱动不接受直接发送的指令和下一步，完整换行、不被按钮遮住',
+    launch: { fakePrinters: COMMAND_PRINTERS },
+    setup: async ({ page }) => {
+      const panel = await openPrinterCommands(page, '面单机B');
+      await panel.getByLabel('浓度').selectOption('10');
+      await panel.getByRole('button', { name: '保存并发送' }).click();
+      await expect(panel.getByRole('alert')).toContainText('驱动不接受直接发送的指令');
+    },
+  },
+  {
+    id: 'V83',
+    title: '打印机 · 恢复出厂设置的二次确认',
+    points:
+      '模态对话框：标题「恢复出厂设置」、说明会回到出厂值、要重新校准、程序里保存的设置不变；「不恢复」是默认焦点的主按钮，「恢复出厂设置」是次要按钮；背后的页面变暗、不可操作',
+    launch: { fakePrinters: COMMAND_PRINTERS },
+    setup: async ({ page }) => {
+      const panel = await openPrinterCommands(page, '标签机A');
+      await panel.getByRole('button', { name: '恢复出厂设置' }).click();
+      await panel.getByRole('button', { name: '确认恢复出厂？' }).click();
+      await expect(page.getByRole('alertdialog', { name: '恢复出厂设置' })).toBeVisible();
+    },
   },
 ];
 

@@ -33,8 +33,8 @@ export const PAPER_LIMITS_MM = {
 /** 驱动以 0.1mm 为单位保存纸张尺寸，四舍五入后可能差零点几毫米。 */
 export const PAPER_TOLERANCE_MM = 1;
 
-/** 尺寸保留到 0.1mm：驱动和打印页面的精度都是这个量级。 */
-const TENTHS_PER_MM = 10;
+/** 尺寸保留到 0.1mm：驱动和打印页面的精度都是这个量级；标签机指令的纸张、间隙也用它。 */
+export const TENTHS_PER_MM = 10;
 
 export const PAPER_PRESETS: readonly PaperPreset[] = [
   { name: '60×40 标签', widthMm: 60, heightMm: 40, parts: [], usage: '样衣标签（内置模板）' },

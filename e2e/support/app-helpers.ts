@@ -1,5 +1,5 @@
-import { type ElectronApplication, expect, type Page } from '@playwright/test';
-import type { FakePrint } from '../../src/main/printing/fake-printers';
+import { type ElectronApplication, expect, type Locator, type Page } from '@playwright/test';
+import type { FakePrint, FakeRawJob } from '../../src/main/printing/fake-printers';
 import { IpcChannel, type LabelFlashApi } from '../../src/shared/ipc-contract';
 import { SCAN_LINE_GAP_RANGE } from '../../src/shared/settings';
 
@@ -71,6 +71,25 @@ export function fakePrints(app: ElectronApplication): Promise<FakePrint[]> {
   return app.evaluate(
     () => (globalThis as { e2eFakePrinters?: { printed: FakePrint[] } }).e2eFakePrinters?.printed ?? [],
   );
+}
+
+/** 假打印机收到的标签机指令（字节按 latin1 转成的文字）。 */
+export function fakeRawJobs(app: ElectronApplication): Promise<FakeRawJob[]> {
+  return app.evaluate(
+    () => (globalThis as { e2eFakePrinters?: { rawJobs: FakeRawJob[] } }).e2eFakePrinters?.rawJobs ?? [],
+  );
+}
+
+/**
+ * 点一个开关：原生复选框被画出来的滑轨盖着，像用户一样点开关本身。
+ * scope 传 page：对 getByRole('region', …) 这类按名字过滤出来的动态定位器再叠一层 filter({ has }) 不可靠
+ * （Playwright 的已知限制），页面上同一时间通常只有一个同名开关，用整页范围没有歧义。
+ */
+export async function clickSwitch(scope: Page | Locator, name: string): Promise<void> {
+  await scope
+    .locator('label.switch')
+    .filter({ has: scope.getByRole('switch', { name }) })
+    .click();
 }
 
 /**

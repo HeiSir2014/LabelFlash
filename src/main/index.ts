@@ -2,11 +2,22 @@ import { randomUUID } from 'node:crypto';
 import { hostname, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net, utilityProcess } from 'electron';
+import {
+  app,
+  type BrowserWindow,
+  dialog,
+  Menu,
+  Notification,
+  nativeImage,
+  net,
+  powerMonitor,
+  utilityProcess,
+} from 'electron';
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { batchIdFor } from '../core/batch/batch-model';
 import { DedupGuard } from '../core/dedup-guard';
+import { NO_DRIVER_HINTS } from '../core/drivers/driver-hints';
 import { PrintQueue } from '../core/print-queue';
 import { BATCH_RULE, fieldsScan, PrintService } from '../core/print-service';
 import { type PrinterChoice, resolvePrinter } from '../core/printing/resolve-printer';
@@ -29,6 +40,7 @@ import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
+import { batchQuitDialogText, canceledJobRecords, shouldConfirmBatchQuit, waitForBatchIdle } from './batch/batch-quit';
 import { BatchStation } from './batch/batch-station';
 import batchReaderPath from './batch/reader-worker?modulePath';
 import { TableReaderHost } from './batch/table-reader-host';
@@ -57,11 +69,14 @@ import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { FakeDriverAdapter, FakePrinters, parseFakePrinters } from './printing/fake-printers';
 import { renderLabelHtml } from './printing/label-html';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
+import { PrinterCommands } from './printing/printer-commands-station';
 import type { PrinterDriver } from './printing/printer-driver';
+import { queryDriverName } from './printing/printer-identity';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { PrinterProfiles } from './printing/printer-profiles';
 import { createReadinessProbe, type PrinterReadiness, PrinterStatusMonitor } from './printing/printer-status';
 import { DEFAULT_PRINTER_DPI } from './printing/qr-code';
+import { createRawSender } from './printing/raw-sender';
 import { RelaunchIntents, UPDATED_ARG } from './relaunch-intent';
 import { createHttpStepRunner } from './scan/http-step';
 import { RuleService } from './scan/rule-service';
@@ -96,11 +111,17 @@ const TABLE_READ_TIMEOUT_MS = 30_000;
 const TABLE_READER_HEAP_MB = 512;
 /** 任务管理器、进程列表里显示的子进程名。 */
 const TABLE_READER_SERVICE_NAME = `${BRAND.productNameAscii} table reader`;
+/** 退出确认之后，取消批次时最多等正在打的那一张结束多久：打印机正常的话一张几秒钟就打完，
+ *  等这么久还没结束多半是驱动卡住了，不能让退出程序跟着一起卡住。 */
+const BATCH_CANCEL_SETTLE_TIMEOUT_MS = 5_000;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: AppTray | null = null;
 let database: DatabaseSync | null = null;
 let isQuitting = false;
+// 操作系统正在关机、注销（而不是操作员自己退出程序）：批量打印还有没打的也不弹确认，不能挡着关机。
+// Windows 走 session-end（before-quit 根本不会触发，见下面的处理），这里主要是给 macOS/Linux 用。
+let isSystemShutdown = false;
 
 /** 仅开发 / E2E 测试可用：把数据目录指到临时目录，测试之间互不干扰。安装版忽略它。 */
 const USER_DATA_OVERRIDE_ENV = 'CDL_LABELFLASH_USER_DATA';
@@ -135,8 +156,12 @@ function showMainWindow(): void {
   bringToFront(mainWindow, process.platform);
 }
 
+/**
+ * 托盘菜单「退出」：只触发 app.quit()，isQuitting 由 before-quit 的处理器在退出真的要发生时才设置
+ * ——批量打印还有没打的会先弹确认，选了「取消」的话退出不会真的发生，这时不能已经把 isQuitting
+ * 设成了 true（会导致关窗口不再藏进托盘，退出明明被取消了，托盘行为却已经坏掉）。
+ */
 function quit(): void {
-  isQuitting = true;
   app.quit();
 }
 
@@ -335,6 +360,26 @@ async function bootstrap(): Promise<void> {
     async (name): Promise<PrinterReadiness | null> => ((await isInstalled(name)) ? probeReadiness(name) : null),
     createPrinterAlertNotifier(new AlertThrottle(systemClock), showMainWindow),
   );
+  // 标签机指令：只发给系统打印机列表里有的打印机；设置存在设置表的 printerCommands 里。
+  // Windows 经常驻探测进程（winspool RAW），macOS 用 lp -o raw；E2E 用假打印机记下来。
+  const printerCommands = new PrinterCommands({
+    configs: () => settings.current.printerCommands,
+    // 只改这一项：不影响别的设置，不需要走 onSettingsChanged。
+    saveConfigs: (next) => {
+      settings.update({ printerCommands: next });
+    },
+    driverNameOf: (name) => (fakePrinters ? fakePrinters.driverName(name) : queryDriverName(name, probeHost)),
+    driverDpi: async (name) => (await profiles.get(name))?.dpi ?? null,
+    // 5c（驱动安装）的在线驱动清单接进来之前，「自动」只按驱动名认。
+    // 取值函数：5c 的在线驱动清单接进来后替换这里，不用重启主进程或重建 PrinterCommands 就能生效。
+    hints: () => NO_DRIVER_HINTS,
+    sender: fakePrinters
+      ? { send: (name, data) => fakePrinters.sendRaw(name, data) }
+      : createRawSender(process.platform, probeHost),
+    hasPrinter: (name) => adapter.hasPrinter(name),
+    log: (message) => console.info(message),
+    warn: (message) => console.warn(message),
+  });
   /** 要检测状态的打印机：纸张分配和模板指定里出现的（交给探测进程前再核对系统里有）。 */
   const assignedPrinterNames = (): string[] => [
     ...new Set([
@@ -455,6 +500,7 @@ async function bootstrap(): Promise<void> {
     },
     onStatus: (status) => sendToMainWindow(IpcChannel.BatchStatusChanged, status),
     onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
+    now: () => Date.now(),
   });
   const voice = new VoiceClips(join(dataPath, VOICE_CACHE_DIR_NAME), synthesizeWithEdge);
   // 后台预热全部播报语：之后扫码时直接播缓存，不等在线合成。
@@ -553,8 +599,74 @@ async function bootstrap(): Promise<void> {
     onStatus: (apiStatus) => sendToMainWindow(IpcChannel.LocalApiStatusChanged, apiStatus),
     onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
   });
-  // 在 before-quit 就告诉手机「程序已退出」：到 will-quit 时进程马上结束，消息可能来不及发出。
-  app.on('before-quit', () => mobile.quit());
+  // macOS/Linux 关机、注销时 before-quit 也会触发（Windows 不会，走的是下面的 session-end）：
+  // 这种情况下不弹确认，不能挡着系统关机。powerMonitor 没有「关机被取消」的事件，收到这个信号
+  // 之后就不再复位——真被取消的情况很少见，顶多是这之后一次正常退出也跳过了确认，不是大问题。
+  // macOS 上 shutdown 和 before-quit 谁先触发尚未在真机上验证过，上线前要用真的 Mac 测一次。
+  powerMonitor.on('shutdown', () => {
+    isSystemShutdown = true;
+  });
+
+  // 退出的副作用（告诉手机「已退出」、isQuitting 影响关窗口是不是藏进托盘）必须等退出真的要发生了
+  // 才做：都归到这一个 before-quit 处理器里，不能分散在几个各管各的处理器里——那样的话，批量打印的
+  // 确认框选了「取消」之后，其他处理器仍然会在同一次 before-quit 里各自跑一遍，副作用照样发生，
+  // 退出明明被取消了，托盘行为却已经坏掉。
+  let readyToQuit = false;
+  app.on('before-quit', (event) => {
+    if (readyToQuit) {
+      isQuitting = true;
+      mobile.quit();
+      return;
+    }
+    const pending = batch.pendingQuit();
+    if (pending === null || !shouldConfirmBatchQuit(pending.labels.length, isSystemShutdown)) {
+      readyToQuit = true;
+      isQuitting = true;
+      mobile.quit();
+      return;
+    }
+    event.preventDefault();
+    showMainWindow();
+    const { message, detail } = batchQuitDialogText(pending.labels.length);
+    const options = {
+      type: 'warning' as const,
+      buttons: ['取消', '仍要退出'],
+      defaultId: 0,
+      cancelId: 0,
+      message,
+      detail,
+    };
+    // 用异步版本：确认框开着的这段时间，打印和 IPC 照常响应（同步版本会冻住整个主进程）。
+    void (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options)).then(
+      async ({ response }) => {
+        if (response !== 1) {
+          return;
+        }
+        // 弹确认框的这段时间批次可能还在打：重新查一遍，只记下这一刻真的还没轮到的——
+        // 不能用弹框之前的旧名单，那时候「没打」的几张可能这期间已经打完或者失败了。
+        const stillPending = batch.pendingQuit();
+        if (stillPending !== null) {
+          // 先取消、等正在打的那一张真的结束（它自己的打印结果已经有记录了），再记 CANCELED、
+          // 最后才退出：不然要么这一张会在被标成「没打」之后又打出来，要么退出时它还没打完。
+          batch.cancel();
+          await waitForBatchIdle(() => batch.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS);
+          for (const record of canceledJobRecords(
+            stillPending.batchId,
+            stillPending.template,
+            stillPending.labels,
+            randomUUID,
+            Date.now,
+          )) {
+            jobs.append(record);
+          }
+        }
+        readyToQuit = true;
+        isQuitting = true;
+        mobile.quit();
+        app.quit();
+      },
+    );
+  });
 
   registerIpc({
     service,
@@ -594,6 +706,7 @@ async function bootstrap(): Promise<void> {
     mobile,
     localApi,
     profiles,
+    printerCommands,
     getWindow: () => mainWindow,
     choosePrinter,
     onTemplatesChanged: () => {
@@ -721,9 +834,6 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', showMainWindow);
-  app.on('before-quit', () => {
-    isQuitting = true;
-  });
   app
     .whenReady()
     .then(bootstrap)

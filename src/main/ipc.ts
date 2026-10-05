@@ -36,6 +36,7 @@ import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
 import { NO_RENDER_WARNINGS } from '../shared/render-warnings';
 import type { AppSettings } from '../shared/settings';
 import type { LocalApi } from './api/local-api';
+import { BATCH_BLOCKS_UPDATE_ISSUE } from './batch/batch-quit';
 import type { BatchStation } from './batch/batch-station';
 import { logFailures } from './ipc-errors';
 import {
@@ -52,10 +53,13 @@ import {
   requireMobilePhoneId,
   requirePaperKey,
   requirePositiveInteger,
+  requirePrinterAction,
+  requirePrinterCommandConfig,
   requirePrintOptions,
   requireRaw,
   requireRecord,
   requireSecretName,
+  requireSettingsPatch,
   requireString,
   requireTemplateId,
   requireVoiceCue,
@@ -69,6 +73,7 @@ import { type PrintTemplate, resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences } from './printing/driver-paper';
 import { renderLabelHtml } from './printing/label-html';
 import { renderLibraryPreviews } from './printing/library-previews';
+import type { PrinterCommands } from './printing/printer-commands-station';
 import type { PrinterDriver } from './printing/printer-driver';
 import type { PrinterProfiles } from './printing/printer-profiles';
 import type { PrinterStatusMonitor } from './printing/printer-status';
@@ -117,6 +122,8 @@ export interface IpcDeps {
   localApi: LocalApi;
   /** 每台打印机的驱动纸张和分辨率（短时缓存）。 */
   profiles: PrinterProfiles;
+  /** 标签机指令（printing/printer-commands-station.ts）。 */
+  printerCommands: PrinterCommands;
   getWindow: () => BrowserWindow | null;
   onSettingsChanged: (next: AppSettings, previous: AppSettings) => Promise<void>;
   /** 模板保存或删除之后：模板指定的打印机可能变了，要检测的打印机跟着变。 */
@@ -268,6 +275,18 @@ export function registerIpc(deps: IpcDeps): void {
     // 操作员可能刚改了纸张：界面随后重新检查时要读到新的设置。
     deps.profiles.forget(name);
   });
+  // 先做不用等系统的校验，再核对打印机在系统列表里（只发给系统里有的打印机）。
+  handle(IpcChannel.PrinterCommands, async (printerName) =>
+    deps.printerCommands.describe(await requireKnownPrinter(printerName)),
+  );
+  handle(IpcChannel.ApplyPrinterCommands, async (printerName, config) => {
+    const parsed = requirePrinterCommandConfig(config);
+    return deps.printerCommands.apply(await requireKnownPrinter(printerName), parsed);
+  });
+  handle(IpcChannel.RunPrinterAction, async (printerName, action) => {
+    const parsed = requirePrinterAction(action);
+    return deps.printerCommands.run(await requireKnownPrinter(printerName), parsed);
+  });
   handle(IpcChannel.ListJobs, (query) => deps.jobs.listPage(requireJobQuery(query)));
   handle(IpcChannel.PreviewJob, async (jobId) => {
     const { job, template, fields } = storedLabelOf(jobId);
@@ -294,7 +313,7 @@ export function registerIpc(deps: IpcDeps): void {
     });
   });
   handle(IpcChannel.GetSettings, () => deps.settings.current);
-  handle(IpcChannel.UpdateSettings, (patch) => updateSettings(requireRecord(patch, 'settings patch')));
+  handle(IpcChannel.UpdateSettings, (patch) => updateSettings(requireSettingsPatch(patch)));
   handle(IpcChannel.ListTemplates, () => deps.templates.list());
   handle(IpcChannel.DuplicateTemplate, (sourceId) => deps.templates.duplicate(requireTemplateId(sourceId)));
   // 没有参数：主进程自己建空白模板，页面传不进任何内容（新通道只给最小能力）。
@@ -376,7 +395,15 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.OpenShop, () => shell.openExternal(BRAND.shop.url));
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
-  handle(IpcChannel.InstallUpdate, () => deps.updater.install('front'));
+  handle(IpcChannel.InstallUpdate, () => {
+    // quitAndInstall 会在任何确认之前就把安装程序拉起来：不像正常退出能先弹确认框，
+    // 批量打印还在打或暂停中时只能直接拒绝，让操作员自己先打完或取消这一批。
+    if (deps.batch.pendingQuit() !== null) {
+      return { status: 'refused', issue: BATCH_BLOCKS_UPDATE_ISSUE } as const;
+    }
+    deps.updater.install('front');
+    return { status: 'ok' } as const;
+  });
   handle(IpcChannel.VoiceClip, (cue) => {
     // 音色和语速取主进程当前设置，不信任页面传入。
     const { name, ratePercent } = deps.settings.current.voice;

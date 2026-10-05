@@ -34,8 +34,9 @@
 ## 打印（`printing/`）
 
 - **打印适配器** `electron-driver-adapter.ts`：隐藏的 `BrowserWindow`（sandbox，禁用 JS）加载标签 HTML，再调用 `webContents.print` 静默打印。超时时由 `AbortSignal` 销毁这个窗口。
-- **打印机探测** `printer-probe-host.ts`（只在 Windows 上）：常驻一个 PowerShell 进程，用行协议查询打印机状态和驱动纸张。
-  - 打印机名用 base64 编码后传入，并转义通配符。
+- **打印机探测** `printer-probe-host.ts`（只在 Windows 上）：常驻一个 PowerShell 进程，用行协议查询打印机状态、驱动纸张、驱动名，并原样发送标签机指令。
+  - 打印机名和数据都用 base64 编码后传入（「命令 名字 [数据]」），名字转义通配符。
+  - 原样发送：第一次用时 `Add-Type` 编译一小段 C#（只用 C# 5 语法），P/Invoke winspool 的 W 版函数，数据类型 RAW；Win32 错误写成 `err win32:<错误码> …`。整段脚本经 `-EncodedCommand` 传入，测试核对命令行不超过 32767 字符。
   - 不要改成每次查询都新启动一个 PowerShell：启动一次约耗 1 秒 CPU。
 - **状态判定** `printer-status.ts`：检测所有被分配到的打印机（纸张分配和模板指定里出现的），每轮重新取名单；只有驱动明确报告问题（离线、缺纸、卡纸……）才判定为不能打印；查询失败按「未知」处理，不阻止打印。异常通知按「打印机 + 问题」限频。
 - **面单** `waybill-html.ts`：按 core 的 `layoutWaybill` 结果画绝对定位的格子和线；条码 `code128.ts`（自己实现，B / C 子集、校验位），每个模块取整数个点、两侧留 10 个模块空白，放不下或内容不能编码时不印并在 `RenderWarnings` 里说明。`label-html.ts` 的 `renderLabelHtml` 按模板的 `kind` 分派，标签、面单、自由设计共用打印、预览、PDF 的入口。
@@ -47,6 +48,7 @@
 - **决定打印机**：规则在 core 的 `printing/resolve-printer.ts`，主进程只提供本机打印机列表（`PrinterDriver.knownPrinterNames`）。读打印机列表要用主窗口，启动时窗口还没建好，检测和预读在窗口建好之后再做。
 - **假打印机** `fake-printers.ts`：环境变量 `CDL_LABELFLASH_FAKE_PRINTERS`（只对未打包的程序生效）换掉适配器、驱动纸张查询和状态探测，E2E 和视觉验收用。
 - **模板库** `library-previews.ts`：按每个模板的示例数据排出缩略图 HTML（`renderLabelHtml`，203dpi），`templates:library` 每次现排、不缓存；`library-html.test.ts` 核对每个模板在 203、300dpi 都印得出并做 HTML 快照。预览、试打带模板库编号时，`ipc.ts` 的 `librarySampleOf` 按编号取示例数据（页面不能交字段）。
+- **标签机指令** `printer-commands-station.ts`：核对打印机在系统列表里 → 认指令集（手动 / 在线驱动清单 / 驱动名）→ 按范围把关 → 保存（设置的 `printerCommands`）→ 经 `raw-sender.ts` 发送一次。发送方式：Windows 探测进程、macOS `lp -o raw`（参数数组，字节走标准输入）、其他平台「不支持」。驱动名在 `printer-identity.ts`（macOS 取 `printer-make-and-model`）。不经 `PrintService`、不写打印记录，每次发送写日志。假打印机记下收到的指令文字（`rawJobs`）。
 
 ## 其他子系统
 
@@ -63,6 +65,15 @@
 | `window-placement.ts` | 按显示器记忆窗口位置。保存时扣掉 Windows 小数缩放下创建窗口的尺寸误差，否则窗口每次启动都会变大一点 |
 | `security.ts`、`app-protocol.ts` | 拒绝导航、新窗口、重定向和 webview；只经 `app://bundle/` 提供界面文件 |
 | `mobile/` | 手机扫码的电脑端，见下一节 |
+
+## 批量打印（`batch/`）
+
+设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 5 节。
+
+- **读表格在子进程里**（Chromium 两条法则）：`table-reader-host.ts` 每读一个文件 `utilityProcess.fork` 一个子进程（入口 `reader-worker.ts`，由 `index.ts` 以 `?modulePath` 引入、单独打包），30 秒超时、512MB 堆上限，读完就结束；子进程只收字节（不给路径），只回文字的二维数组，主进程再核对形状和上限（`readReply`），表头规则走 core 的 `tableFromRecords`。读取逻辑在 `table-file.ts`（不 import electron，用 `bun test` 测，`testing/minimal-xlsx.ts` 生成测试用的 .xlsx）。`.xls` 按扩展名和文件头拒绝。
+- **`batch-station.ts`**：只留最近一张表；预览、检查（把每行排一遍找出条码印不了的，分段让出主线程，新的检查开始时放弃旧的）和打印用同一份 HTML；同一时间只有一批在打；进度最多 0.25 秒推一次（`batch:status-changed`），状态变化立即推，同时推 `jobs:changed`。
+- **拖进窗口的文件**：界面读成字节经 `batch:read-dropped` 交来，主进程不接受任何路径（打开对话框选的文件由主进程自己读）。
+- **静默更新**：批量打印还有没打的（含暂停中的）时不静默更新。
 
 ## 本机接口（`api/`）
 
@@ -110,6 +121,7 @@
 |---|---|---|
 | `index.ts` | 创建常驻探测进程，打印机状态轮询和异常通知都依赖它 | 不创建探测进程，状态按「未知」处理；开发版设置程序坞图标 |
 | `printing/driver-paper.ts` | 读纸张：CIM（`parseCimPaper`）；打开设置：`rundll32 printui.dll` | 读纸张：`ipptool`（`parseIppPaper`）；打开设置：系统设置「打印机与扫描仪」 |
+| `printing/raw-sender.ts` + `printer-identity.ts` | 原样发送：探测进程里 winspool RAW；驱动名：`Get-Printer` 的 DriverName | 原样发送：`lp -o raw`；驱动名：ipptool 的 `printer-make-and-model` |
 | `window.ts` + `src/shared/window-chrome.ts` | 无边框窗口，按钮由界面自绘 | `titleBarStyle: 'hidden'`，保留系统红绿灯 |
 | `tray.ts` | 第一次隐藏到托盘时弹气泡提示 | 不弹 |
 | `secrets/` | DPAPI | 钥匙串 |
@@ -124,3 +136,4 @@
 - **bundle 自包含**：`electron.vite.config.ts` 用 `externalizeDeps: false`，把依赖打进 bundle。
 - **可选原生模块**：`bufferutil`、`utf-8-validate` 必须保持 external。如果被 Vite 换成空对象，WebSocket 发大于 48 字节的帧时会报错，语音合成就坏了。
 - **检查**：新增依赖后跑 `bun run verify:bundle`。它确认 bundle 只引用 Electron 内置模块和这两个可选模块。
+- **子进程入口**：读表格的子进程用 `?modulePath` 引入（electron-vite 单独打包），产物也在 `out/main/` 下，`verify:bundle` 一并检查。

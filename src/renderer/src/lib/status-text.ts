@@ -94,6 +94,8 @@ const FAILURE_TITLES: Record<PrintFailureReason, string> = {
   PRINT_ERROR: '打印失败',
   LOOKUP_FAILED: '数据查询失败，没有打印',
   TEXT_NOT_FOUND: '没认出标签上的字，没有打印',
+  // 批量打印时程序退出，这一张从来没交给过打印机：见 batch-runner.ts 的 unattemptedLabels。
+  CANCELED: '程序退出时还没打到，没有打印',
 };
 
 const FAILURE_SHORT: Record<PrintFailureReason, string> = {
@@ -103,6 +105,7 @@ const FAILURE_SHORT: Record<PrintFailureReason, string> = {
   PRINT_ERROR: '驱动报错',
   LOOKUP_FAILED: '查询失败',
   TEXT_NOT_FOUND: '没认出',
+  CANCELED: '退出时未打',
 };
 
 /** 失败原因的简短说法（打印记录、批量打印的失败行共用）。 */
@@ -117,6 +120,8 @@ const RETRYABLE_FAILURES: ReadonlySet<PrintFailureReason> = new Set([
   'PRINT_ERROR',
   'LOOKUP_FAILED',
   'TEXT_NOT_FOUND',
+  // 退出时还没打到：从来没交给过打印机，确定没出纸，能直接重打。
+  'CANCELED',
 ]);
 
 const SOURCE_LABELS: Record<PrintSource, string> = {
@@ -161,6 +166,9 @@ function failureDetail(reason: PrintFailureReason, detail: string | undefined): 
     case 'TEXT_NOT_FOUND':
       // 只有手机扫码会带图：处理也在手机上。
       return `${detail ?? '没认出标签上的字'}；请在手机上对准标签重扫，或手动输入`;
+    case 'CANCELED':
+      // 重启之后批量打印页不记得这一批了（状态只在内存里）：指到真的找得到的地方——打印记录按批次筛选。
+      return '批量打印时程序退出，这一张还没轮到：在打印记录里点「这一批」能看到同一批其他失败的，一起重打，或者在这里重打';
   }
 }
 

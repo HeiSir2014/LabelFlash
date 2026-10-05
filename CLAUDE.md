@@ -22,6 +22,7 @@
 |---|---|---|
 | 扫码、识别、预览、模板、打印记录、语音、通知、密钥 | ✅ | ✅ |
 | 打印到本机打印机 | ✅ | ✅（家用打印机已实测出纸；热敏标签机待真机验证） |
+| 标签机指令（TSPL / ZPL / EPL，原样发送） | ✅ 常驻 PowerShell 探测进程里 P/Invoke winspool（RAW） | ✅ `lp -o raw`（未在真机验证） |
 | 驱动纸张检测、打开打印机设置 | ✅ 常驻 PowerShell 查询 CIM；驱动「打印首选项」 | ✅ `ipptool`；系统设置「打印机与扫描仪」 |
 | 图中文字识别（货架号，本地 OCR） | ✅ 安装包带扩展和模型（`resources/ocr/`）；扩展静态链接自己编的 ONNX Runtime（/MT），不需要 VC++ 运行库，不要求 AVX2 | 未做：不带 OCR，这一步跳过，电脑不向手机要图 |
 | 本机接口（HTTP） | ✅ 防火墙规则：安装时和配置页按钮（PowerShell NetSecurity，弹 UAC）；占用端口的程序用 `Get-NetTCPConnection` 查 | ✅（未在 Mac 上验证）pkg 装完把程序加进系统防火墙允许列表；占用端口的程序用 `lsof` 查 |
@@ -70,7 +71,7 @@ CI（GitHub Actions）会在 PR 和 `master` 上跑：windows-latest 上 check�
 ```
 src/core      业务层：纯 TypeScript，不依赖 Electron / Node / SQLite
 src/shared    主进程和界面共用：IPC 契约、设置的校验、品牌、常量
-src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）
+src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）、批量打印（batch/）、标签机指令（printing/printer-commands-station.ts）
 src/preload   contextBridge，只暴露类型化 API
 src/renderer  界面：React 19，MVVM（lib → view-models → components）
 scripts       构建脚本（bundle 检查、图标、安装包、中转服务的构建与发布）
@@ -94,7 +95,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 - **测试**：新功能、修 bug 都先写失败的测试。测试名用英文描述行为；纯逻辑放进可测的模块（core、`lib/`、主进程里不依赖 Electron 的文件）。
 - **用词**：界面文字和播报用词保持一致，只说程序确知的事。例如驱动回调成功只代表任务进了打印队列，所以写「已发送打印」，不写「打印成功」。
 - **出错**：不吞异常。主进程把错误和上下文写进日志，界面给出中文提示和下一步该怎么做。
-- **依赖**：不随意引入新依赖，先用现有的：运行时有 electron-log、electron-updater、msedge-tts、qrcode、bwip-js（自由设计模板的条码编码），以及电脑、中转服务、扫码页共用的 @msgpack/msgpack（手机扫码的线上编码）；开发时有 sharp、Playwright、Biome，以及只打进手机扫码页的 zxing-wasm。
+- **依赖**：不随意引入新依赖，先用现有的：运行时有 electron-log、electron-updater、msedge-tts、qrcode、bwip-js（自由设计模板的条码编码）、read-excel-file（批量打印读 .xlsx，只在读表格的子进程里用），以及电脑、中转服务、扫码页共用的 @msgpack/msgpack（手机扫码的线上编码）；开发时有 sharp、Playwright、Biome，以及只打进手机扫码页的 zxing-wasm。
 
 ## 命名与措辞限制
 

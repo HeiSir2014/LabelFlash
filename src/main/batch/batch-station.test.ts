@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { templateFingerprint } from '../../core/api/template-fields';
 import {
   BATCH_LIMITS,
   type BatchPlan,
@@ -16,6 +17,7 @@ import { DEFAULT_PAPER } from '../../shared/label-paper';
 import { NO_RENDER_WARNINGS } from '../../shared/render-warnings';
 import { createTempDir, removeTempDir } from '../storage/testing/temp-dir';
 import { BatchStation, type BatchStationDeps } from './batch-station';
+import type { TableReadReply } from './table-file';
 import { XLS_ISSUE } from './table-file';
 import { minimalXlsx } from './testing/minimal-xlsx';
 
@@ -31,6 +33,8 @@ function createStation(overrides: Partial<BatchStationDeps> = {}) {
   const statuses: (BatchStatus | null)[] = [];
   const scheduled: (() => void)[] = [];
   let tables = 0;
+  let jobsChangedCount = 0;
+  let clockMs = 0;
   const deps: BatchStationDeps = {
     readTable: async () => ({
       ok: true,
@@ -63,10 +67,22 @@ function createStation(overrides: Partial<BatchStationDeps> = {}) {
       };
     },
     onStatus: (status) => statuses.push(status),
-    onJobsChanged: () => undefined,
+    onJobsChanged: () => {
+      jobsChangedCount += 1;
+    },
+    now: () => clockMs,
     ...overrides,
   };
-  return { station: new BatchStation(deps), printed, statuses, scheduled };
+  return {
+    station: new BatchStation(deps),
+    printed,
+    statuses,
+    scheduled,
+    jobsChangedCount: () => jobsChangedCount,
+    advanceClock: (ms: number) => {
+      clockMs += ms;
+    },
+  };
 }
 
 function planFor(tableId: string, overrides: Partial<BatchPlan> = {}): BatchPlan {
@@ -175,6 +191,28 @@ describe('BatchStation tables', () => {
       });
     });
   });
+
+  // 读表格要去子进程跑一趟，比较慢：这次导入还没读完的时候，又粘贴了一张表（马上就有结果）。
+  // 慢的那次读完之后不能用旧结果覆盖已经更新过的表。
+  test('drops a slow file-read result that is superseded by a faster paste', async () => {
+    const held: { resolve: ((reply: TableReadReply) => void) | null } = { resolve: null };
+    const { station } = createStation({
+      readTable: () =>
+        new Promise<TableReadReply>((resolve) => {
+          held.resolve = resolve;
+        }),
+    });
+    const slowLoad = station.loadBytes('slow.xlsx', new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0, 0, 0]));
+    const pasted = station.paste('编码\nFROM_PASTE\n');
+    if (pasted.status !== 'loaded') {
+      throw new Error('expected the paste to load');
+    }
+    held.resolve?.({ ok: true, records: [['编码'], ['FROM_XLSX']] });
+    expect(await slowLoad).toEqual({ status: 'canceled' });
+    // 粘贴的那张表还在：用它的编号开一批能找到表，没有被慢一步回来的 xlsx 结果覆盖掉。
+    const mapping = { 编码: { kind: 'column', column: '编码' }, 颜色: { kind: 'none' } } as const;
+    expect(station.start(planFor(pasted.table.id, { mapping })).status).toBe('started');
+  });
 });
 
 describe('BatchStation printing', () => {
@@ -212,6 +250,72 @@ describe('BatchStation printing', () => {
     expect(station.pendingLabels).toBe(2);
   });
 
+  // 退出确认要用到：正在打的那一张不算「没打」（已经交给打印机），只有排在它后面、还没轮到的才算。
+  test('reports the labels not yet handed to the printer, excluding the one in flight', async () => {
+    const { station } = createStation({ printFields: () => new Promise(() => undefined) });
+    expect(station.pendingQuit()).toBeNull();
+    const tableId = await loaded(station);
+    station.start(planFor(tableId));
+    const pending = station.pendingQuit();
+    expect(pending?.batchId).toBe(BATCH_ID);
+    expect(pending?.labels).toEqual([{ row: 2, copy: 1, fields: expect.any(Array), content: '编码：BAD' }]);
+  });
+
+  test('has nothing pending once the batch is done', async () => {
+    const { station } = createStation();
+    const tableId = await loaded(station);
+    station.start(planFor(tableId));
+    await station.whenIdle();
+    expect(station.pendingQuit()).toBeNull();
+  });
+
+  // 退出确认不是用来追着操作员要答案的：批次被操作员自己取消之后，剩下没打的是他自己的决定，
+  // 不该在之后随便一次退出（哪怕是打印机列表加载完之类完全无关的时机）又弹一次确认。
+  test('has nothing pending once the batch is canceled, even with labels left unattempted', async () => {
+    const held: { resolve: ((result: PrintResult) => void) | null } = { resolve: null };
+    const { station } = createStation({
+      printFields: () => new Promise((resolve) => (held.resolve = resolve)),
+    });
+    const tableId = await loaded(station);
+    station.start(planFor(tableId));
+    station.cancel();
+    held.resolve?.(PRINTED);
+    await station.whenIdle();
+    expect(station.pendingQuit()).toBeNull();
+  });
+
+  // 界面按它核对当前打开的表格是不是这一批用的那张，不是的话不把失败标到当前表格的行上。
+  test('records which table a batch was started from, and null for a serial-only batch', async () => {
+    const { station } = createStation();
+    const tableId = await loaded(station);
+    station.start(planFor(tableId));
+    await station.whenIdle();
+    expect(station.status()?.tableId).toBe(tableId);
+
+    const serialOnlyPlan: BatchPlan = { ...planFor(tableId), data: { kind: 'serial-only', count: 2 } };
+    station.start(serialOnlyPlan);
+    await station.whenIdle();
+    expect(station.status()?.tableId).toBeNull();
+  });
+
+  // state 变成 canceled 那一刻正在打的那一张可能还没打完：isActive 这时还是 true，界面不能当作已经停了
+  // （否则会显示一个按下去又被 BUSY 拒绝的「打印」按钮）。那一张结束之后要再推一次，isActive 才变成 false。
+  test('keeps isActive true until the in-flight label settles after a cancel', async () => {
+    const held: { resolve: ((result: PrintResult) => void) | null } = { resolve: null };
+    const { station, statuses } = createStation({
+      printFields: () => new Promise((resolve) => (held.resolve = resolve)),
+    });
+    const tableId = await loaded(station);
+    station.start(planFor(tableId));
+    station.cancel();
+    expect(station.status()?.isActive).toBe(true);
+    held.resolve?.(PRINTED);
+    await station.whenIdle();
+    expect(station.status()?.isActive).toBe(false);
+    const canceledStatuses = statuses.filter((status) => status?.state === 'canceled');
+    expect(canceledStatuses.map((status) => status?.isActive)).toEqual([true, false]);
+  });
+
   // 表格重新导入过、或对列设置没跟着改：对着一张不存在的列展开，每一行都会报同一个问题，不如一次说清楚。
   test('refuses to start when a mapped, copies or serial column is missing from the table', async () => {
     const { station } = createStation();
@@ -235,6 +339,27 @@ describe('BatchStation printing', () => {
     });
   });
 
+  // 序号关着时，序号列指向哪里都不该报错；模板（CANVAS_TAG）只用到编码、颜色，mapping 里残留一个
+  // 模板不认的变量（例如换模板之前对过列）指向一个不存在的列，也不该报错——那一项反正不会被用到。
+  test('ignores a stale serial column while serial is disabled, and a mapping entry for an unused variable', async () => {
+    const { station } = createStation();
+    const tableId = await loaded(station);
+    const serialDisabled = planFor(tableId, {
+      serial: { ...DEFAULT_SERIAL, enabled: false, column: '货架号' },
+    });
+    expect(station.start(serialDisabled).status).toBe('started');
+    await station.whenIdle();
+
+    const staleVariable = planFor(tableId, {
+      mapping: {
+        编码: { kind: 'column', column: '编码' },
+        颜色: { kind: 'column', column: '颜色' },
+        旧字段: { kind: 'column', column: '货架号' },
+      },
+    });
+    expect(station.start(staleVariable).status).toBe('started');
+  });
+
   // 每张都推会让界面一直重排；状态变化（开始、暂停、打完）立即推。
   test('sends state changes at once and merges progress', async () => {
     const { station, statuses, scheduled } = createStation();
@@ -256,6 +381,7 @@ describe('BatchStation printing', () => {
       forced: false,
       failureReason: 'PRINT_ERROR',
       templateId: CANVAS_TAG.id,
+      templateFingerprint: templateFingerprint(CANVAS_TAG),
       fields: [{ name: '编码', value: 'CL7' }],
       batch: { id: BATCH_ID, row: 7, copy: 2 },
     };
@@ -268,6 +394,56 @@ describe('BatchStation printing', () => {
       [{ id: BATCH_ID, row: 7, copy: 2 }, '编码：CL7', [{ name: '编码', value: 'CL7' }]],
     ]);
     expect(station.retryFailed(BATCH_ID, 3)).toEqual({ status: 'invalid', issue: '这一批没有要重打的失败标签' });
+  });
+
+  // 跨了重启：打印记录里存的指纹和当前模板对不上（字段或纸张改过），不能按旧样子重打。
+  test('refuses to retry from the job history once the template has changed', async () => {
+    const failed: JobRecord = {
+      id: 'j1',
+      createdAt: 1,
+      raw: '编码：CL7',
+      printerName: 'P',
+      source: 'batch',
+      status: 'failed',
+      forced: false,
+      failureReason: 'PRINT_ERROR',
+      templateId: CANVAS_TAG.id,
+      templateFingerprint: 'stale-fingerprint',
+      fields: [{ name: '编码', value: 'CL7' }],
+      batch: { id: BATCH_ID, row: 7, copy: 2 },
+    };
+    const { station } = createStation({
+      failedJobs: (batchId, row) => (batchId === BATCH_ID && row === null ? [failed] : []),
+    });
+    expect(station.retryFailed(BATCH_ID, null)).toEqual({
+      status: 'invalid',
+      issue: '模板已删除或改动过，请重新开一批',
+    });
+  });
+
+  // 同一次会话里重打：永远用重打这一刻查到的当前模板对象，不是开这一批时存的那个快照——
+  // 内容没变就该用现在这个对象（哪怕模板目录换了一个新的对象引用，例如重新保存过一次但内容一样）。
+  test('retries with the current template object once its fingerprint still matches', async () => {
+    const reloadedTemplate = { ...CANVAS_TAG };
+    let currentTemplate = CANVAS_TAG;
+    const { station, printed } = createStation({
+      printFields: async (input) => {
+        printed.push(input);
+        return input.content.includes('BAD') ? { status: 'failed', reason: 'PRINT_ERROR' } : PRINTED;
+      },
+      findTemplate: (id) => (id === CANVAS_TAG.id ? currentTemplate : null),
+    });
+    const tableId = await loaded(station);
+    const started = station.start(planFor(tableId));
+    if (started.status !== 'started') {
+      throw new Error('expected the batch to start');
+    }
+    await station.whenIdle();
+    currentTemplate = reloadedTemplate;
+    const retried = station.retryFailed(started.batch.batchId, null);
+    expect(retried.status).toBe('started');
+    await station.whenIdle();
+    expect(printed.at(-1)?.template).toBe(reloadedTemplate);
   });
 
   // 一批最多 2 万张，但保留的打印记录条数可能比它小（例如调小过容量）：这一批还在这次会话里时，
@@ -294,6 +470,96 @@ describe('BatchStation printing', () => {
     await station.whenIdle();
     expect(printed.map((input) => input.content)).toEqual(['编码：BAD']);
   });
+
+  // 行 2、3 第一次都失败；只重打行 2（成功了）之后，「整批重打失败的」还得找到行 3——
+  // 不能因为上一次重打只带了行 2 那一张标签（新的 BatchRun 只认识这一张），就把行 3 的失败忘掉。
+  test("keeps a batch's open failures merged across separate retries", async () => {
+    const attempts = new Map<string, number>();
+    const { station } = createStation({
+      readTable: async () => ({ ok: true, records: [['编码'], ['R1'], ['R2'], ['R3']] }),
+      printFields: async (input) => {
+        const count = (attempts.get(input.content) ?? 0) + 1;
+        attempts.set(input.content, count);
+        return count === 1 && input.content !== '编码：R1' ? { status: 'failed', reason: 'PRINT_ERROR' } : PRINTED;
+      },
+    });
+    const tableId = await loaded(station);
+    const mapping = { 编码: { kind: 'column', column: '编码' }, 颜色: { kind: 'none' } } as const;
+    const started = station.start(planFor(tableId, { mapping }));
+    if (started.status !== 'started') {
+      throw new Error('expected the batch to start');
+    }
+    const batchId = started.batch.batchId;
+    await station.whenIdle();
+    expect(station.status()).toMatchObject({ state: 'done', sent: 1, failed: 2 });
+
+    expect(station.retryFailed(batchId, 2).status).toBe('started');
+    await station.whenIdle();
+    // 行 2 这次成功了，但行 3 还是失败的——这次重打没碰过它，它不该消失。
+    expect(station.status()).toMatchObject({ state: 'done', sent: 1, failed: 1 });
+
+    expect(station.retryFailed(batchId, null).status).toBe('started');
+    await station.whenIdle();
+    expect(station.status()).toMatchObject({ state: 'done', sent: 1, failed: 0 });
+  });
+
+  test('refuses to retry from memory once its template has been deleted', async () => {
+    let templateDeleted = false;
+    const { station } = createStation({
+      printFields: async () => ({ status: 'failed', reason: 'PRINT_ERROR' }),
+      findTemplate: (id) => (!templateDeleted && id === CANVAS_TAG.id ? CANVAS_TAG : null),
+    });
+    const tableId = await loaded(station);
+    const started = station.start(planFor(tableId));
+    if (started.status !== 'started') {
+      throw new Error('expected the batch to start');
+    }
+    await station.whenIdle();
+    templateDeleted = true;
+    expect(station.retryFailed(started.batch.batchId, null)).toEqual({
+      status: 'invalid',
+      issue: '模板已删除或改动过，请重新开一批',
+    });
+  });
+
+  // 内存里还留着这一批（跟着的那次 schedule 没触发真正的计时器，只是把回调存起来）：
+  // 状态条每一次合并推送都更新，但打印记录的刷新通知更贵，状态没变时最快一秒推一次，状态变了总是立即推。
+  test('throttles JobsChanged to at most once per second, but not on a state change', async () => {
+    const printed: FieldsPrint[] = [];
+    const pending: ((result: PrintResult) => void)[] = [];
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const { station, scheduled, jobsChangedCount, advanceClock } = createStation({
+      readTable: async () => ({ ok: true, records: [['编码'], ['R1'], ['R2'], ['R3']] }),
+      printFields: (input) =>
+        new Promise((resolve) => {
+          printed.push(input);
+          pending.push(resolve);
+        }),
+    });
+    const release = async (result: PrintResult = PRINTED) => {
+      pending.shift()?.(result);
+      await settle();
+    };
+    const tableId = await loaded(station);
+    const mapping = { 编码: { kind: 'column', column: '编码' }, 颜色: { kind: 'none' } } as const;
+    station.start(planFor(tableId, { mapping }));
+    await settle();
+    expect(jobsChangedCount()).toBe(1); // 开始：状态变化，立即推一次。
+
+    await release(); // 行 1 打完，还是 running：排了一次合并推送，没真的推。
+    expect(scheduled.length).toBe(1);
+    scheduled.shift()?.();
+    expect(jobsChangedCount()).toBe(1); // 时钟没走，节流住了。
+
+    await release(); // 行 2 打完，同样是 running。
+    scheduled.shift()?.();
+    expect(jobsChangedCount()).toBe(1); // 还没到一秒。
+
+    advanceClock(1_000);
+    await release(); // 行 3 打完：这一批也结束了（running → done），状态变化立即推。
+    expect(jobsChangedCount()).toBe(2);
+    expect(printed.map((input) => input.content)).toEqual(['编码：R1', '编码：R2', '编码：R3']);
+  });
 });
 
 describe('BatchStation preview and check', () => {
@@ -312,6 +578,16 @@ describe('BatchStation preview and check', () => {
     const tableId = await loaded(station);
     expect(await station.check(planFor(tableId))).toEqual({
       problems: [{ row: 2, texts: ['条码「商品码」不印：位数不对'] }],
+    });
+  });
+
+  // 模板、表格对不上时，不能悄悄说「没有问题」：界面要能看到到底是哪里不对。
+  test('reports the issue instead of silently saying there are no problems when the plan cannot be prepared', async () => {
+    const { station } = createStation();
+    const tableId = await loaded(station);
+    expect(await station.check({ ...planFor(tableId), templateId: 'custom:gone' })).toEqual({
+      problems: [],
+      issue: '模板已经不在了：请重新选择模板',
     });
   });
 

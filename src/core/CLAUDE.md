@@ -25,7 +25,8 @@
 | `errors.ts` | `PrintError`：失败原因和给用户看的补充说明（打印机问题分类） |
 | `scan/` | 识别规则（`RULE_KINDS`：delimited / keyValue / whole / regex）、加工步骤（`STEP_KINDS`：template / regexReplace / lookup / http / imageText）；图中文字的查找规则在 `image-text.ts`、内置规则、每台电脑的规则设置、规则文件导入导出 |
 | `templates/` | 模板模型（`kind`：`label` 标签 / `waybill` 面单 / `canvas` 自由设计）、内置模板、标签内容组装、按宽度缩小字号、备注变量；面单的格子版式在 `waybill-model.ts`（分割树）、`waybill-layout.ts`（切格子、取整到打印点、折行和缩小字号，字宽表按实测取上限）、`sanitize-waybill.ts`、`builtin-waybills.ts`（五套内置面单和示例数据）；字宽表在 `text-fit.ts`（逐字符实测，标签和面单共用）；自由设计模板：`canvas-model.ts`（元素、限制、码制清单）、`sanitize-canvas.ts`、`canvas-layout.ts`（取整到打印点、排文字、表格、打印前检查）、`mono-image.ts`（灰度 → 黑白点，纯 TS，不解码图片文件）、`builtin-canvas.ts` |
-| `lookup/` | CSV 解析（含 GBK 编码的中文 Excel）和查找索引 |
+| `lookup/` | CSV 解析（含 GBK 编码的中文 Excel；上限和分隔符可传入，Excel 读出的行也走 `tableFromRecords`）和查找索引 |
+| `batch/` | 批量打印的纯逻辑：`batch-model.ts`（类型、`BATCH_LIMITS`、序号字段名、批次号）、`column-mapping.ts`（按列名自动对列）、`serial.ts`、`batch-labels.ts`（行 → 标签：字段、份数、问题行；单行预览）、`parse-batch-plan.ts`（界面交来的设置严格校验）、`batch-runner.ts`（`BatchRun`：按顺序逐张经 `printFields` 打，暂停 / 继续 / 取消，打印机不能用时自动暂停、那一张继续时重打） |
 | `notify/` | 打印结果通知的事件、投递状态和重试时间表 |
 | `api/` | 本机接口的任务：`PrintJobService`（整批核对、`requestId` 防重复、排队上限、按提交顺序逐个打印、重启后把没打完的标成 `INTERRUPTED`）、模板名换算、模板用到的字段。存储接口 `ApiJobStore` 的内存版和 SQLite 版共用 `testing/api-job-store-contract.ts` 这套测试 |
 

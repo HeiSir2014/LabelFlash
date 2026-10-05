@@ -149,7 +149,7 @@ interface ScanResult {
   }
   ```
 
-  识别不了时 `rule` 和 `fields` 为 null。`paper` 是这一张的纸张（宽x高，毫米），支持多种纸张后新增；旧记录和识别不了的记录为 null。`source` 是 `desktop`（扫码枪）、`history`（记录重打）、`mobile`（手机）或 `api`（本机接口）；本机接口打的不经过识别规则，`rule` 固定为 `{ "id": "api", "name": "本机接口" }`，`fields` 是调用方给的字段。
+  识别不了时 `rule` 和 `fields` 为 null。`paper` 是这一张的纸张（宽x高，毫米），支持多种纸张后新增；旧记录和识别不了的记录为 null。`source` 是 `desktop`（扫码枪）、`history`（记录重打）、`mobile`（手机）、`api`（本机接口）或 `batch`（批量打印）；本机接口打的不经过识别规则，`rule` 固定为 `{ "id": "api", "name": "本机接口" }`，`fields` 是调用方给的字段；批量打印的 `rule` 固定为 `{ "id": "batch", "name": "批量打印" }`，`fields` 是这一行对出来的字段（含序号）。
 - **签名**：请求头 `X-LabelFlash-Event`、`X-LabelFlash-Delivery`（事件编号）、`X-LabelFlash-Timestamp`（Unix 秒）、`X-LabelFlash-Signature: sha256=<hex>`。签名是 `HMAC-SHA256(密钥, 时间戳 + "." + 请求体)`；接收方用同一个密钥验证，并拒绝时间戳相差超过 5 分钟的请求（防重放）。密钥用 `safeStorage` 加密保存，界面上只能重新设置、不能查看。
 - **可靠投递**：
   - 打印结果先写进本机 SQLite 的发送队列（`webhook_deliveries`），后台发送，不阻塞打印。

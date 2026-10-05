@@ -16,6 +16,7 @@ import type { PrinterReadiness } from './printer-readiness';
 import type { RenderWarnings } from './render-warnings';
 import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
+import type { LibraryPreview } from './template-library';
 import type { UpdateStatus } from './update-status';
 import type { VoiceCue } from './voice';
 import type { WindowChrome } from './window-chrome';
@@ -38,6 +39,8 @@ export const IpcChannel = {
   ListTemplates: 'templates:list',
   DuplicateTemplate: 'templates:duplicate',
   CreateCanvasTemplate: 'templates:create-canvas',
+  ListTemplateLibrary: 'templates:library',
+  CreateTemplateFromLibrary: 'templates:create-from-library',
   SaveTemplate: 'templates:save',
   DeleteTemplate: 'templates:delete',
   ListRules: 'rules:list',
@@ -181,6 +184,10 @@ export interface LabelFlashApi {
   duplicateTemplate(sourceId: string): Promise<LabelTemplate>;
   /** 新建空白的自由设计模板（默认纸张），返回它；没有参数，页面不能指定内容。 */
   createCanvasTemplate(): Promise<CanvasTemplate>;
+  /** 模板库：每个模板的说明和按示例数据排好的 HTML（缩略图）。没有参数。 */
+  listTemplateLibrary(): Promise<LibraryPreview[]>;
+  /** 把模板库里的一个模板复制成自定义模板，返回它；只收模板库的编号（library:xxx）。 */
+  createTemplateFromLibrary(libraryId: string): Promise<CanvasTemplate>;
   saveTemplate(template: LabelTemplate): Promise<LabelTemplate>;
   /** 删除后若它正在使用，自动切回标准模板；返回最新设置。 */
   deleteTemplate(id: string): Promise<AppSettings>;

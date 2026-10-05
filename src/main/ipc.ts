@@ -15,6 +15,7 @@ import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import type { ScanResult } from '../core/scan/scan-result';
 import { DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE } from '../core/templates/builtin-templates';
 import { WAYBILL_SAMPLE_FIELDS } from '../core/templates/builtin-waybills';
+import { TEMPLATE_LIBRARY } from '../core/templates/library/template-library';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
 import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
@@ -45,6 +46,7 @@ import {
   requireBytes,
   requireIndex,
   requireJobQuery,
+  requireLibraryTemplateId,
   requireLookupTableId,
   requireMobilePhoneId,
   requirePaperKey,
@@ -65,6 +67,7 @@ import type { WebhookOutbox } from './notify/webhook-outbox';
 import { type PrintTemplate, resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences } from './printing/driver-paper';
 import { renderLabelHtml } from './printing/label-html';
+import { renderLibraryPreviews } from './printing/library-previews';
 import type { PrinterDriver } from './printing/printer-driver';
 import type { PrinterProfiles } from './printing/printer-profiles';
 import type { PrinterStatusMonitor } from './printing/printer-status';
@@ -279,6 +282,12 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.DuplicateTemplate, (sourceId) => deps.templates.duplicate(requireTemplateId(sourceId)));
   // 没有参数：主进程自己建空白模板，页面传不进任何内容（新通道只给最小能力）。
   handle(IpcChannel.CreateCanvasTemplate, () => deps.templates.createCanvas());
+  // 模板库的缩略图：主进程按示例数据现排（和打印同一份 HTML），页面只拿到结果。
+  handle(IpcChannel.ListTemplateLibrary, () => renderLibraryPreviews(TEMPLATE_LIBRARY, Date.now()));
+  // 只收模板库的编号：复制什么由主进程决定，页面交不进模板内容（新通道只给最小能力）。
+  handle(IpcChannel.CreateTemplateFromLibrary, (libraryId) =>
+    deps.templates.createFromLibrary(requireLibraryTemplateId(libraryId)),
+  );
   handle(IpcChannel.SaveTemplate, (template) => {
     const record = requireRecord(template, 'template');
     const saved = deps.templates.save(requireTemplateId(record['id']), record);

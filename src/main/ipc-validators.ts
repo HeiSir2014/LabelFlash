@@ -5,6 +5,7 @@ import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-model';
+import { LIBRARY_TEMPLATE_ID_PATTERN } from '../core/templates/library/library-model';
 import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
@@ -97,6 +98,14 @@ export function requireRecord(value: unknown, name: string): Record<string, unkn
 export function requireTemplateId(value: unknown): string {
   if (typeof value !== 'string' || !TEMPLATE_ID_PATTERN.test(value)) {
     throw new TypeError('Invalid template id');
+  }
+  return value;
+}
+
+/** 模板库里模板的编号（library:xxx）；模板库里有没有这个模板由 TemplateCatalog / findLibraryEntry 核对。 */
+export function requireLibraryTemplateId(value: unknown): string {
+  if (typeof value !== 'string' || !LIBRARY_TEMPLATE_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid library template id');
   }
   return value;
 }

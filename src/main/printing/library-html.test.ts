@@ -25,8 +25,14 @@ describe('template library HTML', () => {
       }
     });
 
-    test(`${template.name}: HTML stays the same`, () => {
-      const rendered = renderCanvasHtml({ scan: librarySampleScan(sample), template, printedAt: PRINTED_AT });
+    test(`${template.name}: HTML stays the same at 203dpi`, () => {
+      const rendered = renderCanvasHtml({ scan: librarySampleScan(sample), template, printedAt: PRINTED_AT }, 203);
+      expect(rendered.html).toMatchSnapshot();
+    });
+
+    // 300dpi 的点更细，取整到点的坐标和二维码、条码的模块数都和 203dpi 不一样：两种分辨率各留一份快照。
+    test(`${template.name}: HTML stays the same at 300dpi`, () => {
+      const rendered = renderCanvasHtml({ scan: librarySampleScan(sample), template, printedAt: PRINTED_AT }, 300);
       expect(rendered.html).toMatchSnapshot();
     });
   }

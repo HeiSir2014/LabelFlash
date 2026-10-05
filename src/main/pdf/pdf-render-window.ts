@@ -66,7 +66,16 @@ export async function openRenderWindow(rendererDir: string): Promise<RenderPort>
     devServerUrl === null
       ? `${APP_SCHEME}://${APP_HOST}/${PDF_RENDER_PAGE}`
       : new URL(PDF_RENDER_PAGE, devServerUrl).href;
-  await window.loadURL(url);
+  try {
+    await window.loadURL(url);
+  } catch (error) {
+    // 页面都加载不起来（协议没挂好、开发服务器没起来……）：这个窗口没用了，不能留着——
+    // 隐藏窗口没人看得见，泄漏的话主窗口关掉之后它还占着，程序退不出去。
+    if (!window.isDestroyed()) {
+      window.destroy();
+    }
+    throw error;
+  }
   return {
     send: (request) => {
       if (!window.isDestroyed()) {

@@ -76,7 +76,7 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 ## 测试与验收
 
 - **单元测试**：写在 `lib/*.test.ts`，只测行为，不测实现细节。
-- **E2E**：在 `e2e/*.e2e.ts`（工作台和配置中心在 `app.e2e.ts`，手机扫码在 `mobile.e2e.ts`，标签机指令在 `printer-commands.e2e.ts`）。
+- **E2E**：在 `e2e/*.e2e.ts`（工作台和配置中心在 `app.e2e.ts`，手机扫码在 `mobile.e2e.ts`，标签机指令在 `printer-commands.e2e.ts`，驱动安装在 `drivers.e2e.ts`）。
   - 用 `e2e/support/fixtures.ts` 的 `test`（`electronApp` 夹具：用例结束时关掉程序、删掉数据目录），共用的操作在 `e2e/support/app-helpers.ts`，本机中转服务和测试手机在 `e2e/support/relay-server.ts`。
   - 用角色和标签定位元素（`getByRole`、`getByLabel`），不依赖类名以外的实现细节。
 - **视觉验收**：界面改完后截图核对对齐、裁切、焦点框和键盘操作。Windows 看 100% 和 150% 缩放，macOS 看红绿灯区域和全屏状态。验收项见配置中心设计文档第 8 节。

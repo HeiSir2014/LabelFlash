@@ -161,6 +161,15 @@ CanvasTemplate { kind: 'canvas', id, name, paper, printer, elements: CanvasEleme
 - **流程**（Windows）：发现没有驱动的 USB 打印设备（PnP 状态异常）→ 在清单里找到型号 → 下载官方安装包 → 核对大小、SHA-256、Authenticode 签名者 → 弹一次管理员权限静默安装 → 重新列打印机，自动按纸张建议分配。
 - **macOS**：清单里有官方 pkg 就下载核对后用系统安装器（输管理员密码）；没有就打开官方下载页。
 - 清单里没有的型号：给出「用系统自带的通用驱动」或「到厂家官网下载」的指引。
+- **实现时定下的细节**（2026-10-02，见 `docs/superpowers/plans/2026-10-02-driver-install.md`）：
+  - 清单是一个签名信封文件（`format`、`keyId`、`payload` = 清单原文 base64、`signature` = Ed25519），签名覆盖固定的用途前缀加原文；公钥内置（可多把），私钥离线。
+  - 版本号 = 签名时刻的 Unix 秒数，程序记住用过的最高版本（settings 表的独立键，界面改不到）；默认有效期 180 天，最长 400 天。连不上时用同一地址上次的清单（重新核对）。
+  - 单个型号不合格时跳过；`schema` 比程序新时整份不用并提示更新。签名脚本对任何不合格都拒签。
+  - Windows 检测：`Win32_PnPEntity` 里有问题代码的 `USB\VID_*` / `USBPRINT\*`，后者经父设备取 VID/PID；列出打印机类的设备和清单里有的设备。
+  - Windows 安装：普通权限核对大小、SHA-256、Authenticode（Valid + Subject 逐字相同）→ 一次 UAC → 提权脚本复制到只有 Administrators / SYSTEM 能写的新目录、复核 SHA-256 后运行（exe 带静默参数、msi 用 msiexec /qn /norestart）→ `pnputil /scan-devices` → 每 2 秒列一次打印机、最多 30 秒找新打印机。超时 15 分钟。
+  - macOS：USB 设备来自 system_profiler，按序列号 / 型号名和 CUPS 的 usb 队列对，只列清单里有、没有队列的；pkg 用 `osascript … with administrator privileges` 运行固定脚本（root 专属目录里复核 SHA-256 再 `installer`）。
+  - 装完只提示给新打印机分配纸张，不自动分配（沿用打印机页「只建议」的规则）。
+  - 清单放在中转服务那台服务器的 nginx 静态文件里，不经中转服务。
 
 ## 8. 子项目 6：共享与远程打印
 

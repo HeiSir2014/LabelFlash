@@ -26,6 +26,7 @@
 | 驱动纸张检测、打开打印机设置 | ✅ 常驻 PowerShell 查询 CIM；驱动「打印首选项」 | ✅ `ipptool`；系统设置「打印机与扫描仪」 |
 | 图中文字识别（货架号，本地 OCR） | ✅ 安装包带扩展和模型（`resources/ocr/`）；扩展静态链接自己编的 ONNX Runtime（/MT），不需要 VC++ 运行库，不要求 AVX2 | 未做：不带 OCR，这一步跳过，电脑不向手机要图 |
 | 本机接口（HTTP） | ✅ 防火墙规则：安装时和配置页按钮（PowerShell NetSecurity，弹 UAC）；占用端口的程序用 `Get-NetTCPConnection` 查 | ✅（未在 Mac 上验证）pkg 装完把程序加进系统防火墙允许列表；占用端口的程序用 `lsof` 查 |
+| 驱动安装（在线签名清单） | ✅ PnP 检测、Authenticode、一次 UAC 静默安装 | ✅（未在 Mac 上验证）只认清单里有的型号；pkg + 管理员密码，或打开官方下载页 |
 | 打印机状态检测与异常通知 | ✅ | 未做：状态按「未知」处理，不阻止打印；计划改用 CUPS 的 `printer-state-reasons` |
 | 窗口按钮 | 自绘最小化 / 最大化 / 关闭 | 系统红绿灯；快捷键显示 ⌘ |
 | 密钥加密 | DPAPI | 钥匙串 |
@@ -50,6 +51,7 @@
 | `bun run relay:dev` | 本机构建并启动手机扫码的中转服务（http://localhost:3180） |
 | `bun run test:relay-browser` | 用 Edge 的假摄像头跑一遍扫码页（需要本机有 Edge） |
 | `bun run relay:deploy` | 发布中转服务，目标服务器从环境变量读取（见 `relay/README.md`） |
+| `bun run driver-catalog:keygen` / `driver-catalog:sign` / `driver-catalog:describe` | 驱动清单的密钥、签名、读安装包的大小 / SHA-256 / 签名者（见 docs/driver-catalog.md） |
 | `bun run ocr:models` | 下载本地 OCR 的模型到 `models/`（按固定版本和 SHA-256 校验，不进 git） |
 | `bun run ocr:build` | 编译本地 OCR 的 Node-API 扩展（Rust，需要 cargo） |
 | `bun run ocr:test` | 本地 OCR 引擎的 Rust 测试、clippy 和格式检查（有模型时跑真实模型的集成测试） |
@@ -115,6 +117,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 - **隔离数据**：开发版和 E2E 用环境变量 `CDL_LABELFLASH_USER_DATA` 指向单独的数据目录。这个变量只对未打包的程序生效。
 - **本机接口的端口**：E2E 用 `CDL_LABELFLASH_API_PORT=0`（系统分配），和本机上跑着的安装版、并行的用例互不抢端口。同样只对未打包的程序生效。
 - **假打印机**：E2E 和视觉验收用环境变量 `CDL_LABELFLASH_FAKE_PRINTERS`（打印机名、驱动纸张、状态的 JSON）代替系统打印机，打印只记下来。同样只对未打包的程序生效，见 `src/main/printing/fake-printers.ts`。
+- **假驱动环境**：E2E 和视觉验收用 `CDL_LABELFLASH_FAKE_DRIVERS`（缺驱动的设备、安装包下载、签名核对、提权安装）和 `CDL_LABELFLASH_DRIVER_CATALOG_TEST_KEY`（额外信任的清单公钥），同样只对未打包的程序生效，见 `src/main/drivers/fake-drivers.ts`。
 - **数据库迁移**：1.0.1 发布之前，表结构直接改在 `src/main/storage/migrations.ts` 的初始 schema 里，开发机删掉旧库即可。发布之后，已发布的迁移不能改，只能在末尾追加。
 - **删除确认**：删除用户数据、安装目录或更新缓存之前，先征得用户同意。
 
@@ -128,6 +131,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 - 用户写的正则只在隔离上下文里执行，有超时。HTTP 查询和打印结果通知用 `net.fetch`。
 - `electron-builder.yml` 里的 fuses 不放开。
 - 主进程和 preload 的 bundle 必须自包含，安装包里没有 `node_modules`，由 `bun run verify:bundle` 把关。
+- 下载的驱动安装包在核对大小、SHA-256（签名清单里的值）和签名者之前绝不运行；运行的是复制到管理员专属目录、复核过哈希的那份。驱动清单只用内置公钥核对通过、没过期、不比用过的旧的。
 
 ## 打包、更新与发布
 
@@ -139,7 +143,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 - **发版步骤**：
   1. 改 `package.json` 的 `version`，在 `CHANGELOG.md` 写这个版本大概做了什么（发布作业拿它当 GitHub Release 的说明，没写就不发布；单元测试也会检查），经 PR 合进 `master`。
   2. 在 `master` 的提交上打同名标签（例如 `v1.0.1`）并推送，CI 的 release 作业负责发布。
-  3. release 作业先检查三件事，不符合就不发布：标签所在的提交在 `master` 上；标签和 `version` 一致（客户端按版本号比较，并按文件名里的版本号去找旧版的 blockmap）；设置了仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL`（官方安装包的默认中转地址，构建时注入，代码里不写域名）。
+  3. release 作业先检查三件事，不符合就不发布：标签所在的提交在 `master` 上；标签和 `version` 一致（客户端按版本号比较，并按文件名里的版本号去找旧版的 blockmap）；设置了仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL` 和 `LABELFLASH_DEFAULT_DRIVER_CATALOG_URL`（官方安装包的默认中转地址、默认驱动清单地址，构建时注入，代码里不写域名）；`src/shared/driver-catalog-keys.ts` 里至少有一把公钥。
   4. Release 先建成草稿，Windows 和 macOS 各自上传，核对 Windows 安装包、blockmap、`latest.yml` 和 macOS 的 pkg 四个文件都在，才公开。
 - **latest 分支**：始终指向最新发布版本的提交。发布作业公开 Release 之后把它快进到这个标签，快进不了就报错，不往回拨。分支有保护，不能删除、不能强推，管理员也一样；不要手工往上面提交。
 - **构建号**：CI 把工作流的 `run_number` 设成环境变量 `BUILD_NUMBER`。electron-builder 写进 Windows 文件版本（`1.0.2.123`）和 macOS 的 CFBundleVersion，程序在「关于」和启动日志里显示（`src/main/build-info.ts`）。`version` 本身保持 `x.y.z`，不带构建号：标签检查、自动更新的版本比较、按文件名找旧版 blockmap 都依赖它。
@@ -168,6 +172,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 | `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心、手机扫码打印、多台打印机与多种纸张、本机接口、快递面单模板 |
 | `docs/superpowers/plans/` | 实施计划 |
 | `docs/local-api.md` | 给第三方的本机接口接入说明（含 JavaScript、Python、C#、Java 示例） |
+| `docs/driver-catalog.md` | 给出品方：驱动清单的密钥、格式、签名、上传、续签 |
 | `docs/roadmap.md` | 路线图 |
 | `docs/windows-acceptance.md` | Windows 验收记录 |
 

@@ -65,6 +65,16 @@
 | `security.ts`、`app-protocol.ts` | 拒绝导航、新窗口、重定向和 webview；只经 `app://bundle/` 提供界面文件 |
 | `mobile/` | 手机扫码的电脑端，见下一节 |
 
+## 驱动安装（`drivers/`）
+
+设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 7.3 节，给出品方的说明在 `docs/driver-catalog.md`。
+
+- **清单**：`catalog-signature.ts`（Ed25519 信封，不依赖 electron，签名脚本也用）、`catalog-client.ts`（`net.fetch`、2MB 上限、15 秒超时、验签 → `sanitizeCatalog` → 过期和防回滚、退回同一地址上次的清单）、`catalog-state-store.ts`（最高版本和上次的清单存在 settings 表的独立键里，界面改不到）。地址：设置 `driverCatalogUrl` 优先，构建时注入的默认值（`build-defaults.ts`）兜底；代码里不写域名。
+- **下载**：`installer-downloader.ts`：只要 https（跳转后也是），按清单的大小截断，边写边算 SHA-256，空闲 60 秒 / 总共 30 分钟超时，只删自己建的临时目录。
+- **平台**：`windows-devices.ts`（一次性 PowerShell 查 `Win32_PnPEntity`，不放进常驻探测进程）、`windows-signature.ts`（Authenticode）、`windows-install.ts`（一次 UAC；提权脚本只用 .NET 类型，在管理员专属目录复核哈希后运行）、`mac-devices.ts`、`mac-install.ts`（`osascript … with administrator privileges` 运行固定脚本）；解析都是纯函数，按平台测试。平台选择只在 `driver-ports.ts`。
+- **编排**：`driver-station.ts`：同一时间一个安装；界面只能按设备编号装、打开清单里的 https 下载页；进度最多 0.25 秒推一次（`drivers:status-changed`）；装驱动时不静默更新。`hints()` 给 5a、5b 按驱动名查。
+- **假环境**：`fake-drivers.ts`（`CDL_LABELFLASH_FAKE_DRIVERS`、`CDL_LABELFLASH_DRIVER_CATALOG_TEST_KEY`，只对未打包的程序生效），一律走 Windows 流程；清单照样真实下载、真实验签。
+
 ## 本机接口（`api/`）
 
 设计见 `docs/superpowers/specs/2026-09-30-local-api-design.md`，给第三方的说明在 `docs/local-api.md`。

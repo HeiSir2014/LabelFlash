@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process';
 import type { DriverPaper } from '../../shared/driver-paper';
 import type { PrinterProbeHost } from './printer-probe-host';
 
-/** ipptool 要连 CUPS 取全部属性，给足时间。 */
-const IPP_PROBE_TIMEOUT_MS = 8_000;
+/** ipptool 要连 CUPS 取全部属性，给足时间；诊断的 Get-Jobs 也用它。 */
+export const IPP_PROBE_TIMEOUT_MS = 8_000;
 /** ipptool 会返回打印机的全部属性（通常十几 KB），留足余量。 */
 const PROBE_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
 

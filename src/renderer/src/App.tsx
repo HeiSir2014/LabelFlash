@@ -96,7 +96,8 @@ export function App() {
   });
   // 打印记录的预览、重打：本机接口的记录按当时的模板和字段（模板删了就不能按原样重打）。
   const reprintModeOf = useCallback(
-    (job: JobRecord) => reprintMode(job, (id) => templates.templates.some((template) => template.id === id)),
+    (job: JobRecord) =>
+      reprintMode(job, (id) => templates.templates.some((template) => template.id === id), Date.now()),
     [templates.templates],
   );
   const historyTarget = useCallback(

@@ -9,7 +9,7 @@ import {
   shell,
 } from 'electron';
 import { BATCH_LIMITS } from '../core/batch/batch-model';
-import { API_RULE, BATCH_RULE, fieldsScan, type PrintService } from '../core/print-service';
+import { fieldsRuleFor, fieldsScan, type PrintService } from '../core/print-service';
 import type { PrinterChoice } from '../core/printing/resolve-printer';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import type { ScanResult } from '../core/scan/scan-result';
@@ -272,7 +272,7 @@ export function registerIpc(deps: IpcDeps): void {
     const { job, template, fields } = storedLabelOf(jobId);
     const result: PreviewResult = {
       status: 'ok',
-      scan: fieldsScan(job.raw, fields, job.batch === undefined ? API_RULE : BATCH_RULE),
+      scan: fieldsScan(job.raw, fields, fieldsRuleFor(job)),
       recent: null,
       lookupFailure: null,
       printer: await deps.choosePrinter(template),

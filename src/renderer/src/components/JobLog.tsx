@@ -1,5 +1,5 @@
 import type { JobRecord } from '../../../core/types';
-import type { ReprintMode } from '../lib/reprint';
+import { canReprint, type ReprintMode } from '../lib/reprint';
 import { describeJobMeta, describeJobStatus } from '../lib/status-text';
 
 /** 多行内容在列表里只显示第一行，完整内容放在悬停提示里。 */
@@ -24,7 +24,7 @@ interface JobLogProps {
   onLoadMore: () => void;
   /** 本机接口记录的调用方（密钥名称或网站）；其他记录为 null。 */
   callerOf: (job: JobRecord) => string | null;
-  /** 这条记录能不能、怎么预览和重打（见 lib/reprint.ts）；unavailable 时不显示按钮。 */
+  /** 这条记录能不能、怎么预览和重打（见 lib/reprint.ts）；不能重打（unavailable、expired）时不显示按钮。 */
   reprintModeOf: (job: JobRecord) => ReprintMode;
   onReview: (job: JobRecord) => void;
   onReprint: (job: JobRecord) => void;
@@ -92,6 +92,7 @@ export function JobLog({
           const status = describeJobStatus(job);
           const meta = describeJobMeta(job, callerOf(job));
           const batchId = job.batch?.id;
+          const mode = reprintModeOf(job);
           return (
             <li key={job.id} className="job-row">
               <div className="job-row__main">
@@ -104,7 +105,8 @@ export function JobLog({
               <div className="job-row__meta" title={meta}>
                 {meta}
               </div>
-              {(reprintModeOf(job) !== 'unavailable' || (batchId !== undefined && batchFilter === null)) && (
+              {mode === 'expired' && <p className="job-row__hint">PDF 的图只保留 7 天，已过期：重新打开 PDF 再打</p>}
+              {(canReprint(mode) || (batchId !== undefined && batchFilter === null)) && (
                 <div className="job-row__actions">
                   {batchId !== undefined && batchFilter === null && (
                     <button
@@ -115,7 +117,7 @@ export function JobLog({
                       这一批
                     </button>
                   )}
-                  {reprintModeOf(job) !== 'unavailable' && (
+                  {canReprint(mode) && (
                     <>
                       <button
                         type="button"

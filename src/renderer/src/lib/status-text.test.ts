@@ -289,6 +289,17 @@ describe('describeJobMeta', () => {
     );
   });
 
+  test('shows the page and piece of a PDF job', () => {
+    const pdfJob = {
+      ...job,
+      source: 'pdf' as const,
+      printerName: 'P',
+      forced: false,
+      pdf: { file: 'a.pdf', page: 2, piece: 1, bitmap: '0f8fad5b-d9cb-469f-a165-70867728950e' },
+    };
+    expect(describeJobMeta(pdfJob)).toContain('PDF（第 2 页第 1 张）');
+  });
+
   test('names who submitted a job through the local api', () => {
     expect(
       describeJobMeta({ ...job, source: 'api', printerName: '标签机A', forced: false, paper: '60x40' }, 'ERP'),

@@ -17,6 +17,12 @@ export function shouldConfirmBatchQuit(pendingLabels: number, isSystemShutdown: 
 }
 
 /**
+ * 点「重启更新」时用：electron-updater 的 quitAndInstall 会在任何确认之前就把安装程序拉起来，
+ * 不像正常退出能先弹确认框——批量打印还在打或暂停中时只能直接拒绝安装，让操作员自己先处理这一批。
+ */
+export const BATCH_BLOCKS_UPDATE_ISSUE = '批量打印还没打完：请先打完这一批，或点「取消」，再重启更新';
+
+/**
  * 退出确认之后：取消这一批、等正在打的那一张真的结束再记 CANCELED，但不无限等——防止一个卡住的
  * 驱动调用（打印机真的卡死）也让退出程序跟着卡住。等不到就放弃等待，照常继续退出；那一张万一真的
  * 之后才打完，它的记录会在进程已经退出之后才尝试写入，和别的来源异常退出时没写完的记录一样丢掉。

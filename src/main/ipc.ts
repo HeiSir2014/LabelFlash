@@ -34,6 +34,7 @@ import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
 import { NO_RENDER_WARNINGS } from '../shared/render-warnings';
 import type { AppSettings } from '../shared/settings';
 import type { LocalApi } from './api/local-api';
+import { BATCH_BLOCKS_UPDATE_ISSUE } from './batch/batch-quit';
 import type { BatchStation } from './batch/batch-station';
 import { logFailures } from './ipc-errors';
 import {
@@ -350,7 +351,15 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.OpenShop, () => shell.openExternal(BRAND.shop.url));
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
-  handle(IpcChannel.InstallUpdate, () => deps.updater.install('front'));
+  handle(IpcChannel.InstallUpdate, () => {
+    // quitAndInstall 会在任何确认之前就把安装程序拉起来：不像正常退出能先弹确认框，
+    // 批量打印还在打或暂停中时只能直接拒绝，让操作员自己先打完或取消这一批。
+    if (deps.batch.pendingQuit() !== null) {
+      return { status: 'refused', issue: BATCH_BLOCKS_UPDATE_ISSUE } as const;
+    }
+    deps.updater.install('front');
+    return { status: 'ok' } as const;
+  });
   handle(IpcChannel.VoiceClip, (cue) => {
     // 音色和语速取主进程当前设置，不信任页面传入。
     const { name, ratePercent } = deps.settings.current.voice;

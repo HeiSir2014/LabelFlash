@@ -16,7 +16,7 @@ import type { PrinterReadiness } from './printer-readiness';
 import type { RenderWarnings } from './render-warnings';
 import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
-import type { UpdateStatus } from './update-status';
+import type { InstallUpdateResult, UpdateStatus } from './update-status';
 import type { VoiceCue } from './voice';
 import type { WindowChrome } from './window-chrome';
 
@@ -225,8 +225,8 @@ export interface LabelFlashApi {
   openShop(): Promise<void>;
   getUpdateStatus(): Promise<UpdateStatus>;
   checkForUpdates(): Promise<void>;
-  /** 仅在新版本已下载（ready）时有效：重启并安装。 */
-  installUpdate(): Promise<void>;
+  /** 仅在新版本已下载（ready）时有效：重启并安装。批量打印还在打或暂停中时拒绝，见 InstallUpdateResult。 */
+  installUpdate(): Promise<InstallUpdateResult>;
   onUpdateStatus(listener: (status: UpdateStatus) => void): () => void;
   /** 当前音色、语速下这句播报的 mp3；离线且没有缓存时为 null。 */
   getVoiceClip(cue: VoiceCue): Promise<Uint8Array | null>;

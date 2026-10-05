@@ -112,6 +112,9 @@ async function fetchToFile(
   const hash = createHash('sha256');
   let received = 0;
   try {
+    // redirect: 'follow'：和 catalog-client.ts 的 download() 同一个取舍（见那边的注释）——只核对落地地址，
+    // 不逐跳核对中间有没有经过明文 http。这里风险更小：下载到的字节还要和清单钉死的 SHA-256 逐位相同
+    // 才会被安装，中间跳一次明文换不来一个哈希匹配的安装包。
     const response = await deps.fetch(url, {
       redirect: 'follow',
       signal: controller.signal,

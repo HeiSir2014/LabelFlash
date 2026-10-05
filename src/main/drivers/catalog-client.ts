@@ -140,6 +140,12 @@ export class CatalogClient {
   }
 
   private async download(url: string): Promise<string> {
+    // redirect: 'follow'（不是 'manual' 逐跳自己查）：只核对了跳转后落地的地址是 https，中间某一跳
+    // 如果经过了明文 http，这里看不见。能不能在不中断流式下载的前提下，廉价地逐跳核对每一个 Location
+    // 都是 https，取决于 net.fetch 对 redirect: 'manual' 的 opaqueredirect 响应能不能读到 Location——
+    // 不确定这件事在 Electron 的 net.fetch 里是否可行、代价多大，没有把握地改这段网络代码风险更大。
+    // 内容本身靠清单的 Ed25519 签名把关，中间跳一次明文不会让没有私钥的人伪造出一份能通过验签的清单，
+    // 这里暂时保留现状，列进已知限制。
     const response = await this.deps.fetch(url, {
       redirect: 'follow',
       signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),

@@ -10,6 +10,7 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 | 视图模型 | `src/view-models/` | `use-*` hooks：持有状态，调用 `window.api`，把 lib 的逻辑接到 React 上 |
 | 视图 | `src/components/` | 只管展示：数据由 props 传入，操作通过回调传出，不直接调用 `window.api` |
 
+- **PDF 渲染页**（`src/pdf-render/main.ts`）不是界面：没有 React，不用 `window.api`，只经 `window.pdfHost` 收请求、回灰度位图；它跑着不可信的 PDF，不要给它的 preload 加任何别的能力。
 - 能写成纯函数的逻辑都放进 `lib/` 并补测试，组件里只留渲染。
 - **只经 preload 访问主进程**：唯一的入口是 `window.api`（类型见 `src/shared/ipc-contract.ts`）。界面不访问网络、不加载远程内容，CSP 也不允许。
 - **剪贴板**：页面的权限请求（包括剪贴板）一律被拒绝。要复制时经主进程，而且只能复制已有密钥的引用（`copySecretReference`，通道 `secrets:copy-reference`），不能往剪贴板里写任意内容。

@@ -88,6 +88,17 @@
 - **打印**：经 `PrintService.printFields`（来源 `api`），不播报；写了打印记录后推送 `jobs:changed`（合并成最多 0.5 秒一次）。
 - **防火墙**：`firewall.ts` 执行 `src/shared/firewall-rule.ts` 生成的 PowerShell 脚本（系统目录里的 powershell.exe，整段 Base64 交给 `-EncodedCommand`，不经过命令行转义）；只动本程序路径下的规则。安装包用同一份脚本（见 `resources/installer/firewall.nsh`）。
 
+## PDF 打印（`pdf/`）
+
+设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 6 节。
+
+- **分层**：除了 `pdf-render-window.ts`（隐藏窗口、会话），都不 import electron，用 `bun test` 测试。
+  - `pdf-render-host.ts`：请求带编号、各自限时；回复用 `shared/pdf-render-protocol.ts` 的 `readRenderReply` 核对（位图宽高等于主进程自己算的），格式不对或超时就关掉渲染页；
+  - `pdf-station.ts`：打开文件（先看大小和 `%PDF-` 文件头）、识别第一页、按设置出块（换设置时上一次作废，它存的块删掉，打过的留着）、预览一块、按顺序打印（`BatchRun`，来源 `pdf`）；
+  - `piece-cache.ts`：每块一个 `<UUID>.lfm`，在数据目录的 `pdf-cache/`；预览、重打时续期，启动时删 7 天没用过的。编号拼进路径前先核对格式。
+- **渲染页**：`src/renderer/pdf-render.html` + `src/renderer/src/pdf-render/main.ts`（第二个页面入口）、`src/preload/pdf-render.ts`（第二个 preload）。会话是内存里的独立分区，`app://` 协议另挂一份（`handleAppScheme` 的 `target`），权限一律拒绝，`render-session-policy.ts` 决定放行哪些请求。pdf.js 的运行时文件由 `scripts/pdfjs-assets.ts` 在构建时放进 `out/renderer/pdfjs/`。
+- **打印记录**：PDF 打的记录带 `pdf`（文件、页码、第几张、位图编号，迁移 7）；`jobs:preview`、`jobs:reprint` 按位图编号读回、包成临时模板；预览不显示「靠近纸边」（一块本来就铺满纸）。
+
 ## 本地文字识别（`ocr/`）
 
 设计见 `docs/superpowers/specs/2026-09-30-ocr-engine-design.md`（引擎）和 `2026-09-30-shelf-number-design.md`（货架号）。

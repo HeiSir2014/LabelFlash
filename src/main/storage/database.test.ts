@@ -169,3 +169,89 @@ describe('migration 5', () => {
     db.close();
   });
 });
+
+describe('migration 6', () => {
+  test('keeps every row and accepts batch jobs with their batch, row and copy', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, MIGRATIONS.slice(0, 5));
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, fields, caller) VALUES ('a', 1, 'CL5640', 'P', 'api', 'printed', 0, '[]', 'key:k1')",
+    ).run();
+    migrate(db);
+    expect({ ...db.prepare("SELECT seq, source, caller, batch_id FROM jobs WHERE id = 'a'").get() }).toEqual({
+      seq: 1,
+      source: 'api',
+      caller: 'key:k1',
+      batch_id: null,
+    });
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, batch_id, batch_row, batch_copy) VALUES ('b', 2, 'CL5887', 'P', 'batch', 'printed', 0, '20261002-143501-a1b2', 3, 1)",
+    ).run();
+    expect(db.prepare("SELECT seq FROM jobs WHERE id = 'b'").get()?.['seq']).toBe(2);
+    const hits = db.prepare('SELECT rowid FROM jobs_search WHERE jobs_search MATCH \'"5887"\'').all();
+    expect(hits.map((row) => row['rowid'])).toEqual([2]);
+    db.close();
+  });
+
+  test('refuses a batch id without its row and copy', () => {
+    const db = openDatabase(':memory:');
+    const insert = db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, batch_id) VALUES ('c', 3, 'X', 'P', 'batch', 'printed', 0, '20261002-143501-a1b2')",
+    );
+    expect(() => insert.run()).toThrow();
+    db.close();
+  });
+
+  // 后续子项目（PDF 打印、局域网共享、远程打印）要用到的来源：先占住取值，列由各自的迁移再加。
+  test('accepts the sources reserved for later sub-projects', () => {
+    const db = openDatabase(':memory:');
+    for (const source of ['pdf', 'ipp', 'remote']) {
+      db.prepare(
+        'INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES (?, 1, ?, ?, ?, ?, 0)',
+      ).run(source, source, 'P', source, 'printed');
+    }
+    expect(db.prepare('SELECT COUNT(*) AS n FROM jobs').get()?.['n']).toBe(3);
+    db.close();
+  });
+
+  // CANCELED：批量打印退出时还没打到的那些行，从来没交给过打印机。
+  test('accepts the CANCELED failure reason for batch labels never sent to the printer', () => {
+    const db = openDatabase(':memory:');
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason, batch_id, batch_row, batch_copy) VALUES ('c', 1, 'X', 'P', 'batch', 'failed', 0, 'CANCELED', '20261002-143501-a1b2', 5, 1)",
+    ).run();
+    expect(db.prepare("SELECT failure_reason FROM jobs WHERE id = 'c'").get()?.['failure_reason']).toBe('CANCELED');
+    db.close();
+  });
+
+  // 重打失败的标签时要核对模板有没有改过：指纹（字段 + 纸张）跟着批量打印的记录一起存。
+  test('keeps the template fingerprint on a batch job', () => {
+    const db = openDatabase(':memory:');
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, batch_id, batch_row, batch_copy, template_fingerprint) VALUES ('d', 1, 'X', 'P', 'batch', 'failed', 0, '20261002-143501-a1b2', 1, 1, 'fp-1')",
+    ).run();
+    expect(db.prepare("SELECT template_fingerprint FROM jobs WHERE id = 'd'").get()?.['template_fingerprint']).toBe(
+      'fp-1',
+    );
+    db.close();
+  });
+
+  // 和迁移 3 的同一条规则：重建表之后，自增计数接着旧表走，删掉的旧序号不会被新记录复用。
+  test('keeps counting sequence numbers from where the old table stopped, even after a delete', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, MIGRATIONS.slice(0, 5));
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES ('a', 1, 'A', 'P', 'desktop', 'printed', 0)",
+    ).run();
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES ('b', 2, 'B', 'P', 'desktop', 'printed', 0)",
+    ).run();
+    db.prepare("DELETE FROM jobs WHERE id = 'b'").run();
+    migrate(db);
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES ('c', 3, 'C', 'P', 'desktop', 'printed', 0)",
+    ).run();
+    expect(db.prepare("SELECT seq FROM jobs WHERE id = 'c'").get()?.['seq']).toBe(3);
+    db.close();
+  });
+});

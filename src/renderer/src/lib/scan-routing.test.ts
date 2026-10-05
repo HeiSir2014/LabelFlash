@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { WORKBENCH } from './app-view';
+import { BATCH_VIEW, WORKBENCH } from './app-view';
 import { isWorkbenchActive, scanTargetFor } from './scan-routing';
 
 describe('scanTargetFor', () => {
@@ -12,6 +12,7 @@ describe('scanTargetFor', () => {
     expect(scanTargetFor({ kind: 'config', page: 'templates' })).toBe('template-sample');
     expect(scanTargetFor({ kind: 'config', page: 'general' })).toBe('sink');
     expect(scanTargetFor({ kind: 'config', page: 'secrets' })).toBe('sink');
+    expect(scanTargetFor(BATCH_VIEW)).toBe('sink');
   });
 });
 
@@ -19,5 +20,6 @@ describe('isWorkbenchActive', () => {
   test('enables printing shortcuts and auto refocus only on the workbench', () => {
     expect(isWorkbenchActive(WORKBENCH)).toBe(true);
     expect(isWorkbenchActive({ kind: 'config', page: 'about' })).toBe(false);
+    expect(isWorkbenchActive(BATCH_VIEW)).toBe(false);
   });
 });

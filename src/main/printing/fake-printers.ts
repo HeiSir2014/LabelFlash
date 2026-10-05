@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { PrintError } from '../../core/errors';
 import type { LabelJob, PrinterInfo } from '../../core/types';
 import type { DriverPaper } from '../../shared/driver-paper';
@@ -19,6 +20,8 @@ export interface FakePrinterSpec {
   paper: DriverPaper | null;
   /** 状态；null = 未知。 */
   readiness: PrinterReadiness | null;
+  /** 每张打多久（毫秒）；不设就立即打完。E2E 测暂停、取消用。 */
+  printDelayMs?: number;
   /** 驱动名：「自动」按它认指令集；不设 = 读不到。 */
   driverName?: string;
   /** 设了就让标签机指令按这个原因发送失败（E2E、视觉验收看失败提示）。 */
@@ -95,9 +98,13 @@ export class FakePrinters {
     return { ok: true };
   }
 
-  async print(printerName: string, job: LabelJob, _signal: AbortSignal): Promise<void> {
-    if (!this.find(printerName)) {
+  async print(printerName: string, job: LabelJob, signal: AbortSignal): Promise<void> {
+    const spec = this.find(printerName);
+    if (!spec) {
       throw new PrintError('PRINTER_NOT_FOUND', `Printer not found: ${printerName}`);
+    }
+    if (spec.printDelayMs !== undefined) {
+      await sleep(spec.printDelayMs, undefined, { signal });
     }
     this.printed.push({
       printerName,

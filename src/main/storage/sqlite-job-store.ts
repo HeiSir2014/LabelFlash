@@ -10,7 +10,9 @@ import { type Row, readEnum, readInteger, readString } from './row-readers';
 const JOB_COLUMNS = `
   jobs.seq, jobs.id, jobs.created_at AS createdAt, jobs.raw, jobs.printer_name AS printerName,
   jobs.source, jobs.status, jobs.forced, jobs.failure_reason AS failureReason, jobs.paper,
-  jobs.template_id AS templateId, jobs.fields, jobs.caller`;
+  jobs.template_id AS templateId, jobs.fields, jobs.caller,
+  jobs.batch_id AS batchId, jobs.batch_row AS batchRow, jobs.batch_copy AS batchCopy,
+  jobs.template_fingerprint AS templateFingerprint`;
 /** trigram 索引至少需要 3 个字符；更短的搜索词退回 LIKE（LIMIT 保证找够一页就停）。 */
 const FTS_MIN_QUERY_LENGTH = 3;
 /** 调小容量时每批删除的行数；批与批之间让出主线程，避免卡住打印。 */
@@ -32,6 +34,8 @@ export class SqliteJobStore implements JobStore {
   private readonly selectCount: StatementSync;
   private readonly selectLastPrinted: StatementSync;
   private readonly selectById: StatementSync;
+  private readonly selectBatchPage: StatementSync;
+  private readonly selectBatchFailures: StatementSync;
 
   constructor(
     private readonly db: DatabaseSync,
@@ -39,8 +43,10 @@ export class SqliteJobStore implements JobStore {
   ) {
     this.capacity = assertCapacity(capacity);
     this.insertJob = db.prepare(`
-      INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id, fields, caller)
-      VALUES (:id, :createdAt, :raw, :printerName, :source, :status, :forced, :failureReason, :paper, :templateId, :fields, :caller)`);
+      INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id, fields, caller,
+        batch_id, batch_row, batch_copy, template_fingerprint)
+      VALUES (:id, :createdAt, :raw, :printerName, :source, :status, :forced, :failureReason, :paper, :templateId, :fields, :caller,
+        :batchId, :batchRow, :batchCopy, :templateFingerprint)`);
     // 插入后使用：只保留 seq 落在最新 capacity 个序号内的记录，走主键，开销与容量无关。
     this.trimBehind = db.prepare('DELETE FROM jobs WHERE seq <= :lastSeq - :capacity');
     this.trimOldestBatch = db.prepare(`
@@ -61,9 +67,25 @@ export class SqliteJobStore implements JobStore {
     this.selectLastPrinted = db.prepare(`
       SELECT raw, MAX(created_at) AS printedAt
       FROM jobs
-      WHERE status = 'printed' AND created_at >= :since AND caller IS NULL
+      WHERE status = 'printed' AND created_at >= :since AND caller IS NULL AND batch_id IS NULL
       GROUP BY raw`);
     this.selectById = db.prepare(`SELECT ${JOB_COLUMNS} FROM jobs WHERE jobs.id = :id`);
+    // 按批次翻页：搜索只在这一批里用 LIKE（一批最多 2 万张，不需要全文索引）。
+    this.selectBatchPage = db.prepare(`
+      SELECT ${JOB_COLUMNS} FROM jobs
+      WHERE jobs.batch_id = :batchId
+        AND (:pattern IS NULL OR jobs.raw LIKE :pattern ESCAPE '\\')
+        AND (:before IS NULL OR jobs.seq < :before)
+      ORDER BY jobs.seq DESC LIMIT :limit`);
+    // 每行每份最新的一条是失败的：重打成功过的不再算（重打和原来的记录同一个批次、行号、份号）。
+    this.selectBatchFailures = db.prepare(`
+      SELECT ${JOB_COLUMNS} FROM jobs
+      WHERE jobs.seq IN (
+          SELECT MAX(seq) FROM jobs
+          WHERE batch_id = :batchId AND (:row IS NULL OR batch_row = :row)
+          GROUP BY batch_row, batch_copy)
+        AND jobs.status = 'failed'
+      ORDER BY jobs.batch_row, jobs.batch_copy`);
     this.total = this.readCount();
   }
 
@@ -87,6 +109,10 @@ export class SqliteJobStore implements JobStore {
         templateId: job.templateId ?? null,
         fields: job.fields === undefined ? null : JSON.stringify(job.fields),
         caller: job.caller ?? null,
+        batchId: job.batch?.id ?? null,
+        batchRow: job.batch?.row ?? null,
+        batchCopy: job.batch?.copy ?? null,
+        templateFingerprint: job.templateFingerprint ?? null,
       });
       return Number(this.trimBehind.run({ lastSeq: lastInsertRowid, capacity: this.capacity }).changes);
     });
@@ -95,7 +121,17 @@ export class SqliteJobStore implements JobStore {
   }
 
   listPage(query: JobQuery): JobPage {
-    const rows = this.selectRows(query.search?.trim() ?? '', query.before ?? null, query.limit + 1);
+    const search = query.search?.trim() ?? '';
+    const before = query.before ?? null;
+    const rows =
+      query.batchId === undefined
+        ? this.selectRows(search, before, query.limit + 1)
+        : this.selectBatchPage.all({
+            batchId: query.batchId,
+            pattern: search === '' ? null : `%${escapeLike(search)}%`,
+            before,
+            limit: query.limit + 1,
+          });
     const hasMore = rows.length > query.limit;
     const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
     const lastRow = pageRows.at(-1);
@@ -112,11 +148,19 @@ export class SqliteJobStore implements JobStore {
     return row ? toJobRecord(row) : null;
   }
 
+  /** 这一批里（只看某一行时传行号）每行每份最新一次是失败的记录，按行号、份号排：整批重打失败的用它。 */
+  listBatchFailures(batchId: string, row: number | null): JobRecord[] {
+    return this.selectBatchFailures.all({ batchId, row }).map(toJobRecord);
+  }
+
   count(): number {
     return this.total;
   }
 
-  /** 扫码防重复窗口的恢复：只算扫码打的，本机接口（和按字段重打，都带调用方）不用这个窗口。 */
+  /**
+   * 扫码防重复窗口的恢复：只算扫码打的。本机接口、按字段重打（带调用方）和批量打印（带批次号）都不用这个窗口，
+   * 否则重启后扫到和批量打过的同样内容会被当成重复。
+   */
   listLastPrinted(since: number): LastPrinted[] {
     return this.selectLastPrinted.all({ since }).map((row) => ({
       raw: readString(row, 'raw'),
@@ -188,6 +232,16 @@ function toJobRecord(row: Row): JobRecord {
   }
   if (row['caller'] !== null) {
     job.caller = readString(row, 'caller');
+  }
+  if (row['batchId'] !== null) {
+    job.batch = {
+      id: readString(row, 'batchId'),
+      row: readInteger(row, 'batchRow'),
+      copy: readInteger(row, 'batchCopy'),
+    };
+  }
+  if (row['templateFingerprint'] !== null) {
+    job.templateFingerprint = readString(row, 'templateFingerprint');
   }
   return job;
 }

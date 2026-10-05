@@ -68,6 +68,8 @@ const FAILURE_DETAILS: Record<PrintFailureReason, (detail: string | null) => str
   PRINT_ERROR: () => '打印机驱动报错，检查打印机后点「重试」',
   LOOKUP_FAILED: (detail) => `${detail ?? '数据查询失败'}，处理好后点「重试」`,
   TEXT_NOT_FOUND: (detail) => `${detail ?? '没认出标签上的字'}：对准整张标签重扫，或在下面手动输入`,
+  // 只有批量打印会产生这个原因（电脑上退出程序时还没打到的标签）：手机扫码不会走到这里，映射只为穷尽。
+  CANCELED: () => '这一张还没打印，请在电脑上重试',
 };
 
 const REFUSAL_TITLES: Record<RefusalReason, string> = {

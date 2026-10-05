@@ -1,6 +1,6 @@
 # src/renderer — 界面
 
-React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗口的配置中心）见 `docs/superpowers/specs/2026-09-29-config-center-layout-design.md`。
+React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗口的配置中心；批量打印页和配置中心同级）见 `docs/superpowers/specs/2026-09-29-config-center-layout-design.md`。
 
 ## 分层
 
@@ -35,7 +35,7 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
   - macOS 还是普通输入框（密码框会打开系统的「安全输入」，对扫码枪输出中文的影响未验证），靠上面这一条应对输入法。
   - 不要把扫码框改回 textarea，也不要去掉「密码框」：Windows 上中文模式下扫码会立刻坏掉（已用微软拼音实测）。
 - **多行扫码**：二维码里的换行会以回车发出，`lib/scan-assembler.ts` 按回车后的停顿区分「码里的换行」和「扫完了」。停顿时长是设置项 `scanLineGapMs`，默认 80 毫秒。
-- **不能打印的界面**：配置中心里扫码永远不打印（F2 也不行）；「打印机」页的「测试页」是操作员明确点的按钮，照常打印。模板页设计器的「打印一张试试」同样是明确点的按钮，照常打印（不写打印记录）。
+- **不能打印的界面**：配置中心和批量打印页里扫码永远不打印（F2 也不行）；「打印机」页的「测试页」是操作员明确点的按钮，照常打印。模板页设计器的「打印一张试试」同样是明确点的按钮，照常打印（不写打印记录）。
 - **一件事只在一处说**：界面精简的取舍见 `docs/superpowers/specs/2026-09-29-config-center-layout-design.md` 最后一节。加元素前先看有没有已经表达同一件事的地方。
 
 ## 手机扫码
@@ -76,7 +76,7 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 ## 测试与验收
 
 - **单元测试**：写在 `lib/*.test.ts`，只测行为，不测实现细节。
-- **E2E**：在 `e2e/*.e2e.ts`（工作台和配置中心在 `app.e2e.ts`，手机扫码在 `mobile.e2e.ts`，标签机指令在 `printer-commands.e2e.ts`）。
+- **E2E**：在 `e2e/*.e2e.ts`（工作台和配置中心在 `app.e2e.ts`，手机扫码在 `mobile.e2e.ts`，批量打印在 `batch.e2e.ts`，标签机指令在 `printer-commands.e2e.ts`）。
   - 用 `e2e/support/fixtures.ts` 的 `test`（`electronApp` 夹具：用例结束时关掉程序、删掉数据目录），共用的操作在 `e2e/support/app-helpers.ts`，本机中转服务和测试手机在 `e2e/support/relay-server.ts`。
   - 用角色和标签定位元素（`getByRole`、`getByLabel`），不依赖类名以外的实现细节。
 - **视觉验收**：界面改完后截图核对对齐、裁切、焦点框和键盘操作。Windows 看 100% 和 150% 缩放，macOS 看红绿灯区域和全屏状态。验收项见配置中心设计文档第 8 节。

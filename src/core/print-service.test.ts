@@ -699,3 +699,31 @@ describe('PrintService.printFields', () => {
     expect(store.listRecent(1)[0]).toMatchObject({ status: 'failed', source: 'api' });
   });
 });
+
+describe('PrintService.printFields for a batch', () => {
+  const fields = [{ name: '编码', value: 'CL1' }];
+  const batchInput = {
+    template: PICK_TEMPLATE,
+    fields,
+    content: RAW,
+    source: 'batch',
+    caller: null,
+    printerName: null,
+    batch: { id: '20261002-143501-a1b2', row: 3, copy: 2 },
+  } as const;
+
+  test('records the batch, row and copy and names batch printing as the rule', async () => {
+    const { service, store, recorded } = createHarness();
+    expect((await service.printFields(batchInput)).status).toBe('printed');
+    expect(store.listRecent(1)[0]).toMatchObject({ source: 'batch', batch: batchInput.batch, fields });
+    expect(recorded.at(-1)?.scan).toMatchObject({ ruleId: 'batch', ruleName: '批量打印' });
+  });
+
+  // 批量打的内容和扫码一样时，重启后扫码不能被当成重复。
+  test('stays out of the scan dedup window after a restart', async () => {
+    const { service } = createHarness();
+    await service.printFields(batchInput);
+    service.restore();
+    expect((await service.submit(request())).status).toBe('printed');
+  });
+});

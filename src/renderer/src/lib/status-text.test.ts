@@ -301,6 +301,16 @@ describe('describeJobMeta', () => {
       describeJobMeta({ ...job, source: 'history', printerName: '标签机A', forced: false, paper: '60x40' }, 'ERP'),
     ).toBe(`${formatDateTime(NOW)} · 记录重打（原提交：ERP） · 标签机A · 60×40 标签`);
   });
+
+  test('shows the row and copy of a batch job', () => {
+    const batchJob = { ...job, source: 'batch' as const, printerName: 'P', forced: false };
+    expect(describeJobMeta({ ...batchJob, batch: { id: '20261002-143501-a1b2', row: 3, copy: 2 } })).toContain(
+      '批量（第 3 行第 2 份）',
+    );
+    expect(describeJobMeta({ ...batchJob, batch: { id: '20261002-143501-a1b2', row: 3, copy: 1 } })).toContain(
+      '批量（第 3 行）',
+    );
+  });
 });
 
 describe('describeJobStatus', () => {
@@ -324,6 +334,14 @@ describe('describeJobStatus', () => {
 describe('describeSource', () => {
   test('names jobs submitted through the local api', () => {
     expect(describeSource('api')).toBe('本机接口');
+  });
+
+  // batch 现在接入；pdf / ipp / remote 的来源值已占住（各自的子项目接入时用），标签先写好。
+  test('names batch prints and the sources reserved for later sub-projects', () => {
+    expect(describeSource('batch')).toBe('批量');
+    expect(describeSource('pdf')).toBe('PDF');
+    expect(describeSource('ipp')).toBe('局域网共享');
+    expect(describeSource('remote')).toBe('远程');
   });
 });
 

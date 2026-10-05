@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { UpdateStatus } from '../../../shared/update-status';
-import { reportError } from '../lib/notices';
+import { notices, reportError } from '../lib/notices';
 
 /** 自动更新状态：先取一次当前状态，之后跟随主进程推送。 */
 export function useUpdateStatus() {
@@ -28,7 +28,14 @@ export function useUpdateStatus() {
   }, []);
 
   const install = useCallback(() => {
-    window.api.installUpdate().catch((error: unknown) => reportError('安装更新', error));
+    window.api
+      .installUpdate()
+      .then((result) => {
+        if (result.status === 'refused') {
+          notices.push('warning', result.issue);
+        }
+      })
+      .catch((error: unknown) => reportError('安装更新', error));
   }, []);
 
   return { status, check, install };

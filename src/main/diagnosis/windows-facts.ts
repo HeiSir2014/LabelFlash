@@ -137,11 +137,17 @@ export function parseUsbReply(reply: string | null): UsbFacts {
 
 function readJob(entry: JsonObject): QueueJob | null {
   const id = entry['id'];
-  const submitted = entry['submittedMs'];
+  // 探测进程把 SubmittedTime 转成带偏移量的 ISO 字符串（`yyyy-MM-ddTHH:mm:sszzz`），不是在 PowerShell
+  // 里先转成 Unix 毫秒：偏移量跟着字符串一起传过来，这里按偏移量解析，不会把本地时间当成 UTC 直接读。
+  const submittedAt = entry['submittedAt'];
   if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
     return null;
   }
-  if (typeof submitted !== 'number' || !Number.isFinite(submitted)) {
+  if (typeof submittedAt !== 'string') {
+    return null;
+  }
+  const submittedAtMs = Date.parse(submittedAt);
+  if (!Number.isFinite(submittedAtMs)) {
     return null;
   }
   const flags = text(entry['status'])
@@ -150,7 +156,7 @@ function readJob(entry: JsonObject): QueueJob | null {
       const flag = JOB_FLAGS.get(name);
       return flag === undefined ? [] : [flag];
     });
-  return { id, document: text(entry['document']), user: text(entry['user']), submittedAtMs: submitted, flags };
+  return { id, document: text(entry['document']), user: text(entry['user']), submittedAtMs, flags };
 }
 
 export function parseJobsReply(reply: string | null): QueueFacts {

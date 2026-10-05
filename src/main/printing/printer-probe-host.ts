@@ -155,8 +155,12 @@ namespace LabelFlash {
  *   拔过的旧 USB 打印设备会一直留在这个列表里，超过上限要截断时先把 Present 的排到前面，
  *   不然当前这台可能因为排在旧设备后面被截掉、查成「找不到」；
  *   `paper-options` 用 .NET 的 System.Printing（全局程序集缓存里的系统程序集，不是编译出来的代码）
- *   读驱动的 PrintCapabilities；XmlResolver 设为 $null 不解析外部实体；这些命令都在下面的 try 里，
- *   出错一样回 err …，主进程按「查不到」处理。
+ *   读驱动的 PrintCapabilities；XmlResolver 设为 $null 不解析外部实体；
+ *   `jobs` 的 `SubmittedTime` 转成带偏移量的 ISO 字符串（`zzz`），不在这里转成 Unix 毫秒：
+ *   `Get-PrintJob` 给的 `[DateTime]` 的 `Kind` 不确定是 Local 还是 Unspecified，转 `[DateTimeOffset]`
+ *   时按「当前系统时区」当成本地时间处理——这是假设，真的是不是本地时间还没有在真机（尤其中文 Windows）
+ *   上核对过（见 docs/roadmap.md）；带偏移量的字符串至少能让主进程按偏移量正确解析，不会多一次
+ *   「当成 UTC 直接读」的错误；这些命令都在下面的 try 里，出错一样回 err …，主进程按「查不到」处理。
  */
 export const PROBE_SCRIPT = `
 $ErrorActionPreference = 'Stop'
@@ -214,7 +218,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
             document = $document.Substring(0, [Math]::Min($document.Length, ${DIAGNOSIS_LIMITS.textLength}))
             user = [string]$_.UserName
             status = $_.JobStatus.ToString()
-            submittedMs = ([DateTimeOffset]$_.SubmittedTime).ToUnixTimeMilliseconds()
+            submittedAt = ([DateTimeOffset]$_.SubmittedTime).ToString('yyyy-MM-ddTHH:mm:sszzz')
           }
         })
         $reply = 'ok ' + (ConvertTo-Json -Compress -Depth 4 -InputObject ([ordered]@{ user = [Environment]::UserName; total = $all.Count; jobs = $jobs }))

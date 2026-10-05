@@ -72,7 +72,8 @@ export function cupsPrinterUri(printerName: string): string {
   return `ipp://localhost/printers/${encodeURIComponent(printerName)}`;
 }
 
-function queryIppPaper(printerName: string): Promise<DriverPaper | null> {
+/** 用 ipptool 取这台打印机的全部属性（文字输出）；失败返回 null 并写日志。纸张、驱动名都从这里解析。 */
+export function readIppAttributes(printerName: string): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
       '/usr/bin/ipptool',
@@ -80,14 +81,19 @@ function queryIppPaper(printerName: string): Promise<DriverPaper | null> {
       { timeout: IPP_PROBE_TIMEOUT_MS, maxBuffer: PROBE_MAX_BUFFER_BYTES },
       (error, stdout) => {
         if (error) {
-          console.warn(`[driver-paper] probe failed for "${printerName}": ${error.message}`);
+          console.warn(`[driver-paper] ipptool failed for "${printerName}": ${error.message}`);
           resolve(null);
           return;
         }
-        resolve(parseIppPaper(stdout));
+        resolve(stdout);
       },
     );
   });
+}
+
+async function queryIppPaper(printerName: string): Promise<DriverPaper | null> {
+  const output = await readIppAttributes(printerName);
+  return output === null ? null : parseIppPaper(output);
 }
 
 /**

@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
-import { type TemplateFields, templateFields } from '../../core/api/template-fields';
+import { type TemplateFields, templateFields, templateFingerprint } from '../../core/api/template-fields';
 import { type LabelPlanInput, labelForRow, planLabels } from '../../core/batch/batch-labels';
 import {
   BATCH_LIMITS,
@@ -47,7 +47,9 @@ const TEMPLATE_GONE = '模板已经不在了：请重新选择模板';
 const BUSY = '上一批还没打完：等它打完，或者先取消';
 const NOTHING_TO_PRINT = '没有要打的标签：勾选要打的行，或检查份数';
 const NO_FAILURES = '这一批没有要重打的失败标签';
-const RETRY_TEMPLATE_GONE = '这一批用的模板已经删掉了，不能按原样重打';
+/** 模板删掉了，或者字段、纸张改过（哪怕编号没变）：两种情况都不能按原样重打，说法统一，
+ *  不用让操作员先猜是哪一种——反正都得重新开一批。 */
+const RETRY_TEMPLATE_CHANGED = '模板已删除或改动过，请重新开一批';
 
 export interface BatchStationDeps {
   /** 在子进程里读表格（TableReaderHost）。 */
@@ -85,6 +87,12 @@ interface OpenFailure {
   reason: PrintFailureReason;
 }
 
+/** 一批用的模板：重打前要核对模板还在、没改过，不能只看编号。 */
+interface BatchTemplateInfo {
+  templateId: string;
+  fingerprint: string;
+}
+
 type Prepared = { ok: true; template: LabelTemplate; input: LabelPlanInput } | { ok: false; issue: string };
 
 /**
@@ -104,8 +112,13 @@ export class BatchStation {
    *  不管是整批第几次重打、哪一次打的。「整批重打失败的」永远用这份合并后的名单，不会因为只重打了
    *  一部分就忘记其余还没解决的。 */
   private readonly openFailures = new Map<string, Map<string, OpenFailure>>();
-  /** 这次会话里打过的每一批用的模板：重打时要用，不依赖 this.current（可能已经是后来另一批了）。 */
-  private readonly templatesByBatch = new Map<string, LabelTemplate>();
+  /** 这次会话里打过的每一批用的模板编号和指纹：重打前核对模板没有被删除、改过，不依赖
+   *  this.current（可能已经是后来另一批了），也不保留模板对象本身——重打永远用重打时查到的当前模板，
+   *  不用开这一批时的旧快照（模板可能在这之后被编辑过，旧快照会印出不一样的东西）。 */
+  private readonly templateInfoByBatch = new Map<string, BatchTemplateInfo>();
+  /** 这一批是用哪张表开的：「只按序号打」没有表格，为 null。重打沿用开这一批时的表格，不跟着
+   *  后来又导入的表走。界面按它核对当前打开的表格是不是这一批用的那张。 */
+  private readonly tableIdByBatch = new Map<string, string | null>();
 
   constructor(private readonly deps: BatchStationDeps) {}
 
@@ -214,15 +227,21 @@ export class BatchStation {
     if (planned.labels.length === 0) {
       return { status: 'invalid', issue: NOTHING_TO_PRINT };
     }
-    return this.begin(this.deps.createBatchId(), prepared.template, planned.labels);
+    const tableId = plan.data.kind === 'table' ? plan.data.tableId : null;
+    return this.begin(this.deps.createBatchId(), prepared.template, planned.labels, tableId);
   }
 
   /**
-   * 重打一批里失败的标签（row 不为 null 时只重打那一行）：同一个批次号、行号、份号，当时的模板和字段。
+   * 重打一批里失败的标签（row 不为 null 时只重打那一行）：同一个批次号、行号、份号和当时的字段，
+   * 但模板永远用重打这一刻查到的当前模板——不用开这一批时的旧快照，模板可能在那之后被编辑过。
+   * 重打前核对这个模板编号还在、字段和纸张都和开这一批时一样（指纹比对），不一样就拒绝，统一说
+   * 「模板已删除或改动过，请重新开一批」，不用区分是删掉了还是改过了。
+   *
    * 这一批如果是这次会话里打过的（哪怕后来又开始了别的批），用 BatchStation 合并了每一次尝试之后
    * 还没解决的失败名单——打印记录按容量环形保留，条数可能比一批的张数（最多 2 万）小，
    * 查出来的会少于实际失败的；只重打过一部分时，没重打到的那些也不会因为换了一次 BatchRun 就丢掉。
-   * 换了别的批、或跨了重启，内存里已经没有了，退回查打印记录（受保留条数限制）。
+   * 换了别的批、或跨了重启，内存里已经没有了，退回查打印记录（受保留条数限制），这时核对用的指纹
+   * 是打印记录里存的那一份。
    */
   retryFailed(batchId: string, row: number | null): BatchStartResult {
     if (this.current?.run.isActive === true) {
@@ -236,12 +255,12 @@ export class BatchStation {
       if (labels.length === 0) {
         return { status: 'invalid', issue: NO_FAILURES };
       }
-      const template = this.templatesByBatch.get(batchId);
-      // 模板对象还在，但这个编号的模板可能已经被删掉了（或者改存了别的模板）：重打前再核对一遍。
-      if (template === undefined || this.deps.findTemplate(template.id) === null) {
-        return { status: 'invalid', issue: RETRY_TEMPLATE_GONE };
+      const info = this.templateInfoByBatch.get(batchId);
+      const template = info === undefined ? null : this.currentMatchingTemplate(info);
+      if (template === null) {
+        return { status: 'invalid', issue: RETRY_TEMPLATE_CHANGED };
       }
-      return this.begin(batchId, template, labels);
+      return this.begin(batchId, template, labels, this.tableIdByBatch.get(batchId) ?? null);
     }
     const jobs = this.deps.failedJobs(batchId, row);
     const labels = jobs.flatMap((job): BatchLabel[] =>
@@ -252,12 +271,27 @@ export class BatchStation {
     if (labels.length === 0) {
       return { status: 'invalid', issue: NO_FAILURES };
     }
-    const templateId = jobs[0]?.templateId;
-    const template = templateId === undefined ? null : this.deps.findTemplate(templateId);
+    const first = jobs[0];
+    const info =
+      first?.templateId === undefined || first.templateFingerprint === undefined
+        ? null
+        : { templateId: first.templateId, fingerprint: first.templateFingerprint };
+    const template = info === null ? null : this.currentMatchingTemplate(info);
     if (template === null) {
-      return { status: 'invalid', issue: RETRY_TEMPLATE_GONE };
+      return { status: 'invalid', issue: RETRY_TEMPLATE_CHANGED };
     }
-    return this.begin(batchId, template, labels);
+    // 跨了重启：这一批当初用哪张表无从得知（表只在主进程内存里留最近一张，不持久化），
+    // 按「只按序号打」处理——界面本来就只在表匹配时才把失败标到行上，这里给 null 不会显示到别的表上。
+    return this.begin(batchId, template, labels, null);
+  }
+
+  /** 按编号查当前模板，核对字段、纸张的指纹和记下的一致——不一致说明模板删了或者改过，返回 null。 */
+  private currentMatchingTemplate(info: BatchTemplateInfo): LabelTemplate | null {
+    const current = this.deps.findTemplate(info.templateId);
+    if (current === null || templateFingerprint(current) !== info.fingerprint) {
+      return null;
+    }
+    return current;
   }
 
   pause(): void {
@@ -291,6 +325,8 @@ export class BatchStation {
       failed: open.length,
       failures,
       templateName: this.current.templateName,
+      tableId: this.tableIdByBatch.get(this.current.run.batchId) ?? null,
+      isActive: this.current.run.isActive,
     };
   }
 
@@ -354,7 +390,12 @@ export class BatchStation {
     return { ok: true, template, input: { table, plan, fields } };
   }
 
-  private begin(batchId: string, template: LabelTemplate, labels: readonly BatchLabel[]): BatchStartResult {
+  private begin(
+    batchId: string,
+    template: LabelTemplate,
+    labels: readonly BatchLabel[],
+    tableId: string | null,
+  ): BatchStartResult {
     const run = new BatchRun(batchId, labels, {
       print: (label) =>
         this.deps.printFields({
@@ -374,7 +415,8 @@ export class BatchStation {
       markFinished = resolve;
     });
     this.current = { run, template, templateName: template.name, finished };
-    this.templatesByBatch.set(batchId, template);
+    this.templateInfoByBatch.set(batchId, { templateId: template.id, fingerprint: templateFingerprint(template) });
+    this.tableIdByBatch.set(batchId, tableId);
     this.lastState = null;
     // run() 本身不该 reject（onChange 抛错已经在 BatchRun 内部兜住，print() 的异常也转成失败），
     // 但这里仍然 .catch：防止版本以外的意外把这个 Promise 的 rejection 落地成未处理异常，带崩主进程。
@@ -386,6 +428,12 @@ export class BatchStation {
       .finally(() => {
         this.reconcileOpenFailures(batchId, labels, run);
         markFinished();
+        // 取消的那一刻正在打的那一张可能还没结束：那次状态推送里 isActive 还是 true。run() 到这里
+        // 已经真正返回（那一张不管成功失败都已经有了自己的记录），再推一次，界面才能看到「真的停了」。
+        // 正常打完（done）在 run() 内部的最后一次状态变化就已经是 isActive: false，不用再推一次。
+        if (run.snapshot().state === 'canceled') {
+          this.flush(true);
+        }
       });
     const status = this.status();
     if (status === null) {

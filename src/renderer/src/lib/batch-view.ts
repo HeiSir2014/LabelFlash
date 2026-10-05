@@ -147,9 +147,17 @@ export function problemsByRow(...lists: ReadonlyArray<readonly RowProblem[]>): M
 }
 
 /** 这一批每行的失败（状态里带着的那些）；键是从 1 数的行号。 */
-export function failuresByRow(status: BatchStatus | null): Map<number, BatchFailure[]> {
+/**
+ * status 是哪一批、哪张表的失败，只在和当前打开的表（currentTableId）对得上时才映射到行号。
+ * 换了一张新表之后，旧批次的失败（哪怕行号凑巧对上）不该显示在新表的行上——操作员会以为
+ * 「重打」按的是新表这一行，实际上那是另一批、另一张表的记录。
+ */
+export function failuresByRow(status: BatchStatus | null, currentTableId: string | null): Map<number, BatchFailure[]> {
   const byRow = new Map<number, BatchFailure[]>();
-  for (const failure of status?.failures ?? []) {
+  if (status === null || status.tableId !== currentTableId) {
+    return byRow;
+  }
+  for (const failure of status.failures) {
     byRow.set(failure.row, [...(byRow.get(failure.row) ?? []), failure]);
   }
   return byRow;

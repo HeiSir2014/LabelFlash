@@ -11,7 +11,8 @@ const JOB_COLUMNS = `
   jobs.seq, jobs.id, jobs.created_at AS createdAt, jobs.raw, jobs.printer_name AS printerName,
   jobs.source, jobs.status, jobs.forced, jobs.failure_reason AS failureReason, jobs.paper,
   jobs.template_id AS templateId, jobs.fields, jobs.caller,
-  jobs.batch_id AS batchId, jobs.batch_row AS batchRow, jobs.batch_copy AS batchCopy`;
+  jobs.batch_id AS batchId, jobs.batch_row AS batchRow, jobs.batch_copy AS batchCopy,
+  jobs.template_fingerprint AS templateFingerprint`;
 /** trigram 索引至少需要 3 个字符；更短的搜索词退回 LIKE（LIMIT 保证找够一页就停）。 */
 const FTS_MIN_QUERY_LENGTH = 3;
 /** 调小容量时每批删除的行数；批与批之间让出主线程，避免卡住打印。 */
@@ -43,9 +44,9 @@ export class SqliteJobStore implements JobStore {
     this.capacity = assertCapacity(capacity);
     this.insertJob = db.prepare(`
       INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id, fields, caller,
-        batch_id, batch_row, batch_copy)
+        batch_id, batch_row, batch_copy, template_fingerprint)
       VALUES (:id, :createdAt, :raw, :printerName, :source, :status, :forced, :failureReason, :paper, :templateId, :fields, :caller,
-        :batchId, :batchRow, :batchCopy)`);
+        :batchId, :batchRow, :batchCopy, :templateFingerprint)`);
     // 插入后使用：只保留 seq 落在最新 capacity 个序号内的记录，走主键，开销与容量无关。
     this.trimBehind = db.prepare('DELETE FROM jobs WHERE seq <= :lastSeq - :capacity');
     this.trimOldestBatch = db.prepare(`
@@ -111,6 +112,7 @@ export class SqliteJobStore implements JobStore {
         batchId: job.batch?.id ?? null,
         batchRow: job.batch?.row ?? null,
         batchCopy: job.batch?.copy ?? null,
+        templateFingerprint: job.templateFingerprint ?? null,
       });
       return Number(this.trimBehind.run({ lastSeq: lastInsertRowid, capacity: this.capacity }).changes);
     });
@@ -237,6 +239,9 @@ function toJobRecord(row: Row): JobRecord {
       row: readInteger(row, 'batchRow'),
       copy: readInteger(row, 'batchCopy'),
     };
+  }
+  if (row['templateFingerprint'] !== null) {
+    job.templateFingerprint = readString(row, 'templateFingerprint');
   }
   return job;
 }

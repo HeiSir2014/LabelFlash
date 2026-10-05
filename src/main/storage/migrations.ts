@@ -213,28 +213,30 @@ export const MIGRATIONS: readonly string[] = [
   END;
   `,
   // 6：来源加 batch（批量打印）、pdf / ipp / remote（给后续子项目：PDF 打印、局域网共享、远程打印先占住取值，
-  // 各自的列由那几个子项目的迁移再加），新增 batch_id、batch_row、batch_copy（批次号、第几行、第几份）。
+  // 各自的列由那几个子项目的迁移再加），新增 batch_id、batch_row、batch_copy（批次号、第几行、第几份）、
+  // template_fingerprint（批量打印用的模板指纹：字段 + 纸张，重打时核对模板有没有改过，只有批量打印来源有）。
   // 失败原因加 CANCELED：批量打印退出时还没打到的那些行（操作员选择了不等它们），从来没交给过打印机。
   // 和第 3、5 条一样重建 jobs 表，序号和全文索引不变。三列要么都有、要么都没有。按批次翻页和找失败的标签走 jobs_batch 索引。
   `
   CREATE TABLE jobs_new (
-    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
-    id             TEXT    NOT NULL UNIQUE,
-    created_at     INTEGER NOT NULL,
-    raw            TEXT    NOT NULL,
-    printer_name   TEXT    NOT NULL,
-    source         TEXT    NOT NULL CHECK (source IN ('desktop', 'history', 'mobile', 'api', 'batch', 'pdf', 'ipp', 'remote')),
-    status         TEXT    NOT NULL CHECK (status IN ('printed', 'duplicate', 'invalid', 'failed')),
-    forced         INTEGER NOT NULL CHECK (forced IN (0, 1)),
-    failure_reason TEXT             CHECK (failure_reason IN
+    seq                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                   TEXT    NOT NULL UNIQUE,
+    created_at           INTEGER NOT NULL,
+    raw                  TEXT    NOT NULL,
+    printer_name         TEXT    NOT NULL,
+    source               TEXT    NOT NULL CHECK (source IN ('desktop', 'history', 'mobile', 'api', 'batch', 'pdf', 'ipp', 'remote')),
+    status               TEXT    NOT NULL CHECK (status IN ('printed', 'duplicate', 'invalid', 'failed')),
+    forced               INTEGER NOT NULL CHECK (forced IN (0, 1)),
+    failure_reason       TEXT             CHECK (failure_reason IN
       ('PRINTER_NOT_FOUND', 'PRINTER_NOT_READY', 'PRINT_TIMEOUT', 'PRINT_ERROR', 'LOOKUP_FAILED', 'TEXT_NOT_FOUND', 'CANCELED')),
-    paper          TEXT,
-    template_id    TEXT,
-    fields         TEXT,
-    caller         TEXT,
-    batch_id       TEXT,
-    batch_row      INTEGER,
-    batch_copy     INTEGER,
+    paper                TEXT,
+    template_id          TEXT,
+    fields               TEXT,
+    caller               TEXT,
+    batch_id             TEXT,
+    batch_row            INTEGER,
+    batch_copy           INTEGER,
+    template_fingerprint TEXT,
     CHECK ((batch_id IS NULL) = (batch_row IS NULL) AND (batch_id IS NULL) = (batch_copy IS NULL))
   ) STRICT;
   INSERT INTO jobs_new (seq, id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id, fields, caller)

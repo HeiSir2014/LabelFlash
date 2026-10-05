@@ -24,9 +24,12 @@ export function BatchPage({ batch, templates, onClose }: BatchPageProps) {
   const focusTitle = useCallback((title: HTMLHeadingElement | null) => title?.focus(), []);
   const { status, preview } = batch;
   const progress = status === null ? null : describeProgress(status);
-  const issue = batch.startIssue ?? (progress === null ? batch.planIssue : null);
-  const statusText = issue ?? progress?.text ?? '';
-  const canRetryAll = !batch.isRunning && status !== null && status.failed > 0;
+  const isButtonDisabled = batch.labelCount === 0;
+  // 按钮点不了（没有要打的标签）时，不管之前有没有别的批打过，都该说清楚为什么点不了——
+  // 不能一直显示上一批的旧进度，让操作员以为「打印 0 张」是因为上一批还没完。
+  const issue = batch.startIssue ?? (isButtonDisabled ? batch.planIssue : null);
+  const statusText = batch.isStopping ? '正在停止…' : (issue ?? progress?.text ?? '');
+  const canRetryAll = !batch.isRunning && !batch.isStopping && status !== null && status.failed > 0;
   const currentProblems = batch.dataProblems.get(batch.currentRow + 1) ?? [];
 
   return (
@@ -87,7 +90,7 @@ export function BatchPage({ batch, templates, onClose }: BatchPageProps) {
                       currentRow={batch.currentRow}
                       isSelected={batch.isSelected}
                       isAllChecked={batch.isAllVisibleChecked}
-                      canRetry={!batch.isRunning && status !== null}
+                      canRetry={!batch.isRunning && !batch.isStopping && status !== null}
                       onToggleRow={batch.toggleRow}
                       onToggleAll={batch.setVisibleChecked}
                       onSelectRow={batch.setCurrentRow}
@@ -164,6 +167,11 @@ export function BatchPage({ batch, templates, onClose }: BatchPageProps) {
               取消
             </button>
           </>
+        ) : batch.isStopping ? (
+          // 取消之后正在打的那一张还没结束：这时「打印」不能点得了，点了也只会被拒绝（上一批还没真的停）。
+          <button type="button" className="button button--primary" disabled>
+            正在停止…
+          </button>
         ) : (
           <>
             {canRetryAll && status !== null && (
@@ -179,7 +187,7 @@ export function BatchPage({ batch, templates, onClose }: BatchPageProps) {
             <button
               type="button"
               className="button button--primary"
-              disabled={batch.labelCount === 0}
+              disabled={isButtonDisabled}
               onClick={() => void batch.start()}
             >
               打印 {batch.labelCount} 张

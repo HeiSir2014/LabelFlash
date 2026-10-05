@@ -128,6 +128,9 @@ export interface JobRecord {
   caller?: string;
   /** 批量打印的一张：批次号、行号、份号；其他来源没有。 */
   batch?: BatchRef;
+  /** 批量打印用的模板指纹（templateFingerprint，字段 + 纸张）：重打时核对模板有没有改过，
+   *  改过（哪怕编号没变）就拒绝按旧样子重打。只有批量打印来源有。 */
+  templateFingerprint?: string;
 }
 
 export interface Clock {

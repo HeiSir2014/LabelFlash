@@ -224,6 +224,18 @@ describe('migration 6', () => {
     db.close();
   });
 
+  // 重打失败的标签时要核对模板有没有改过：指纹（字段 + 纸张）跟着批量打印的记录一起存。
+  test('keeps the template fingerprint on a batch job', () => {
+    const db = openDatabase(':memory:');
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, batch_id, batch_row, batch_copy, template_fingerprint) VALUES ('d', 1, 'X', 'P', 'batch', 'failed', 0, '20261002-143501-a1b2', 1, 1, 'fp-1')",
+    ).run();
+    expect(db.prepare("SELECT template_fingerprint FROM jobs WHERE id = 'd'").get()?.['template_fingerprint']).toBe(
+      'fp-1',
+    );
+    db.close();
+  });
+
   // 和迁移 3 的同一条规则：重建表之后，自增计数接着旧表走，删掉的旧序号不会被新记录复用。
   test('keeps counting sequence numbers from where the old table stopped, even after a delete', () => {
     const db = new DatabaseSync(':memory:');

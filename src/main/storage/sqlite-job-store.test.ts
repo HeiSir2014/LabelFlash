@@ -50,9 +50,15 @@ describe('SqliteJobStore', () => {
   test('round-trips every field, newest first', () => {
     const store = new SqliteJobStore(db, 10);
     const failed = job(2, { status: 'failed', failureReason: 'PRINTER_NOT_READY', source: 'history', forced: true });
+    const batchJob = job(3, {
+      source: 'batch',
+      batch: { id: '20261002-143501-a1b2', row: 1, copy: 1 },
+      templateFingerprint: 'fp-1',
+    });
     store.append(job(1));
     store.append(failed);
-    expect(store.listPage({ limit: 10 }).jobs).toEqual([failed, job(1)]);
+    store.append(batchJob);
+    expect(store.listPage({ limit: 10 }).jobs).toEqual([batchJob, failed, job(1)]);
   });
 
   test('keeps only the newest jobs once capacity is reached (ring) and tracks the total', () => {

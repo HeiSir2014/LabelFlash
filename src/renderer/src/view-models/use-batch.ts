@@ -68,6 +68,8 @@ export function useBatch({ templates, activeTemplateId, isOpen, historyLimit }: 
   const [search, setSearch] = useState('');
   const [currentRow, setCurrentRow] = useState(0);
   const [renderProblems, setRenderProblems] = useState<readonly RowProblem[]>([]);
+  /** 排版检查这一轮根本没能检查的原因（模板、表格对不上，见 BatchStation.check）；能检查时为 null。 */
+  const [checkIssue, setCheckIssue] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [preview, setPreview] = useState<BatchPreviewResult | null>(null);
   const [status, setStatus] = useState<BatchStatus | null>(null);
@@ -115,12 +117,16 @@ export function useBatch({ templates, activeTemplateId, isOpen, historyLimit }: 
   );
   const visibleRows = useMemo(() => filterRows(dataTable, rowCount, search), [dataTable, rowCount, search]);
   const isRunning = status !== null && (status.state === 'running' || status.state === 'paused');
+  // 取消的那一刻正在打的那一张可能还没结束：这期间 state 已经是 canceled，但 isActive 还是 true。
+  // 这时「打印」按钮不能又点得了——点了也只会被主进程以 BUSY 拒绝，界面要显示「正在停止…」。
+  const isStopping = status !== null && status.state === 'canceled' && status.isActive;
   const labelCount = labelPlan?.ok ? labelPlan.labels.length : 0;
 
   // 排版的问题（条码印不了、二维码放不下）要把每一行排一遍：交给主进程，改设置后稍等再查。
   useEffect(() => {
     if (!isOpen || plan === null) {
       setRenderProblems([]);
+      setCheckIssue(null);
       return;
     }
     let isActive = true;
@@ -130,6 +136,7 @@ export function useBatch({ templates, activeTemplateId, isOpen, historyLimit }: 
         const result = await window.api.checkBatch(plan);
         if (isActive && result !== null) {
           setRenderProblems(result.problems);
+          setCheckIssue(result.issue ?? null);
         }
       } catch (error) {
         reportError('检查标签', error);
@@ -179,7 +186,12 @@ export function useBatch({ templates, activeTemplateId, isOpen, historyLimit }: 
       },
       (error: unknown) => reportError('读取批量打印进度', error),
     );
-    const unsubscribe = window.api.onBatchStatus(setStatus);
+    // 推送来的状态永远是最新的：不管这次更新是不是这个页面实例自己触发的（例如打印记录页点了
+    // 「重打这一批」），上一次本地操作留下的错误提示都已经过时，不然它会一直挡住新的进度文字。
+    const unsubscribe = window.api.onBatchStatus((next) => {
+      setStatus(next);
+      setStartIssue(null);
+    });
     return () => {
       isActive = false;
       unsubscribe();
@@ -260,7 +272,8 @@ export function useBatch({ templates, activeTemplateId, isOpen, historyLimit }: 
     copies,
     setCopies,
     plan,
-    planIssue: labelPlan !== null && !labelPlan.ok ? labelPlan.issue : null,
+    // 本地排的问题优先（不用等主进程来回）；排不出问题但主进程那边检查不了（模板、表格对不上）时用那个原因。
+    planIssue: (labelPlan !== null && !labelPlan.ok ? labelPlan.issue : null) ?? checkIssue,
     labelCount,
     /** 这一批比打印记录保留的条数还多时的提醒（非阻塞：仍然能打，只是提醒后果）。 */
     historyLimitWarning: historyLimitWarning(labelCount, historyLimit),
@@ -284,7 +297,8 @@ export function useBatch({ templates, activeTemplateId, isOpen, historyLimit }: 
     preview,
     status,
     isRunning,
-    failures: failuresByRow(status),
+    isStopping,
+    failures: failuresByRow(status, dataTable?.id ?? null),
     startIssue,
     start: async () => {
       if (plan === null) {

@@ -248,11 +248,13 @@ export function queueVerdict(
       [],
     );
   }
+  // ownStuck 为 0 时不能说「都不是本程序发的」：账本只在内存里、最多保留一天，重启或时间久了
+  // 就认不出哪些是本程序发的，那不代表真的都不是；只有认出是本程序发的才能肯定地说。
   const own =
     summary.ownStuck === summary.stuck
       ? '都是本程序发的'
       : summary.ownStuck === 0
-        ? '都不是本程序发的'
+        ? '认不出是本程序发的'
         : `其中 ${summary.ownStuck} 个是本程序发的`;
   const waited = formatAge(summary.oldestStuckAgeMs ?? 0);
   return verdict(

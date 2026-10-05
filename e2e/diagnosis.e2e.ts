@@ -40,7 +40,7 @@ test('finds stuck jobs, clears ours first and the rest after the admin prompt', 
 
   await queue.getByRole('button', { name: '清除本程序的任务' }).click();
   await expect(queue).toContainText('已请求取消本程序的 2 个任务');
-  await expect(queue).toContainText('都不是本程序发的');
+  await expect(queue).toContainText('认不出是本程序发的');
   expect(await fakeAdminPrompts(app)).toEqual([]);
 
   await queue.getByRole('button', { name: '清除全部任务（需要管理员权限）' }).click();

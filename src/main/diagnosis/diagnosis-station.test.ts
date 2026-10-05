@@ -105,7 +105,7 @@ describe('DiagnosisStation.fix', () => {
     const { station } = setup({ diagnosis: { stuckJobs: { ours: 2, others: 1 } } });
     expect(await station.fix(request({}))).toEqual({ status: 'done', message: '已请求取消本程序的 2 个任务' });
     expect(await station.check('标签机A', 'queue', null)).toMatchObject({
-      detail: '有 1 个任务卡在队列里（最早的已经等了 5 分钟），都不是本程序发的',
+      detail: '有 1 个任务卡在队列里（最早的已经等了 5 分钟），认不出是本程序发的',
     });
   });
 

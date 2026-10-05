@@ -1441,13 +1441,13 @@ const ITEMS: Item[] = [
     id: 'V86',
     title: '打印机 · 诊断 · 修复之后',
     points:
-      '队列一项下面绿色说明「已请求取消本程序的 1 个任务」，随后结论变成「…都不是本程序发的」；点了管理员按钮又拒绝后，红色提示「没有拿到管理员权限…」（读屏按 alert 念）；指令集一项问「标签机走出一张空白标签了吗？」并点了「没反应」：变红「有问题」，下面出现指令集下拉（5a 的控件）；提示不遮挡按钮',
+      '队列一项下面绿色说明「已请求取消本程序的 1 个任务」，随后结论变成「…认不出是本程序发的」；点了管理员按钮又拒绝后，红色提示「没有拿到管理员权限…」（读屏按 alert 念）；指令集一项问「标签机走出一张空白标签了吗？」并点了「没反应」：变红「有问题」，下面出现指令集下拉（5a 的控件）；提示不遮挡按钮',
     launch: { fakePrinters: diagnosisPrinters({ stuckJobs: { ours: 1, others: 1 }, adminPrompt: 'decline' }) },
     setup: async ({ page }) => {
       const panel = await openDiagnosisPanel(page);
       const queue = panel.locator('.diagnosis-item', { hasText: '打印队列' });
       await queue.getByRole('button', { name: '清除本程序的任务' }).click();
-      await expect(queue).toContainText('都不是本程序发的');
+      await expect(queue).toContainText('认不出是本程序发的');
       await queue.getByRole('button', { name: '清除全部任务（需要管理员权限）' }).click();
       await expect(queue.getByRole('alert')).toContainText('没有拿到管理员权限');
       const commands = panel.locator('.diagnosis-item', { hasText: '指令集' });

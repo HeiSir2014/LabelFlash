@@ -160,10 +160,11 @@ describe('queueVerdict', () => {
     expect(ids(queueVerdict(facts, 'mac', [window], NOW).fixes)).toEqual(['cancel-own-jobs', 'cancel-all-jobs']);
   });
 
-  test('does not offer to clear our jobs when none are ours', () => {
+  // 账本只在内存里、最多存一天：说「都不是」是在断言一件记不住就无从断言的事，只能说「认不出」。
+  test('does not claim none of them are ours when the ledger cannot tell', () => {
     const facts = { kind: 'listed' as const, currentUser: 'shop', total: 1, jobs: [job({ user: 'someone' })] };
     const verdict = queueVerdict(facts, 'windows', [window], NOW);
-    expect(verdict.detail).toBe('有 1 个任务卡在队列里（最早的已经等了 5 分钟），都不是本程序发的');
+    expect(verdict.detail).toBe('有 1 个任务卡在队列里（最早的已经等了 5 分钟），认不出是本程序发的');
     expect(ids(verdict.fixes)).toEqual(['cancel-all-jobs', 'open-queue']);
   });
 });

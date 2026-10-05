@@ -4,13 +4,16 @@ import type { PaperSize } from '../../../shared/paper-sizes';
 import type { PrinterCommandResult, PrinterCommandsView } from '../../../shared/printer-commands';
 import { reportError } from '../lib/notices';
 import {
+  busyFor,
   type CommandForm,
   type CommandMessage,
   type CommandRequest,
+  type CommandRequestTicket,
   configFromForm,
   describeCommandResult,
   formFromConfig,
   isFormDirty,
+  isSameRequest,
   withCommandSet,
 } from '../lib/printer-commands-view';
 
@@ -40,7 +43,8 @@ export function usePrinterCommands(paperOf: (printerName: string) => PaperSize):
   const [view, setView] = useState<PrinterCommandsView | null>(null);
   const [form, setForm] = useState<CommandForm | null>(null);
   const [savedForm, setSavedForm] = useState<CommandForm | null>(null);
-  const [busy, setBusy] = useState<CommandRequest | null>(null);
+  /** 哪台打印机、哪个请求正在跑；展开的面板换了之后，旧请求不再显示成「正在发送」（busyFor 按打印机名过滤）。 */
+  const [busyTicket, setBusyTicket] = useState<CommandRequestTicket | null>(null);
   const [message, setMessage] = useState<CommandMessage | null>(null);
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
   // 最新的值给异步回调用；在 effect 里更新，不在渲染过程中改 ref。
@@ -98,26 +102,41 @@ export function usePrinterCommands(paperOf: (printerName: string) => PaperSize):
     [view],
   );
 
-  const send = async (request: CommandRequest, call: () => Promise<PrinterCommandResult>): Promise<void> => {
-    setBusy(request);
-    setMessage(null);
+  /**
+   * printerName 在请求发出的那一刻就固定下来：操作员随后可能切换面板，结果回来时要核对
+   * 当时开着的还是不是这一台，不是的话就不显示消息、也不拿它的结果去刷新现在打开的面板（isSameRequest）。
+   */
+  const send = async (
+    printerName: string,
+    request: CommandRequest,
+    call: () => Promise<PrinterCommandResult>,
+  ): Promise<void> => {
+    const ticket: CommandRequestTicket = { printerName, request };
+    setBusyTicket(ticket);
+    if (openNameRef.current === printerName) {
+      setMessage(null);
+    }
     try {
       const result = await call();
-      setMessage(describeCommandResult(result, request));
-      // 没通过把关的设置没有保存：留着操作员改到一半的表单；其余情况重新读，表单回到保存的样子。
-      if (request === 'save' && result.status !== 'invalid' && openName !== null) {
-        await load(openName);
+      if (openNameRef.current === printerName) {
+        setMessage(describeCommandResult(result, request));
+        // 没通过把关的设置没有保存：留着操作员改到一半的表单；其余情况重新读，表单回到保存的样子。
+        if (request === 'save' && result.status !== 'invalid') {
+          await load(printerName);
+        }
       }
     } catch (error) {
       reportError(request === 'save' ? '保存标签机指令设置' : '发送打印机指令', error);
     } finally {
-      setBusy(null);
+      // 这段时间里可能已经有新的请求把 ticket 换掉了（针对现在这台或另一台打印机），不要把它清空。
+      setBusyTicket((current) => (isSameRequest(current, printerName, request) ? null : current));
     }
   };
 
   const run = (action: PrinterAction) => {
     if (openName !== null) {
-      void send(action, () => window.api.runPrinterAction(openName, action));
+      const printerName = openName;
+      void send(printerName, action, () => window.api.runPrinterAction(printerName, action));
     }
   };
 
@@ -126,7 +145,7 @@ export function usePrinterCommands(paperOf: (printerName: string) => PaperSize):
     view,
     form,
     isDirty: form !== null && savedForm !== null && isFormDirty(form, savedForm),
-    busy,
+    busy: busyFor(busyTicket, openName),
     message,
     isConfirmingReset,
     toggle,
@@ -134,7 +153,9 @@ export function usePrinterCommands(paperOf: (printerName: string) => PaperSize):
     changeCommandSet,
     save: () => {
       if (openName !== null && form !== null) {
-        void send('save', () => window.api.applyPrinterCommands(openName, configFromForm(form)));
+        const printerName = openName;
+        const commandConfig = configFromForm(form);
+        void send(printerName, 'save', () => window.api.applyPrinterCommands(printerName, commandConfig));
       }
     },
     run,

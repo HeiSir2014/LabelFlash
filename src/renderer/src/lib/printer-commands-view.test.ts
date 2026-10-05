@@ -3,7 +3,9 @@ import { DEFAULT_COMMAND_CONFIG, DEFAULT_GAP_MM } from '../../../core/printer-co
 import type { PrinterCommandsView } from '../../../shared/printer-commands';
 import {
   actionsHint,
+  busyFor,
   type CommandForm,
+  type CommandRequestTicket,
   commandSetOptions,
   configFromForm,
   densityOptions,
@@ -12,6 +14,7 @@ import {
   dpiOptions,
   formFromConfig,
   isFormDirty,
+  isSameRequest,
   speedOptions,
   withCommandSet,
 } from './printer-commands-view';
@@ -141,6 +144,25 @@ describe('describeCommandResult', () => {
     expect(failed('raw-rejected').text).toContain('驱动不接受直接发送的指令');
     expect(failed('uncertain').text.startsWith('不确定有没有发出去')).toBe(true);
     expect(failed('error', 'lp: busy').text).toBe('发送失败：lp: busy。检查打印机是否开着、连好，再试一次');
+  });
+});
+
+describe('busyFor / isSameRequest', () => {
+  // 展开的打印机换了：之前那次请求不该再把当前面板显示成「正在发送」，也不该用它的结果刷新当前面板。
+  const ticket: CommandRequestTicket = { printerName: '标签机A', request: 'save' };
+
+  test('busyFor only shows the request on the printer it belongs to', () => {
+    expect(busyFor(ticket, '标签机A')).toBe('save');
+    expect(busyFor(ticket, '家用打印机')).toBeNull();
+    expect(busyFor(ticket, null)).toBeNull();
+    expect(busyFor(null, '标签机A')).toBeNull();
+  });
+
+  test('isSameRequest matches only the exact printer and request it was issued for', () => {
+    expect(isSameRequest(ticket, '标签机A', 'save')).toBe(true);
+    expect(isSameRequest(ticket, '标签机A', 'feed')).toBe(false);
+    expect(isSameRequest(ticket, '家用打印机', 'save')).toBe(false);
+    expect(isSameRequest(null, '标签机A', 'save')).toBe(false);
   });
 });
 

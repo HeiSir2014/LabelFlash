@@ -57,6 +57,26 @@ export interface CommandMessage {
 /** 正在做的事：保存并发送，或四个动作之一。 */
 export type CommandRequest = 'save' | PrinterAction;
 
+/** 一次指令请求发给了哪台打印机。请求发出后操作员可能已经切换到另一台，结果不该算到新打印机头上。 */
+export interface CommandRequestTicket {
+  printerName: string;
+  request: CommandRequest;
+}
+
+/** 只有请求发给的那台打印机还开着，才把它算作「正在发送」；换了打印机就不再显示忙碌（哪怕请求仍在后台跑）。 */
+export function busyFor(ticket: CommandRequestTicket | null, openName: string | null): CommandRequest | null {
+  return ticket !== null && ticket.printerName === openName ? ticket.request : null;
+}
+
+/** 这个结果是不是刚好对应这张 ticket：打印机名和具体请求都要对上，用来决定收到结果时要不要理会它。 */
+export function isSameRequest(
+  ticket: CommandRequestTicket | null,
+  printerName: string,
+  request: CommandRequest,
+): boolean {
+  return ticket !== null && ticket.printerName === printerName && ticket.request === request;
+}
+
 export const ACTION_LABELS: Readonly<Record<PrinterAction, string>> = {
   calibrate: '纸张校准',
   feed: '走一张纸',

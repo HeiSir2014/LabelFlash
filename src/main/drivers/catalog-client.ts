@@ -33,6 +33,8 @@ export const CATALOG_REFRESH_MS = 10 * 60_000;
 
 export type CatalogLoad =
   | { kind: 'unconfigured' }
+  /** 这个版本的程序没有内置任何公钥（开源 / 自己构建、没填密钥）：填了地址也验不了签，不下载。 */
+  | { kind: 'no-keys' }
   | { kind: 'ready'; catalog: DriverCatalog; source: 'network' | 'cache'; fetchedAt: number; staleIssue: string | null }
   | { kind: 'failed'; issue: string };
 
@@ -56,6 +58,12 @@ export class CatalogClient {
   }
 
   async load(force: boolean): Promise<CatalogLoad> {
+    // 内置公钥表是空的：不管地址填没填，任何清单都验不了签，不值得发请求，也不能说「未配置地址」
+    // （那会让操作员以为填个地址就好了）。
+    if (this.deps.keys.size === 0) {
+      this.last = null;
+      return { kind: 'no-keys' };
+    }
     const url = this.deps.url();
     if (url === null) {
       this.last = null;

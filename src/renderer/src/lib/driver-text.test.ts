@@ -48,6 +48,13 @@ describe('catalogText', () => {
       text: '驱动清单不能用：驱动清单的签名不对，可能被改过，不使用',
     });
   });
+
+  test('never suggests filling in an address when this build has no embedded keys', () => {
+    const text = catalogText({ state: 'no-keys' });
+    expect(text).toEqual({ tone: 'warning', text: '这个版本没有内置驱动清单公钥，不能自动安装驱动' });
+    expect(text.text).not.toContain('驱动清单地址');
+    expect(text.text).not.toContain('请更新程序');
+  });
 });
 
 describe('devices', () => {

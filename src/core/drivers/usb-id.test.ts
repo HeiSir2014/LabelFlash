@@ -3,8 +3,8 @@ import { formatUsbId, isSameUsbId, parseHexUsbId, parseWindowsUsbInstanceId } fr
 
 describe('parseWindowsUsbInstanceId', () => {
   test('reads the vendor and product id of a USB device', () => {
-    expect(parseWindowsUsbInstanceId('USB\\VID_0A5F&PID_0120\\ABC123')).toEqual({
-      vendorId: 0x0a5f,
+    expect(parseWindowsUsbInstanceId('USB\\VID_5678&PID_0120\\ABC123')).toEqual({
+      vendorId: 0x5678,
       productId: 0x0120,
     });
   });
@@ -33,7 +33,7 @@ describe('parseHexUsbId', () => {
 
 describe('formatUsbId', () => {
   test('pads and upper-cases like Device Manager', () => {
-    expect(formatUsbId({ vendorId: 0xa5f, productId: 0x12 })).toBe('0A5F:0012');
+    expect(formatUsbId({ vendorId: 0x5678, productId: 0x12 })).toBe('5678:0012');
   });
 
   test('compares both parts', () => {

@@ -8,6 +8,8 @@ export type DriverPlatformView = 'windows' | 'mac' | 'unsupported';
 /** staleIssue 不为 null：新清单用不了，用的是上次下载的（原因写在里面）。 */
 export type CatalogView =
   | { state: 'unconfigured' }
+  /** 这个版本的程序没有内置任何驱动清单公钥（开源 / 自己构建）：填地址也没用，不下载。 */
+  | { state: 'no-keys' }
   | { state: 'loading' }
   | { state: 'ready'; issuedAt: number; expiresAt: number; modelCount: number; staleIssue: string | null }
   | { state: 'failed'; issue: string };
@@ -23,7 +25,7 @@ export interface DriverDeviceView {
   key: string;
   /** 系统给的名字。 */
   name: string;
-  /** 0A5F:0120。 */
+  /** 5678:0012。 */
   usbId: string;
   problem: DeviceProblem;
   problemCode: number | null;

@@ -306,6 +306,8 @@ function catalogView(load: CatalogLoad | null): CatalogView {
   switch (load.kind) {
     case 'unconfigured':
       return { state: 'unconfigured' };
+    case 'no-keys':
+      return { state: 'no-keys' };
     case 'failed':
       return { state: 'failed', issue: load.issue };
     case 'ready':

@@ -33,11 +33,11 @@ function serving(respond: () => Response | Promise<Response>): FetchFunction {
   };
 }
 
-function client(fetch: FetchFunction): CatalogClient {
+function client(fetch: FetchFunction, trustedKeys = keys.trusted): CatalogClient {
   return new CatalogClient({
     url: () => url,
     fetch,
-    keys: keys.trusted,
+    keys: trustedKeys,
     store,
     clock,
     userAgent: 'test',
@@ -56,6 +56,15 @@ describe('CatalogClient', () => {
   test('says the address is not configured', async () => {
     url = null;
     expect(await client(serving(() => new Response(GOOD))).load(false)).toEqual({ kind: 'unconfigured' });
+    expect(requests).toEqual([]);
+  });
+
+  test('says there are no embedded keys, even with an address configured, without downloading', async () => {
+    const load = await client(
+      serving(() => new Response(GOOD)),
+      new Map(),
+    ).load(false);
+    expect(load).toEqual({ kind: 'no-keys' });
     expect(requests).toEqual([]);
   });
 

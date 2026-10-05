@@ -36,6 +36,20 @@ test('says the catalog address is not configured and still lists the printer dev
   await expect(card.getByRole('button', { name: /安装驱动/ })).toHaveCount(0);
 });
 
+test('says this build has no embedded keys, never asks for an address, and still lists printer devices', async ({
+  electronApp,
+}) => {
+  // 不传 driverCatalogKey：DRIVER_CATALOG_PUBLIC_KEYS 是空表，程序没有任何可信公钥。
+  const { page } = await electronApp.launch({ fakePrinters: [], fakeDrivers: fakeDrivers() });
+  await openConfig(page, '打印机');
+  const card = driverCard(page);
+  await expect(card).toContainText('这个版本没有内置驱动清单公钥，不能自动安装驱动');
+  await expect(card).not.toContainText('未配置驱动清单地址');
+  await expect(card).not.toContainText('请更新程序');
+  await expect(card).toContainText('USB 1234:ABCD · 没装驱动');
+  await expect(card.getByRole('button', { name: /安装驱动/ })).toHaveCount(0);
+});
+
 test('installs the driver from the signed catalog and shows the new printer', async ({ electronApp }) => {
   const server = await serveCatalog(catalogText(keys, [catalogModel()]));
   try {

@@ -18,7 +18,7 @@
    ```
 
    私钥放在加密的 U 盘或密码管理器里，不提交、不上传、不发给别人。命令会打印公钥。
-2. 把打印出的 `'2026a': '<公钥>'` 加进 `src/shared/driver-catalog-keys.ts`，经 PR 合进 master。**发布的程序里有这把公钥之后**，它签的清单才会被接受（发布作业也会检查这里不为空）。
+2. 把打印出的 `'2026a': '<公钥>'` 加进 `src/shared/driver-catalog-keys.ts`，经 PR 合进 master。**发布的程序里有这把公钥之后**，它签的清单才会被接受。没加这把公钥不会挡住发布（驱动安装是独立功能，CI 只给一条 `::warning::` 提醒，不是 `exit 1`），但那个版本的程序会显示「这个版本没有内置驱动清单公钥，不能自动安装驱动」，不能自动装驱动。
 
 ## 写清单
 
@@ -97,7 +97,7 @@ location = /labelflash/driver-catalog.json {
 
 ## 让官方安装包带上清单地址
 
-在 GitHub 仓库的 Settings → Secrets and variables → Actions → Variables 里加 `LABELFLASH_DEFAULT_DRIVER_CATALOG_URL`，值是上面的完整地址。CI 构建安装包时注入（代码里不写域名）；没设这个变量发布作业会失败。自己构建时可以用环境变量 `CDL_LABELFLASH_DEFAULT_DRIVER_CATALOG_URL` 指定；都没有时界面显示「未配置驱动清单地址」，用户可以在「驱动清单地址」里自己填。
+在 GitHub 仓库的 Settings → Secrets and variables → Actions → Variables 里加 `LABELFLASH_DEFAULT_DRIVER_CATALOG_URL`，值是上面的完整地址。CI 构建安装包时注入（代码里不写域名）。没设这个变量不挡发布（CI 只给一条 `::warning::`），只是官方安装包这个版本没有默认地址；自己构建时可以用环境变量 `CDL_LABELFLASH_DEFAULT_DRIVER_CATALOG_URL` 指定；都没有时界面显示「未配置驱动清单地址」，用户可以在「驱动清单地址」里自己填——前提是这个版本已经内置了公钥，否则会显示「这个版本没有内置驱动清单公钥，不能自动安装驱动」，填地址也没用。
 
 ## 续签、更新、换密钥
 

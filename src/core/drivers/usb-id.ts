@@ -32,7 +32,7 @@ export function parseWindowsUsbInstanceId(instanceId: string): UsbId | null {
   return parseHexUsbId(vendor, product);
 }
 
-/** 界面和日志里的写法：0A5F:0120（和设备管理器里一样大写）。 */
+/** 界面和日志里的写法：5678:0012（和设备管理器里一样大写）。 */
 export function formatUsbId(id: UsbId): string {
   return `${hex(id.vendorId)}:${hex(id.productId)}`;
 }

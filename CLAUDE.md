@@ -143,7 +143,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 - **发版步骤**：
   1. 改 `package.json` 的 `version`，在 `CHANGELOG.md` 写这个版本大概做了什么（发布作业拿它当 GitHub Release 的说明，没写就不发布；单元测试也会检查），经 PR 合进 `master`。
   2. 在 `master` 的提交上打同名标签（例如 `v1.0.1`）并推送，CI 的 release 作业负责发布。
-  3. release 作业先检查三件事，不符合就不发布：标签所在的提交在 `master` 上；标签和 `version` 一致（客户端按版本号比较，并按文件名里的版本号去找旧版的 blockmap）；设置了仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL` 和 `LABELFLASH_DEFAULT_DRIVER_CATALOG_URL`（官方安装包的默认中转地址、默认驱动清单地址，构建时注入，代码里不写域名）；`src/shared/driver-catalog-keys.ts` 里至少有一把公钥。
+  3. release 作业先检查三件事，不符合就不发布：标签所在的提交在 `master` 上；标签和 `version` 一致（客户端按版本号比较，并按文件名里的版本号去找旧版的 blockmap）；设置了仓库的 Actions 变量 `LABELFLASH_DEFAULT_RELAY_URL`（官方安装包的默认中转地址，构建时注入，代码里不写域名）。没设 `LABELFLASH_DEFAULT_DRIVER_CATALOG_URL`、或 `src/shared/driver-catalog-keys.ts` 里没有公钥只会警告、不挡发布：驱动安装是独立功能，没配置清单地址或公钥时界面会提示清楚，不影响其余功能照常发布。
   4. Release 先建成草稿，Windows 和 macOS 各自上传，核对 Windows 安装包、blockmap、`latest.yml` 和 macOS 的 pkg 四个文件都在，才公开。
 - **latest 分支**：始终指向最新发布版本的提交。发布作业公开 Release 之后把它快进到这个标签，快进不了就报错，不往回拨。分支有保护，不能删除、不能强推，管理员也一样；不要手工往上面提交。
 - **构建号**：CI 把工作流的 `run_number` 设成环境变量 `BUILD_NUMBER`。electron-builder 写进 Windows 文件版本（`1.0.2.123`）和 macOS 的 CFBundleVersion，程序在「关于」和启动日志里显示（`src/main/build-info.ts`）。`version` 本身保持 `x.y.z`，不带构建号：标签检查、自动更新的版本比较、按文件名找旧版 blockmap 都依赖它。

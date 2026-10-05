@@ -88,6 +88,13 @@ describe('DriverStation', () => {
     expect(status.devices?.map((device) => device.action.kind)).toEqual(['no-catalog']);
   });
 
+  test('says this build has no embedded keys and still lists printer devices', async () => {
+    load = { kind: 'no-keys' };
+    const status = await station().detect(false);
+    expect(status.catalog).toEqual({ state: 'no-keys' });
+    expect(status.devices?.map((device) => device.action.kind)).toEqual(['no-catalog']);
+  });
+
   test('installs, pushes progress, finds the new printer and refreshes the devices', async () => {
     const drivers = station();
     await drivers.detect(false);

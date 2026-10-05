@@ -47,6 +47,8 @@ export function catalogText(view: CatalogView): ToneText {
         tone: 'warning',
         text: '未配置驱动清单地址：清单里有的型号才能自动下载安装官方驱动。在下面「驱动清单地址」里填写出品方提供的地址',
       };
+    case 'no-keys':
+      return { tone: 'warning', text: '这个版本没有内置驱动清单公钥，不能自动安装驱动' };
     case 'loading':
       return { tone: 'running', text: '正在读取驱动清单…' };
     case 'failed':

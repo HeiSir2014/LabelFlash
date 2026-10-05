@@ -85,4 +85,18 @@ describe('fixOutcome', () => {
       message: '驱动里没有 60×40mm 这种纸，也不能自定义尺寸：打开打印首选项，新建这种纸再选上',
     });
   });
+
+  // 「驱动已重新安装」只能在 5c 的接缝确认装完、装成功（ActionResult 的 done）之后才出现；
+  // 5c 的适配器把「已经开始安装」误当「已经做完」时，这里不能替它圆谎。
+  test('only says the driver was reinstalled on a confirmed done, not on a declined or failed install', () => {
+    const request = { ...REQUEST, fix: 'reinstall-driver' as const };
+    expect(fixOutcome('windows', request, { kind: 'done' })).toEqual({
+      status: 'done',
+      message: '驱动已重新安装，正在重新检查',
+    });
+    expect(fixOutcome('windows', request, { kind: 'declined' }).message).not.toContain('驱动已重新安装');
+    expect(fixOutcome('windows', request, { kind: 'failed', detail: 'download failed: 404' }).message).not.toContain(
+      '驱动已重新安装',
+    );
+  });
 });

@@ -25,6 +25,12 @@ export const PDF_LIMITS = {
   copies: 99,
 } as const;
 
+/**
+ * 打印记录里 PDF 这一块用的「模板」编号：不在模板库里，只说明这一张不是按模板排的。
+ * 放在这里而不是 piece-template.ts：自由设计的排版要认它（不做安全边距检查），又不该依赖 PDF 的其余部分。
+ */
+export const PDF_PIECE_TEMPLATE_ID = 'builtin:pdf-piece';
+
 /** 黑白位图在缓存里留 7 天：能从打印记录预览、重打；更久的 PDF 重新打开文件再打。 */
 export const PDF_PIECE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 

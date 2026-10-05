@@ -1,3 +1,4 @@
+import { PDF_PIECE_TEMPLATE_ID } from '../pdf/pdf-model';
 import type { ScanResult } from '../scan/scan-result';
 import {
   CANVAS_LIMITS,
@@ -79,6 +80,9 @@ export function layoutCanvas(template: CanvasTemplate, context: CanvasLayoutCont
   const issues: string[] = [];
   const elements: LaidCanvasElement[] = [];
   let overflowCount = 0;
+  // PDF 的一页是原样放到纸上的，不是按安全边距排出来的：图片框本来就铺满整张纸，PDF 里自己留了多少边就印多少边。
+  // 对它做安全边距检查只会每张都报「靠近纸边」，操作员也没法改，所以整个跳过。
+  const checksSafeMargin = template.id !== PDF_PIECE_TEMPLATE_ID;
   for (const element of template.elements) {
     const rect = snapRect(element, context.dotMm);
     const turned = element.rotation === 90 || element.rotation === 270;
@@ -98,7 +102,7 @@ export function layoutCanvas(template: CanvasTemplate, context: CanvasLayoutCont
     if (laid.content === null) {
       continue;
     }
-    if (isNearEdge(rect, template.paper.widthMm, template.paper.heightMm, context.dotMm)) {
+    if (checksSafeMargin && isNearEdge(rect, template.paper.widthMm, template.paper.heightMm, context.dotMm)) {
       issues.push(`「${element.name}」靠近纸边（离纸边不到 ${CANVAS_LIMITS.safeMarginMm}mm），可能打不全`);
     }
     elements.push({ rect, frame, rotation: element.rotation, name: element.name, content: laid.content });

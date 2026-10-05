@@ -374,11 +374,13 @@ export function App() {
               library: templates.isLibraryOpen
                 ? {
                     items: config.templateLibrary.items,
+                    hasError: config.templateLibrary.hasError,
                     view: config.templateLibrary.view,
                     category: config.templateLibrary.category,
                     onCategory: config.templateLibrary.selectCategory,
                     onPaper: config.templateLibrary.selectPaper,
                     onUse: (item) => void config.templateLibrary.createFromLibrary(item),
+                    isCreating: templates.isCreatingFromLibrary,
                     onClose: templates.closeLibrary,
                   }
                 : null,

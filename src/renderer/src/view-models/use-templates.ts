@@ -36,6 +36,9 @@ export function useTemplates({
   const isCreatingCanvasRef = useRef(false);
   /** 「从模板库新建」打开着：模板页显示模板库，不显示列表。 */
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [isCreatingFromLibrary, setIsCreatingFromLibrary] = useState(false);
+  // 守着「用这个模板」：原因同上——连点两下会在主进程回应第一次复制之前发出第二次，建出两个一样的自定义模板。
+  const isCreatingFromLibraryRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -110,9 +113,15 @@ export function useTemplates({
   /**
    * 「用这个模板」：把模板库里的模板复制成自定义模板，选中它、直接进设计器。返回复制出的模板（失败时提示并返回 null），
    * 调用方据此把预览内容换成这个模板的示例数据。
+   * 复制未完成前再点一下什么也不做，不然连点两下会建出两个一样的自定义模板。
    */
   const createFromLibrary = useCallback(
     async (libraryId: string): Promise<CanvasTemplate | null> => {
+      if (isCreatingFromLibraryRef.current) {
+        return null;
+      }
+      isCreatingFromLibraryRef.current = true;
+      setIsCreatingFromLibrary(true);
       try {
         const created = await window.api.createTemplateFromLibrary(libraryId);
         await load();
@@ -123,6 +132,9 @@ export function useTemplates({
       } catch (error) {
         reportError('从模板库新建', error);
         return null;
+      } finally {
+        isCreatingFromLibraryRef.current = false;
+        setIsCreatingFromLibrary(false);
       }
     },
     [load],
@@ -221,6 +233,7 @@ export function useTemplates({
     openLibrary: () => setIsLibraryOpen(true),
     closeLibrary: () => setIsLibraryOpen(false),
     createFromLibrary,
+    isCreatingFromLibrary,
     remove,
   };
 }

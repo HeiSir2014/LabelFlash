@@ -137,6 +137,11 @@ textarea {
   .title-bar:has(.update-pill) .title-bar__shop {
     display: none;
   }
+
+  /* 加了「批量打印」按钮后标题栏更挤：1024 宽时先让出店铺名，保留店铺图标和其余按钮。 */
+  .title-bar:has(.batch-button) .title-bar__shop-name {
+    display: none;
+  }
 }
 
 /* 新版本已下载：标题栏里的可点击提示（必须排除在拖拽区域之外才能点击） */

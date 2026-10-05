@@ -314,20 +314,20 @@ const ITEMS: Item[] = [
         label: '常态',
         prepare: async ({ page }) => {
           if ((await page.locator('.config-center').count()) > 0) {
-            await page.locator('.config-button').click();
+            await page.locator('.config-button:not(.batch-button)').click();
             await expect(page.locator('.config-center')).toHaveCount(0);
           }
           await page.locator('.title-bar__name').hover();
         },
       },
-      { label: '悬停', prepare: async ({ page }) => page.locator('.config-button').hover() },
+      { label: '悬停', prepare: async ({ page }) => page.locator('.config-button:not(.batch-button)').hover() },
       {
         label: '按下（配置中心打开时）',
         prepare: async ({ page }) => {
           if ((await page.locator('.config-center').count()) === 0) {
-            await page.locator('.config-button').click();
+            await page.locator('.config-button:not(.batch-button)').click();
           }
-          await expect(page.locator('.config-button')).toHaveAttribute('aria-pressed', 'true');
+          await expect(page.locator('.config-button:not(.batch-button)')).toHaveAttribute('aria-pressed', 'true');
         },
       },
     ],
@@ -672,7 +672,7 @@ const ITEMS: Item[] = [
     points: '红绿灯区域、全屏时标题栏；配置中心快捷键显示 ⌘,；退出全屏后窗口回到进入全屏前的位置',
     sizes: [SIZE_1280],
     custom: async (ctx, record) => {
-      const title = await ctx.page.locator('.config-button').getAttribute('title');
+      const title = await ctx.page.locator('.config-button:not(.batch-button)').getAttribute('title');
       ctx.notes.push(`「配置」按钮的悬停提示：${title}`);
       if (process.platform !== 'darwin') {
         ctx.notes.push('不是 macOS：本项在 Mac 上复验');

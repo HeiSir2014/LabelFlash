@@ -80,6 +80,7 @@ export function PdfPage({ pdf, paperOptions, onClose }: PdfPageProps) {
               <PdfBoxEditor
                 firstPage={pdfFile.firstPage}
                 boxes={pdf.layout.boxes}
+                isLocked={pdf.isPrinting}
                 onAdd={pdf.addBox}
                 onRemove={pdf.removeBox}
               />

@@ -10,7 +10,15 @@ import {
   type PdfStatus,
 } from '../../../shared/pdf';
 import { reportError } from '../lib/notices';
-import { canAddBox, defaultPaperKey, movePiece, printCount, visibleOrder } from '../lib/pdf-view';
+import {
+  canAddBox,
+  defaultPaperKey,
+  isPdfPrinting,
+  keepsResultOnIssue,
+  movePiece,
+  printCount,
+  visibleOrder,
+} from '../lib/pdf-view';
 
 /** 拖阈值滑块时停下 0.3 秒再重新出块：每次出块都要把每一页重新渲染一遍。 */
 const THRESHOLD_DEBOUNCE_MS = 300;
@@ -135,7 +143,11 @@ export function usePdf({ paperPrinters }: { paperPrinters: Readonly<Record<strin
         }
         if (outcome.status === 'invalid') {
           setIssue(outcome.issue);
-          clearPieces();
+          // 主进程拒绝只是因为正在打印（判定窗口比这里的 isPrinting 更宽，两边有一瞬间不一致）：
+          // 这不是这次出块真的作废了，保留已经出好的块，不要清空重来。
+          if (!keepsResultOnIssue(outcome.issue)) {
+            clearPieces();
+          }
           return;
         }
         setIssue(null);
@@ -289,7 +301,12 @@ export function usePdf({ paperPrinters }: { paperPrinters: Readonly<Record<strin
 
   const close = useCallback(async () => {
     try {
-      await window.api.closePdf();
+      const result = await window.api.closePdf();
+      if (result.status === 'invalid') {
+        // 主进程拒绝了（正在打印）：文件还在，照实说明，不能当成已经关掉清空界面。
+        setIssue(result.issue);
+        return;
+      }
       layoutRequest.current += 1;
       setPdfFile(null);
       setIssue(null);
@@ -299,7 +316,6 @@ export function usePdf({ paperPrinters }: { paperPrinters: Readonly<Record<strin
     }
   }, [clearPieces]);
 
-  const printState = status?.print?.state;
   return {
     pdfFile,
     issue,
@@ -313,7 +329,7 @@ export function usePdf({ paperPrinters }: { paperPrinters: Readonly<Record<strin
     selectedId,
     preview,
     status,
-    isPrinting: printState === 'running' || printState === 'paused',
+    isPrinting: isPdfPrinting(status),
     openFile,
     dropFile,
     changeLayout,

@@ -2,7 +2,7 @@ import type { BatchProgress } from '../../../core/batch/batch-runner';
 import { MIN_BOX_FRACTION } from '../../../core/pdf/parse-pdf-request';
 import { type CropMode, type NormalizedBox, PDF_LIMITS } from '../../../core/pdf/pdf-model';
 import { formatPaperName, PAPER_PRESETS, paperKey, parsePaperKey } from '../../../shared/paper-sizes';
-import type { PdfStatus } from '../../../shared/pdf';
+import { PDF_PRINTING_ISSUE, type PdfStatus } from '../../../shared/pdf';
 
 /** 没有特别分配时默认用 100×150 面单纸：PDF 打印最常见的就是平台导出的电子面单。 */
 export const DEFAULT_PDF_PAPER_KEY = '100x150';
@@ -181,4 +181,21 @@ export function pdfButtonProgress(status: PdfStatus | null): string | null {
     return null;
   }
   return `${print.sent}/${print.total}`;
+}
+
+/**
+ * 正在打印、不能换文件改设置：按主进程的 isActive（取消后最后一张还在送也算），不自己按
+ * print.state 猜——主进程判定的窗口比 running/paused 更宽，两边不一致的那段时间会出 bug
+ * （例如主进程已经拒绝了一次出块，界面却以为没在打，把结果当成真的作废清空）。
+ */
+export function isPdfPrinting(status: PdfStatus | null): boolean {
+  return status?.isActive ?? false;
+}
+
+/**
+ * 主进程因为「正在打印」拒绝出块、关文件时，界面要保留已经出好的块，不能清空重来：
+ * 那只是暂时拒绝，不是这次出块真的作废了。其余原因（文件坏了、处理出错……）照常清空。
+ */
+export function keepsResultOnIssue(issue: string): boolean {
+  return issue === PDF_PRINTING_ISSUE;
 }

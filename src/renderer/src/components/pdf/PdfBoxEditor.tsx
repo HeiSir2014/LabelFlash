@@ -6,6 +6,8 @@ import { boxFromDrag, canAddBox, type Point } from '../../lib/pdf-view';
 interface PdfBoxEditorProps {
   firstPage: BitmapView;
   boxes: readonly NormalizedBox[];
+  /** 打印中不能再画、删框。 */
+  isLocked: boolean;
   onAdd: (box: NormalizedBox) => void;
   onRemove: (index: number) => void;
 }
@@ -25,9 +27,9 @@ function pointOf(event: PointerEvent<HTMLDivElement>): Point {
 }
 
 /** 在第一页上拖出要打印的区域（按页面比例记），每一页按同样的位置裁。底图是程序认为「有内容」的地方。 */
-export function PdfBoxEditor({ firstPage, boxes, onAdd, onRemove }: PdfBoxEditorProps) {
+export function PdfBoxEditor({ firstPage, boxes, isLocked, onAdd, onRemove }: PdfBoxEditorProps) {
   const [drag, setDrag] = useState<{ start: Point; end: Point } | null>(null);
-  const canAdd = canAddBox(boxes);
+  const canAdd = !isLocked && canAddBox(boxes);
   const draft = drag === null ? null : boxFromDrag(drag.start, drag.end);
   return (
     <div className="pdf-box-editor">
@@ -68,7 +70,8 @@ export function PdfBoxEditor({ firstPage, boxes, onAdd, onRemove }: PdfBoxEditor
           draggable={false}
         />
         {boxes.map((box, index) => (
-          <div key={`${box.x}-${box.y}-${box.width}-${box.height}`} className="pdf-box" style={boxStyle(box)}>
+          // biome-ignore lint/suspicious/noArrayIndexKey: 框的坐标在拖动预览（draft）时会变，位置本身不是稳定键；顺序才是，删除也按顺序重排。
+          <div key={index} className="pdf-box" style={boxStyle(box)}>
             <span className="pdf-box__number">{index + 1}</span>
           </div>
         ))}
@@ -76,19 +79,23 @@ export function PdfBoxEditor({ firstPage, boxes, onAdd, onRemove }: PdfBoxEditor
       </div>
       <div className="pdf-box-editor__side">
         <p className="config-card__text">
-          {canAdd
-            ? '在第一页上按住鼠标拖出要打印的区域，可以画几个；每一页按同样的位置裁，空白的不打。'
-            : `最多 ${PDF_LIMITS.manualBoxes} 个框。`}
+          {isLocked
+            ? '正在打印：打完或取消之后再画框、删框。'
+            : canAdd
+              ? '在第一页上按住鼠标拖出要打印的区域，可以画几个；每一页按同样的位置裁，空白的不打。'
+              : `最多 ${PDF_LIMITS.manualBoxes} 个框。`}
         </p>
         {boxes.length > 0 && (
           <ol className="pdf-box-list">
-            {boxes.map((box, index) => (
-              <li key={`${box.x}-${box.y}-${box.width}-${box.height}`}>
+            {boxes.map((_box, index) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: 同上，顺序就是这个框的编号。
+              <li key={index}>
                 框 {index + 1}
                 <button
                   type="button"
                   className="button button--small button--quiet"
                   aria-label={`删掉框 ${index + 1}`}
+                  disabled={isLocked}
                   onClick={() => onRemove(index)}
                 >
                   删除

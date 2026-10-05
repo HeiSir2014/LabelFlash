@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { BatchProgress } from '../../../core/batch/batch-runner';
+import { PDF_PRINTING_ISSUE } from '../../../shared/pdf';
 import {
   boxFromDrag,
   cropLabel,
@@ -8,6 +9,8 @@ import {
   describePieces,
   describeProcessing,
   isPdfFileName,
+  isPdfPrinting,
+  keepsResultOnIssue,
   movePiece,
   paperOptions,
   parseCopies,
@@ -139,5 +142,32 @@ describe('progress', () => {
       pdfButtonProgress({ fileName: 'a.pdf', processing: null, print: { ...running, state: 'done' }, isActive: false }),
     ).toBeNull();
     expect(pdfButtonProgress(null)).toBeNull();
+  });
+});
+
+describe('isPdfPrinting', () => {
+  // 主进程判定「正在打印」的窗口比 running/paused 更宽（取消后最后一张还在送也算）：界面按主进程的
+  // isActive 来，不能自己按 print.state 猜，不然会有一段时间两边不一致。
+  test('follows the status reported by main, not the print state alone', () => {
+    expect(isPdfPrinting({ fileName: 'a.pdf', processing: null, print: null, isActive: true })).toBe(true);
+    expect(
+      isPdfPrinting({
+        fileName: 'a.pdf',
+        processing: null,
+        print: { batchId: 'b', state: 'canceled', total: 1, sent: 0, failed: 0, pauseReason: null },
+        isActive: true,
+      }),
+    ).toBe(true);
+    expect(isPdfPrinting({ fileName: 'a.pdf', processing: null, print: null, isActive: false })).toBe(false);
+    expect(isPdfPrinting(null)).toBe(false);
+  });
+});
+
+describe('keepsResultOnIssue', () => {
+  // 主进程因为「正在打印」拒绝出块、关文件时，界面不能清空已经出好的块重来：那只是暂时拒绝，
+  // 不是这次出块真的作废了。其余原因（文件坏了、处理出错……）照常清空。
+  test('only keeps the current result for the shared "printing" refusal', () => {
+    expect(keepsResultOnIssue(PDF_PRINTING_ISSUE)).toBe(true);
+    expect(keepsResultOnIssue('处理 PDF 时出错：详细原因已写入日志，重新选择文件再试')).toBe(false);
   });
 });

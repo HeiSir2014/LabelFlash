@@ -37,7 +37,12 @@ export function rawResultFromProbe(reply: ProbeReply): RawSendResult {
     return { ok: true };
   }
   if (reply.error === null) {
-    return { ok: false, failure: { kind: 'uncertain', detail: 'the printer probe stopped answering' } };
+    return reply.neverStarted
+      ? {
+          ok: false,
+          failure: { kind: 'not-sent', detail: 'the printer probe restarted before this command was read' },
+        }
+      : { ok: false, failure: { kind: 'uncertain', detail: 'the printer probe stopped answering' } };
   }
   const code = Number(WIN32_ERROR_PATTERN.exec(reply.error)?.[1]);
   return { ok: false, failure: { kind: WIN32_FAILURES[code] ?? 'error', detail: reply.error } };

@@ -240,6 +240,8 @@ function failureText(reason: RawSendFailureKind, detail: string): string {
       return '发送失败：没有向这台打印机发送的权限。在 Windows 打印机属性的「安全」里给当前用户「打印」权限后再试';
     case 'raw-rejected':
       return '发送失败：这台打印机的驱动不接受直接发送的指令。装热敏标签机厂家的驱动后再试；只想正常打印的话，把指令集改成「不发指令」';
+    case 'not-sent':
+      return '没有发出去：排队时探测进程重启了，这条还没轮到就被取消。请重试';
     case 'uncertain':
       return '不确定有没有发出去：系统的打印服务没有及时回应。看看打印机有没有动作，再决定要不要重发';
     case 'unsupported':

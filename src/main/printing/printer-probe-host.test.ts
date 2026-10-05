@@ -8,6 +8,7 @@ import {
   PrinterProbeHost,
   type ProbeProcess,
   probeArguments,
+  RAW_SEND_TIMEOUT_MS,
   spawnPowerShellProbe,
 } from './printer-probe-host';
 
@@ -42,7 +43,7 @@ class FakeProbe extends EventEmitter implements ProbeProcess {
   }
 }
 
-function harness() {
+function harness(rawTimeoutMs: number = TIMEOUT_MS) {
   const spawned: FakeProbe[] = [];
   const warnings: string[] = [];
   const host = new PrinterProbeHost(
@@ -53,6 +54,7 @@ function harness() {
     },
     TIMEOUT_MS,
     (message) => warnings.push(message),
+    rawTimeoutMs,
   );
   return { host, spawned, warnings };
 }
@@ -163,6 +165,53 @@ describe('PrinterProbeHost', () => {
   test('cannot tell whether a raw send happened when the probe stops answering', async () => {
     const { host } = harness();
     expect(await host.sendRaw('A', Buffer.from('FORMFEED\r\n'))).toEqual({ ok: false, error: null });
+  });
+
+  test('defaults the raw send timeout to 30 seconds, much longer than a status query', () => {
+    expect(RAW_SEND_TIMEOUT_MS).toBe(30_000);
+    expect(RAW_SEND_TIMEOUT_MS).toBeGreaterThan(PROBE_QUERY_TIMEOUT_MS);
+  });
+
+  // 两个请求都立即写进了探测进程的标准输入，但第二个要等第一个处理完才轮到；
+  // 第一个超时并重启探测进程时，第二个连行都还没被探测进程读到，不该背上和第一个一样的「不确定」。
+  test('does not start timing out a queued request until the one ahead of it is done', async () => {
+    const { host, spawned } = harness();
+    const first = host.sendRaw('A', Buffer.from('X'));
+    const second = host.sendRaw('B', Buffer.from('Y'));
+    const probe = spawned[0] as FakeProbe;
+    await nextRequests(probe, 2);
+    const [firstReply, secondReply] = await Promise.all([first, second]);
+    expect(firstReply).toEqual({ ok: false, error: null });
+    expect(secondReply).toEqual({ ok: false, error: null, neverStarted: true });
+    expect(spawned).toHaveLength(1);
+  });
+
+  test('starts the next request only after the one ahead of it answers, not when it was enqueued', async () => {
+    const { host, spawned } = harness();
+    const first = host.query('status', 'A');
+    const second = host.query('status', 'B');
+    const probe = spawned[0] as FakeProbe;
+    await nextRequests(probe, 2);
+    // 先回答第一个：这时第二个才算「排到」，它自己的计时器才开始算。
+    probe.reply('ok Normal');
+    expect(await first).toBe('Normal');
+    probe.reply('ok PaperOut');
+    expect(await second).toBe('PaperOut');
+    // 两个回答之间可以间隔超过 TIMEOUT_MS，因为第二个的计时器是第一个答完才启动的。
+    expect(spawned).toHaveLength(1);
+  });
+
+  test('gives raw sends their own longer timeout than status queries', async () => {
+    // 探测查询的超时很短；原样发送用独立的、更长的超时，不受这个短超时影响。
+    const { host, spawned } = harness(5_000);
+    const answer = host.sendRaw('A', Buffer.from('FORMFEED\r\n'));
+    const probe = spawned[0] as FakeProbe;
+    await nextRequests(probe, 1);
+    // 等过状态查询的超时（TIMEOUT_MS）还没到原样发送的超时：不应该被重启。
+    await Bun.sleep(TIMEOUT_MS * 3);
+    expect(spawned).toHaveLength(1);
+    probe.reply('ok 1');
+    expect(await answer).toEqual({ ok: true, payload: '1' });
   });
 
   test('refuses an empty or oversized raw payload before writing anything', () => {

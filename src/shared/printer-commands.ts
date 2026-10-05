@@ -2,12 +2,14 @@ import type { CommandSet, DetectedCommandSet, PrinterCommandConfig } from '../co
 
 /**
  * 发不出去的原因。Windows 按 winspool 的错误码分：找不到打印机、没有权限、驱动不收 RAW；
- * uncertain = 系统的打印服务没有及时回应，不知道发没发出去；unsupported = 这个平台不能直接发；其余为 error。
+ * not-sent = 探测进程重启时这条还没排到（连行都没被读到），确定没发出去；
+ * uncertain = 排到了但探测进程没有及时回应，不知道发没发出去；unsupported = 这个平台不能直接发；其余为 error。
  */
 export const RAW_SEND_FAILURES = [
   'not-found',
   'access-denied',
   'raw-rejected',
+  'not-sent',
   'uncertain',
   'unsupported',
   'error',

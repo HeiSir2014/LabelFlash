@@ -39,6 +39,7 @@ import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
 import { useConfigCenter } from './view-models/use-config-center';
+import { useDiagnosis } from './view-models/use-diagnosis';
 import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
@@ -127,6 +128,7 @@ export function App() {
     [installedNames, responsibilitiesByName],
   );
   const printerProfiles = usePrinterProfiles(installedNames, assignedNames, expectedPapers);
+  const diagnosis = useDiagnosis();
   /** 这台打印机负责的纸：标签机指令的纸张按它预填；没负责纸张时按 60×40。 */
   const paperForPrinter = useCallback(
     (name: string) => parsePaperKey(expectedPapers[name] ?? '') ?? DEFAULT_PAPER,
@@ -429,6 +431,7 @@ export function App() {
                 onRefresh={() => void printers.refresh()}
                 onTestPrint={printTest}
                 commands={printerCommands}
+                diagnosis={diagnosis}
               />
             }
             localApi={localApi}

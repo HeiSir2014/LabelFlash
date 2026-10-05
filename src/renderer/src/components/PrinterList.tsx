@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import type { PrinterInfo, PrintResult } from '../../../core/types';
 import { DEFAULT_PAPER } from '../../../shared/label-paper';
 import { paperKey, parsePaperKey } from '../../../shared/paper-sizes';
@@ -6,8 +6,10 @@ import { filterPrinters } from '../lib/list-filters';
 import { describePaperCheck } from '../lib/paper-text';
 import { expectedPaperKey, type PaperRow, type Responsibilities } from '../lib/printer-assignment';
 import { describeResult } from '../lib/status-text';
+import type { DiagnosisControls } from '../view-models/use-diagnosis';
 import type { PrinterCommandsModel } from '../view-models/use-printer-commands';
 import type { PrinterProfile } from '../view-models/use-printer-profiles';
+import { DiagnosisPanel } from './DiagnosisPanel';
 import { PrinterCommandsPanel } from './PrinterCommandsPanel';
 
 const LABEL_PAPER_KEY = paperKey(DEFAULT_PAPER);
@@ -29,6 +31,8 @@ interface PrinterListProps {
   onTestPrint: (printerName: string, paperKey: string) => Promise<PrintResult | null>;
   /** 每台打印机下面展开的「标签机指令」。 */
   commands: PrinterCommandsModel;
+  /** 「诊断」的状态和操作（view-models/use-diagnosis.ts）。 */
+  diagnosis: DiagnosisControls;
 }
 
 /** 工作台右侧的打印机页：上面按纸张分配打印机，下面列出本机所有打印机和各自负责什么。 */
@@ -45,6 +49,7 @@ export function PrinterList({
   onRefresh,
   onTestPrint,
   commands,
+  diagnosis,
 }: PrinterListProps) {
   const [query, setQuery] = useState('');
   const [testMessages, setTestMessages] = useState<Record<string, string>>({});
@@ -61,6 +66,15 @@ export function PrinterList({
           : describeResult(result, Date.now()).detail;
     setTestMessages((messages) => ({ ...messages, [printerName]: message }));
   };
+
+  // 诊断的「改指令集」复用打印机行里已有的「标签机指令」面板，不新写一份选指令集的逻辑。
+  const renderCommandSetPicker = (printerName: string): ReactNode => (
+    <div className="diagnosis-item__fixes">
+      <button type="button" className="button button--small" onClick={() => commands.toggle(printerName)}>
+        {commands.openName === printerName ? '已展开下面的「标签机指令」' : '展开下面的「标签机指令」改指令集'}
+      </button>
+    </div>
+  );
 
   return (
     <div className="panel-body">
@@ -146,6 +160,14 @@ export function PrinterList({
                 <button
                   type="button"
                   className="button button--small button--quiet"
+                  aria-expanded={diagnosis.view?.printerName === printer.name}
+                  onClick={() => diagnosis.open(printer.name, expectedKey)}
+                >
+                  诊断
+                </button>
+                <button
+                  type="button"
+                  className="button button--small button--quiet"
                   onClick={() => void runTest(printer.name, expectedKey ?? LABEL_PAPER_KEY)}
                 >
                   测试页
@@ -175,6 +197,18 @@ export function PrinterList({
                 </div>
               )}
               {testMessages[printer.name] && <p className="printer-row__message">{testMessages[printer.name]}</p>}
+              {diagnosis.view?.printerName === printer.name && (
+                <DiagnosisPanel
+                  view={diagnosis.view}
+                  title={printer.displayName}
+                  onRerun={diagnosis.rerun}
+                  onClose={diagnosis.close}
+                  onFix={diagnosis.applyFix}
+                  onAnswerFeed={diagnosis.answerFeed}
+                  onTestPrint={() => void runTest(printer.name, expectedKey ?? LABEL_PAPER_KEY)}
+                  commandSetPicker={renderCommandSetPicker(printer.name)}
+                />
+              )}
               {commands.openName === printer.name && (
                 <PrinterCommandsPanel model={commands} displayName={printer.displayName} />
               )}
@@ -188,6 +222,25 @@ export function PrinterList({
             ? '系统里没有打印机。先在 Windows「设置 › 打印机和扫描仪」里添加，再点刷新'
             : `没有名称包含「${query}」的打印机`}
         </p>
+      )}
+      {!isLoading && printers.length === 0 && (
+        <div className="printer-empty-actions">
+          <button type="button" className="button button--small" onClick={() => diagnosis.open(null, null)}>
+            检查后台打印服务
+          </button>
+        </div>
+      )}
+      {diagnosis.view !== null && diagnosis.view.printerName === null && (
+        <DiagnosisPanel
+          view={diagnosis.view}
+          title="后台打印服务"
+          onRerun={diagnosis.rerun}
+          onClose={diagnosis.close}
+          onFix={diagnosis.applyFix}
+          onAnswerFeed={diagnosis.answerFeed}
+          onTestPrint={null}
+          commandSetPicker={null}
+        />
       )}
     </div>
   );

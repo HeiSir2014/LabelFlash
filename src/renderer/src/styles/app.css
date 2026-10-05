@@ -1121,6 +1121,96 @@ textarea {
   font-size: 12px;
 }
 
+.printer-empty-actions {
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+/* 诊断面板：打印机行下面展开，占满两列 */
+.diagnosis {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--space-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+}
+
+.diagnosis__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-housing);
+}
+
+.diagnosis__summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--color-ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.diagnosis__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diagnosis-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-housing);
+}
+
+.diagnosis-item:last-child {
+  border-bottom: none;
+}
+
+.diagnosis-item__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.diagnosis-item__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.diagnosis-item__detail,
+.diagnosis-item__next,
+.diagnosis-item__outcome {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.diagnosis-item__next {
+  color: var(--color-ink-soft);
+}
+
+.diagnosis-item__fixes,
+.diagnosis-item__question {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 12px;
+}
+
+.diagnosis-item__outcome--error {
+  color: var(--color-error);
+}
+
 /* 驱动默认纸张和这台负责的纸对不上：贴在那一台下面，附处理按钮 */
 .paper-warning {
   display: flex;
@@ -1216,6 +1306,17 @@ textarea {
 /* 打印机的问题（缺纸、离线……） */
 .badge--error {
   background: var(--color-error);
+  color: var(--color-paper);
+}
+
+/* 诊断：通过 / 要注意 */
+.badge--ok {
+  background: var(--color-success);
+  color: var(--color-paper);
+}
+
+.badge--warning {
+  background: var(--color-warning);
   color: var(--color-paper);
 }
 

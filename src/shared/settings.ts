@@ -1,5 +1,7 @@
 import { MAX_DEDUP_WINDOW_MS } from '../core/dedup-guard';
 import { sanitizeWebhooks, type WebhookEndpoint } from '../core/notify/webhook-model';
+import type { PrinterCommandConfig } from '../core/printer-commands/command-model';
+import { sanitizeCommandConfig } from '../core/printer-commands/sanitize-command-config';
 import { defaultRuleSettings, type RuleSetting, sanitizeRuleSettings } from '../core/scan/rule-settings';
 import { currentTemplateId, DEFAULT_TEMPLATE_ID } from '../core/templates/builtin-templates';
 import { DEFAULT_NOTE_OVERRIDE, type NoteOverride } from '../core/templates/note-override';
@@ -61,6 +63,11 @@ export interface AppSettings {
   apiLanEnabled: boolean;
   /** 允许调用本机接口的网站（http/https 的 origin），由电脑上的授权框加入，配置中心可以撤销。 */
   apiAuthorizedOrigins: string[];
+  /**
+   * 每台打印机的标签机指令设置（指令集、浓度、速度、纸张……）：键是系统打印机名。
+   * 只在操作员点「保存并发送」时经 printer:commands-apply 写入并发给打印机一次，打印前不再发。
+   */
+  printerCommands: Record<string, PrinterCommandConfig>;
 }
 
 export const MS_PER_SECOND = 1_000;
@@ -76,6 +83,8 @@ export const SCAN_LINE_GAP_RANGE = { min: 20, max: 500, default: 80 } as const;
 export const API_PORT_RANGE = { min: 1024, max: 65_535 } as const;
 /** 授权网站最多这么多个：一台电脑用到的网页系统不会太多；防止异常数据撑大设置。 */
 export const MAX_AUTHORIZED_ORIGINS = 50;
+/** 最多为这么多台打印机保存指令设置：和纸张分配一样，一台电脑用不到这么多；防止异常数据撑大设置。 */
+export const MAX_PRINTER_COMMAND_ENTRIES = 32;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   paperPrinters: {},
@@ -100,6 +109,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // 局域网里的客户端软件是主要用法之一；没有程序密钥时局域网请求一律拒绝，默认开着也不会被随便调用。
   apiLanEnabled: true,
   apiAuthorizedOrigins: [],
+  printerCommands: {},
 };
 
 export function sanitizeSettings(value: unknown): AppSettings {
@@ -140,6 +150,7 @@ export function sanitizeSettings(value: unknown): AppSettings {
     apiInstanceId: sanitizeInstanceId(input['apiInstanceId']),
     apiLanEnabled: sanitizeBoolean(input['apiLanEnabled'], DEFAULT_SETTINGS.apiLanEnabled),
     apiAuthorizedOrigins: sanitizeOrigins(input['apiAuthorizedOrigins']),
+    printerCommands: sanitizePrinterCommands(input['printerCommands']),
   };
 }
 
@@ -214,6 +225,20 @@ function sanitizePaperPrinters(value: unknown, legacySelected: unknown): Record<
 
 function sanitizePrinterName(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 && value.length <= MAX_PRINTER_NAME_LENGTH ? value : null;
+}
+
+function sanitizePrinterCommands(value: unknown): Record<string, PrinterCommandConfig> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  const entries: [string, PrinterCommandConfig][] = [];
+  for (const [name, config] of Object.entries(value)) {
+    if (sanitizePrinterName(name) !== null && entries.length < MAX_PRINTER_COMMAND_ENTRIES) {
+      entries.push([name, sanitizeCommandConfig(config)]);
+    }
+  }
+  // fromEntries 按「定义自己的属性」写入：名为 __proto__ 的打印机也只是一个普通的键。
+  return Object.fromEntries(entries);
 }
 
 /** 去掉的「样衣」模板换成版式相同的通用模板（见 currentTemplateId）。 */

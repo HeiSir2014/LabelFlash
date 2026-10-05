@@ -8,6 +8,7 @@ import {
   MAX_DEDUP_WINDOW_SECONDS,
   MAX_NOTE_PRESETS,
   MAX_PAPER_ASSIGNMENTS,
+  MAX_PRINTER_COMMAND_ENTRIES,
   SCAN_LINE_GAP_RANGE,
   sanitizeSettings,
   secondsToMs,
@@ -59,6 +60,17 @@ describe('sanitizeSettings', () => {
       apiInstanceId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
       apiLanEnabled: false,
       apiAuthorizedOrigins: ['https://erp.example.com', 'http://localhost:8080'],
+      printerCommands: {
+        标签机A: {
+          commandSet: 'tspl',
+          density: 8,
+          speed: 4,
+          media: null,
+          orientation: null,
+          finish: 'tear',
+          dpi: null,
+        },
+      },
     };
     expect(sanitizeSettings(settings)).toEqual(settings);
   });
@@ -224,5 +236,43 @@ describe('local api settings', () => {
     expect(kept[0]).toBe('https://erp.example.com');
     expect(kept).toHaveLength(MAX_AUTHORIZED_ORIGINS);
     expect(new Set(kept).size).toBe(kept.length);
+  });
+});
+
+describe('printerCommands', () => {
+  test('keeps each printer config and turns bad values into 不改', () => {
+    const settings = sanitizeSettings({
+      printerCommands: {
+        标签机A: { commandSet: 'tspl', density: 99, speed: 4, media: null, orientation: 'sideways', finish: 'tear' },
+        '': { commandSet: 'zpl' },
+      },
+    });
+    expect(settings.printerCommands).toEqual({
+      标签机A: {
+        commandSet: 'tspl',
+        density: null,
+        speed: 4,
+        media: null,
+        orientation: null,
+        finish: 'tear',
+        dpi: null,
+      },
+    });
+  });
+
+  test('keeps at most MAX_PRINTER_COMMAND_ENTRIES printers', () => {
+    const many = Object.fromEntries(
+      Array.from({ length: MAX_PRINTER_COMMAND_ENTRIES + 1 }, (_, index) => [`打印机${index}`, { commandSet: 'none' }]),
+    );
+    expect(Object.keys(sanitizeSettings({ printerCommands: many }).printerCommands)).toHaveLength(
+      MAX_PRINTER_COMMAND_ENTRIES,
+    );
+  });
+
+  // 打印机名来自系统：名为 __proto__ 的打印机只是普通的键，不能改到原型。
+  test('stores a printer named __proto__ as a plain own key', () => {
+    const settings = sanitizeSettings(JSON.parse('{"printerCommands":{"__proto__":{"commandSet":"epl"}}}'));
+    expect(Object.getPrototypeOf(settings.printerCommands)).toBe(Object.prototype);
+    expect(Object.hasOwn(settings.printerCommands, '__proto__')).toBe(true);
   });
 });

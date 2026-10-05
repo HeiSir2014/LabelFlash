@@ -1,4 +1,5 @@
 import type { DriverCatalog } from '../drivers/catalog-model';
+import type { InstallTarget } from '../drivers/install-plan';
 import { sanitizeCatalog } from '../drivers/sanitize-catalog';
 
 /**
@@ -53,4 +54,13 @@ export function exampleCatalog(models?: unknown[]): DriverCatalog {
     throw new Error(`example catalog is invalid: ${parsed.issue}`);
   }
   return parsed.catalog;
+}
+
+/** 示例清单第一个型号的 Windows 安装包。 */
+export function exampleWindowsTarget(): InstallTarget {
+  const model = exampleCatalog().models[0];
+  if (!model?.windows) {
+    throw new Error('example model has no Windows package');
+  }
+  return { platform: 'windows', model, package: model.windows };
 }

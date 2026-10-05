@@ -50,9 +50,16 @@ function setup(overrides: Partial<Omit<Setup, 'deps' | 'clock'>> & { printers?: 
 async function run(
   context: Setup,
   signal = new AbortController().signal,
+  searchForNewPrinter = true,
 ): Promise<{ result: InstallState; steps: string[] }> {
   const states: InstallState[] = [];
-  const result = await runDriverInstall(exampleWindowsTarget(), context.deps, (state) => states.push(state), signal);
+  const result = await runDriverInstall(
+    exampleWindowsTarget(),
+    context.deps,
+    (state) => states.push(state),
+    signal,
+    searchForNewPrinter,
+  );
   return { result, steps: states.map((state) => (state.phase === 'running' ? state.step : state.phase)) };
 }
 
@@ -64,6 +71,13 @@ describe('runDriverInstall', () => {
     expect(steps).toEqual(['downloading', 'downloading', 'verifying', 'installing', 'finding-printer', 'done']);
     expect(context.installer.installed).toEqual([FAKE_DOWNLOAD.path]);
     expect(context.downloader.discarded).toEqual([FAKE_DOWNLOAD.path]);
+  });
+
+  test('skips finding a new printer and reports null newPrinters when reinstalling for an existing one', async () => {
+    const context = setup();
+    const { result, steps } = await run(context, new AbortController().signal, false);
+    expect(result).toEqual({ phase: 'done', newPrinters: null, needsRestart: false });
+    expect(steps).toEqual(['downloading', 'downloading', 'verifying', 'installing', 'done']);
   });
 
   test('never runs a download whose SHA-256 differs from the catalog', async () => {

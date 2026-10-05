@@ -21,7 +21,11 @@ export type InstallFailure =
 
 export type InstallState =
   | { phase: 'running'; step: InstallStep; receivedBytes: number; totalBytes: number }
-  | { phase: 'done'; newPrinters: string[]; needsRestart: boolean }
+  /**
+   * newPrinters：null 表示没找（重新安装一台已经有打印机队列的设备，见 runDriverInstall 的
+   * searchForNewPrinter）；[] 表示找了但在超时内没看到新的；非空表示找到的新打印机名字。
+   */
+  | { phase: 'done'; newPrinters: string[] | null; needsRestart: boolean }
   /** exitCode：安装程序的退出码（只有 installer-failed 才有，提权脚本自己出错时为 null）。 */
   | { phase: 'failed'; failure: InstallFailure; exitCode: number | null };
 
@@ -110,6 +114,8 @@ export async function runDriverInstall(
   deps: InstallFlowDeps,
   onState: (state: InstallState) => void,
   signal: AbortSignal,
+  /** false：重新安装一台已经有打印机队列的设备（5b 按驱动名重装）；跳过「找新打印机」这一步。 */
+  searchForNewPrinter = true,
 ): Promise<InstallState> {
   const pkg = target.package;
   const label = `[drivers] ${target.model.id}`;
@@ -124,7 +130,7 @@ export async function runDriverInstall(
   const running = (step: InstallStep, receivedBytes: number): void =>
     onState({ phase: 'running', step, receivedBytes, totalBytes: pkg.sizeBytes });
 
-  const before = await listOrNull(deps);
+  const before = searchForNewPrinter ? await listOrNull(deps) : null;
   running('downloading', 0);
   deps.log(`${label}: downloading ${pkg.url} (${pkg.sizeBytes} bytes)`);
   let file: DownloadedFile;
@@ -196,6 +202,10 @@ export async function runDriverInstall(
       .catch((error: unknown) => deps.log(`${label}: could not delete ${file.path}: ${describeError(error)}`));
   }
 
+  if (!searchForNewPrinter) {
+    deps.log(`${label}: installed${needsRestart ? ' (restart needed)' : ''}`);
+    return finish({ phase: 'done', newPrinters: null, needsRestart });
+  }
   running('finding-printer', pkg.sizeBytes);
   const newPrinters = before === null ? [] : await findNewPrinters(before, deps);
   deps.log(

@@ -143,15 +143,116 @@ describe('DriverStation', () => {
     expect(drivers.hints().modelForDriverName('示例品牌 X1')).toBeNull();
   });
 
-  test('reinstalls by driver name for the diagnosis', async () => {
+  test('reinstalls by driver name for the diagnosis, skipping the search for a new printer', async () => {
     const drivers = station();
     await drivers.installForDriverName(' 示例品牌  x1 ');
     await drivers.settled();
     expect(drivers.status().install).toMatchObject({
       modelId: 'example-x1',
       deviceKey: null,
-      state: { phase: 'done' },
+      state: { phase: 'done', newPrinters: null },
     });
     await expect(drivers.installForDriverName('Generic / Text Only')).rejects.toThrow();
+  });
+
+  test('detect resolves to a status with isDetecting already false', async () => {
+    const status = await station().detect(false);
+    expect(status.isDetecting).toBe(false);
+  });
+
+  test('clears the in-progress flag even when a detection throws, so later calls try again', async () => {
+    let calls = 0;
+    const throwing = {
+      load: async (): Promise<CatalogLoad> => {
+        calls += 1;
+        throw new Error('boom');
+      },
+      current: () => null,
+    };
+    const drivers = new DriverStation({
+      platform: 'windows',
+      catalog: throwing,
+      devices: { detect: async () => [] },
+      flow: {
+        downloader: new FakeDownloader(FAKE_DOWNLOAD),
+        verifier: new FakeVerifier({ status: 'valid', signer: EXAMPLE_SIGNER }),
+        installer,
+        listPrinters: new FakePrinterList([[]]).list,
+        sleep: async (ms) => clock.advance(ms),
+        clock,
+      },
+      openExternal: async () => undefined,
+      onStatus: () => undefined,
+      clock,
+      log: () => undefined,
+    });
+    await expect(drivers.detect(false)).rejects.toThrow('boom');
+    await expect(drivers.detect(false)).rejects.toThrow('boom');
+    expect(calls).toBe(2);
+  });
+
+  test('reinstall() resolves only once the install has finished, success case', async () => {
+    const drivers = station();
+    const result = await drivers.reinstall('示例品牌 X1');
+    expect(result).toEqual({ phase: 'done', newPrinters: null, needsRestart: false });
+    expect(drivers.status().install?.state).toEqual(result);
+  });
+
+  test('reinstall() resolves to the declined state when the operator declines elevation, not just on success', async () => {
+    installer = new FakeInstaller({ kind: 'declined' });
+    const drivers = station();
+    const result = await drivers.reinstall('示例品牌 X1');
+    expect(result).toEqual({ phase: 'failed', failure: 'admin-declined', exitCode: null });
+    expect(drivers.status().install?.state).toEqual(result);
+  });
+
+  test('queues a fresh detection after an install instead of joining one already in flight', async () => {
+    let detectCalls = 0;
+    let releaseStaleDetect: () => void = () => undefined;
+    const staleDetectGate = new Promise<void>((resolve) => {
+      releaseStaleDetect = resolve;
+    });
+    const devices = {
+      detect: async (): Promise<DetectedDevice[]> => {
+        detectCalls += 1;
+        if (detectCalls === 2) {
+          // 第二次检测在装驱动之前就开始、卡住不动：不能让装完后的刷新直接复用它的（过时的）结果。
+          await staleDetectGate;
+          return [KNOWN, UNKNOWN_PRINTER, UNKNOWN_GADGET];
+        }
+        if (detectCalls === 3) {
+          // 第三次（真正装完之后才发起的）检测：这台设备已经不缺驱动了。
+          return [UNKNOWN_PRINTER, UNKNOWN_GADGET];
+        }
+        return [KNOWN, UNKNOWN_PRINTER, UNKNOWN_GADGET];
+      },
+    };
+    const drivers = new DriverStation({
+      platform: 'windows',
+      catalog: { load: async () => load, current: () => (load.kind === 'ready' ? load.catalog : null) },
+      devices,
+      flow: {
+        downloader: new FakeDownloader(FAKE_DOWNLOAD),
+        verifier: new FakeVerifier({ status: 'valid', signer: EXAMPLE_SIGNER }),
+        installer,
+        listPrinters: new FakePrinterList([[], ['示例标签机']]).list,
+        sleep: async (ms) => clock.advance(ms),
+        clock,
+      },
+      openExternal: async () => undefined,
+      onStatus: (status) => pushed.push(status),
+      clock,
+      log: () => undefined,
+    });
+
+    await drivers.detect(false); // call #1：先正常跑一次，populate devices（KNOWN 还在）。
+    const staleDetect = drivers.detect(false); // call #2：模拟装驱动之前就已经在跑、还没结束的那一次检测。
+    drivers.install(KNOWN.key);
+    setTimeout(releaseStaleDetect, 10);
+    await drivers.settled();
+    await staleDetect;
+
+    expect(detectCalls).toBe(3);
+    expect(drivers.status().devices?.map((device) => device.key)).not.toContain(KNOWN.key);
   });
 });

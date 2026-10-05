@@ -127,7 +127,8 @@ test('reinstalls the driver of an installed printer by its driver name', async (
     await callApi(page, 'updateSettings', { driverCatalogUrl: server.url });
     await openConfig(page, '打印机');
     await callApi(page, 'reinstallPrinterDriver', NEW_PRINTER.name);
-    await expect(driverCard(page).getByRole('status')).toContainText('驱动已装好');
+    // 重装的是一台已经有打印机队列的设备，不是新插的 USB 设备：不找「新」打印机，也不提示插拔 USB 线。
+    await expect(driverCard(page).getByRole('status')).toContainText('驱动已重新安装');
     expect(await fakeInstalls(app)).toHaveLength(1);
   } finally {
     await server.close();

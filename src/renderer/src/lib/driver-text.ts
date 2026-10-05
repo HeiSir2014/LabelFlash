@@ -126,6 +126,10 @@ export function installText(view: DriverInstallView, platform: DriverPlatformVie
       };
     case 'done': {
       const restart = state.needsRestart ? '（重启电脑后生效）' : '';
+      if (state.newPrinters === null) {
+        // 重新安装的是一台已经有打印机队列的设备：没有「新」打印机要找，不提示插拔 USB 线。
+        return { tone: 'ok', text: `驱动已重新安装${restart}` };
+      }
       return state.newPrinters.length > 0
         ? {
             tone: 'ok',

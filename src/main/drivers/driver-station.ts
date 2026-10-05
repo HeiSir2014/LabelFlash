@@ -58,6 +58,8 @@ export class DriverStation {
   private isDetecting = false;
   private installView: DriverInstallView | null = null;
   private installCount = 0;
+  /** 当前（或最近一次）安装本身的结果：只到「装完或失败」为止，不含装完之后的重新检测。给 reinstall() 用。 */
+  private outcome: Promise<InstallState> | null = null;
   private controller: AbortController | null = null;
   private running: Promise<void> | null = null;
   private lastPushAt = Number.NEGATIVE_INFINITY;
@@ -94,12 +96,15 @@ export class DriverStation {
       // true（它在 isDetecting 被置回 false 之前就生成了），直接把它当 detect() 的结果会把界面的「检测中」状态
       // 卡死——IPC 的返回值和随后的推送谁先到达渲染进程不确定，用旧快照覆盖新推送就再也不会恢复。
       // 这里在标记复位之后重新取一次 status()，保证两边看到的都是检测结束后的状态。
-      this.detecting = this.runDetect(force).then(() => {
-        this.detecting = null;
-        this.isDetecting = false;
-        this.push(true);
-        return this.status();
-      });
+      // 用 finally（不是 then 的回调里才清标记）：runDetect 万一抛出意外的异常，标记也要清掉，
+      // 不然 detecting 永远不为 null，以后每次 detect() 都会卡在这个已经拒绝的 promise 上。
+      this.detecting = this.runDetect(force)
+        .finally(() => {
+          this.detecting = null;
+          this.isDetecting = false;
+          this.push(true);
+        })
+        .then(() => this.status());
     }
     return this.detecting;
   }
@@ -131,6 +136,20 @@ export class DriverStation {
       throw new Error(`No installable driver in the catalog for "${driverName}"`);
     }
     return this.installModel(hint.modelId);
+  }
+
+  /**
+   * 给同一进程里需要等真正装完（成功或失败）才继续的调用方用（例如 5b 的诊断流程：重装后要再探测一次，
+   * 不能提前探测）：按驱动名重装，等到 outcome 落定才返回。IPC 的 drivers:reinstall-for-printer 仍然调用
+   * installForDriverName，立即返回、进度照常经 onStatus 推送，这里不改那条路径。
+   */
+  async reinstall(driverName: string): Promise<InstallState> {
+    await this.installForDriverName(driverName);
+    const outcome = this.outcome;
+    if (outcome === null) {
+      throw new Error(`Driver install for "${driverName}" did not start`);
+    }
+    return outcome;
   }
 
   cancelInstall(): void {
@@ -217,27 +236,50 @@ export class DriverStation {
       state: { phase: 'running', step: 'downloading', receivedBytes: 0, totalBytes: target.package.sizeBytes },
     };
     this.push(true);
-    this.running = this.run(target, controller.signal);
+    // deviceKey 为 null：按驱动名重装一台已经有打印机队列的设备（5b），不是新插的 USB 设备，
+    // 跳过「找新打印机」（没有「新」的可找，也不提示插拔 USB 线）。
+    const outcome = this.runInstall(target, deviceKey !== null, controller.signal);
+    this.outcome = outcome;
+    // 安装本身（outcome）和装完之后的重新检测分开：reinstall() 只等 outcome；settled() 仍然等两者都完。
+    this.running = outcome.then(() => this.requestFreshDetect()).then(() => undefined);
   }
 
-  private async run(target: InstallTarget, signal: AbortSignal): Promise<void> {
+  private async runInstall(
+    target: InstallTarget,
+    searchForNewPrinter: boolean,
+    signal: AbortSignal,
+  ): Promise<InstallState> {
+    let final: InstallState;
     try {
-      await runDriverInstall(
+      final = await runDriverInstall(
         target,
         { ...this.deps.flow, log: this.deps.log },
         (state) => this.setState(state),
         signal,
+        searchForNewPrinter,
       );
     } catch (error) {
       this.deps.log(
         `[drivers] install of ${target.model.id} stopped unexpectedly: ${error instanceof Error ? error.message : String(error)}`,
       );
-      this.setState({ phase: 'failed', failure: 'internal', exitCode: null });
+      final = { phase: 'failed', failure: 'internal', exitCode: null };
+      this.setState(final);
     } finally {
       this.controller = null;
     }
-    // 装好的设备不再缺驱动：重新检测一次，列表跟着变。
-    await this.detect(false);
+    return final;
+  }
+
+  /**
+   * 装好的设备不再缺驱动：重新检测一次，列表跟着变。如果已经有一次检测在跑（它开始时还没装上驱动），
+   * 不能直接把那次的结果当成「装完之后」的状态——等它结束后再专门发起一次新的。
+   */
+  private requestFreshDetect(): Promise<DriverStatus> {
+    const inFlight = this.detecting;
+    if (inFlight === null) {
+      return this.detect(false);
+    }
+    return inFlight.catch(() => undefined).then(() => this.detect(false));
   }
 
   private setState(state: InstallState): void {

@@ -113,6 +113,13 @@ describe('install progress', () => {
     );
   });
 
+  test('says the driver was reinstalled, without asking to replug USB, for a reinstall of an existing printer', () => {
+    const text = installText(install({ phase: 'done', newPrinters: null, needsRestart: false }), 'windows');
+    expect(text).toEqual({ tone: 'ok', text: '驱动已重新安装' });
+    expect(text.text).not.toContain('新打印机');
+    expect(text.text).not.toContain('插拔');
+  });
+
   test('explains each failure with a next step', () => {
     expect(
       installText(install({ phase: 'failed', failure: 'hash-mismatch', exitCode: null }), 'windows'),

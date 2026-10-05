@@ -6,7 +6,6 @@ import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net, 
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
-import { NO_DRIVER_HINTS } from '../core/drivers/driver-hints';
 import type { DriverPlatform } from '../core/drivers/install-plan';
 import { PrintQueue } from '../core/print-queue';
 import { PrintService } from '../core/print-service';
@@ -347,9 +346,10 @@ async function bootstrap(): Promise<void> {
     },
     driverNameOf: (name) => (fakePrinters ? fakePrinters.driverName(name) : queryDriverName(name, probeHost)),
     driverDpi: async (name) => (await profiles.get(name))?.dpi ?? null,
-    // 5c（驱动安装）的在线驱动清单接进来之前，「自动」只按驱动名认。
-    // 取值函数：5c 的在线驱动清单接进来后替换这里，不用重启主进程或重建 PrinterCommands 就能生效。
-    hints: () => NO_DRIVER_HINTS,
+    // 取值函数：清单下载完、装好驱动之后才会有内容，不能在构造时取一次就定住，每次用到都要重新取。
+    // drivers（DriverStation）在本函数后面才建：这里只是存一个会在调用时才执行的箭头函数，调用发生在
+    // drivers 已经赋值之后（操作员点「自动」的时候），JS 闭包按引用捕获变量，声明顺序不影响这一点。
+    hints: () => drivers.hints(),
     sender: fakePrinters
       ? { send: (name, data) => fakePrinters.sendRaw(name, data) }
       : createRawSender(process.platform, probeHost),
@@ -599,6 +599,7 @@ async function bootstrap(): Promise<void> {
     mobile,
     localApi,
     drivers,
+    driverNameOf: (name) => (fakePrinters ? fakePrinters.driverName(name) : queryDriverName(name, probeHost)),
     profiles,
     printerCommands,
     getWindow: () => mainWindow,

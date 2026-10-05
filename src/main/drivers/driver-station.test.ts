@@ -135,4 +135,16 @@ describe('DriverStation', () => {
     load = { kind: 'unconfigured' };
     expect(drivers.hints().modelForDriverName('示例品牌 X1')).toBeNull();
   });
+
+  test('reinstalls by driver name for the diagnosis', async () => {
+    const drivers = station();
+    await drivers.installForDriverName(' 示例品牌  x1 ');
+    await drivers.settled();
+    expect(drivers.status().install).toMatchObject({
+      modelId: 'example-x1',
+      deviceKey: null,
+      state: { phase: 'done' },
+    });
+    await expect(drivers.installForDriverName('Generic / Text Only')).rejects.toThrow();
+  });
 });

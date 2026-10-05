@@ -123,6 +123,16 @@ export class DriverStation {
     return this.status();
   }
 
+  /** 5b 的「重新安装驱动」：按驱动名找清单里的型号来装；找不到或这个平台没有安装包时抛错。 */
+  async installForDriverName(driverName: string): Promise<DriverStatus> {
+    await this.ensureCatalog();
+    const hint = this.hints().modelForDriverName(driverName);
+    if (hint === null || !hint.canInstall) {
+      throw new Error(`No installable driver in the catalog for "${driverName}"`);
+    }
+    return this.installModel(hint.modelId);
+  }
+
   cancelInstall(): void {
     this.controller?.abort();
   }

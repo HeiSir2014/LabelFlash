@@ -7,6 +7,7 @@ import {
   fakeDrivers,
   INSTALLER_BYTES,
   INSTALLER_URL,
+  NEW_PRINTER,
   serveCatalog,
 } from './support/driver-catalog';
 import { expect, test } from './support/fixtures';
@@ -96,6 +97,24 @@ test('never runs a download whose SHA-256 differs from the catalog', async ({ el
     expect(await fakeInstalls(app)).toEqual([]);
     // 没装上：那台设备还在列表里。
     await expect(driverCard(page)).toContainText('USB 1234:ABCD · 没装驱动');
+  } finally {
+    await server.close();
+  }
+});
+
+test('reinstalls the driver of an installed printer by its driver name', async ({ electronApp }) => {
+  const server = await serveCatalog(catalogText(keys, [catalogModel()]));
+  try {
+    const { app, page } = await electronApp.launch({
+      fakePrinters: [{ ...NEW_PRINTER, driverName: '示例品牌 X1' }],
+      fakeDrivers: fakeDrivers({ devices: [], printerAfterInstall: null }),
+      driverCatalogKey: keys.publicKey,
+    });
+    await callApi(page, 'updateSettings', { driverCatalogUrl: server.url });
+    await openConfig(page, '打印机');
+    await callApi(page, 'reinstallPrinterDriver', NEW_PRINTER.name);
+    await expect(driverCard(page).getByRole('status')).toContainText('驱动已装好');
+    expect(await fakeInstalls(app)).toHaveLength(1);
   } finally {
     await server.close();
   }

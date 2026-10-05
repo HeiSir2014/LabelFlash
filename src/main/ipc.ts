@@ -108,6 +108,8 @@ export interface IpcDeps {
   localApi: LocalApi;
   /** 驱动安装（打印机页的「驱动」一节）。 */
   drivers: DriverStation;
+  /** 打印机的驱动名（按驱动名查清单）。 */
+  driverNameOf: (printerName: string) => Promise<string | null>;
   /** 每台打印机的驱动纸张和分辨率（短时缓存）。 */
   profiles: PrinterProfiles;
   /** 标签机指令（printing/printer-commands-station.ts）。 */
@@ -398,6 +400,14 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.OpenDriverDownloadPage, (deviceKey) =>
     deps.drivers.openDownloadPage(requireDriverDeviceKey(deviceKey)),
   );
+  handle(IpcChannel.ReinstallPrinterDriver, async (printerName) => {
+    const name = await requireKnownPrinter(printerName);
+    const driverName = await deps.driverNameOf(name);
+    if (driverName === null) {
+      throw new Error(`Cannot read the driver name of ${name}`);
+    }
+    return deps.drivers.installForDriverName(driverName);
+  });
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());
   on(IpcChannel.WindowToggleMaximize, () => {

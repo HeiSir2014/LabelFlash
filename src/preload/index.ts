@@ -87,6 +87,7 @@ const api: LabelFlashApi = {
   cancelDriverInstall: () => ipcRenderer.invoke(IpcChannel.CancelDriverInstall),
   openDriverDownloadPage: (deviceKey) => ipcRenderer.invoke(IpcChannel.OpenDriverDownloadPage, deviceKey),
   onDriverStatus: (listener) => subscribe(IpcChannel.DriverStatusChanged, listener),
+  reinstallPrinterDriver: (printerName) => ipcRenderer.invoke(IpcChannel.ReinstallPrinterDriver, printerName),
 };
 
 const windowControls: WindowControlsApi = {

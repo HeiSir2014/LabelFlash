@@ -6,6 +6,7 @@ import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net }
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
+import { SubmittedJobs } from '../core/diagnosis/submitted-jobs';
 import { NO_DRIVER_HINTS } from '../core/drivers/driver-hints';
 import { PrintQueue } from '../core/print-queue';
 import { PrintService } from '../core/print-service';
@@ -307,6 +308,8 @@ async function bootstrap(): Promise<void> {
       return false;
     }
   };
+  // 本程序交给打印队列的任务（只在内存里）：诊断「队列里有卡住的任务」时据此认出哪些是本程序发的。
+  const submittedJobs = new SubmittedJobs(systemClock);
   const profiles = new PrinterProfiles(
     (name) => (fakePrinters ? fakePrinters.driverPaper(name) : queryDriverPaper(name, probeHost)),
     systemClock,
@@ -318,6 +321,7 @@ async function bootstrap(): Promise<void> {
         (name): PrinterReadiness | null => status.get(name),
         systemClock,
         profiles,
+        submittedJobs,
       );
   const probeReadiness = fakePrinters
     ? (name: string) => fakePrinters.readiness(name)
@@ -346,6 +350,8 @@ async function bootstrap(): Promise<void> {
     hasPrinter: (name) => adapter.hasPrinter(name),
     log: (message) => console.info(message),
     warn: (message) => console.warn(message),
+    clock: systemClock,
+    submitted: submittedJobs,
   });
   /** 要检测状态的打印机：纸张分配和模板指定里出现的（交给探测进程前再核对系统里有）。 */
   const assignedPrinterNames = (): string[] => [

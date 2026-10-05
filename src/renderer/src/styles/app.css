@@ -281,6 +281,11 @@ textarea {
   color: var(--color-ink);
 }
 
+.batch-button__progress {
+  font-family: var(--font-data);
+  font-weight: 400;
+}
+
 .mobile-button__dot {
   flex: none;
   width: 8px;

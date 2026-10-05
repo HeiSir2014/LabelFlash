@@ -19,6 +19,13 @@ export interface MobileButtonProps {
   onToggle: () => void;
 }
 
+export interface BatchButtonProps {
+  isOpen: boolean;
+  /** 正在打或暂停时的进度（「36/120」）；其余为 null。 */
+  progress: string | null;
+  onToggle: () => void;
+}
+
 interface TitleBarProps {
   /** 当前版本号（如 1.0.1）；读取到之前为 null，不显示。 */
   version: string | null;
@@ -29,6 +36,7 @@ interface TitleBarProps {
   /** 新版本已下载时显示的版本号；null 表示没有待安装的更新。 */
   readyUpdateVersion: string | null;
   config: ConfigButtonProps;
+  batch: BatchButtonProps;
   mobile: MobileButtonProps;
   onInstallUpdate: () => void;
   onOpenShop: () => void;
@@ -40,6 +48,7 @@ export function TitleBar({
   onOpenPrinters,
   readyUpdateVersion,
   config,
+  batch,
   mobile,
   onInstallUpdate,
   onOpenShop,
@@ -71,6 +80,17 @@ export function TitleBar({
             新版本 {readyUpdateVersion} 已就绪 · 重启更新
           </button>
         )}
+        {/* 批量打印页和配置中心同级：按下状态表示正在看它；在打的时候按钮上带进度，关掉页面也看得到。 */}
+        <button
+          type="button"
+          className="config-button batch-button"
+          aria-pressed={batch.isOpen}
+          title={batch.isOpen ? '返回工作台' : '批量打印：导入 Excel / CSV，一行打一张'}
+          onClick={batch.onToggle}
+        >
+          批量打印
+          {batch.progress !== null && <span className="batch-button__progress">{batch.progress}</span>}
+        </button>
         {/* 切换按钮：状态只由 aria-pressed 和按下的样式表达，名称始终是「配置」。 */}
         <button
           type="button"

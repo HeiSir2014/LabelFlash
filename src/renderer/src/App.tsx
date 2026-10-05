@@ -5,6 +5,7 @@ import { describePrintersSummary } from '../../shared/printer-summary';
 import { NO_RENDER_WARNINGS } from '../../shared/render-warnings';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
+import { BatchPage } from './components/batch/BatchPage';
 import { ConfigCenter } from './components/config/ConfigCenter';
 import { ConfigPages } from './components/config/ConfigPages';
 import { ConfirmDialog } from './components/config/ConfirmDialog';
@@ -18,6 +19,7 @@ import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
+import { batchButtonProgress } from './lib/batch-view';
 import { describeCaller } from './lib/local-api-text';
 import { describeMobileButton, describeMobileOverlay } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
@@ -36,8 +38,10 @@ import { isWorkbenchActive } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
+import { useBatch } from './view-models/use-batch';
 import { useConfigCenter } from './view-models/use-config-center';
 import { useFeedback } from './view-models/use-feedback';
+import { useFileDrop } from './view-models/use-file-drop';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
 import { useLocalApi } from './view-models/use-local-api';
@@ -180,6 +184,20 @@ export function App() {
   const { appView } = config;
   const isWorkbench = isWorkbenchActive(appView.view);
 
+  // 批量打印：设置留在这里（关掉页面再打开都还在），批次本身在主进程里跑。
+  const isBatchOpen = appView.view.kind === 'batch';
+  const batch = useBatch({
+    templates: templates.templates,
+    activeTemplateId: settings?.activeTemplateId ?? null,
+    isOpen: isBatchOpen,
+    historyLimit,
+  });
+  // 把 .xlsx / .csv 拖进窗口：打开批量打印页并读这个文件（.xls 等由主进程说明为什么不行）。
+  useFileDrop((file) => {
+    appView.openBatch();
+    batch.dropFile(file);
+  }, settings !== null);
+
   // 手机扫码：浮层只在工作台上显示；在配置中心里点按钮会先回到工作台（经过未保存修改的确认）。
   const mobile = useMobileStation({ onJobsChanged: () => void jobLog.refresh() });
   const mobileQr = useQrImage(mobile.status.state === 'active' ? mobile.status.url : null, MOBILE_QR_SIZE_PX);
@@ -273,9 +291,14 @@ export function App() {
         onOpenPrinters={() => appView.open('printers')}
         readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
         config={{
-          isOpen: !isWorkbench,
+          isOpen: appView.view.kind === 'config',
           shortcutLabel: configShortcutLabel(platform),
           onToggle: appView.toggle,
+        }}
+        batch={{
+          isOpen: isBatchOpen,
+          progress: batchButtonProgress(batch.status),
+          onToggle: isBatchOpen ? appView.close : appView.openBatch,
         }}
         mobile={{ view: describeMobileButton(mobile.status), isOpen: isMobileOverlayShown, onToggle: toggleMobile }}
         onInstallUpdate={updates.install}
@@ -435,6 +458,9 @@ export function App() {
             onOpenPage={appView.open}
           />
         </ConfigCenter>
+      )}
+      {settings !== null && isBatchOpen && (
+        <BatchPage batch={batch} templates={templates.templates} onClose={appView.close} />
       )}
       {isMobileOverlayShown && (
         <MobileOverlay

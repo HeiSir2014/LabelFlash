@@ -55,6 +55,19 @@ describe('windows scripts', () => {
     const delta = /\$Delta = '([A-Za-z0-9+/=]+)'/.exec(script)?.[1] ?? '';
     expect(Buffer.from(delta, 'base64').toString('utf8')).toBe(paperDeltaTicket(OPTION));
   });
+
+  // 默认纸张已经改好、回读也确认过了之后，UserPrintTicket（同账户的打印首选项）是锦上添花的一步；
+  // 它失败不该和「读回来的默认纸张不对」混为一谈，也不该因此把已经验证好的默认纸张回滚掉。
+  test('reports a failed UserPrintTicket merge separately, without rolling back a confirmed default', () => {
+    const script = setDriverPaperScript('标签机A', OPTION, LABEL);
+    expect(script).toContain(`exit ${SCRIPT_EXIT.userTicketFailed}`);
+    expect(SCRIPT_EXIT.userTicketFailed).not.toBe(SCRIPT_EXIT.rolledBack);
+    // UserPrintTicket 的赋值在负责默认纸张回滚的那个 catch（唯一回滚到 SCRIPT_EXIT.rolledBack 的地方）之后，
+    // 不在同一个 try/catch 里，失败不会触发那段回滚逻辑。
+    const rolledBackAt = script.lastIndexOf(`exit ${SCRIPT_EXIT.rolledBack}`);
+    const userTicketAssignment = script.indexOf('$queue.UserPrintTicket =');
+    expect(userTicketAssignment).toBeGreaterThan(rolledBackAt);
+  });
 });
 
 describe('paperDeltaTicket', () => {

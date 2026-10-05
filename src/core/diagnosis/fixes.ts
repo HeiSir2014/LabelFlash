@@ -149,6 +149,10 @@ export function fixOutcome(
     }
     case 'rolled-back':
       return { status: 'rolled-back', message: ROLLED_BACK_MESSAGE };
+    // 目标本身做成了（已经回读确认过），只是连带的一步没成功：按「做成了」处理，说清楚具体差了哪一步，
+    // 不是笼统的失败，也不是（错误地）说被回滚了。
+    case 'partial':
+      return { status: 'done', message: result.detail };
     case 'no-matching-paper':
       return {
         status: 'failed',

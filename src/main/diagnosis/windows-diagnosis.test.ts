@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ProbeCommand } from '../printing/printer-probe-host';
 import { ELEVATION_DECLINED_EXIT_CODE, type PowerShellRun } from '../windows-powershell';
 import { fixture } from './testing/fixtures';
-import { WindowsDiagnosis } from './windows-diagnosis';
+import { elevatedResult, WindowsDiagnosis } from './windows-diagnosis';
 import { SCRIPT_EXIT } from './windows-scripts';
 
 const LABEL = { widthMm: 60, heightMm: 40 };
@@ -72,5 +72,15 @@ describe('WindowsDiagnosis', () => {
     });
     expect(await system.setDriverPaper('标签机A', LABEL, true)).toEqual({ kind: 'no-matching-paper' });
     expect(elevatedScripts).toEqual([]);
+  });
+});
+
+describe('elevatedResult', () => {
+  // UserPrintTicket 失败是「做成了一部分」，不是「读回来的默认纸张不对」：不能和 rolledBack 混在一起，
+  // 也不是单纯的 failed（默认纸张其实设置成功了）。
+  test('tells a failed UserPrintTicket merge apart from a rolled-back default', () => {
+    expect(elevatedResult(run(SCRIPT_EXIT.userTicketFailed))).toMatchObject({ kind: 'partial' });
+    expect(elevatedResult(run(SCRIPT_EXIT.userTicketFailed))).not.toMatchObject({ kind: 'rolled-back' });
+    expect(elevatedResult(run(SCRIPT_EXIT.userTicketFailed))).not.toMatchObject({ kind: 'failed' });
   });
 });

@@ -5,8 +5,13 @@ import {
 } from '../../core/diagnosis/paper-choice';
 import { PAPER_TOLERANCE_MM, type PaperSize } from '../../shared/paper-sizes';
 
-/** 脚本的退出码：提权后的窗口是隐藏的，输出拿不回来，结果只能靠退出码带回。 */
-export const SCRIPT_EXIT = { done: 0, failed: 1, driverRefused: 3, rolledBack: 4 } as const;
+/**
+ * 脚本的退出码：提权后的窗口是隐藏的，输出拿不回来，结果只能靠退出码带回。
+ * userTicketFailed：默认纸张已经设置成功、回读也确认过了，只是同账户的 UserPrintTicket（打印首选项）
+ * 没有同步更新——这不是「读回来的默认纸张不对」（rolledBack 的触发条件），两者要分开说，
+ * 也不该因为这一步失败就把已经验证好的默认纸张回滚掉。
+ */
+export const SCRIPT_EXIT = { done: 0, failed: 1, driverRefused: 3, rolledBack: 4, userTicketFailed: 5 } as const;
 
 const MICRONS_PER_MM = 1_000;
 /** 等服务停下、启动的最长时间：Spooler 正常几秒内就好，30 秒还没好就是卡住了。 */
@@ -147,7 +152,9 @@ export function paperDeltaTicket(paper: PrintTicketPaper): string {
  * 1. 记下原来的 DefaultPrintTicket；
  * 2. 把增量合进去、让驱动校验，校验后的尺寸不对就说明驱动不接受（什么都没改，退出 3）；
  * 3. 写回、重读，重读的尺寸不对就恢复原来的（退出 4）；
- * 4. 同一账户的 UserPrintTicket（打印首选项里的个人设置，Chromium 打印时用它）也合进同样的增量。
+ * 4. 默认纸张确认无误之后，同一账户的 UserPrintTicket（打印首选项里的个人设置，Chromium 打印时用它）
+ *    也合进同样的增量——这一步单独算，失败只退出 5，不回滚已经验证过的默认纸张（它和「驱动拒绝」「回读不对」
+ *    是两类问题：默认纸张这时已经改好了）。
  * PageMediaSize 的宽高以 1/96 英寸计。
  */
 const SET_PAPER_BODY = `
@@ -159,6 +166,7 @@ function Test-Paper($ticket) {
 }
 $queue = $null
 $before = $null
+$delta = $null
 try {
   ${OPEN_QUEUE_AS_ADMIN}
   $before = $queue.DefaultPrintTicket.GetXmlStream().ToArray()
@@ -169,11 +177,6 @@ try {
   $queue.Commit()
   $queue.Refresh()
   if (-not (Test-Paper $queue.DefaultPrintTicket)) { throw 'read-back mismatch' }
-  if ($null -ne $queue.UserPrintTicket) {
-    $queue.UserPrintTicket = $queue.MergeAndValidatePrintTicket($queue.UserPrintTicket, $delta).ValidatedPrintTicket
-    $queue.Commit()
-  }
-  exit ${SCRIPT_EXIT.done}
 } catch {
   if ($null -ne $queue -and $null -ne $before) {
     try {
@@ -185,6 +188,15 @@ try {
     }
   }
   exit ${SCRIPT_EXIT.failed}
+}
+try {
+  if ($null -ne $queue.UserPrintTicket) {
+    $queue.UserPrintTicket = $queue.MergeAndValidatePrintTicket($queue.UserPrintTicket, $delta).ValidatedPrintTicket
+    $queue.Commit()
+  }
+  exit ${SCRIPT_EXIT.done}
+} catch {
+  exit ${SCRIPT_EXIT.userTicketFailed}
 }`;
 
 export function setDriverPaperScript(printerName: string, paper: PrintTicketPaper, target: PaperSize): string {

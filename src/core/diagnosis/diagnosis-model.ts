@@ -85,7 +85,13 @@ export type ActionResult =
   | { kind: 'needs-admin' }
   | { kind: 'rolled-back' }
   | { kind: 'no-matching-paper' }
-  | { kind: 'failed'; detail: string };
+  | { kind: 'failed'; detail: string }
+  /**
+   * 目标本身做成了，但有一步连带的操作没成功，且那一步失败不该牵连已经做成、已经回读确认过的部分
+   * （例如驱动默认纸张设置成功、回读也对，但同一账户「打印首选项」里的个人设置没有同步更新）。
+   * detail 是说给操作员看的中文说明。
+   */
+  | { kind: 'partial'; detail: string };
 
 /** 主进程校验过的修复请求（paperKey 已换成纸张）。 */
 export interface DiagnosisFixRequest {

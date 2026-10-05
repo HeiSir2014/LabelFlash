@@ -86,6 +86,20 @@ describe('fixOutcome', () => {
     });
   });
 
+  // 默认纸张已经设对、回读也确认过了，只是同账户的打印首选项没有跟着更新：这不是「没做成」，
+  // 诊断该说清楚具体差了哪一步，而不是笼统的失败或者（错误地）说设置被回滚了。
+  test('reports a partial set-driver-paper result as done, with its own detail, not as a plain failure', () => {
+    const request = { ...REQUEST, fix: 'set-driver-paper' as const, paper: { widthMm: 60, heightMm: 40 } };
+    const outcome = fixOutcome('windows', request, {
+      kind: 'partial',
+      detail: '驱动默认纸张已经设置成功，但当前账户的打印首选项没有同步更新',
+    });
+    expect(outcome).toEqual({
+      status: 'done',
+      message: '驱动默认纸张已经设置成功，但当前账户的打印首选项没有同步更新',
+    });
+  });
+
   // 「驱动已重新安装」只能在 5c 的接缝确认装完、装成功（ActionResult 的 done）之后才出现；
   // 5c 的适配器把「已经开始安装」误当「已经做完」时，这里不能替它圆谎。
   test('only says the driver was reinstalled on a confirmed done, not on a declined or failed install', () => {

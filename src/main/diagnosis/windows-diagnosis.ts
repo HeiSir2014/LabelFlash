@@ -56,6 +56,12 @@ export function elevatedResult(run: PowerShellRun): ActionResult {
       return { kind: 'failed', detail: '驱动不接受这个尺寸，什么都没改' };
     case SCRIPT_EXIT.rolledBack:
       return { kind: 'rolled-back' };
+    case SCRIPT_EXIT.userTicketFailed:
+      return {
+        kind: 'partial',
+        detail:
+          '驱动默认纸张已经设置成功，但当前账户的打印首选项没有同步更新（不影响静默打印），需要的话手动在打印首选项里调整一次',
+      };
     default:
       return { kind: 'failed', detail: describeRun(run) };
   }

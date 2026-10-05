@@ -90,10 +90,15 @@ export class DriverStation {
       // 先标记再推送：界面立即看到「检测中…」（runDetect 里的第一个 await 之前，detecting 还没赋值）。
       this.isDetecting = true;
       this.push(true);
-      this.detecting = this.runDetect(force).finally(() => {
+      // 调用方（IPC 的返回值）和 onStatus 推送必须是同一份状态：runDetect() 自己返回的快照里 isDetecting 还是
+      // true（它在 isDetecting 被置回 false 之前就生成了），直接把它当 detect() 的结果会把界面的「检测中」状态
+      // 卡死——IPC 的返回值和随后的推送谁先到达渲染进程不确定，用旧快照覆盖新推送就再也不会恢复。
+      // 这里在标记复位之后重新取一次 status()，保证两边看到的都是检测结束后的状态。
+      this.detecting = this.runDetect(force).then(() => {
         this.detecting = null;
         this.isDetecting = false;
         this.push(true);
+        return this.status();
       });
     }
     return this.detecting;

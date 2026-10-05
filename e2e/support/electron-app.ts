@@ -3,6 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ElectronApplication, _electron as electron, expect, type Page } from '@playwright/test';
 import { API_PORT_ENV } from '../../src/main/api/local-api';
+import {
+  DRIVER_CATALOG_TEST_KEY_ENV,
+  FAKE_DRIVERS_ENV,
+  type FakeDriverSpec,
+} from '../../src/main/drivers/fake-drivers';
 import { FAKE_OCR_ENV } from '../../src/main/ocr/fake-ocr';
 import { FAKE_PRINTERS_ENV, type FakePrinterSpec } from '../../src/main/printing/fake-printers';
 
@@ -43,6 +48,10 @@ export interface LaunchOptions {
   fakePrinters?: FakePrinterSpec[];
   /** 用假的文字识别：每张标签图都读出这几段字（见 src/main/ocr/fake-ocr.ts）。 */
   fakeOcr?: string[];
+  /** 假的驱动环境（见 src/main/drivers/fake-drivers.ts）：缺驱动的设备、安装包下载、签名核对和提权安装都是假的。 */
+  fakeDrivers?: FakeDriverSpec;
+  /** 额外信任的驱动清单公钥（编号 e2e）：E2E 用现场生成的密钥签清单。 */
+  driverCatalogKey?: string;
 }
 
 /** 用指定的数据目录（不传则新建一个）启动构建好的程序，等到扫码框出现。 */
@@ -60,6 +69,12 @@ export async function launchApp(userData?: string, options: LaunchOptions = {}):
   }
   if (options.fakeOcr) {
     env[FAKE_OCR_ENV] = JSON.stringify(options.fakeOcr);
+  }
+  if (options.fakeDrivers) {
+    env[FAKE_DRIVERS_ENV] = JSON.stringify(options.fakeDrivers);
+  }
+  if (options.driverCatalogKey) {
+    env[DRIVER_CATALOG_TEST_KEY_ENV] = options.driverCatalogKey;
   }
   // 本机接口用系统随便给的端口：并行的用例之间、和本机上跑着的安装版之间都不抢 17631。
   env[API_PORT_ENV] = '0';

@@ -14,7 +14,14 @@ import type { JobPage, JobQuery } from './job-history';
 import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from './local-api';
 import type { MobileStatus } from './mobile-status';
 import type { PaperSize } from './paper-sizes';
-import type { PdfLayoutResult, PdfOpenResult, PdfPiecePreviewResult, PdfPrintStartResult, PdfStatus } from './pdf';
+import type {
+  PdfCloseResult,
+  PdfLayoutResult,
+  PdfOpenResult,
+  PdfPiecePreviewResult,
+  PdfPrintStartResult,
+  PdfStatus,
+} from './pdf';
 import type { PrinterCommandResult, PrinterCommandsView } from './printer-commands';
 import type { PrinterReadiness } from './printer-readiness';
 import type { RenderWarnings } from './render-warnings';
@@ -319,8 +326,8 @@ export interface LabelFlashApi {
   resumePdf(): Promise<void>;
   /** 不再交新的；正在打的这一张照常打完。 */
   cancelPdf(): Promise<void>;
-  /** 关掉文件，放掉渲染页和没打过的块。 */
-  closePdf(): Promise<void>;
+  /** 关掉文件，放掉渲染页和没打过的块；正在打印时拒绝，带着原因。 */
+  closePdf(): Promise<PdfCloseResult>;
   getPdfStatus(): Promise<PdfStatus>;
   /** 处理进度和打印进度（合并推送）。 */
   onPdfStatus(listener: (status: PdfStatus) => void): () => void;

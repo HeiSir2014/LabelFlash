@@ -368,6 +368,38 @@ describe('PdfStation printing', () => {
     expect(pieces.touched).toEqual([key]);
     expect(await station.storedPiece('missing')).toBeNull();
   });
+
+  // 打印记录按「最后用到的时间」过期显示（见 status-text.ts），缓存按文件的修改时间清理：两边要用
+  // 同一个时间点，不然界面显示「还没过期」时文件已经被按 mtime 清理掉了。
+  test('touches the cached bitmap when printing it, so pruning follows the same clock as the record', async () => {
+    const { station, pieces, result } = await laidOut();
+    await station.print({ runId: result.runId, pieceIds: ['1-1'], copies: 1 });
+    await waitUntil(() => station.status().print?.state === 'done');
+    const key = [...pieces.stored.keys()][0] ?? '';
+    expect(pieces.touched).toContain(key);
+  });
+});
+
+describe('PdfStation closing', () => {
+  test('refuses to close while printing', async () => {
+    const { station, result } = await laidOut({ printFields: () => new Promise(() => undefined) });
+    await station.print({ runId: result.runId, pieceIds: ['1-1'], copies: 1 });
+    await settle();
+    expect(await station.closeDocument()).toEqual({ status: 'invalid', issue: PDF_STATION_ISSUES.printing });
+    // 拒绝关闭：文件还在，调用方（界面）不该把它当成已经关掉了。
+    expect(station.status().fileName).not.toBeNull();
+  });
+
+  test('closes and releases the render page otherwise', async () => {
+    const { station, renderer } = await laidOut();
+    let closed = false;
+    renderer.close = () => {
+      closed = true;
+    };
+    expect(await station.closeDocument()).toEqual({ status: 'ok' });
+    expect(station.status().fileName).toBeNull();
+    expect(closed).toBe(true);
+  });
 });
 
 describe('PdfStation on quit', () => {
@@ -399,5 +431,35 @@ describe('PdfStation on quit', () => {
     stuck.release();
     await station.whenIdle();
     expect(station.pendingQuit()).toBeNull();
+  });
+
+  // pendingQuit 只用来决定弹不弹确认框、能不能重启更新：操作员完全可能看一眼就点「取消」，
+  // 这一刻不能钉住位图，不然这些块会一直占着缓存，直到 7 天保留期才被清理。
+  test('pendingQuit is a pure query: it does not pin the bitmaps it reports', async () => {
+    const stuck = stuckOnFirstLabel();
+    const { station, result, pieces } = await laidOut({ printFields: stuck.printFields });
+    await station.print({ runId: result.runId, pieceIds: ['1-1', '2-3'], copies: 1 });
+    await settle();
+    const key = station.pendingQuit()?.labels[0]?.pdf.bitmap ?? '';
+    station.cancel();
+    stuck.release();
+    await station.whenIdle();
+    await station.closeDocument();
+    expect(pieces.stored.has(key)).toBe(false);
+  });
+
+  // confirmQuit 只在操作员真的点了「仍要退出」之后调用：这些块要记成「退出时未打」的打印记录，
+  // 从这一刻起就不能再被换设置、关文件删掉。
+  test('confirmQuit pins the bitmaps of the labels it reports, for the quit records', async () => {
+    const stuck = stuckOnFirstLabel();
+    const { station, result, pieces } = await laidOut({ printFields: stuck.printFields });
+    await station.print({ runId: result.runId, pieceIds: ['1-1', '2-3'], copies: 1 });
+    await settle();
+    const key = station.confirmQuit()?.labels[0]?.pdf.bitmap ?? '';
+    station.cancel();
+    stuck.release();
+    await station.whenIdle();
+    await station.closeDocument();
+    expect(pieces.stored.has(key)).toBe(true);
   });
 });

@@ -15,7 +15,9 @@ import type { PdfRef, PrintResult } from '../../core/types';
 import { type PaperSize, parsePaperKey } from '../../shared/paper-sizes';
 import {
   type BitmapView,
+  PDF_PRINTING_ISSUE,
   PDF_TOO_LARGE_ISSUE,
+  type PdfCloseResult,
   type PdfLayoutResult,
   type PdfOpenResult,
   type PdfPiecePreviewResult,
@@ -40,7 +42,7 @@ export const PDF_STATION_ISSUES = {
   tooLarge: PDF_TOO_LARGE_ISSUE,
   empty: '这个 PDF 一页也没有',
   noDocument: '先选一个 PDF',
-  printing: '正在打印：打完或取消之后再换文件、改设置',
+  printing: PDF_PRINTING_ISSUE,
   stale: '预览已经变了：等这次处理完再打印',
   failed: '处理 PDF 时出错：详细原因已写入日志，重新选择文件再试',
 } as const;
@@ -372,11 +374,29 @@ export class PdfStation {
   }
 
   /**
-   * 退出程序前要确认的：正在打或暂停中时，还没轮到的那些块（不含正在打的那一张——它已经交给了打印机，
-   * 可能已经出纸，不能当成「没打」）。没在打、打完了或被操作员取消了都返回 null。
-   * 这些块的位图从现在起不删：退出后它们记成「退出时未打」，7 天内还能从打印记录重打。
+   * 退出程序前要不要确认、能不能重启更新：正在打或暂停中时，还没轮到的那些块（不含正在打的那一张——
+   * 它已经交给了打印机，可能已经出纸，不能当成「没打」）。没在打、打完了或被操作员取消了都返回 null。
+   * 纯查询，不钉住任何位图：这一刻操作员完全可能看一眼就点「取消」，不能让这些块从此占着缓存不被清理。
    */
   pendingQuit(): { labels: PdfPendingLabel[] } | null {
+    return this.pendingQuitSnapshot();
+  }
+
+  /**
+   * 操作员确认「仍要退出」之后用：和 pendingQuit 同一份查询，但钉住这些块的位图——
+   * 从这一刻起它们要记成「退出时未打」，7 天内还能从打印记录重打，换设置、关文件都不能删掉它们。
+   */
+  confirmQuit(): { labels: PdfPendingLabel[] } | null {
+    const pending = this.pendingQuitSnapshot();
+    if (pending !== null) {
+      for (const label of pending.labels) {
+        this.printedKeys.add(label.pdf.bitmap);
+      }
+    }
+    return pending;
+  }
+
+  private pendingQuitSnapshot(): { labels: PdfPendingLabel[] } | null {
     const job = this.printJob;
     if (job === null || !job.batch.isActive) {
       return null;
@@ -386,7 +406,6 @@ export class PdfStation {
       if (piece === undefined) {
         return [];
       }
-      this.printedKeys.add(piece.key);
       return [
         {
           content: label.content,
@@ -399,10 +418,13 @@ export class PdfStation {
     return labels.length === 0 ? null : { labels };
   }
 
-  /** 关掉文件：放掉渲染页和没打过的块。打印中不关（要用缓存里的块），界面在打印时也不显示这个按钮。 */
-  async closeDocument(): Promise<void> {
+  /**
+   * 关掉文件：放掉渲染页和没打过的块。打印中拒绝（要用缓存里的块），返回原因；界面只在失败时才
+   * 保留文件、提示操作员，不能默认当作已经关掉了。
+   */
+  async closeDocument(): Promise<PdfCloseResult> {
     if (this.isPrinting()) {
-      return;
+      return invalid(PDF_STATION_ISSUES.printing);
     }
     this.generation += 1;
     await this.discardRun();
@@ -412,6 +434,7 @@ export class PdfStation {
     this.processing = null;
     this.deps.renderer.close();
     this.pushStatus();
+    return { status: 'ok' };
   }
 
   /** 打印记录的预览、重打：读回那一块的位图，并从现在起再留一个保留期。已被清理时返回 null。 */
@@ -450,8 +473,10 @@ export class PdfStation {
     if (bitmap === null) {
       throw new Error(`PDF piece ${piece.key} is missing from the cache`);
     }
-    // 打印记录会指着这张位图：从现在起换设置、关文件都不删它。
+    // 打印记录会指着这张位图：从现在起换设置、关文件都不删它。续期：打印记录按「最后用到的时间」
+    // 显示过期，缓存按文件的修改时间清理，两边要用同一个时间点。
     this.printedKeys.add(piece.key);
+    await this.deps.pieces.touch(piece.key);
     const result = await this.deps.printFields({
       template: pieceTemplate(bitmap, run.paper),
       fields: label.fields,

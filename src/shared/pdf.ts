@@ -7,6 +7,14 @@ const BYTES_PER_MB = 1024 * 1024;
 /** 文件太大：主进程（选文件时）和界面（拖进来、读字节之前）说同一句话。 */
 export const PDF_TOO_LARGE_ISSUE = `文件超过 ${PDF_LIMITS.fileBytes / BYTES_PER_MB}MB：拆成几个小一点的 PDF 再打`;
 
+/**
+ * 正在打印时主进程拒绝换设置、换文件、关文件：主进程和界面说同一句话，界面靠这句话（而不是自己对
+ * isActive 的判断）认出「是因为正在打印才被拒绝」，这种情况下保留当前的出块结果，不清空重来——
+ * 主进程判定「正在打印」的窗口比界面按钮的 running/paused 更宽（取消后最后一张还在送也算），
+ * 两边有判断不一致的空档时，界面不能把这当成真的出错了。
+ */
+export const PDF_PRINTING_ISSUE = '正在打印：打完或取消之后再换文件、改设置';
+
 /** 一张黑白小图：1 位 BMP 的 base64（界面用 data:image/bmp 显示）和宽高（像素）。 */
 export interface BitmapView {
   bmp: string;
@@ -70,3 +78,6 @@ export interface PdfStatus {
 }
 
 export type PdfPrintStartResult = { status: 'started'; progress: BatchProgress } | { status: 'invalid'; issue: string };
+
+/** 关文件：正在打印时拒绝（界面只在失败时才保留文件、提示原因，不能默认当作关掉了）。 */
+export type PdfCloseResult = { status: 'ok' } | { status: 'invalid'; issue: string };

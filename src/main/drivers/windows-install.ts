@@ -1,5 +1,8 @@
 import type { WindowsPackage } from '../../core/drivers/catalog-model';
 import type { PrivilegedInstaller, PrivilegedOutcome } from '../../core/drivers/driver-install-flow';
+// powerShellLiteral 是和防火墙功能共用的（src/shared/firewall-rule.ts）：这里依赖它把 $Source（下载到的
+// 临时文件路径，常年在 %TEMP% 下，用户名、安装路径都可能带撇号，例如 O'Brien）正确转成单引号字符串，
+// 单引号翻倍转义。那个文件改了实现要确认这条假设仍然成立（见 firewall-rule.test.ts 和本文件的测试）。
 import { powerShellLiteral } from '../../shared/firewall-rule';
 import { powerShellPath } from '../firewall';
 import { encodePowerShell, runPowerShell } from './run-command';

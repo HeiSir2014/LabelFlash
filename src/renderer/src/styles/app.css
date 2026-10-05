@@ -1142,6 +1142,62 @@ textarea {
   line-height: 1.5;
 }
 
+/* 打印机一行右侧的按钮：测试页、标签机指令 */
+.printer-row__actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* 标签机指令：打印机页每台打印机下面展开的面板 */
+.printer-commands {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0 0 var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-housing);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+}
+
+.printer-commands__hint,
+.printer-commands__message {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.printer-commands__hint {
+  color: var(--color-ink-soft);
+}
+
+.printer-commands__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 动作按钮组用 <fieldset> 代替 role="group" 的 div；去掉浏览器默认的边框和内边距 */
+.printer-commands__actions--fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.printer-commands__message--ok {
+  color: var(--color-success);
+}
+
+.printer-commands__message--info {
+  color: var(--color-ink);
+}
+
+.printer-commands__message--error {
+  color: var(--color-error);
+}
+
 .badge {
   flex: none;
   padding: 0 6px;

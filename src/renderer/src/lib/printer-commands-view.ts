@@ -143,7 +143,9 @@ export function withCommandSet(
   };
 }
 
-export function commandSetOptions(detected: DetectedCommandSet | null): SelectOption[] {
+export function commandSetOptions(
+  detected: DetectedCommandSet | null,
+): ReadonlyArray<{ value: CommandSetChoice; label: string }> {
   return COMMAND_SET_CHOICES.map((choice) => {
     switch (choice) {
       case 'auto':

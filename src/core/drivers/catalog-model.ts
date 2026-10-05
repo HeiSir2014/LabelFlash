@@ -25,6 +25,14 @@ export const CATALOG_LIMITS = {
   installerBytes: 512 * BYTES_PER_MB,
 } as const;
 
+const MS_PER_DAY = 86_400_000;
+/**
+ * 清单的有效期（expiresAt - issuedAt）最长 400 天：签名脚本按这个上限签发，但程序不只信任签名脚本——
+ * 私钥一旦泄露，攻击者能签出一份有效期任意长的清单，客户端这边也要卡住这个上限，泄露期间能被重放的
+ * 时间才是有限的（见 catalog-freshness.ts 的 checkCatalogFreshness）。和签名脚本的 MAX_VALID_DAYS 同一个数。
+ */
+export const MAX_CATALOG_VALIDITY_MS = 400 * MS_PER_DAY;
+
 /** 型号编号：日志、5b 的重装、界面都用它。只用小写字母、数字和横杠。 */
 export const MODEL_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /**

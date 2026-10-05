@@ -1,12 +1,17 @@
-import type { DriverCatalog } from './catalog-model';
+import { type DriverCatalog, MAX_CATALOG_VALIDITY_MS } from './catalog-model';
 
-export type CatalogFreshness = { ok: true } | { ok: false; reason: 'expired' | 'rolled-back'; issue: string };
+export type CatalogFreshness =
+  | { ok: true }
+  | { ok: false; reason: 'expired' | 'rolled-back' | 'too-long-lived'; issue: string };
 
 /** ISO 时间的前 10 个字符是日期（YYYY-MM-DD）。 */
 const ISO_DATE_LENGTH = 10;
+const MS_PER_DAY = 86_400_000;
 
 /**
  * 这份清单能不能用：
+ * - 有效期跨度超过 400 天：不用。签名脚本本来就不会签出这么长的有效期，这里是防止私钥一旦泄露，
+ *   攻击者拿它签一份有效期任意长的清单——客户端这边也卡住上限，泄露期间能被重放的时间才是有限的。
  * - 版本比这台电脑用过的最高版本低：不用（防止有人拿旧清单换掉新清单，旧清单里可能有已经撤下的驱动）；
  * - 过了有效期：不用（同一个理由，签过的旧清单不能无限期被重放）。同一版本可以反复用（缓存、重新下载）。
  */
@@ -15,6 +20,13 @@ export function checkCatalogFreshness(
   highestSeenVersion: number | null,
   now: number,
 ): CatalogFreshness {
+  if (catalog.expiresAt - catalog.issuedAt > MAX_CATALOG_VALIDITY_MS) {
+    return {
+      ok: false,
+      reason: 'too-long-lived',
+      issue: `驱动清单的有效期超过 ${MAX_CATALOG_VALIDITY_MS / MS_PER_DAY} 天（${utcDate(catalog.issuedAt)} 到 ${utcDate(catalog.expiresAt)}），不使用：请联系出品方重新签发`,
+    };
+  }
   if (highestSeenVersion !== null && catalog.version < highestSeenVersion) {
     return {
       ok: false,

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { exampleCatalog } from '../testing/driver-catalog-fixtures';
 import { checkCatalogFreshness } from './catalog-freshness';
+import { MAX_CATALOG_VALIDITY_MS } from './catalog-model';
 
 const catalog = exampleCatalog();
 
@@ -20,4 +21,17 @@ test('refuses an expired catalog and shows both the expiry and the computer cloc
   const result = checkCatalogFreshness(catalog, null, catalog.expiresAt);
   expect(result).toMatchObject({ ok: false, reason: 'expired' });
   expect(result.ok ? '' : result.issue).toContain('2027-03-01');
+});
+
+test('refuses a catalog whose validity window is longer than 400 days, even though it is signed', () => {
+  const tooLong = { ...catalog, expiresAt: catalog.issuedAt + MAX_CATALOG_VALIDITY_MS + 1 };
+  expect(checkCatalogFreshness(tooLong, null, tooLong.issuedAt + 1)).toMatchObject({
+    ok: false,
+    reason: 'too-long-lived',
+  });
+});
+
+test('accepts a catalog whose validity window is exactly 400 days', () => {
+  const atLimit = { ...catalog, expiresAt: catalog.issuedAt + MAX_CATALOG_VALIDITY_MS };
+  expect(checkCatalogFreshness(atLimit, null, atLimit.issuedAt + 1)).toEqual({ ok: true });
 });

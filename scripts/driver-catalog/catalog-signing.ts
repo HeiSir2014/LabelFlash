@@ -1,5 +1,5 @@
 import type { KeyObject } from 'node:crypto';
-import { CATALOG_SCHEMA } from '../../src/core/drivers/catalog-model';
+import { CATALOG_SCHEMA, MAX_CATALOG_VALIDITY_MS } from '../../src/core/drivers/catalog-model';
 import { sanitizeCatalog } from '../../src/core/drivers/sanitize-catalog';
 import {
   type CatalogEnvelope,
@@ -11,8 +11,11 @@ const MS_PER_SECOND = 1_000;
 const MS_PER_DAY = 86_400_000;
 /** 有效期默认 180 天：程序不用过期清单（防止拿旧清单回滚），半年重签一次不算麻烦。 */
 export const DEFAULT_VALID_DAYS = 180;
-/** 最长 400 天：有效期越长，撤下的条目（例如厂家撤回的驱动）能被重放的时间越长。 */
-export const MAX_VALID_DAYS = 400;
+/**
+ * 最长 400 天：有效期越长，撤下的条目（例如厂家撤回的驱动）能被重放的时间越长。和客户端卡的上限
+ * 是同一个数（src/core/drivers/catalog-model.ts 的 MAX_CATALOG_VALIDITY_MS），不要只改一处。
+ */
+export const MAX_VALID_DAYS = MAX_CATALOG_VALIDITY_MS / MS_PER_DAY;
 
 export interface SignOptions {
   keyId: string;

@@ -4049,7 +4049,7 @@ textarea {
   font-size: 13px;
 }
 
-.pdf-box-list li {
+ol.pdf-box-list li {
   display: flex;
   align-items: center;
   justify-content: space-between;

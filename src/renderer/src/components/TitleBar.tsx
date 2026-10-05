@@ -26,6 +26,13 @@ export interface BatchButtonProps {
   onToggle: () => void;
 }
 
+export interface PdfButtonProps {
+  isOpen: boolean;
+  /** 正在打或暂停时的进度（「3/8」）；其余为 null。 */
+  progress: string | null;
+  onToggle: () => void;
+}
+
 interface TitleBarProps {
   /** 当前版本号（如 1.0.1）；读取到之前为 null，不显示。 */
   version: string | null;
@@ -37,6 +44,7 @@ interface TitleBarProps {
   readyUpdateVersion: string | null;
   config: ConfigButtonProps;
   batch: BatchButtonProps;
+  pdf: PdfButtonProps;
   mobile: MobileButtonProps;
   onInstallUpdate: () => void;
   onOpenShop: () => void;
@@ -49,6 +57,7 @@ export function TitleBar({
   readyUpdateVersion,
   config,
   batch,
+  pdf,
   mobile,
   onInstallUpdate,
   onOpenShop,
@@ -90,6 +99,17 @@ export function TitleBar({
         >
           批量打印
           {batch.progress !== null && <span className="batch-button__progress">{batch.progress}</span>}
+        </button>
+        {/* 打印 PDF 页和批量打印页一样与配置中心同级：按下表示正在看它；打印中按钮上带进度。 */}
+        <button
+          type="button"
+          className="config-button pdf-button"
+          aria-pressed={pdf.isOpen}
+          title={pdf.isOpen ? '返回工作台' : '打印 PDF：把 PDF 里的面单、标签裁好，缩放到标签纸上打印'}
+          onClick={pdf.onToggle}
+        >
+          打印 PDF
+          {pdf.progress !== null && <span className="batch-button__progress">{pdf.progress}</span>}
         </button>
         {/* 切换按钮：状态只由 aria-pressed 和按下的样式表达，名称始终是「配置」。 */}
         <button

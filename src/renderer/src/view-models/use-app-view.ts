@@ -5,6 +5,7 @@ import {
   backStep,
   type ConfigPage,
   isConfigShortcut,
+  PDF_VIEW,
   type Platform,
   WORKBENCH,
 } from '../lib/app-view';
@@ -41,7 +42,7 @@ interface AppViewOptions {
 }
 
 /**
- * 整个窗口的视图：工作台、配置中心的某一页，或批量打印页。
+ * 整个窗口的视图：工作台、配置中心的某一页、批量打印页或打印 PDF 页。
  * - 任何离开编辑器的动作（切换页面、返回、关闭、快捷键、Esc、跳转链接）都经过 requestLeave：
  *   有未保存的修改时先确认，放弃修改后才执行。
  * - 再次打开时回到上次的页面（本次运行内记住）。
@@ -131,22 +132,24 @@ export function useAppView({ platform, canOpen, editor, onClosed }: AppViewOptio
   );
 
   /**
-   * 打开批量打印页（标题栏按钮、拖进文件、打印记录里重打一批）；配置中心里有未保存的修改时先确认。
+   * 打开和配置中心同级的整页（批量打印、打印 PDF）；配置中心里有未保存的修改时先确认。
    * onOpened 在页面真的切过去之后才调用（确认框还没答、或者 canOpen 是 false 时都不会调用）：
    * 拖进来的文件要读、要重打的那一批要开始，都不能在操作员还没决定要不要离开当前页面时就先做了。
    */
-  const openBatch = useCallback(
-    (onOpened?: () => void) => {
+  const openFullPage = useCallback(
+    (next: AppView, onOpened?: () => void) => {
       if (canOpen) {
         requestLeave(() => {
           fadeOutConfig();
-          setView(BATCH_VIEW);
+          setView(next);
           onOpened?.();
         });
       }
     },
     [canOpen, requestLeave, fadeOutConfig],
   );
+  const openBatch = useCallback((onOpened?: () => void) => openFullPage(BATCH_VIEW, onOpened), [openFullPage]);
+  const openPdf = useCallback((onOpened?: () => void) => openFullPage(PDF_VIEW, onOpened), [openFullPage]);
 
   const isOpen = view.kind === 'config';
   const toggle = useCallback(() => (isOpen ? close() : open()), [isOpen, close, open]);
@@ -199,5 +202,5 @@ export function useAppView({ platform, canOpen, editor, onClosed }: AppViewOptio
     onContinue: () => setPendingLeave(null),
   };
 
-  return { view, leavingPage, open, close, toggle, requestLeave, leaveConfirm, openBatch };
+  return { view, leavingPage, open, close, toggle, requestLeave, leaveConfirm, openBatch, openPdf };
 }

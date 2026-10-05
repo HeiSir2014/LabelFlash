@@ -139,15 +139,19 @@ describe('detectCropMode', () => {
 describe('cropRects', () => {
   const grid = inkMask(gridPage());
 
-  test('gives the whole page, the content box or the pieces', () => {
-    expect(cropRects('page', grid, OPTIONS, [])).toEqual([{ x: 0, y: 0, width: 400, height: 560 }]);
-    expect(cropRects('trim', grid, OPTIONS, [])).toEqual([{ x: 20, y: 20, width: 360, height: 520 }]);
-    expect(cropRects('split', grid, OPTIONS, [])).toEqual([...GRID_LABELS]);
+  test('gives the whole page, the content box or the pieces, each numbered from 0 in order', () => {
+    expect(cropRects('page', grid, OPTIONS, [])).toEqual([{ index: 0, rect: { x: 0, y: 0, width: 400, height: 560 } }]);
+    expect(cropRects('trim', grid, OPTIONS, [])).toEqual([
+      { index: 0, rect: { x: 20, y: 20, width: 360, height: 520 } },
+    ]);
+    expect(cropRects('split', grid, OPTIONS, [])).toEqual(GRID_LABELS.map((rect, index) => ({ index, rect })));
   });
 
   test('falls back to the content box when nothing can be split', () => {
     const page = inkMask(fill(blankPage(400, 560), { x: 10, y: 10, width: 30, height: 30 }));
-    expect(cropRects('split', page, OPTIONS, [])).toEqual([{ x: 10, y: 10, width: 30, height: 30 }]);
+    expect(cropRects('split', page, OPTIONS, [])).toEqual([
+      { index: 0, rect: { x: 10, y: 10, width: 30, height: 30 } },
+    ]);
   });
 
   test('skips blank pages in every mode', () => {
@@ -162,7 +166,23 @@ describe('cropRects', () => {
       { x: 0, y: 0, width: 0.5, height: 0.5 },
       { x: 0.5, y: 0.97, width: 0.5, height: 0.03 },
     ];
-    expect(cropRects('manual', grid, OPTIONS, boxes)).toEqual([{ x: 0, y: 0, width: 200, height: 280 }]);
+    expect(cropRects('manual', grid, OPTIONS, boxes)).toEqual([
+      { index: 0, rect: { x: 0, y: 0, width: 200, height: 280 } },
+    ]);
+  });
+
+  // 第二个框在这一页上是空白的（落在两张面单之间的缝里）：第三个框不能顶替它的号，
+  // 不然操作员会看到同一个框在不同页上叫不同的「第 N 张」。
+  test('keeps a box numbered by its own position even when an earlier box is blank on this page', () => {
+    const boxes = [
+      { x: 0, y: 0, width: 0.5, height: 0.5 }, // 有内容（左上那张）
+      { x: 0.475, y: 0, width: 0.05, height: 0.1 }, // 空白：两列之间的缝
+      { x: 0.5, y: 0.5, width: 0.5, height: 0.5 }, // 有内容（右下那张）
+    ];
+    expect(cropRects('manual', grid, OPTIONS, boxes)).toEqual([
+      { index: 0, rect: { x: 0, y: 0, width: 200, height: 280 } },
+      { index: 2, rect: { x: 200, y: 280, width: 200, height: 280 } },
+    ]);
   });
 
   test('keeps a box inside the page', () => {

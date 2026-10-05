@@ -231,6 +231,11 @@ export class PdfStation {
     this.setProcessing({ done: 0, total: document.pages.length });
     try {
       for (const [index, size] of document.pages.entries()) {
+        // 换文件、改设置发生在上一页处理期间（不一定卡在渲染上，存缓存也要等）：这一页还没开始就别再
+        // 向渲染页要新的一页了，免得问一个可能已经被关掉、复用给新文档的渲染页。
+        if (!isCurrent()) {
+          break;
+        }
         const page = index + 1;
         const rendered = await this.deps.renderer.render(page, size, dpi);
         if (!isCurrent()) {
@@ -240,16 +245,20 @@ export class PdfStation {
         if (rects.length === 0) {
           skippedPages += 1;
         }
-        for (const [rectIndex, rect] of rects.entries()) {
+        for (const { index: boxIndex, rect } of rects) {
           if (pieces.size >= PDF_LIMITS.pieces) {
             truncated = true;
             break;
           }
-          const piece = rectIndex + 1;
+          const piece = boxIndex + 1;
           const bitmap = renderPiece(rendered.image, rect, { dots, mono: layout.mono, threshold: layout.threshold });
           const id = pieceId(page, piece);
           pieces.set(id, { page, piece, key: await this.deps.pieces.save(bitmap) });
           views.push({ id, page, piece, thumbnail: bitmapView(thumbnail(bitmap)) });
+          // 存缓存是异步的：存的这一刻也可能已经被换设置、换文件超过。不再处理这一页剩下的块。
+          if (!isCurrent()) {
+            break;
+          }
         }
         if (isCurrent()) {
           this.setProcessing({ done: page, total: document.pages.length });

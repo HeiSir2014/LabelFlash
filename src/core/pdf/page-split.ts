@@ -248,6 +248,16 @@ export function boxRect(box: NormalizedBox, size: { width: number; height: numbe
 }
 
 /**
+ * 裁出来的一块，带着它的编号（从 0 数，打印时 +1 就是「第几张」）。page / trim / split 按切出来的顺序编号；
+ * manual 按画框时的顺序编号——这一页上某个框是空白的就跳过，但号不跟着往前挪，不然同一个框在不同页上
+ * 会叫出不同的「第 N 张」（例如框 2 在这一页空白，框 3 的号不能变成 2）。
+ */
+export interface CropPiece {
+  index: number;
+  rect: PixelRect;
+}
+
+/**
  * 这一页按裁切方式要打的矩形（按打印顺序）。空白页（以及手动框里是空白的框）不出块：打一张白纸没有意义。
  * 一页多张切不出来时退回内容外框（例如这一页只剩一张小标签）。
  */
@@ -256,22 +266,24 @@ export function cropRects(
   mask: InkMask,
   options: SplitOptions,
   boxes: readonly NormalizedBox[],
-): PixelRect[] {
+): CropPiece[] {
   const whole = fullRect(mask);
   const content = contentBox(mask, whole);
   switch (mode) {
     case 'page':
-      return content === null ? [] : [whole];
+      return content === null ? [] : [{ index: 0, rect: whole }];
     case 'trim':
-      return content === null ? [] : [content];
+      return content === null ? [] : [{ index: 0, rect: content }];
     case 'split': {
       const pieces = splitPage(mask, options);
       if (pieces.length > 0) {
-        return pieces;
+        return pieces.map((rect, index) => ({ index, rect }));
       }
-      return content === null ? [] : [content];
+      return content === null ? [] : [{ index: 0, rect: content }];
     }
     case 'manual':
-      return boxes.map((box) => boxRect(box, mask)).filter((rect) => contentBox(mask, rect) !== null);
+      return boxes
+        .map((box, index) => ({ index, rect: boxRect(box, mask) }))
+        .filter((piece) => contentBox(mask, piece.rect) !== null);
   }
 }

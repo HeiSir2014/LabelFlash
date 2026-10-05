@@ -66,11 +66,17 @@ class FakeRenderer implements PdfDocumentRenderer {
 class MemoryPieces implements PieceStore {
   readonly stored = new Map<string, MonoBitmap>();
   readonly touched: string[] = [];
+  /** 不为 null 时每次 save() 都等测试放行（模拟存缓存比较慢的情形）。 */
+  saveGate: (() => void)[] | null = null;
   private count = 0;
 
   async save(bitmap: MonoBitmap): Promise<string> {
     this.count += 1;
     const key = `k${this.count}`;
+    const gate = this.saveGate;
+    if (gate !== null) {
+      await new Promise<void>((resolve) => gate.push(resolve));
+    }
     this.stored.set(key, bitmap);
     return key;
   }
@@ -237,6 +243,24 @@ describe('PdfStation layout', () => {
     const latest = await second;
     expect(latest.status === 'ok' ? latest.pieces.map((piece) => piece.id) : latest).toEqual(['1-1', '2-1']);
     expect(pieces.stored.size).toBe(2);
+  });
+
+  // 存缓存是异步的：换文件发生在第 1 页第 1 块还在存缓存的时候（渲染本身没卡住）。之前的代码只在
+  // render() 前后查了一次，这期间换了文件也照样会把第 2 页交给渲染页——可能问到已经被关掉、复用给
+  // 新文档的渲染页。
+  test('never asks the render port for another page once superseded while still saving a piece', async () => {
+    const { station, renderer, pieces } = await loaded();
+    const gate: (() => void)[] = [];
+    pieces.saveGate = gate;
+    const layoutPromise = station.layout(LAYOUT);
+    await settle();
+    await station.loadBytes('other.pdf', PDF_BYTES);
+    pieces.saveGate = null;
+    for (const release of gate.splice(0)) {
+      release();
+    }
+    expect(await layoutPromise).toEqual({ status: 'superseded' });
+    expect(renderer.renders.some((render) => render.page === 2)).toBe(false);
   });
 
   test('replaces the pieces of the previous layout', async () => {

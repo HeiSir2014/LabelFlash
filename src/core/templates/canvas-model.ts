@@ -207,6 +207,24 @@ export function barcodeType(id: string): BarcodeType | null {
   return BARCODE_TYPES.find((type) => type.id === id) ?? null;
 }
 
+/** 码制下拉框的一个分组：标题和这一组里的码制。 */
+export interface BarcodeGroup {
+  label: string;
+  types: readonly BarcodeType[];
+}
+
+/**
+ * 码制下拉框的分组：常用的在前，其余按一维、二维分两组。每种码制只属于一组
+ * （`common` 的只进第一组，不会在「更多一维码 / 更多二维码」里重复出现），测试覆盖这一条。
+ */
+export function barcodeGroups(): readonly BarcodeGroup[] {
+  return [
+    { label: '常用', types: BARCODE_TYPES.filter((type) => type.common) },
+    { label: '更多一维码', types: BARCODE_TYPES.filter((type) => !type.common && type.dimensions === 1) },
+    { label: '更多二维码', types: BARCODE_TYPES.filter((type) => !type.common && type.dimensions === 2) },
+  ];
+}
+
 /**
  * 边框粗细按点取整（返回点数，不是毫米）：0 或更小没有边框；大于 0 时至少取 1 个点，
  * 否则很细的边框四舍五入会降到 0 点，打出来时有时无。排版（表格要靠它算内边距）和画 HTML（矩形、表格的边框）

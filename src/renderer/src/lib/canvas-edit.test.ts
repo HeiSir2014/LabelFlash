@@ -16,6 +16,7 @@ import {
   deleteElements,
   distributeElements,
   elementsInRect,
+  maxExtentMm,
   moveBy,
   newElementId,
   pasteElements,
@@ -56,6 +57,11 @@ describe('rounding', () => {
   test('rounds to a step', () => {
     expect(roundTo(1.26, 0.1)).toBe(1.3);
     expect(roundTo(0.04, 0.1)).toBe(0);
+  });
+
+  test('maxExtentMm rounds away floating point error so a value flush with the edge is accepted', () => {
+    // 60 - 36.7 在浮点数里算出 23.299999999999997，直接拿去当 <input max> 会拒收用户刚好填的 23.3。
+    expect(maxExtentMm(60, 36.7)).toBe(23.3);
   });
 });
 

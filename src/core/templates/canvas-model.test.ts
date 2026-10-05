@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   BARCODE_TYPES,
+  barcodeGroups,
   barcodeType,
   CANVAS_ELEMENT_KINDS,
   CANVAS_ELEMENT_LABELS,
@@ -32,6 +33,16 @@ describe('canvas model', () => {
     expect(barcodeType('datamatrix')?.dimensions).toBe(2);
     expect(barcodeType('ean13')?.dimensions).toBe(1);
     expect(barcodeType('nope')).toBeNull();
+  });
+
+  test('barcodeGroups lists every barcode type exactly once', () => {
+    const groups = barcodeGroups();
+    const listed = groups.flatMap((group) => group.types.map((type) => type.id));
+    expect(listed.sort()).toEqual([...BARCODE_TYPES.map((type) => type.id)].sort());
+    expect(new Set(listed).size).toBe(listed.length);
+    // 二维码也要被 !common 过滤，不然将来加一种常用的二维码会在「更多二维码」里重复出现。
+    const moreQr = groups.find((group) => group.label === '更多二维码');
+    expect(moreQr?.types.every((type) => !type.common)).toBe(true);
   });
 
   test('creates every element kind with a size that fits a 60x40 label', () => {

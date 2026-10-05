@@ -3,8 +3,10 @@ import { PrintError } from '../../core/errors';
 import type { LabelJob, PrinterInfo } from '../../core/types';
 import type { DriverPaper } from '../../shared/driver-paper';
 import { paperKey } from '../../shared/paper-sizes';
+import type { RawSendFailureKind } from '../../shared/printer-commands';
 import type { PrinterReadiness } from '../../shared/printer-readiness';
 import type { PrinterDriver } from './printer-driver';
+import type { RawSendResult } from './raw-sender';
 
 /**
  * 仅开发 / E2E 可用：用假打印机代替系统打印机，验证多台打印机的分配（E2E 里没有真打印机）。
@@ -20,6 +22,10 @@ export interface FakePrinterSpec {
   readiness: PrinterReadiness | null;
   /** 每张打多久（毫秒）；不设就立即打完。E2E 测暂停、取消用。 */
   printDelayMs?: number;
+  /** 驱动名：「自动」按它认指令集；不设 = 读不到。 */
+  driverName?: string;
+  /** 设了就让标签机指令按这个原因发送失败（E2E、视觉验收看失败提示）。 */
+  rawFailure?: RawSendFailureKind;
 }
 
 /** 假打印机收到的一张。 */
@@ -28,6 +34,12 @@ export interface FakePrint {
   raw: string;
   paper: string;
   templateId: string;
+}
+
+/** 假打印机收到的一次标签机指令：字节按 latin1 转成文字（指令都是 ASCII，E2E 直接比对文字）。 */
+export interface FakeRawJob {
+  printerName: string;
+  text: string;
 }
 
 export function parseFakePrinters(
@@ -52,6 +64,7 @@ function isSpec(value: unknown): value is FakePrinterSpec {
 /** 假打印机：有名字、驱动纸张和状态；打印只记下来。 */
 export class FakePrinters {
   readonly printed: FakePrint[] = [];
+  readonly rawJobs: FakeRawJob[] = [];
 
   constructor(private readonly specs: readonly FakePrinterSpec[]) {}
 
@@ -65,6 +78,24 @@ export class FakePrinters {
 
   async readiness(name: string): Promise<PrinterReadiness | null> {
     return this.find(name)?.readiness ?? null;
+  }
+
+  /** 驱动名（DriverHints、guessFromDriverName 都按它查）；读不到为 null。 */
+  async driverName(name: string): Promise<string | null> {
+    return this.find(name)?.driverName ?? null;
+  }
+
+  /** 和真的发送方式一样回答：找不到、按 spec 失败，或记下来。 */
+  async sendRaw(printerName: string, data: Uint8Array): Promise<RawSendResult> {
+    const spec = this.find(printerName);
+    if (!spec) {
+      return { ok: false, failure: { kind: 'not-found', detail: `Printer not found: ${printerName}` } };
+    }
+    if (spec.rawFailure !== undefined) {
+      return { ok: false, failure: { kind: spec.rawFailure, detail: `fake ${spec.rawFailure}` } };
+    }
+    this.rawJobs.push({ printerName, text: Buffer.from(data).toString('latin1') });
+    return { ok: true };
   }
 
   async print(printerName: string, job: LabelJob, signal: AbortSignal): Promise<void> {

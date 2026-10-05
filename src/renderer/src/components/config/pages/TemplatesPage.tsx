@@ -3,11 +3,12 @@ import { isBuiltInTemplateId, type LabelTemplate } from '../../../../../core/tem
 import type { PrinterInfo } from '../../../../../core/types';
 import { DEFAULT_PAPER } from '../../../../../shared/label-paper';
 import { NO_RENDER_WARNINGS } from '../../../../../shared/render-warnings';
+import type { Platform } from '../../../lib/app-view';
 import { FIELD_NAME_LIST_ID } from '../../../lib/field-names';
 import { describeTemplateUse } from '../../../lib/printer-assignment';
 import type { TemplatePreview } from '../../../view-models/use-template-preview';
-import { CanvasBasics } from '../../CanvasBasics';
 import { DeleteButton } from '../../ConfirmButton';
+import { CanvasDesigner } from '../../canvas-editor/CanvasDesigner';
 import { LabelPreview } from '../../LabelPreview';
 import { type SampleContent, SampleInput } from '../../SampleInput';
 import { TemplateEditor } from '../../TemplateEditor';
@@ -35,6 +36,8 @@ export interface TemplatesPageProps {
   /** 本机的打印机和纸张分配：编辑器选打印机、列表显示实际会用哪台。 */
   printers: readonly PrinterInfo[];
   paperPrinters: Readonly<Record<string, string>>;
+  /** 画布覆盖层 aria-label 里撤销快捷键的文字按平台显示，设计器用。 */
+  platform: Platform;
   onSelect: (id: string) => void;
   onActivate: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -43,6 +46,14 @@ export interface TemplatesPageProps {
   onDraftChange: (draft: LabelTemplate) => void;
   onSave: () => void;
   onCancel: () => void;
+  /** 新建空白的自由设计模板，直接进设计器。 */
+  onCreateCanvas: () => void;
+  /** 「新建自由设计模板」正在进行：按钮禁用，避免连点建出好几个空白模板。 */
+  isCreatingCanvas: boolean;
+  /** 「打印一张试试」：按预览内容打印正在编辑的草稿（只在设计器里有）。 */
+  onPrintSample: () => void;
+  /** 「打印一张试试」正在进行：按钮禁用，避免连点打出好几张一样的草稿。 */
+  isPrintingSample: boolean;
 }
 
 /** 模板：左边列表点选即预览，右边大号预览和操作；编辑时表单和预览并排。 */
@@ -71,6 +82,8 @@ function ListView({
   onDuplicate,
   onEdit,
   onRemove,
+  onCreateCanvas,
+  isCreatingCanvas,
   printers,
   paperPrinters,
 }: TemplatesPageProps) {
@@ -93,6 +106,14 @@ function ListView({
           empty="还没有自定义模板：选一套模板，点「复制」生成后再编辑。"
           {...groupProps}
         />
+        <button
+          type="button"
+          className="button button--small button--quiet template-list__create"
+          disabled={isCreatingCanvas}
+          onClick={onCreateCanvas}
+        >
+          {isCreatingCanvas ? '正在新建…' : '新建自由设计模板'}
+        </button>
       </div>
       <section className="template-stage" aria-label="模板预览">
         <PreviewSource template={selected} sample={sample} />
@@ -204,12 +225,40 @@ function EditView({
   isDirty,
   sample,
   preview,
+  fieldNames,
+  platform,
   onDraftChange,
   onSave,
   onCancel,
+  onPrintSample,
+  isPrintingSample,
   printers,
   paperPrinters,
 }: TemplatesPageProps & { draft: LabelTemplate }) {
+  if (draft.kind === 'canvas') {
+    return (
+      <div className="template-editing template-editing--canvas">
+        <CanvasDesigner
+          key={draft.id}
+          draft={draft}
+          preview={preview}
+          sample={sample}
+          fieldNames={fieldNames}
+          platform={platform}
+          printers={printers}
+          paperPrinters={paperPrinters}
+          onChange={onDraftChange}
+        />
+        <EditActions
+          isDirty={isDirty}
+          onSave={onSave}
+          onCancel={onCancel}
+          onPrintSample={onPrintSample}
+          isPrintingSample={isPrintingSample}
+        />
+      </div>
+    );
+  }
   return (
     <div className="template-editing">
       <div className="template-editing__form">
@@ -221,16 +270,8 @@ function EditView({
             printers={printers}
             paperPrinters={paperPrinters}
           />
-        ) : draft.kind === 'waybill' ? (
-          <WaybillEditor
-            key={draft.id}
-            draft={draft}
-            onChange={onDraftChange}
-            printers={printers}
-            paperPrinters={paperPrinters}
-          />
         ) : (
-          <CanvasBasics
+          <WaybillEditor
             key={draft.id}
             draft={draft}
             onChange={onDraftChange}
@@ -250,15 +291,43 @@ function EditView({
           placeholder={previewPlaceholder(preview)}
         />
       </section>
-      <div className="config-actions">
-        <p className="config-actions__status">{isDirty ? '有未保存的修改，保存后才会用于打印' : '还没有修改'}</p>
-        <button type="button" className="button button--quiet" onClick={onCancel}>
-          {isDirty ? '放弃修改' : '返回列表'}
+      <EditActions
+        isDirty={isDirty}
+        onSave={onSave}
+        onCancel={onCancel}
+        onPrintSample={null}
+        isPrintingSample={false}
+      />
+    </div>
+  );
+}
+
+interface EditActionsProps {
+  isDirty: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+  /** 只有设计器有「打印一张试试」；标签、面单的编辑器传 null。 */
+  onPrintSample: (() => void) | null;
+  /** 「打印一张试试」正在进行：按钮禁用，避免连点打出好几张一样的草稿。标签、面单的编辑器传 false。 */
+  isPrintingSample: boolean;
+}
+
+/** 编辑视图底部的操作条。 */
+function EditActions({ isDirty, onSave, onCancel, onPrintSample, isPrintingSample }: EditActionsProps) {
+  return (
+    <div className="config-actions">
+      <p className="config-actions__status">{isDirty ? '有未保存的修改，保存后才会用于打印' : '还没有修改'}</p>
+      <button type="button" className="button button--quiet" onClick={onCancel}>
+        {isDirty ? '放弃修改' : '返回列表'}
+      </button>
+      {onPrintSample && (
+        <button type="button" className="button button--quiet" disabled={isPrintingSample} onClick={onPrintSample}>
+          {isPrintingSample ? '正在打印…' : '打印一张试试'}
         </button>
-        <button type="button" className="button button--primary" onClick={onSave} disabled={!isDirty}>
-          保存模板
-        </button>
-      </div>
+      )}
+      <button type="button" className="button button--primary" onClick={onSave} disabled={!isDirty}>
+        保存模板
+      </button>
     </div>
   );
 }

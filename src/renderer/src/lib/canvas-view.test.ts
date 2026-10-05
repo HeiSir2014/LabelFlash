@@ -6,6 +6,7 @@ import {
   NUDGE_MM,
   PX_PER_MM,
   pxToMm,
+  undoShortcutLabel,
   ZOOM_LEVELS,
   zoomIn,
   zoomOut,
@@ -42,6 +43,13 @@ describe('zoom', () => {
 
   test('converts screen pixels to millimetres at a zoom', () => {
     expect(pxToMm(PX_PER_MM * 2, 2)).toBe(1);
+  });
+});
+
+describe('undoShortcutLabel', () => {
+  test('is ⌘Z on macOS and Ctrl+Z elsewhere, matching the config shortcut convention', () => {
+    expect(undoShortcutLabel('mac')).toBe('⌘Z');
+    expect(undoShortcutLabel('other')).toBe('Ctrl+Z');
   });
 });
 

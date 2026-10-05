@@ -52,6 +52,15 @@ export function roundTo(value: number, step: number): number {
   return roundMm(Math.round(value / step) * step);
 }
 
+/**
+ * 属性栏数字框（X/Y/宽/高）的上限：纸边减去元素占另一边的量，取整到 0.01mm。
+ * 不取整的话浮点误差会把刚好顶到边的合法值挡在外面，例如 60 - 36.7 算出 23.299999999999997，
+ * 比用户想填的 23.3 还小，`<input type="number" max=...>` 会拒收这个值。
+ */
+export function maxExtentMm(totalMm: number, usedMm: number): number {
+  return roundMm(totalMm - usedMm);
+}
+
 /** 只取框的四个数（元素本身也是一个框）。 */
 export function boxOf(box: Box): Box {
   return { x: box.x, y: box.y, width: box.width, height: box.height };

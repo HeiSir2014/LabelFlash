@@ -22,6 +22,7 @@
 |---|---|---|
 | 扫码、识别、预览、模板、打印记录、语音、通知、密钥 | ✅ | ✅ |
 | 打印到本机打印机 | ✅ | ✅（家用打印机已实测出纸；热敏标签机待真机验证） |
+| 标签机指令（TSPL / ZPL / EPL，原样发送） | ✅ 常驻 PowerShell 探测进程里 P/Invoke winspool（RAW） | ✅ `lp -o raw`（未在真机验证） |
 | 驱动纸张检测、打开打印机设置 | ✅ 常驻 PowerShell 查询 CIM；驱动「打印首选项」 | ✅ `ipptool`；系统设置「打印机与扫描仪」 |
 | 图中文字识别（货架号，本地 OCR） | ✅ 安装包带扩展和模型（`resources/ocr/`）；扩展静态链接自己编的 ONNX Runtime（/MT），不需要 VC++ 运行库，不要求 AVX2 | 未做：不带 OCR，这一步跳过，电脑不向手机要图 |
 | 本机接口（HTTP） | ✅ 防火墙规则：安装时和配置页按钮（PowerShell NetSecurity，弹 UAC）；占用端口的程序用 `Get-NetTCPConnection` 查 | ✅（未在 Mac 上验证）pkg 装完把程序加进系统防火墙允许列表；占用端口的程序用 `lsof` 查 |
@@ -70,7 +71,7 @@ CI（GitHub Actions）会在 PR 和 `master` 上跑：windows-latest 上 check�
 ```
 src/core      业务层：纯 TypeScript，不依赖 Electron / Node / SQLite
 src/shared    主进程和界面共用：IPC 契约、设置的校验、品牌、常量
-src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）、批量打印（batch/）
+src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）、批量打印（batch/）、标签机指令（printing/printer-commands-station.ts）
 src/preload   contextBridge，只暴露类型化 API
 src/renderer  界面：React 19，MVVM（lib → view-models → components）
 scripts       构建脚本（bundle 检查、图标、安装包、中转服务的构建与发布）

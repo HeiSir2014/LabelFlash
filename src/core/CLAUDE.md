@@ -20,6 +20,7 @@
 |---|---|
 | `print-service.ts` | 打印的完整流程：识别 → 门限 → 加工 → 选模板（规则的「按字段换模板」在 `scan/rule-settings.ts`，所以模板在加工之后才定）→ 决定打印机（没有时放开门限）→ 排队打印 → 记录。界面和主进程都只调它；本机接口和按字段重打走 `printFields`：不识别、不加工、不用扫码的防重复窗口，其余（决定打印机、排队、记录）一样 |
 | `printing/resolve-printer.ts` | 决定打印机：模板指定的（本机有）→ 纸张分配的 → 没有；没有时不打印、不写记录 |
+| `printer-commands/` | 标签机指令：`command-model.ts`（指令集、每种的范围）、`command-set.ts`（按驱动名认，写着两种的不猜，按型号认交给 `drivers/driver-hints.ts` 的 `DriverHints`）、`sanitize-command-config.ts`（存储宽松、IPC 严格）、`tspl.ts` / `zpl.ts` / `epl.ts`（每种一个生成器，输出 ASCII，对照手册的写法测试）、`printer-commands.ts`（分派、范围把关）。每一项为 null 表示不改，不发 |
 | `dedup-guard.ts` | 防重门限。「检查并占位」是同步的：成功和超时记为已打印（超时说明结果不确定），确定没出纸的失败释放占位；`force` 能跳过已打印，但不能跳过正在打印的同一个码 |
 | `print-queue.ts`、`serial-queue.ts` | 每台打印机一个串行队列（同一台先扫先打，不同打印机并行），单张超时后通过 `AbortSignal` 通知适配器放弃 |
 | `errors.ts` | `PrintError`：失败原因和给用户看的补充说明（打印机问题分类） |

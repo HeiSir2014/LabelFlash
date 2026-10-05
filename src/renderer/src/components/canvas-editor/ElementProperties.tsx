@@ -1,6 +1,6 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import {
-  BARCODE_TYPES,
+  barcodeGroups,
   barcodeType,
   CANVAS_ELEMENT_LABELS,
   CANVAS_LIMITS,
@@ -15,7 +15,7 @@ import {
   type Rotation,
 } from '../../../../core/templates/canvas-model';
 import type { PaperSize } from '../../../../shared/paper-sizes';
-import { useImageImport } from '../../view-models/use-image-import';
+import { maxExtentMm } from '../../lib/canvas-edit';
 import { NumberField, Segmented, TextInput, Toggle } from '../form-controls';
 import { InsertField } from './InsertField';
 import {
@@ -37,14 +37,15 @@ const THRESHOLD_MAX = 255;
 /** 选图片时接受的格式：浏览器能解码的常见位图。 */
 const IMAGE_ACCEPT = 'image/png,image/jpeg,image/bmp,image/gif,image/webp';
 
-/** 改了一项：field 是哪一项，撤销历史按「元素 + 字段」合并连续输入。 */
-type ElementChange = (next: CanvasElement, field: string) => void;
+/**
+ * 改了一项：field 非空时（同一个输入框连续打字、同一个滑块连续拖）撤销历史按「元素 + 字段」合并；
+ * 按钮、开关、分段选择、下拉框这类一次点一下就改完的控件传 null，不跟别的编辑并成一步撤销。
+ */
+type ElementChange = (next: CanvasElement, field: string | null) => void;
 
 export interface ElementPropertiesProps {
   element: CanvasElement;
   paper: PaperSize;
-  /** 模板里所有元素：插入图片时核对整个模板的图片总量。 */
-  elements: readonly CanvasElement[];
   fieldNames: readonly string[];
   /** 双击了哪个文字元素：它的「内容」框拿到焦点后调用 onTextEditStarted 清掉。 */
   editTextId: string | null;
@@ -53,6 +54,10 @@ export interface ElementPropertiesProps {
   onRotate: (rotation: Rotation) => void;
   /** 属性栏的文字 / 数字框失焦时调用：结束撤销历史的合并，不然焦点挪回来接着改会并进上一步。 */
   onEndMerge: () => void;
+  /** 选图片：设计器按最新草稿解码并核对图片总量，这里只管触发选择和显示进度。 */
+  onImportImage: (file: File) => void;
+  /** 这个图片元素是不是正在读取（由调用方按 element.id 查 `designer.isImportingImage` 得出）。 */
+  isImportingImage: boolean;
 }
 
 /** 选中一个元素时右栏的属性：通用的位置、大小、旋转、锁定，再加这一类自己的设置。 */
@@ -74,7 +79,7 @@ export function ElementProperties(props: ElementPropertiesProps) {
           label="X"
           value={element.x}
           min={0}
-          max={paper.widthMm - element.width}
+          max={maxExtentMm(paper.widthMm, element.width)}
           step={POSITION_STEP_MM}
           onChange={(x) => onChange({ ...element, x }, 'x')}
           onBlur={onEndMerge}
@@ -83,7 +88,7 @@ export function ElementProperties(props: ElementPropertiesProps) {
           label="Y"
           value={element.y}
           min={0}
-          max={paper.heightMm - element.height}
+          max={maxExtentMm(paper.heightMm, element.height)}
           step={POSITION_STEP_MM}
           onChange={(y) => onChange({ ...element, y }, 'y')}
           onBlur={onEndMerge}
@@ -92,7 +97,7 @@ export function ElementProperties(props: ElementPropertiesProps) {
           label="宽"
           value={element.width}
           min={min}
-          max={paper.widthMm - element.x}
+          max={maxExtentMm(paper.widthMm, element.x)}
           step={POSITION_STEP_MM}
           onChange={(width) => onChange({ ...element, width }, 'width')}
           onBlur={onEndMerge}
@@ -101,7 +106,7 @@ export function ElementProperties(props: ElementPropertiesProps) {
           label="高"
           value={element.height}
           min={min}
-          max={paper.heightMm - element.y}
+          max={maxExtentMm(paper.heightMm, element.y)}
           step={POSITION_STEP_MM}
           onChange={(height) => onChange({ ...element, height }, 'height')}
           onBlur={onEndMerge}
@@ -112,11 +117,7 @@ export function ElementProperties(props: ElementPropertiesProps) {
           options={ROTATION_OPTIONS}
           onChange={(value) => onRotate(ROTATIONS.find((rotation) => String(rotation) === value) ?? 0)}
         />
-        <Toggle
-          label="锁定"
-          checked={element.locked}
-          onChange={(locked) => onChange({ ...element, locked }, 'locked')}
-        />
+        <Toggle label="锁定" checked={element.locked} onChange={(locked) => onChange({ ...element, locked }, null)} />
         {element.locked && <p className="form-hint">锁定后在画布上不能拖动、缩放和删除；这里的数字照样能改。</p>}
       </section>
       <section className="form-section">
@@ -129,13 +130,13 @@ export function ElementProperties(props: ElementPropertiesProps) {
 
 function KindProperties({
   element,
-  paper,
-  elements,
   fieldNames,
   editTextId,
   onTextEditStarted,
   onChange,
   onEndMerge,
+  onImportImage,
+  isImportingImage,
 }: ElementPropertiesProps) {
   switch (element.kind) {
     case 'text':
@@ -156,21 +157,21 @@ function KindProperties({
     case 'qr':
       return <QrProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />;
     case 'image':
-      return <ImageProperties element={element} elements={elements} onChange={onChange} />;
+      return (
+        <ImageProperties
+          element={element}
+          onChange={onChange}
+          onEndMerge={onEndMerge}
+          onImportImage={onImportImage}
+          isImportingImage={isImportingImage}
+        />
+      );
     case 'line':
       return <LineProperties element={element} onChange={onChange} />;
     case 'rect':
       return <RectProperties element={element} onChange={onChange} onEndMerge={onEndMerge} />;
     case 'table':
-      return (
-        <TableProperties
-          element={element}
-          paper={paper}
-          fieldNames={fieldNames}
-          onChange={onChange}
-          onEndMerge={onEndMerge}
-        />
-      );
+      return <TableProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />;
   }
 }
 
@@ -230,30 +231,26 @@ function TextProperties({
         onChange={(value) => onChange({ ...element, fontSizeMm: value }, 'fontSizeMm')}
         onBlur={onEndMerge}
       />
-      <Toggle label="加粗" checked={element.bold} onChange={(bold) => onChange({ ...element, bold }, 'bold')} />
+      <Toggle label="加粗" checked={element.bold} onChange={(bold) => onChange({ ...element, bold }, null)} />
       <Segmented
         label="对齐"
         value={element.align}
         options={ALIGN_OPTIONS}
-        onChange={(align) => onChange({ ...element, align }, 'align')}
+        onChange={(align) => onChange({ ...element, align }, null)}
       />
       <Segmented
         label="垂直"
         value={element.valign}
         options={VALIGN_OPTIONS}
-        onChange={(valign) => onChange({ ...element, valign }, 'valign')}
+        onChange={(valign) => onChange({ ...element, valign }, null)}
       />
       <Segmented
         label="放不下时"
         value={element.fit}
         options={FIT_OPTIONS}
-        onChange={(fit) => onChange({ ...element, fit }, 'fit')}
+        onChange={(fit) => onChange({ ...element, fit }, null)}
       />
-      <Toggle
-        label="反白"
-        checked={element.inverse}
-        onChange={(inverse) => onChange({ ...element, inverse }, 'inverse')}
-      />
+      <Toggle label="反白" checked={element.inverse} onChange={(inverse) => onChange({ ...element, inverse }, null)} />
     </>
   );
 }
@@ -272,15 +269,6 @@ function BarcodeProperties({
   const id = useId();
   const isLinear = barcodeType(element.symbology)?.dimensions !== 2;
   const { fontSizeMm, valueLength } = CANVAS_LIMITS;
-  const group = (label: string, types: typeof BARCODE_TYPES) => (
-    <optgroup label={label}>
-      {types.map((type) => (
-        <option key={type.id} value={type.id}>
-          {type.label}
-        </option>
-      ))}
-    </optgroup>
-  );
   return (
     <>
       <div className="form-row">
@@ -291,20 +279,17 @@ function BarcodeProperties({
           id={id}
           className="select-field"
           value={element.symbology}
-          onChange={(event) => onChange({ ...element, symbology: event.target.value }, 'symbology')}
+          onChange={(event) => onChange({ ...element, symbology: event.target.value }, null)}
         >
-          {group(
-            '常用',
-            BARCODE_TYPES.filter((type) => type.common),
-          )}
-          {group(
-            '更多一维码',
-            BARCODE_TYPES.filter((type) => !type.common && type.dimensions === 1),
-          )}
-          {group(
-            '更多二维码',
-            BARCODE_TYPES.filter((type) => type.dimensions === 2),
-          )}
+          {barcodeGroups().map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.types.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
         </select>
       </div>
       <TextInput
@@ -328,7 +313,7 @@ function BarcodeProperties({
         <Toggle
           label="印号码"
           checked={element.showText}
-          onChange={(showText) => onChange({ ...element, showText }, 'showText')}
+          onChange={(showText) => onChange({ ...element, showText }, null)}
         />
       )}
       {isLinear && element.showText && (
@@ -378,7 +363,7 @@ function QrProperties({
         label="容错"
         value={element.errorCorrection}
         options={QR_LEVEL_OPTIONS}
-        onChange={(errorCorrection) => onChange({ ...element, errorCorrection }, 'errorCorrection')}
+        onChange={(errorCorrection) => onChange({ ...element, errorCorrection }, null)}
       />
       <p className="form-hint">内容太长放不下时自动降低容错，仍放不下就不印，并在底部「打印前检查」说明。</p>
     </>
@@ -390,11 +375,14 @@ function RangeField({
   value,
   max,
   onChange,
+  onEndMerge,
 }: {
   label: string;
   value: number;
   max: number;
   onChange: (value: number) => void;
+  /** 拖动结束、松开键盘方向键或失焦时调用：结束撤销历史的合并（滑块没有原生的「change」和「input」区分）。 */
+  onEndMerge: () => void;
 }) {
   const id = useId();
   return (
@@ -412,6 +400,9 @@ function RangeField({
           step={1}
           value={value}
           onChange={(event) => onChange(Number(event.target.value))}
+          onPointerUp={onEndMerge}
+          onKeyUp={onEndMerge}
+          onBlur={onEndMerge}
         />
         <span className="form-row__unit">{value}</span>
       </span>
@@ -421,45 +412,20 @@ function RangeField({
 
 function ImageProperties({
   element,
-  elements,
   onChange,
+  onEndMerge,
+  onImportImage,
+  isImportingImage,
 }: {
   element: CanvasImage;
-  elements: readonly CanvasElement[];
   onChange: ElementChange;
+  onEndMerge: () => void;
+  onImportImage: (file: File) => void;
+  isImportingImage: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [isReading, setIsReading] = useState(false);
-  const importImage = useImageImport();
-  // 导入耗时（解码、缩放可能要几百毫秒），期间用户可能已经改了这个元素的其他属性（位置、阈值……）；
-  // 不能用选文件那一刻（渲染时闭包捕获的、这时已经过时）的元素去覆盖这些改动，所以用 ref 跟住最新的元素，
-  // 在 useEffect 里更新（不在渲染过程中改 ref）。
-  const elementRef = useRef(element);
-  useEffect(() => {
-    elementRef.current = element;
-  }, [element]);
   // 新建的图片元素是 1×1 的白点（canvas-model 的默认值），还没有真正的图。
   const hasPicture = element.pixelWidth > 1 || element.pixelHeight > 1;
-  const onFile = async (file: File) => {
-    setIsReading(true);
-    let picked: Awaited<ReturnType<typeof importImage>>;
-    try {
-      picked = await importImage(file, element.id, elements);
-    } finally {
-      setIsReading(false);
-    }
-    if (picked !== null) {
-      onChange(
-        {
-          ...elementRef.current,
-          pixels: picked.pixels,
-          pixelWidth: picked.pixelWidth,
-          pixelHeight: picked.pixelHeight,
-        },
-        'pixels',
-      );
-    }
-  };
   return (
     <>
       <div className="form-row">
@@ -471,10 +437,10 @@ function ImageProperties({
           <button
             type="button"
             className="button button--small"
-            disabled={isReading}
+            disabled={isImportingImage}
             onClick={() => inputRef.current?.click()}
           >
-            {isReading ? '正在读取…' : '选择图片…'}
+            {isImportingImage ? '正在读取…' : '选择图片…'}
           </button>
           <input
             ref={inputRef}
@@ -486,7 +452,7 @@ function ImageProperties({
               // 清掉选择：同一个文件改过之后再选一次也能触发。
               event.target.value = '';
               if (file) {
-                void onFile(file);
+                onImportImage(file);
               }
             }}
           />
@@ -496,13 +462,14 @@ function ImageProperties({
         label="转黑白"
         value={element.mode}
         options={IMAGE_MODE_OPTIONS}
-        onChange={(mode) => onChange({ ...element, mode }, 'mode')}
+        onChange={(mode) => onChange({ ...element, mode }, null)}
       />
       <RangeField
         label="阈值"
         value={element.threshold}
         max={THRESHOLD_MAX}
         onChange={(threshold) => onChange({ ...element, threshold }, 'threshold')}
+        onEndMerge={onEndMerge}
       />
       <p className="form-hint">
         标签机只有黑白两色：「阈值」适合 Logo
@@ -515,7 +482,7 @@ function ImageProperties({
 function LineProperties({ element, onChange }: { element: CanvasLine; onChange: ElementChange }) {
   return (
     <>
-      <Toggle label="虚线" checked={element.dashed} onChange={(dashed) => onChange({ ...element, dashed }, 'dashed')} />
+      <Toggle label="虚线" checked={element.dashed} onChange={(dashed) => onChange({ ...element, dashed }, null)} />
       <p className="form-hint">{`横线还是竖线看宽和高哪个长，粗细是短的那一边（最细 ${CANVAS_LIMITS.minSizeMm}mm）。`}</p>
     </>
   );
@@ -541,7 +508,7 @@ function RectProperties({
         onChange={(borderMm) => onChange({ ...element, borderMm }, 'borderMm')}
         onBlur={onEndMerge}
       />
-      <Toggle label="填黑" checked={element.filled} onChange={(filled) => onChange({ ...element, filled }, 'filled')} />
+      <Toggle label="填黑" checked={element.filled} onChange={(filled) => onChange({ ...element, filled }, null)} />
       <NumberField
         label="圆角"
         value={element.radiusMm}

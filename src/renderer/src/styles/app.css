@@ -1179,6 +1179,24 @@ textarea {
   margin: 0 var(--space-3) var(--space-2);
 }
 
+/* 按批次筛选时的提示行：批次号（等宽）、重打失败的、显示全部 */
+.job-log__batch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 var(--space-3) var(--space-2);
+  font-size: 12px;
+}
+
+.job-log__batch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-data);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .job-log__count {
   color: var(--color-ink-soft);
   font: 12px var(--font-data);

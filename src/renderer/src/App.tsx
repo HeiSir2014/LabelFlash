@@ -359,6 +359,13 @@ export function App() {
               reprintModeOf={reprintModeOf}
               onReview={(job) => station.review(historyTarget(job))}
               onReprint={(job) => station.reprint(historyTarget(job))}
+              batchFilter={jobLog.batchId}
+              onFilterBatch={jobLog.setBatchId}
+              onRetryBatch={(batchId) => {
+                // 打开批量打印页：进度、失败的原因（例如模板删了不能重打）都在那里看。
+                appView.openBatch();
+                void batch.retryFailed(batchId, null);
+              }}
             />
           }
         />

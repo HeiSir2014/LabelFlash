@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { applyNoteOverride } from '../../../core/templates/note-override';
 import { BRAND } from '../../../shared/brand';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../../shared/settings';
+import type { LibraryPreview } from '../../../shared/template-library';
 import type { SampleContent } from '../components/SampleInput';
 import type { ConfigPage, Platform } from '../lib/app-view';
 import { editorForPage, type PageDraft } from '../lib/editor-guard';
@@ -16,6 +17,7 @@ import { useLookupPreview } from './use-lookup-preview';
 import { useQrImage } from './use-qr-image';
 import type { RulesViewModel } from './use-rules';
 import { useSampleContent } from './use-sample-content';
+import { useTemplateLibrary } from './use-template-library';
 import { useTemplatePreview } from './use-template-preview';
 import type { TemplatesViewModel } from './use-templates';
 import { useWebhookDeliveries } from './use-webhook-deliveries';
@@ -48,7 +50,8 @@ export function useConfigCenter({
 }: ConfigCenterOptions) {
   const endpointEditor = useEndpointEditor();
   const drafts: Partial<Record<ConfigPage, PageDraft>> = {
-    templates: { isEditing: templates.draft !== null, isDirty: templates.isDirty },
+    // 模板库也算「编辑器」：Esc、点面包屑的「模板」回到列表，离开模板页时一并关掉。
+    templates: { isEditing: templates.draft !== null || templates.isLibraryOpen, isDirty: templates.isDirty },
     rules: { isEditing: rules.draft !== null, isDirty: rules.isDirty },
     webhooks: { isEditing: endpointEditor.draft !== null, isDirty: endpointEditor.isDirty },
   };
@@ -69,10 +72,14 @@ export function useConfigCenter({
   const page = isOpen ? view.page : appView.leavingPage;
 
   const editingName = page === 'templates' ? templates.draft?.name : page === 'rules' ? rules.draft?.name : undefined;
+  const editingLabel =
+    editingName !== undefined
+      ? `编辑：${editingName}`
+      : page === 'templates' && templates.isLibraryOpen
+        ? '从模板库新建'
+        : null;
   const breadcrumb =
-    editingName === undefined
-      ? null
-      : { current: `编辑：${editingName}`, onList: () => appView.requestLeave(() => undefined) };
+    editingLabel === null ? null : { current: editingLabel, onList: () => appView.requestLeave(() => undefined) };
 
   // 模板页预览选中的模板或草稿，套用备注下拉框的选择（草稿除外：正在编辑的就是备注本身）。
   const noteOverride = settings?.noteOverride ?? DEFAULT_SETTINGS.noteOverride;
@@ -81,7 +88,8 @@ export function useConfigCenter({
     () => (templates.selected ? applyNoteOverride(templates.selected, noteOverride) : null),
     [templates.selected, noteOverride],
   );
-  const previewedTemplate = page === 'templates' ? (templates.draft ?? selectedTemplate) : null;
+  const previewedTemplate =
+    page === 'templates' && !templates.isLibraryOpen ? (templates.draft ?? selectedTemplate) : null;
   // 复制出的那个模板（草稿或保存后选中）才用模板库示例；回到列表点别的模板，按预览内容识别。
   const librarySampleId = librarySampleIdFor(sample.library, previewedTemplate?.id ?? null);
   const templatePreview = useTemplatePreview(sample.value, previewedTemplate, '', librarySampleId);
@@ -133,6 +141,15 @@ export function useConfigCenter({
     },
   });
 
+  const templateLibrary = useTemplateLibrary(isOpen && page === 'templates' && templates.isLibraryOpen);
+  /** 「用这个模板」：复制成功后，预览内容换成这个模板的示例数据（只对复制出的那个模板生效）。 */
+  const createFromLibrary = async (item: LibraryPreview) => {
+    const created = await templates.createFromLibrary(item.id);
+    if (created !== null) {
+      sample.showLibrarySample({ templateId: created.id, libraryId: item.id }, item.sampleContent);
+    }
+  };
+
   const lookupPreview = useLookupPreview(rules.lookupTables);
   const deliveries = useWebhookDeliveries(isOpen && page === 'webhooks');
   const shopQr = useQrImage(BRAND.shop.url);
@@ -148,6 +165,7 @@ export function useConfigCenter({
     templatePage: { sample: sampleView, preview: templatePreview, fieldNames },
     /** 正在预览的模板绑着的模板库示例（「打印一张试试」也用它）。 */
     librarySampleId,
+    templateLibrary: { ...templateLibrary, createFromLibrary },
     tester: { raw: testerRaw, onRawChange: setTesterRaw },
     lookupPreview,
     deliveries,

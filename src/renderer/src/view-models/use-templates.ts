@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CanvasTemplate } from '../../../core/templates/canvas-model';
 import { isBuiltInTemplateId, type LabelTemplate } from '../../../core/templates/template-model';
 import type { AppSettings } from '../../../shared/settings';
 import { deepEqual } from '../lib/deep-equal';
@@ -33,6 +34,8 @@ export function useTemplates({
   // 守着「新建自由设计模板」：原因同上——双击按钮会在主进程回应第一次调用之前就发出第二次，
   // 光靠 state 挡不住，得建出两个空白模板才反应过来。
   const isCreatingCanvasRef = useRef(false);
+  /** 「从模板库新建」打开着：模板页显示模板库，不显示列表。 */
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -103,6 +106,27 @@ export function useTemplates({
       setIsCreatingCanvas(false);
     }
   }, [load]);
+
+  /**
+   * 「用这个模板」：把模板库里的模板复制成自定义模板，选中它、直接进设计器。返回复制出的模板（失败时提示并返回 null），
+   * 调用方据此把预览内容换成这个模板的示例数据。
+   */
+  const createFromLibrary = useCallback(
+    async (libraryId: string): Promise<CanvasTemplate | null> => {
+      try {
+        const created = await window.api.createTemplateFromLibrary(libraryId);
+        await load();
+        setSelectedId(created.id);
+        setDraft(structuredClone(created));
+        setIsLibraryOpen(false);
+        return created;
+      } catch (error) {
+        reportError('从模板库新建', error);
+        return null;
+      }
+    },
+    [load],
+  );
 
   const startEdit = useCallback(
     (id: string) => {
@@ -188,7 +212,15 @@ export function useTemplates({
     saveDraft,
     printSample,
     isPrintingSample,
-    cancelEdit: () => setDraft(null),
+    // 关掉编辑器（返回列表、Esc、离开模板页）也关掉模板库：两者都是列表之上的一层。
+    cancelEdit: () => {
+      setDraft(null);
+      setIsLibraryOpen(false);
+    },
+    isLibraryOpen,
+    openLibrary: () => setIsLibraryOpen(true),
+    closeLibrary: () => setIsLibraryOpen(false),
+    createFromLibrary,
     remove,
   };
 }

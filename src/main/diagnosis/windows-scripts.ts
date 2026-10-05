@@ -3,7 +3,6 @@ import {
   PRINT_TICKET_NAMESPACE_PATTERN,
   type PrintTicketPaper,
 } from '../../core/diagnosis/paper-choice';
-import { powerShellLiteral } from '../../shared/firewall-rule';
 import { PAPER_TOLERANCE_MM, type PaperSize } from '../../shared/paper-sizes';
 
 /** 脚本的退出码：提权后的窗口是隐藏的，输出拿不回来，结果只能靠退出码带回。 */
@@ -28,6 +27,17 @@ const PREAMBLE = [
   "$ProgressPreference = 'SilentlyContinue'",
   "$env:PSModulePath = Join-Path $PSHOME 'Modules'",
 ].join('\n');
+
+/**
+ * 打印机名来自系统打印机列表，但列表里的名字本身不可信（WSD/IPP 自动发现、拷贝粘贴的驱动名可以是任意文字，
+ * 包括 PowerShell 的智能引号变体）。按 Base64 写进脚本、脚本里再解码，不管名字里有什么字符都不会被当成代码，
+ * 和探测进程解析请求行的做法一致（见 printer-probe-host.ts）。Base64 字母表本身只有 ASCII 字母、数字、+ / =，
+ * 包在普通的单引号里总是安全的。
+ */
+function decodedNameAssignment(variable: string, value: string): string {
+  const encoded = Buffer.from(value, 'utf8').toString('base64');
+  return `${variable} = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))`;
+}
 
 /** 打开这台打印机的队列，要「管理打印机」权限（清空、改默认设置都要）。 */
 const OPEN_QUEUE_AS_ADMIN = `Add-Type -AssemblyName System.Printing
@@ -64,7 +74,7 @@ export function restartSpoolerScript(): string {
 export function purgeQueueScript(printerName: string): string {
   return [
     PREAMBLE,
-    `$Name = ${powerShellLiteral(printerName)}`,
+    decodedNameAssignment('$Name', printerName),
     `try {
   ${OPEN_QUEUE_AS_ADMIN}
   $queue.Purge()
@@ -85,7 +95,7 @@ export function cancelJobsScript(printerName: string, ids: readonly number[]): s
   }
   return [
     PREAMBLE,
-    `$Name = ${powerShellLiteral(printerName)}`,
+    decodedNameAssignment('$Name', printerName),
     `$Ids = @(${ids.join(', ')})`,
     `$canceled = 0
 try {
@@ -180,7 +190,7 @@ try {
 export function setDriverPaperScript(printerName: string, paper: PrintTicketPaper, target: PaperSize): string {
   return [
     PREAMBLE,
-    `$Name = ${powerShellLiteral(printerName)}`,
+    decodedNameAssignment('$Name', printerName),
     `$Delta = '${Buffer.from(paperDeltaTicket(paper), 'utf8').toString('base64')}'`,
     `$WidthMicrons = ${Math.round(target.widthMm * MICRONS_PER_MM)}`,
     `$HeightMicrons = ${Math.round(target.heightMm * MICRONS_PER_MM)}`,

@@ -23,8 +23,15 @@ describe('windows scripts', () => {
     }
   });
 
-  test('passes the printer name only as a PowerShell literal', () => {
-    expect(purgeQueueScript("O'Neil 标签机")).toContain("$Name = 'O''Neil 标签机'");
+  // 打印机名来自系统（WSD/IPP 自动发现的名字可以是任意文字），按 Base64 传入、脚本里再解码，
+  // 不管名字里有什么字符（包括 PowerShell 的智能引号变体）都跳不出这段脚本。
+  test('passes the printer name as base64, decoded inside the script, never as literal text', () => {
+    const name = "O'Neil ’; Write-Output INJECTED; ’ 标签机";
+    const script = purgeQueueScript(name);
+    const encoded = Buffer.from(name, 'utf8').toString('base64');
+    expect(script).toContain(`$Name = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))`);
+    expect(script).not.toContain(name);
+    expect(script).not.toContain('INJECTED');
   });
 
   test('runs sc.exe from the system directory, not from a name or an environment variable', () => {

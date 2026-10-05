@@ -23,6 +23,7 @@ import {
 } from '../support/app-helpers';
 import { APP_ROOT, type LaunchOptions } from '../support/electron-app';
 import { expect, test } from '../support/fixtures';
+import { writeGridPdf } from '../support/pdf-files';
 import { connectTestPhone, type LocalRelay, startLocalRelay, type TestPhone } from '../support/relay-server';
 import {
   ALL_SIZES,
@@ -47,7 +48,7 @@ import { type Issue, pageChecks } from './checks';
 
 /**
  * 视觉验收（设计文档 §8.2 的验收项，V01 起）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
- * 结果写进 manifest.json，供验收页面逐项展示和确认；批量打印是 V60–V63，标签机指令是 V80–V83。
+ * 结果写进 manifest.json，供验收页面逐项展示和确认；批量打印是 V60–V63，打印 PDF 是 V70–V72，标签机指令是 V80–V83。
  */
 
 const OUT_DIR = join(APP_ROOT, 'test-results', 'visual-acceptance');
@@ -224,6 +225,45 @@ async function openBatchPage(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { level: 1, name: '批量打印' })).toBeVisible();
 }
 
+/** V70–V72：一台 100×150 的假面单机。 */
+const PDF_PRINTERS: FakePrinterSpec[] = [
+  { name: '面单机', paper: { widthMm: 100, heightMm: 150, dpi: 203 }, readiness: { ready: true } },
+];
+
+async function openPdfPage(page: Page): Promise<void> {
+  await callApi(page, 'updateSettings', { paperPrinters: { '100x150': '面单机' } });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await page.getByRole('button', { name: '打印 PDF' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '打印 PDF' })).toBeVisible();
+}
+
+async function openGridPdf(app: ElectronApplication, page: Page, userData: string): Promise<void> {
+  const path = join(userData, 'grid.pdf');
+  await writeGridPdf(app, path);
+  await stubOpenDialog(app, path);
+  await openPdfPage(page);
+  await page.getByRole('button', { name: '选择 PDF…' }).click();
+  await expect(page.locator('.pdf-preview__summary')).toContainText('共 8 张');
+}
+
+/**
+ * 在第一页上从 (x1, y1) 拖到 (x2, y2)，按页面比例。1280×800 的视口里第一页的底图整张比视口矮不了多少：
+ * 先把它滚到可视区顶部，不然底部的坐标落在视口外，鼠标事件根本碰不到元素。
+ */
+async function dragBox(page: Page, from: [number, number], to: [number, number]): Promise<void> {
+  const image = page.getByRole('img', { name: '第一页' });
+  await image.evaluate((element) => element.scrollIntoView({ block: 'start' }));
+  const box = await image.boundingBox();
+  if (box === null) {
+    throw new Error('the first page is not shown');
+  }
+  await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1]);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * to[0], box.y + box.height * to[1], { steps: 5 });
+  await page.mouse.up();
+}
+
 /** 复制通用模板，改成指定的纸张（和打印机）后保存；返回新模板的 id。 */
 async function saveCopyOnPaper(
   page: Page,
@@ -350,20 +390,26 @@ const ITEMS: Item[] = [
         label: '常态',
         prepare: async ({ page }) => {
           if ((await page.locator('.config-center').count()) > 0) {
-            await page.locator('.config-button:not(.batch-button)').click();
+            await page.locator('.config-button:not(.batch-button):not(.pdf-button)').click();
             await expect(page.locator('.config-center')).toHaveCount(0);
           }
           await page.locator('.title-bar__name').hover();
         },
       },
-      { label: '悬停', prepare: async ({ page }) => page.locator('.config-button:not(.batch-button)').hover() },
+      {
+        label: '悬停',
+        prepare: async ({ page }) => page.locator('.config-button:not(.batch-button):not(.pdf-button)').hover(),
+      },
       {
         label: '按下（配置中心打开时）',
         prepare: async ({ page }) => {
           if ((await page.locator('.config-center').count()) === 0) {
-            await page.locator('.config-button:not(.batch-button)').click();
+            await page.locator('.config-button:not(.batch-button):not(.pdf-button)').click();
           }
-          await expect(page.locator('.config-button:not(.batch-button)')).toHaveAttribute('aria-pressed', 'true');
+          await expect(page.locator('.config-button:not(.batch-button):not(.pdf-button)')).toHaveAttribute(
+            'aria-pressed',
+            'true',
+          );
         },
       },
     ],
@@ -708,7 +754,7 @@ const ITEMS: Item[] = [
     points: '红绿灯区域、全屏时标题栏；配置中心快捷键显示 ⌘,；退出全屏后窗口回到进入全屏前的位置',
     sizes: [SIZE_1280],
     custom: async (ctx, record) => {
-      const title = await ctx.page.locator('.config-button:not(.batch-button)').getAttribute('title');
+      const title = await ctx.page.locator('.config-button:not(.batch-button):not(.pdf-button)').getAttribute('title');
       ctx.notes.push(`「配置」按钮的悬停提示：${title}`);
       if (process.platform !== 'darwin') {
         ctx.notes.push('不是 macOS：本项在 Mac 上复验');
@@ -1477,6 +1523,66 @@ const ITEMS: Item[] = [
       await panel.getByRole('button', { name: '确认恢复出厂？' }).click();
       await expect(page.getByRole('alertdialog', { name: '恢复出厂设置' })).toBeVisible();
     },
+  },
+  {
+    id: 'V70',
+    title: '打印 PDF · 刚打开',
+    points:
+      '页头「← 返回工作台」和标题「打印 PDF」；只有「文件」一段：一句说明和「选择 PDF…」；底部操作条「每张 1 份」「打印 0 张」灰掉；标题栏「打印 PDF」按下，「批量打印」「配置」没按下；1024 宽时标题栏不换行、不溢出',
+    launch: { fakePrinters: PDF_PRINTERS },
+    setup: async ({ page }) => {
+      await openPdfPage(page);
+    },
+  },
+  {
+    id: 'V71',
+    title: '打印 PDF · 2×2 面单自动切成 8 张',
+    points:
+      '「grid.pdf · 2 页」；裁切方式「一页多张（自动识别）」选中，下面一句说明；纸张「100×150 二联面单 · 面单机」；缩略图网格 8 张，每张黑框和字母清楚、没有糊成灰色，下面是「1. 第 1 页第 1 张」和 ← → 删除；第一张是按下状态，右侧软尺框住 100×150 的同一张，黑框贴近纸边但没有被裁；汇总「共 8 张 · 每张 1 份 · 打 8 张」；网格自己滚动，页面不横向滚动；1024 宽时网格和预览上下排列',
+    launch: { fakePrinters: PDF_PRINTERS },
+    setup: async ({ app, page, userData }) => {
+      await openGridPdf(app, page, userData);
+    },
+    shots: [
+      {
+        label: '打印 PDF · 2×2 面单自动切成 8 张',
+        prepare: async ({ page }) => {
+          // 「文件」「纸张和裁切」两段比视口还高：滚到选中那张的真实预览底部对齐可视区，这一段才不会被切掉
+          // （scrollIntoViewIfNeeded 默认就近滚动，这一段本来就有一角露在视口里，不会再往下滚）。1024 宽时
+          // 网格和预览上下排列，换了尺寸要重新滚一次——每种尺寸截图前都会跑一次 prepare，不能只在 setup 里滚一次。
+          await page.locator('.pdf-preview__label').evaluate((element) => element.scrollIntoView({ block: 'end' }));
+        },
+      },
+    ],
+  },
+  {
+    id: 'V72',
+    title: '打印 PDF · 手动框选',
+    points:
+      '「框选区域」一段：第一页的底图按 A4 比例完整显示，两个蓝框带编号 1、2，框住左上和右下两张；右边一句说明和「框 1」「框 2」各带「删除」；1024 宽时底图和框列表上下排列（预览段「共 4 张 · 每张 1 份 · 打 4 张」和 4 张缩略图在下方，这张图按屏幕高度放不下，截图只覆盖框选区域，数字已由用例的断言核对过）',
+    launch: { fakePrinters: PDF_PRINTERS },
+    setup: async ({ app, page, userData }) => {
+      await openGridPdf(app, page, userData);
+      await page.getByLabel('手动框选').check();
+      await dragBox(page, [0.02, 0.02], [0.48, 0.48]);
+      // 等第一个框真的出块了（汇总变成「共 2 张」）再画第二个：两次出块离得太近，第二次可能读到
+      // 还没带上第一个框的旧设置（出块是异步的，往主进程一来一回）。
+      await expect(page.locator('.pdf-preview__summary')).toContainText('共 2 张');
+      await dragBox(page, [0.52, 0.52], [0.98, 0.98]);
+      await expect(page.locator('.pdf-preview__summary')).toContainText('共 4 张');
+    },
+    shots: [
+      {
+        label: '打印 PDF · 手动框选',
+        prepare: async ({ page }) => {
+          // 和 V71 一样：换了尺寸（尤其是 1024 宽单列排版）第一页底图的宽高跟着变，每种尺寸截图前都要
+          // 重新把底图滚到可视区顶部，不能只在 setup 里滚一次。
+          await page
+            .getByRole('img', { name: '第一页' })
+            .evaluate((element) => element.scrollIntoView({ block: 'start' }));
+        },
+      },
+    ],
   },
 ];
 

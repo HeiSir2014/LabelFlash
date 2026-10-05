@@ -57,7 +57,7 @@ export function exampleCatalog(models?: unknown[]): DriverCatalog {
 }
 
 /** 示例清单第一个型号的 Windows 安装包。 */
-export function exampleWindowsTarget(): InstallTarget {
+export function exampleWindowsTarget(): Extract<InstallTarget, { platform: 'windows' }> {
   const model = exampleCatalog().models[0];
   if (!model?.windows) {
     throw new Error('example model has no Windows package');

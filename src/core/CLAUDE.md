@@ -29,6 +29,7 @@
 | `lookup/` | CSV 解析（含 GBK 编码的中文 Excel）和查找索引 |
 | `notify/` | 打印结果通知的事件、投递状态和重试时间表 |
 | `api/` | 本机接口的任务：`PrintJobService`（整批核对、`requestId` 防重复、排队上限、按提交顺序逐个打印、重启后把没打完的标成 `INTERRUPTED`）、模板名换算、模板用到的字段。存储接口 `ApiJobStore` 的内存版和 SQLite 版共用 `testing/api-job-store-contract.ts` 这套测试 |
+| `diagnosis/` | 打印机诊断的纯逻辑：`diagnosis-model.ts`（两个平台统一的「事实」、动作结果、上限）、`submitted-jobs.ts`（本程序交给打印队列的时间段，认「本程序的任务」）、`queue-summary.ts`（卡住的任务）、`paper-choice.ts`（挑驱动纸张选项 / PWG 纸张名）、`fixes.ts`（每个平台每个修复要不要管理员、按钮和结果文字）、`verdicts.ts`（事实 → 结论、下一步、按钮） |
 
 ## 扩展时
 

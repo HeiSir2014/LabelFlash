@@ -9,6 +9,7 @@
   - `log-files.ts`、`ipc-errors.ts`、`ipc-validators.ts`、`update-settings.ts`
   - `printing/printer-status.ts`、`printing/printer-profiles.ts`、`printing/page-size.ts`、`printing/fake-printers.ts`
   - `mobile/` 整个目录
+  - `diagnosis/` 除了 `create-diagnosis-system.ts`（接上真实进程和文件）都不 import electron
 - **接线文件保持薄**：`window.ts`、`window-placement.ts`、`updater.ts`、`index.ts` 这类只负责接线，不写业务判断。
 - **依赖注入**：外部依赖由构造参数传入，测试时换成假的，例如 `PrinterProbeHost` 的进程工厂。
 
@@ -65,6 +66,17 @@
 | `security.ts`、`app-protocol.ts` | 拒绝导航、新窗口、重定向和 webview；只经 `app://bundle/` 提供界面文件 |
 | `mobile/` | 手机扫码的电脑端，见下一节 |
 
+## 诊断（`diagnosis/`）
+
+设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 7.2 节。
+
+- **分层**：系统命令的输出由 `windows-facts.ts`、`mac-facts.ts` 解析成 core 的「事实」，结论在 core 的 `verdicts.ts`；`windows-diagnosis.ts`、`mac-diagnosis.ts`、`fake-diagnosis.ts` 实现同一个 `DiagnosisSystem`，依赖由构造参数传入；样本在 `testing/fixtures/{windows,mac}/`，按原样保存。
+- **`diagnosis-station.ts`**：打印机名不在系统列表里的，检查只说「已经没有这台了」，修复直接拒绝；修复按 core 的管理员策略核对，同一时间只做一个；检查和修复都写日志，「查不到」的英文原因也写。
+- **Windows**：查询走常驻探测进程（`spooler`、`printer`、`usb`、`jobs`、`paper-options`，回答一行 JSON，长度有上限）；取消本程序的任务用一次性 PowerShell；要管理员的用 `windows-powershell.ts`（防火墙的做法：外层 `Start-Process -Verb RunAs`，内层 Base64，确认框没成退出 1223），提权脚本第一行把 `PSModulePath` 收紧到 `$PSHOME`，只用 .NET 系统程序集和 `[Environment]::SystemDirectory` 下的 `sc.exe`，结果靠退出码带回（`windows-scripts.ts` 的 `SCRIPT_EXIT`）。
+- **macOS**：`command-runner.ts` 跑命令（参数数组、英文环境、关 stdin、独立会话——CUPS 要密码时不会去终端上等）；改 CUPS 的先以当前用户做，`Forbidden` 时返回 needs-admin，操作员点管理员按钮后经 `osascript … with administrator privileges`（命令、提示经 argv，`shellCommand` 逐个单引号转义）。Get-Jobs 用自己的 ipptool 测试文件（`CUPS_GET_JOBS_TEST`），用时写进临时目录、用完删掉。
+- **账本**：`ElectronDriverAdapter` 和 5a 的 RAW 下发在任务进了系统队列后 `SubmittedJobs.record`，只在内存里。
+- **接缝**：5a（指令集、走纸、校准）和 5c（重装驱动）只经 `seams.ts` 的两个接口，`index.ts` 里接上；5c 合并前 `drivers` 是 null，按钮不出现。
+
 ## 本机接口（`api/`）
 
 设计见 `docs/superpowers/specs/2026-09-30-local-api-design.md`，给第三方的说明在 `docs/local-api.md`。
@@ -115,6 +127,7 @@
 | `window.ts` + `src/shared/window-chrome.ts` | 无边框窗口，按钮由界面自绘 | `titleBarStyle: 'hidden'`，保留系统红绿灯 |
 | `tray.ts` | 第一次隐藏到托盘时弹气泡提示 | 不弹 |
 | `secrets/` | DPAPI | 钥匙串 |
+| `diagnosis/` | 探测进程的诊断查询；提权 PowerShell（UAC） | `lpstat`、`ipptool`、`system_profiler`；`osascript` 要管理员密码 |
 
 - **解析和调用分开**：解析系统命令输出的函数写成纯函数，每个平台单独测试；调用系统命令的代码保持很薄。
 - **不经过 shell**：系统命令一律用参数数组调用，打印机名只经参数或环境变量传入，并且必须是系统打印机列表里存在的打印机。

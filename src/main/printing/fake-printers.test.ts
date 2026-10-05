@@ -54,6 +54,31 @@ describe('FakePrinters', () => {
   });
 });
 
+describe('FakePrinters (printer commands)', () => {
+  test('reports the driver name and records raw commands as text', async () => {
+    const printers = new FakePrinters([
+      { ...SPEC[0], name: '标签机A', driverName: 'Label Printer TSPL' } as FakePrinterSpec,
+    ]);
+    expect(await printers.driverName('标签机A')).toBe('Label Printer TSPL');
+    expect(await printers.driverName('没有这台')).toBeNull();
+    expect(await printers.sendRaw('标签机A', Buffer.from('FORMFEED\r\n'))).toEqual({ ok: true });
+    expect(printers.rawJobs).toEqual([{ printerName: '标签机A', text: 'FORMFEED\r\n' }]);
+  });
+
+  test('fails raw commands the way the spec says and records nothing', async () => {
+    const printers = new FakePrinters([{ ...SPEC[0], name: '面单机B', rawFailure: 'raw-rejected' } as FakePrinterSpec]);
+    expect(await printers.sendRaw('面单机B', Buffer.from('~PH\n'))).toMatchObject({
+      ok: false,
+      failure: { kind: 'raw-rejected' },
+    });
+    expect(await printers.sendRaw('没有这台', Buffer.from('~PH\n'))).toMatchObject({
+      ok: false,
+      failure: { kind: 'not-found' },
+    });
+    expect(printers.rawJobs).toEqual([]);
+  });
+});
+
 describe('FakeDriverAdapter', () => {
   test('answers the questions the main process asks a printer driver', async () => {
     const adapter = new FakeDriverAdapter(new FakePrinters(SPEC));

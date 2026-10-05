@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { applyNoteOverride } from '../../core/templates/note-override';
 import type { JobRecord } from '../../core/types';
+import { DEFAULT_PAPER } from '../../shared/label-paper';
+import { parsePaperKey } from '../../shared/paper-sizes';
 import { describePrintersSummary } from '../../shared/printer-summary';
 import { NO_RENDER_WARNINGS } from '../../shared/render-warnings';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
@@ -44,6 +46,7 @@ import { useLocalApi } from './view-models/use-local-api';
 import { useMediaQuery } from './view-models/use-media-query';
 import { useMobileStation } from './view-models/use-mobile-station';
 import { useNotices } from './view-models/use-notices';
+import { usePrinterCommands } from './view-models/use-printer-commands';
 import { usePrinterProfiles } from './view-models/use-printer-profiles';
 import { usePrinters } from './view-models/use-printers';
 import { useQrImage } from './view-models/use-qr-image';
@@ -124,6 +127,12 @@ export function App() {
     [installedNames, responsibilitiesByName],
   );
   const printerProfiles = usePrinterProfiles(installedNames, assignedNames, expectedPapers);
+  /** 这台打印机负责的纸：标签机指令的纸张按它预填；没负责纸张时按 60×40。 */
+  const paperForPrinter = useCallback(
+    (name: string) => parsePaperKey(expectedPapers[name] ?? '') ?? DEFAULT_PAPER,
+    [expectedPapers],
+  );
+  const printerCommands = usePrinterCommands(paperForPrinter);
   // 第一次读完打印机列表之前，不把分配到的打印机说成「这台电脑上没有」。
   const knownNames = printers.hasLoaded ? installedNames : [...installedNames, ...assignedNames];
   /** 系统打印机名 → 界面上显示的名字（macOS 上系统名是打印队列名）。 */
@@ -419,6 +428,7 @@ export function App() {
                 onOpenPreferences={(name) => void printerProfiles.openPreferences(name)}
                 onRefresh={() => void printers.refresh()}
                 onTestPrint={printTest}
+                commands={printerCommands}
               />
             }
             localApi={localApi}

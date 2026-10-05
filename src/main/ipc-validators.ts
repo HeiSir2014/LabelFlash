@@ -1,4 +1,6 @@
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
+import { isPrinterAction, type PrinterAction, type PrinterCommandConfig } from '../core/printer-commands/command-model';
+import { parseCommandConfig } from '../core/printer-commands/sanitize-command-config';
 import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-model';
@@ -179,4 +181,30 @@ export function requireWebOrigin(value: unknown): string {
     throw new TypeError('Invalid web origin');
   }
   return value;
+}
+
+/** 标签机指令的设置：每一项都要有、都合法（core 的严格校验），不纠正。 */
+export function requirePrinterCommandConfig(value: unknown): PrinterCommandConfig {
+  const config = parseCommandConfig(value);
+  if (config === null) {
+    throw new TypeError('Invalid printer command config');
+  }
+  return config;
+}
+
+export function requirePrinterAction(value: unknown): PrinterAction {
+  if (!isPrinterAction(value)) {
+    throw new TypeError('Invalid printer action');
+  }
+  return value;
+}
+
+/**
+ * settings:update 的补丁：是一个对象即可，但 printerCommands 只能经 printer:commands-apply 的严格校验
+ * （认指令集、核对打印机在系统列表里、按范围把关）写入，这里要把它挡在外面，不让界面绕过去直接改设置表。
+ */
+export function requireSettingsPatch(value: unknown): Record<string, unknown> {
+  const patch = requireRecord(value, 'settings patch');
+  const { printerCommands: _ignored, ...rest } = patch;
+  return rest;
 }

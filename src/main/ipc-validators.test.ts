@@ -10,12 +10,15 @@ import {
   requireMobilePhoneId,
   requirePaperKey,
   requirePositiveInteger,
+  requirePrinterAction,
+  requirePrinterCommandConfig,
   requirePrintOptions,
   requireRaw,
   requireRuleId,
   requireRuleIds,
   requireRuleKind,
   requireSecretName,
+  requireSettingsPatch,
   requireString,
   requireTemplateId,
   requireVoiceCue,
@@ -133,5 +136,34 @@ describe('ipc validators', () => {
     expect(requireWebOrigin('https://erp.example.com')).toBe('https://erp.example.com');
     expect(() => requireWebOrigin('null')).toThrow(TypeError);
     expect(() => requireWebOrigin(7)).toThrow(TypeError);
+  });
+
+  test('requirePrinterCommandConfig accepts only a complete, valid config', () => {
+    const config = {
+      commandSet: 'zpl',
+      density: 30,
+      speed: 6,
+      media: null,
+      orientation: 'normal',
+      finish: 'peel',
+      dpi: 300,
+    } as const;
+    expect(requirePrinterCommandConfig(config)).toEqual(config);
+    expect(() => requirePrinterCommandConfig({ ...config, density: 31 })).toThrow('Invalid printer command config');
+    expect(() => requirePrinterCommandConfig({ commandSet: 'zpl' })).toThrow('Invalid printer command config');
+    expect(() => requirePrinterCommandConfig('zpl')).toThrow('Invalid printer command config');
+  });
+
+  test('requirePrinterAction accepts the four actions only', () => {
+    expect(requirePrinterAction('factoryReset')).toBe('factoryReset');
+    expect(() => requirePrinterAction('raw')).toThrow('Invalid printer action');
+  });
+
+  // printerCommands 只能经 printer:commands-apply 的严格校验写入；settings:update 要把它挡在外面，
+  // 不然界面可以绕过指令集范围检查、绕过「只发给系统里有的打印机」的核对，直接把任意内容写进设置表。
+  test('requireSettingsPatch strips printerCommands but keeps other keys', () => {
+    const patch = { autoPrint: false, printerCommands: { 标签机A: { commandSet: 'tspl' } } };
+    expect(requireSettingsPatch(patch)).toEqual({ autoPrint: false });
+    expect(() => requireSettingsPatch('x')).toThrow(TypeError);
   });
 });

@@ -29,6 +29,7 @@ import {
   capturePng,
   formatBounds,
   isSameRectangle,
+  pushBatchStatus,
   pushUpdateStatus,
   resize,
   SIZE_1024,
@@ -1297,6 +1298,28 @@ const ITEMS: Item[] = [
       await expect.poll(async () => (await fakePrints(app)).length).toBeGreaterThanOrEqual(2);
       await page.getByRole('button', { name: '暂停' }).click();
       await expect(page.locator('.batch-actions').getByRole('status')).toContainText('已暂停');
+    },
+  },
+  {
+    id: 'V63',
+    title: '标题栏 · 批量打印按钮的进度数字很长',
+    points:
+      '一批 2 万张、打到 19999 张时，标题栏「批量打印」按钮上的「19999/20000」不换行、不挤出标题栏；1024 宽时同样不溢出',
+    sizes: [SIZE_1024, SIZE_1280],
+    setup: async ({ page, window }) => {
+      await pushBatchStatus(window, {
+        batchId: '20261002-143501-a1b2',
+        state: 'running',
+        total: 20000,
+        sent: 19999,
+        failed: 0,
+        pauseReason: null,
+        failures: [],
+        templateName: '通用',
+        tableId: null,
+        isActive: true,
+      });
+      await expect(page.getByRole('button', { name: '批量打印' })).toContainText('19999/20000');
     },
   },
 ];

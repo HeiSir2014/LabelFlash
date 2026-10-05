@@ -2,6 +2,7 @@ import { createServer, type RequestListener } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { expect, type JSHandle, type Page } from '@playwright/test';
 import type { BrowserWindow, Rectangle } from 'electron';
+import type { BatchStatus } from '../../src/shared/batch';
 import { IpcChannel, type LabelFlashApi } from '../../src/shared/ipc-contract';
 import type { UpdateStatus } from '../../src/shared/update-status';
 
@@ -60,6 +61,17 @@ export async function capturePng(window: WindowHandle): Promise<Buffer> {
 export async function pushUpdateStatus(window: WindowHandle, status: UpdateStatus): Promise<void> {
   await window.evaluate((win, { channel, payload }) => win.webContents.send(channel, payload), {
     channel: IpcChannel.UpdateStatusChanged,
+    payload: status,
+  });
+}
+
+/**
+ * 直接推一条批量打印状态，不需要真的开一批、真的打那么多张：标题栏按钮上的进度数字可能很长
+ * （例如一批 2 万张，打到 19999 张），验收它在窄屏幕下排不排得下，不用真的打两万张那么久。
+ */
+export async function pushBatchStatus(window: WindowHandle, status: BatchStatus): Promise<void> {
+  await window.evaluate((win, { channel, payload }) => win.webContents.send(channel, payload), {
+    channel: IpcChannel.BatchStatusChanged,
     payload: status,
   });
 }

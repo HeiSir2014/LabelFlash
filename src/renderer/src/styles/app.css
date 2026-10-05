@@ -138,8 +138,9 @@ textarea {
     display: none;
   }
 
-  /* 加了「批量打印」按钮后标题栏更挤：1024 宽时先让出店铺名，保留店铺图标和其余按钮。 */
-  .title-bar:has(.batch-button) .title-bar__shop-name {
+  /* 「批量打印」按钮一直都在（不是只在批量打印页才有），标题栏更挤：1024 宽时先让出店铺名，
+   * 保留店铺图标和其余按钮。不用 :has(.batch-button) 判断——这个按钮不是有条件渲染的，判断是多余的。 */
+  .title-bar__shop-name {
     display: none;
   }
 }

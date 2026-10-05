@@ -1,3 +1,4 @@
+import type { CommandSetName } from '../../core/diagnosis/diagnosis-model';
 import { PrintError } from '../../core/errors';
 import type { LabelJob, PrinterInfo } from '../../core/types';
 import type { DriverPaper } from '../../shared/driver-paper';
@@ -13,6 +14,21 @@ import type { RawSendResult } from './raw-sender';
  */
 export const FAKE_PRINTERS_ENV = 'CDL_LABELFLASH_FAKE_PRINTERS';
 
+/** 假打印机在诊断里的样子（都可以不填，不填就是「一切正常」）。 */
+export interface FakeDiagnosisSpec {
+  /** 后台打印服务：Windows 上是 Spooler 停了；macOS 上是这台在 CUPS 里被暂停了。任何一台写 stopped 都算。 */
+  spooler?: 'running' | 'stopped';
+  usb?: 'present' | 'disconnected' | 'not-found' | 'not-usb';
+  /** 队列里卡住的任务：本程序的（记进账本）和别人的。 */
+  stuckJobs?: { ours: number; others: number };
+  /** false：驱动里没有这种纸，也不能自定义。 */
+  paperSettable?: boolean;
+  /** 假的管理员确认框：allow 点了「是」，decline 点了「否」。 */
+  adminPrompt?: 'allow' | 'decline';
+  /** 5a 的指令集；不填是 tspl。 */
+  commandSet?: CommandSetName | 'none';
+}
+
 export interface FakePrinterSpec {
   name: string;
   /** 驱动默认纸张；null = 读不到。 */
@@ -23,6 +39,8 @@ export interface FakePrinterSpec {
   driverName?: string;
   /** 设了就让标签机指令按这个原因发送失败（E2E、视觉验收看失败提示）。 */
   rawFailure?: RawSendFailureKind;
+  /** 诊断用（见 FakeDiagnosisSpec）。 */
+  diagnosis?: FakeDiagnosisSpec;
 }
 
 /** 假打印机收到的一张。 */
@@ -63,6 +81,9 @@ export class FakePrinters {
   readonly printed: FakePrint[] = [];
   readonly rawJobs: FakeRawJob[] = [];
 
+  /** 诊断「自动设置驱动纸张」改过的驱动纸张。 */
+  private readonly paperOverrides = new Map<string, DriverPaper>();
+
   constructor(private readonly specs: readonly FakePrinterSpec[]) {}
 
   async listPrinters(): Promise<PrinterInfo[]> {
@@ -70,7 +91,11 @@ export class FakePrinters {
   }
 
   async driverPaper(name: string): Promise<DriverPaper | null> {
-    return this.find(name)?.paper ?? null;
+    return this.paperOverrides.get(name) ?? this.find(name)?.paper ?? null;
+  }
+
+  setDriverPaper(name: string, paper: DriverPaper): void {
+    this.paperOverrides.set(name, paper);
   }
 
   async readiness(name: string): Promise<PrinterReadiness | null> {

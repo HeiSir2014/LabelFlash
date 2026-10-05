@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { type HttpStep, STEP_LIMITS } from '../../src/core/scan/enrich-model';
-import type { FakePrinterSpec } from '../../src/main/printing/fake-printers';
+import type { FakeDiagnosisSpec, FakePrinterSpec } from '../../src/main/printing/fake-printers';
 import { RECENT_DELIVERY_COUNT } from '../../src/shared/ipc-contract';
 import { HISTORY_LIMIT_RANGE } from '../../src/shared/settings';
 import {
@@ -45,7 +45,7 @@ import { type Issue, pageChecks } from './checks';
 
 /**
  * 视觉验收（设计文档 §8.2 的 V01–V48）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
- * 结果写进 manifest.json，供验收页面逐项展示和确认，标签机指令是 V80–V83。
+ * 结果写进 manifest.json，供验收页面逐项展示和确认，标签机指令是 V80–V83，诊断是 V84–V86。
  */
 
 const OUT_DIR = join(APP_ROOT, 'test-results', 'visual-acceptance');
@@ -196,6 +196,36 @@ const PAPER_PRINTERS: FakePrinterSpec[] = [
   { name: '面单机C', paper: { widthMm: 100, heightMm: 180, dpi: 300 }, readiness: { ready: true } },
   { name: '家用打印机', paper: { widthMm: 210, heightMm: 297, dpi: 600 }, readiness: null },
 ];
+
+/** V84–V86：一台 60×40 的假标签机，诊断的各项按需要设成好的或坏的。 */
+const DIAGNOSIS_PRINTER = '标签机A';
+
+function diagnosisPrinters(diagnosis: FakeDiagnosisSpec, overrides: Partial<FakePrinterSpec> = {}): FakePrinterSpec[] {
+  return [
+    {
+      name: DIAGNOSIS_PRINTER,
+      paper: { widthMm: 60, heightMm: 40, dpi: 203 },
+      readiness: { ready: true },
+      diagnosis,
+      ...overrides,
+    },
+  ];
+}
+
+/** 把 60×40 分给标签机A，打开「打印机」页，点「诊断」，等全部查完。 */
+async function openDiagnosisPanel(page: Page): Promise<Locator> {
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': DIAGNOSIS_PRINTER } });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await openConfig(page, '打印机');
+  await page
+    .locator('.printer-row', { hasText: DIAGNOSIS_PRINTER })
+    .getByRole('button', { name: '诊断', exact: true })
+    .click();
+  const panel = page.getByRole('region', { name: `诊断：${DIAGNOSIS_PRINTER}` });
+  await expect(panel.locator('.diagnosis__summary')).toContainText('查完了');
+  return panel;
+}
 
 /** 复制通用模板，改成指定的纸张（和打印机）后保存；返回新模板的 id。 */
 async function saveCopyOnPaper(
@@ -1377,6 +1407,53 @@ const ITEMS: Item[] = [
       await panel.getByRole('button', { name: '恢复出厂设置' }).click();
       await panel.getByRole('button', { name: '确认恢复出厂？' }).click();
       await expect(page.getByRole('alertdialog', { name: '恢复出厂设置' })).toBeVisible();
+    },
+  },
+  {
+    id: 'V84',
+    title: '打印机 · 诊断 · 全部通过',
+    points:
+      '打印机行右侧「诊断」「测试页」并排、不换行；面板在行下面展开、占满整行；顶部「查完了：没发现问题，1 项待确认」和「重新检查」「打测试页」「收起」一行排开；六项依次是后台打印服务、打印机和驱动状态、USB 连接、打印队列、驱动纸张、指令集，标记分别是绿「通过」和橙「待确认」；指令集一项有「走一张纸」「纸张校准」「改指令集」；1024 宽时文字折行、不溢出',
+    launch: { fakePrinters: diagnosisPrinters({}) },
+    setup: async ({ page }) => {
+      await openDiagnosisPanel(page);
+    },
+  },
+  {
+    id: 'V85',
+    title: '打印机 · 诊断 · 发现问题',
+    points:
+      '红「有问题」的几项：驱动报告缺纸（下一步「装好标签纸…」、按钮「打开打印首选项」）、USB 没连上（下一步说换线换口）、队列卡住 3 个任务其中 1 个是本程序发的（「清除本程序的任务」「清除全部任务（需要管理员权限）」，Windows 上还有「打开打印队列」）、驱动纸张 100×150mm 不是 60×40mm（「自动设置驱动纸张（需要管理员权限）」，macOS 上没有括号）；按钮多时换行、和文字左对齐；顶部「查完了：4 项有问题，1 项待确认」',
+    launch: {
+      fakePrinters: diagnosisPrinters(
+        { usb: 'disconnected', stuckJobs: { ours: 1, others: 2 } },
+        {
+          paper: { widthMm: 100, heightMm: 150, dpi: 203 },
+          readiness: { ready: false, detail: '缺纸', issue: 'paperOut' },
+        },
+      ),
+    },
+    setup: async ({ page }) => {
+      await openDiagnosisPanel(page);
+    },
+  },
+  {
+    id: 'V86',
+    title: '打印机 · 诊断 · 修复之后',
+    points:
+      '队列一项下面绿色说明「已请求取消本程序的 1 个任务」，随后结论变成「…都不是本程序发的」；点了管理员按钮又拒绝后，红色提示「没有拿到管理员权限…」（读屏按 alert 念）；指令集一项问「标签机走出一张空白标签了吗？」并点了「没反应」：变红「有问题」，下面出现指令集下拉（5a 的控件）；提示不遮挡按钮',
+    launch: { fakePrinters: diagnosisPrinters({ stuckJobs: { ours: 1, others: 1 }, adminPrompt: 'decline' }) },
+    setup: async ({ page }) => {
+      const panel = await openDiagnosisPanel(page);
+      const queue = panel.locator('.diagnosis-item', { hasText: '打印队列' });
+      await queue.getByRole('button', { name: '清除本程序的任务' }).click();
+      await expect(queue).toContainText('都不是本程序发的');
+      await queue.getByRole('button', { name: '清除全部任务（需要管理员权限）' }).click();
+      await expect(queue.getByRole('alert')).toContainText('没有拿到管理员权限');
+      const commands = panel.locator('.diagnosis-item', { hasText: '指令集' });
+      await commands.getByRole('button', { name: '走一张纸' }).click();
+      await commands.getByRole('button', { name: '没反应' }).click();
+      await expect(commands).toContainText('标签机没有反应');
     },
   },
 ];

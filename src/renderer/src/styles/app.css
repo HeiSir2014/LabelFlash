@@ -1316,8 +1316,8 @@ textarea {
 }
 
 .badge--warning {
-  background: var(--color-warning);
-  color: var(--color-paper);
+  background: var(--color-warning-wash);
+  color: var(--color-ink);
 }
 
 /* 打印记录 */

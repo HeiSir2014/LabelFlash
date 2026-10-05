@@ -59,13 +59,25 @@ export interface WindowsPackage extends DownloadSpec {
   kind: WindowsPackageKind;
   /** exe 的静默参数；msi 由程序加 /qn /norestart，这里写额外的属性（例如 ALLUSERS=1）。 */
   silentArgs: string[];
-  /** Authenticode 签名证书的 Subject，必须逐字相同（用 bun run driver-catalog:describe 读出来）。 */
+  /**
+   * Authenticode 签名证书的 Subject，必须逐字相同（用 bun run driver-catalog:describe 读出来）。
+   * 不另外钉签发者（Issuer）或证书指纹：真正防篡改的是上面钉死的 sha256——装的字节必须和它逐位相同，
+   * 这件事不依赖签名链，哈希不可能被「换一个签发者」绕过。signer 只是第二层核对（装的确实是这家厂商签过的
+   * 东西，而不是哪个人凑巧用同一个哈希覆盖了文件），Authenticode 状态必须是 Valid（证书链本身已经验过
+   * 签发者可信），再加 Issuer 钉死只能防「另一家可信 CA 签发了同名 Subject 的证书」这种要先骗过那家 CA
+   * 的组织验证的场景，收益很小；加证书指纹则要求厂商每次续证书都重签清单，运营成本不划算。
+   */
   signer: string;
   successExitCodes: number[];
 }
 
 export interface MacPkg extends DownloadSpec {
-  /** pkgutil --check-signature 证书链第一行的名字（Developer ID Installer: …），必须逐字相同。 */
+  /**
+   * pkgutil --check-signature 证书链第一行的名字（Developer ID Installer: …），必须逐字相同。
+   * 不钉签发者：苹果的开发者证书链固定两层，所有开发者的 Developer ID Installer 证书都是同一个
+   * 「Developer ID Certification Authority」签发的，钉这一项对区分厂商没有任何帮助（见 WindowsPackage.signer
+   * 的说明，sha256 才是真正防篡改的那一层）。
+   */
   signer: string;
 }
 

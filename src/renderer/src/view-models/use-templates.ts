@@ -134,16 +134,17 @@ export function useTemplates({
   /**
    * 「打印一张试试」：按预览内容打印草稿，结果用提示条说。
    * 在调模板时连点按钮会打出好几张一样的草稿，所以打印未完成前，再点一下什么也不做。
+   * 复制自模板库、还在用示例数据预览时，打的也是示例数据（librarySampleId）。
    */
   const printSample = useCallback(
-    async (raw: string) => {
+    async (raw: string, librarySampleId: string | null) => {
       if (!draft || isPrintingSampleRef.current) {
         return;
       }
       isPrintingSampleRef.current = true;
       setIsPrintingSample(true);
       try {
-        const notice = describeSamplePrint(await window.api.printSample(raw, draft), Date.now());
+        const notice = describeSamplePrint(await window.api.printSample(raw, draft, librarySampleId), Date.now());
         notices.push(notice.tone, notice.message);
       } catch (error) {
         reportError('打印一张试试', error);

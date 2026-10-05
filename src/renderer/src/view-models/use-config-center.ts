@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { applyNoteOverride } from '../../../core/templates/note-override';
 import { BRAND } from '../../../shared/brand';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../../shared/settings';
+import type { SampleContent } from '../components/SampleInput';
 import type { ConfigPage, Platform } from '../lib/app-view';
 import { editorForPage, type PageDraft } from '../lib/editor-guard';
 import { fieldNameSuggestions } from '../lib/field-names';
 import { scanTargetFor } from '../lib/scan-routing';
+import { librarySampleIdFor } from '../lib/template-library';
 import { useAppView } from './use-app-view';
 import { useConfigScan } from './use-config-scan';
 import { useCopySecretReference } from './use-copy-secret-reference';
@@ -79,10 +81,15 @@ export function useConfigCenter({
     () => (templates.selected ? applyNoteOverride(templates.selected, noteOverride) : null),
     [templates.selected, noteOverride],
   );
-  const templatePreview = useTemplatePreview(
-    sample.value,
-    page === 'templates' ? (templates.draft ?? selectedTemplate) : null,
-  );
+  const previewedTemplate = page === 'templates' ? (templates.draft ?? selectedTemplate) : null;
+  // 复制出的那个模板（草稿或保存后选中）才用模板库示例；回到列表点别的模板，按预览内容识别。
+  const librarySampleId = librarySampleIdFor(sample.library, previewedTemplate?.id ?? null);
+  const templatePreview = useTemplatePreview(sample.value, previewedTemplate, '', librarySampleId);
+  const sampleView: SampleContent = {
+    value: sample.value,
+    onChange: sample.onChange,
+    isLibrarySample: librarySampleId !== null,
+  };
   const fieldNames = useMemo(
     () =>
       fieldNameSuggestions(
@@ -138,7 +145,9 @@ export function useConfigCenter({
     sink,
     pillFlashes,
     endpointEditor,
-    templatePage: { sample, preview: templatePreview, fieldNames },
+    templatePage: { sample: sampleView, preview: templatePreview, fieldNames },
+    /** 正在预览的模板绑着的模板库示例（「打印一张试试」也用它）。 */
+    librarySampleId,
     tester: { raw: testerRaw, onRawChange: setTesterRaw },
     lookupPreview,
     deliveries,

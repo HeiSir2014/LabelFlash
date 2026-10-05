@@ -371,7 +371,7 @@ export function App() {
               onCancel: templates.cancelEdit,
               onCreateCanvas: () => void templates.createCanvas(),
               isCreatingCanvas: templates.isCreatingCanvas,
-              onPrintSample: () => void templates.printSample(config.templatePage.sample.value),
+              onPrintSample: () => void templates.printSample(config.templatePage.sample.value, config.librarySampleId),
               isPrintingSample: templates.isPrintingSample,
               printers: printers.printers,
               paperPrinters,

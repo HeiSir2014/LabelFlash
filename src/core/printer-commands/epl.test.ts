@@ -43,7 +43,8 @@ describe('eplGapIssue', () => {
 describe('eplAction', () => {
   test('auto-senses, prints one blank label, prints the configuration and restores defaults', () => {
     expect(eplAction('calibrate')).toBe(lf('xa'));
-    expect(eplAction('feed')).toBe(lf('N', 'P1'));
+    // 手册要求 N 前面先发一个空行（LF），清掉命令缓冲区里可能残留的半条指令。
+    expect(eplAction('feed')).toBe(lf('', 'N', 'P1'));
     expect(eplAction('selfTest')).toBe(lf('U'));
     expect(eplAction('factoryReset')).toBe(lf('^default'));
   });

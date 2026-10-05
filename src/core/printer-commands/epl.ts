@@ -56,8 +56,9 @@ export function eplAction(action: PrinterAction): string {
       // xa：自动测纸（AutoSense），量标签长度、定间隙传感器的门限。
       return lines(['xa']);
     case 'feed':
+      // 手册要求 N 前面先发一个空行（LF），清掉命令缓冲区里可能残留的半条指令，打印机才会正常初始化。
       // N 清空图像缓冲区，P1 打一张：打出一张空白标签，就是走一张纸。
-      return lines(['N', 'P1']);
+      return lines(['', 'N', 'P1']);
     case 'selfTest':
       // U：打印配置。
       return lines(['U']);

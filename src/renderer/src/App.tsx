@@ -10,6 +10,7 @@ import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
 import { ConfigCenter } from './components/config/ConfigCenter';
 import { ConfigPages } from './components/config/ConfigPages';
 import { ConfirmDialog } from './components/config/ConfirmDialog';
+import { DriverSection } from './components/DriverSection';
 import { JobLog } from './components/JobLog';
 import { MOBILE_QR_SIZE_PX, MobileOverlay } from './components/MobileOverlay';
 import { NoticeBar } from './components/NoticeBar';
@@ -39,6 +40,7 @@ import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
 import { useConfigCenter } from './view-models/use-config-center';
+import { useDrivers } from './view-models/use-drivers';
 import { useFeedback } from './view-models/use-feedback';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
@@ -188,6 +190,10 @@ export function App() {
   });
   const { appView } = config;
   const isWorkbench = isWorkbenchActive(appView.view);
+
+  // 打印机页打开时检测缺驱动的设备；装好之后立即刷新打印机列表（新打印机出现、驱动纸张的「建议」跟着出现）。
+  const refreshPrinters = useCallback(() => void printers.refresh(), [printers.refresh]);
+  const drivers = useDrivers(appView.view.kind === 'config' && appView.view.page === 'printers', refreshPrinters);
 
   // 手机扫码：浮层只在工作台上显示；在配置中心里点按钮会先回到工作台（经过未保存修改的确认）。
   const mobile = useMobileStation({ onJobsChanged: () => void jobLog.refresh() });
@@ -429,6 +435,18 @@ export function App() {
                 onRefresh={() => void printers.refresh()}
                 onTestPrint={printTest}
                 commands={printerCommands}
+              />
+            }
+            drivers={
+              <DriverSection
+                status={drivers.status}
+                catalogUrl={settings?.driverCatalogUrl ?? null}
+                defaultCatalogUrl={appInfo?.defaultDriverCatalogUrl ?? null}
+                onChangeCatalogUrl={async (driverCatalogUrl) => (await update({ driverCatalogUrl })) !== null}
+                onDetect={() => void drivers.detect(true)}
+                onInstall={(key) => void drivers.install(key)}
+                onCancel={() => void drivers.cancel()}
+                onOpenPage={(key) => void drivers.openPage(key)}
               />
             }
             localApi={localApi}

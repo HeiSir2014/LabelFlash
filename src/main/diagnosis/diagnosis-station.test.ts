@@ -9,14 +9,18 @@ import type { DriverReinstallSeam } from './seams';
 
 const LABEL = { widthMm: 60, heightMm: 40 };
 
-function setup(spec: Partial<FakePrinterSpec> = {}, drivers: DriverReinstallSeam | null = null) {
+function setup(
+  spec: Partial<FakePrinterSpec> = {},
+  drivers: DriverReinstallSeam | null = null,
+  platform: 'windows' | 'mac' = 'windows',
+) {
   const clock = new FakeClock();
   const specs: FakePrinterSpec[] = [
     { name: '标签机A', paper: { widthMm: 60, heightMm: 40, dpi: 203 }, readiness: { ready: true }, ...spec },
   ];
   const printers = new FakePrinters(specs);
   const submitted = new SubmittedJobs(clock);
-  const system = new FakeDiagnosis('windows', specs, printers, submitted, clock);
+  const system = new FakeDiagnosis(platform, specs, printers, submitted, clock);
   const forgotten: string[] = [];
   const logs: string[] = [];
   const station = new DiagnosisStation({
@@ -61,6 +65,22 @@ describe('DiagnosisStation.check', () => {
     const { station } = setup({ diagnosis: { spooler: 'stopped' } });
     expect(await station.check(null, 'spooler', null)).toMatchObject({ status: 'fail' });
     await expect(station.check(null, 'queue', null)).rejects.toThrow('needs a printer');
+  });
+
+  // 后台打印服务停了时系统打印机列表可能是空的：这一项不能因为「这台不在列表里」就说「已经没有这台了」，
+  // 不然服务挂了反而查不出服务挂了，「重启后台打印服务」按钮也按不到。
+  test('checks the print service even for a printer that has left the system list', async () => {
+    const { station } = setup({ diagnosis: { spooler: 'stopped' } });
+    const verdict = await station.check('别的打印机', 'spooler', null);
+    expect(verdict).toMatchObject({ status: 'fail', detail: '后台打印服务没有运行：所有打印都发不出去' });
+    expect(verdict.fixes.map((fix) => fix.id)).toEqual(['restart-spooler']);
+  });
+
+  // macOS 上这台打印机不在列表里时，不拿一个可能不存在的队列名去问 CUPS：只查服务本身。
+  test('asks only about the service on macOS when the printer is not listed', async () => {
+    const { station } = setup({}, null, 'mac');
+    const verdict = await station.check('别的打印机', 'spooler', null);
+    expect(verdict).toMatchObject({ status: 'pass', detail: '打印系统（CUPS）在运行' });
   });
 
   test('offers a driver reinstall only through the 5c seam', async () => {
@@ -126,6 +146,14 @@ describe('DiagnosisStation.fix', () => {
       status: 'done',
     });
     expect(await station.check(null, 'spooler', null)).toMatchObject({ status: 'pass' });
+  });
+
+  // 诊断面板打开的是具体某台打印机，但服务挂了之后系统列表里可能已经没有它：重启服务不该因此被拒绝。
+  test('restarts the print service for a printer that has left the system list', async () => {
+    const { station } = setup({ diagnosis: { spooler: 'stopped' } });
+    expect(
+      await station.fix(request({ printerName: '别的打印机', fix: 'restart-spooler', admin: true })),
+    ).toMatchObject({ status: 'done' });
   });
 
   test('runs one fix at a time', async () => {

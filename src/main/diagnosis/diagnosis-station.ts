@@ -58,6 +58,12 @@ export class DiagnosisStation {
       return this.logged('(system)', spoolerVerdict(await system.spooler(null), system.platform));
     }
     if (!(await this.deps.isKnownPrinter(printerName))) {
+      // 后台打印服务不依赖这台打印机还在系统列表里：服务停了时列表本来就可能是空的，
+      // 不然这一项也会说「已经没有这台了」，「重启后台打印服务」的按钮也按不到。
+      // macOS 不拿一个可能已经不存在的队列名去问 CUPS，只查服务本身（system.spooler(null)）。
+      if (check === 'spooler') {
+        return this.logged(printerName, spoolerVerdict(await system.spooler(null), system.platform));
+      }
       // 点「诊断」之后打印机被拔掉或删了：这不是程序错误，说清楚就行。
       return this.logged(printerName, missingPrinterVerdict(check));
     }
@@ -73,8 +79,11 @@ export class DiagnosisStation {
     if (!isAllowed) {
       throw new Error(`Fix "${request.fix}" with admin=${request.admin} is not allowed on ${system.platform}`);
     }
+    // 重启后台打印服务不针对某一台打印机（run() 里也不用 printerName）：服务挂了时，
+    // 诊断面板打开的那台打印机本来就可能已经不在系统列表里了，不该因此拒绝重启。
     const isSystemFix = request.fix === 'restart-spooler';
-    const isListed = request.printerName === null ? isSystemFix : await this.deps.isKnownPrinter(request.printerName);
+    const isListed =
+      isSystemFix || (request.printerName !== null && (await this.deps.isKnownPrinter(request.printerName)));
     if (!isListed) {
       throw new Error(`Fix "${request.fix}" needs a printer that is in the system list`);
     }

@@ -45,6 +45,21 @@ export interface LaunchOptions {
   fakeOcr?: string[];
 }
 
+/**
+ * 换掉批量打印退出确认框（index.ts 的 before-quit，异步版 dialog.showMessageBox）的答案：
+ * 'confirm' 对应「仍要退出」（按钮数组的第二个，下标 1），'cancel' 对应「取消」（下标 0）。
+ * launchApp 默认换成 'confirm'（没人去点，不然会一直卡住等对话框）；专门测这个确认框的用例
+ * 用它换成 'cancel'，或者在断言完一次之后再换回 'confirm' 让程序退出。
+ */
+export async function stubBatchQuitConfirm(app: ElectronApplication, answer: 'confirm' | 'cancel'): Promise<void> {
+  await app.evaluate(
+    ({ dialog }, response) => {
+      dialog.showMessageBox = (async () => ({ response, checkboxChecked: false })) as typeof dialog.showMessageBox;
+    },
+    answer === 'confirm' ? 1 : 0,
+  );
+}
+
 /** 用指定的数据目录（不传则新建一个）启动构建好的程序，等到扫码框出现。 */
 export async function launchApp(userData?: string, options: LaunchOptions = {}): Promise<LaunchedApp> {
   const dataDir = userData ?? (await createUserDataDir());
@@ -69,11 +84,9 @@ export async function launchApp(userData?: string, options: LaunchOptions = {}):
   try {
     page = await app.firstWindow();
     await expect(page.locator('.scan-bar__input')).toBeVisible();
-    // 批量打印还有没打完的标签时退出会弹确认（index.ts 的 before-quit）：测试里没人去点，
-    // 统一选「仍要退出」，否则关程序会一直卡住等对话框。目前只有这一处用 showMessageBoxSync。
-    await app.evaluate(({ dialog }) => {
-      dialog.showMessageBoxSync = (() => 1) as typeof dialog.showMessageBoxSync;
-    });
+    // 批量打印还有没打完的标签时退出会弹确认（index.ts 的 before-quit）：默认选「仍要退出」，
+    // 否则关程序会一直卡住等对话框。专门测这个确认框的用例用 stubBatchQuitConfirm 换一个答案。
+    await stubBatchQuitConfirm(app, 'confirm');
   } catch (error) {
     // 调用方还没拿到这个程序，没法关它：启动没完成就在这里关掉，免得残留的进程占着数据目录。
     await app.close().catch(() => undefined);

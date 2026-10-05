@@ -1,9 +1,10 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Page } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 import { minimalXlsx } from '../src/main/batch/testing/minimal-xlsx';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
 import { callApi, fakePrints, stubOpenDialog } from './support/app-helpers';
+import { stubBatchQuitConfirm } from './support/electron-app';
 import { expect, test } from './support/fixtures';
 
 const LABEL_PRINTER: FakePrinterSpec = {
@@ -13,8 +14,29 @@ const LABEL_PRINTER: FakePrinterSpec = {
 };
 /** 暂停、取消的用例里每张打 300ms：按钮要在打完之前点到。 */
 const SLOW_PRINT_MS = 300;
-/** 暂停、取消后等正在打的那一张打完：它已经交出去了，收不回来。 */
-const IN_FLIGHT_SETTLE_MS = SLOW_PRINT_MS * 2;
+
+/**
+ * 等打印数量稳定下来（连续两次读到的一样）：暂停、取消之后用，比固定等一段时间更快也更可靠——
+ * 慢的时候（CI 负载高）不会因为等得不够久而读错，快的时候也不用白等。
+ */
+async function waitForPrintCountToSettle(app: ElectronApplication): Promise<number> {
+  let previous = -1;
+  await expect
+    .poll(
+      async () => {
+        const current = (await fakePrints(app)).length;
+        const isStable = current === previous;
+        previous = current;
+        return isStable;
+      },
+      // 两次读到一样的数才算稳定：间隔要比一张的打印延迟长，不然可能在正在打的那一张还没落地时
+      // 就连续读到两次一样的旧值，提前把还没结束的当成已经结束（暂停、取消这一刻可能正有一张在打，
+      // 状态已经是 paused/canceled 了，但它还没真的打完）。
+      { intervals: [SLOW_PRINT_MS + 100] },
+    )
+    .toBe(true);
+  return previous;
+}
 
 /** 60×40 分给标签机A（当前模板「通用」就是 60×40）。 */
 async function assignLabelPrinter(page: Page): Promise<void> {
@@ -128,18 +150,75 @@ test('pauses, resumes and cancels a running batch between labels', async ({ elec
 
   await page.getByRole('button', { name: '暂停' }).click();
   await expect(batchStatus(page)).toContainText('已暂停');
-  await page.waitForTimeout(IN_FLIGHT_SETTLE_MS);
-  const pausedAt = (await fakePrints(app)).length;
-  await page.waitForTimeout(IN_FLIGHT_SETTLE_MS);
-  expect((await fakePrints(app)).length).toBe(pausedAt);
+  const pausedAt = await waitForPrintCountToSettle(app);
 
   await page.getByRole('button', { name: '继续' }).click();
   await expect.poll(async () => (await fakePrints(app)).length).toBeGreaterThan(pausedAt);
   await page.getByRole('button', { name: '取消' }).click();
   await expect(batchStatus(page)).toContainText('已取消');
-  await page.waitForTimeout(IN_FLIGHT_SETTLE_MS);
-  const canceledAt = (await fakePrints(app)).length;
-  await page.waitForTimeout(IN_FLIGHT_SETTLE_MS);
-  expect((await fakePrints(app)).length).toBe(canceledAt);
+  const canceledAt = await waitForPrintCountToSettle(app);
   expect(canceledAt).toBeLessThan(20);
+});
+
+test('quitting mid-batch and confirming records exactly one CANCELED job per unattempted label', async ({
+  electronApp,
+}) => {
+  const { app, page } = await electronApp.launch({ fakePrinters: [{ ...LABEL_PRINTER, printDelayMs: SLOW_PRINT_MS }] });
+  await assignLabelPrinter(page);
+  await openBatch(page);
+  await page.getByRole('button', { name: '只按序号打' }).click();
+  await page.getByLabel('张数').fill('5');
+  await page.getByRole('button', { name: '打印 5 张' }).click();
+  await expect.poll(async () => (await fakePrints(app)).length).toBeGreaterThan(0);
+
+  await page.getByRole('button', { name: '暂停' }).click();
+  await expect(batchStatus(page)).toContainText('已暂停');
+  // 真的暂停下来之后（不是正在打的那一刻）没有哪一张算「正在打」，剩下没打的就是全部还没轮到的。
+  const sentBeforeQuit = await waitForPrintCountToSettle(app);
+  const unattempted = 5 - sentBeforeQuit;
+
+  // launchApp 默认把确认框换成「仍要退出」：退出走完整个确认 → 取消批次 → 记 CANCELED 的流程。
+  await app.close();
+
+  // 重开同一个数据目录：批量打印页不记得这一批了，但打印记录里应该能看到。
+  const relaunched = await electronApp.launch({ fakePrinters: [LABEL_PRINTER] });
+  const canceledRows = relaunched.page.locator('.job-row', { hasText: '退出时未打' });
+  await expect(canceledRows).toHaveCount(unattempted);
+  await expect(relaunched.page.locator('.job-row')).toHaveCount(5);
+});
+
+test('quitting mid-batch and cancelling keeps the app running and hides the window on close', async ({
+  electronApp,
+}) => {
+  const { app, page } = await electronApp.launch({ fakePrinters: [{ ...LABEL_PRINTER, printDelayMs: SLOW_PRINT_MS }] });
+  await assignLabelPrinter(page);
+  await openBatch(page);
+  await page.getByRole('button', { name: '只按序号打' }).click();
+  await page.getByLabel('张数').fill('20');
+  await page.getByRole('button', { name: '打印 20 张' }).click();
+  await expect.poll(async () => (await fakePrints(app)).length).toBeGreaterThan(0);
+  await page.getByRole('button', { name: '暂停' }).click();
+  await expect(batchStatus(page)).toContainText('已暂停');
+  const pausedAt = await waitForPrintCountToSettle(app);
+
+  await stubBatchQuitConfirm(app, 'cancel');
+  try {
+    // app.quit() 本身不等退出完成（真退出的话也不该等，会一直等不到）：用一次之后还能正常 evaluate
+    // 来确认进程确实没有退出。
+    await app.evaluate(({ app: electronApp }) => electronApp.quit());
+    await expect.poll(() => app.evaluate(({ app: electronApp }) => electronApp.getVersion())).toBeTruthy();
+    // 批次被取消了吗？没有：退出被取消，批次原样留着，暂停时的张数不该变。
+    expect((await fakePrints(app)).length).toBe(pausedAt);
+
+    // 关窗口（不是退出）：还是藏进托盘，不是真的关掉。
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
+    await expect
+      .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible() ?? null))
+      .toBe(false);
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+  } finally {
+    // 换回「仍要退出」：不管上面的断言有没有通过，用例结束时夹具都要能关掉这个程序，
+    // 不然一直卡在「取消」的确认框上，teardown 会超时（这个确认框现在没有真的窗口能去点它）。
+    await stubBatchQuitConfirm(app, 'confirm');
+  }
 });

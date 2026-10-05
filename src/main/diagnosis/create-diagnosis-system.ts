@@ -13,7 +13,12 @@ import { WindowsDiagnosis } from './windows-diagnosis';
 
 const DEFAULT_SYSTEM_ROOT = 'C:\\Windows';
 
-/** 按平台接上真实的进程和文件。Windows 必须有常驻探测进程（假打印机模式下没有，那时用 FakeDiagnosis）。 */
+/**
+ * 按平台接上真实的进程和文件。Windows 必须有常驻探测进程（假打印机模式下没有，那时用 FakeDiagnosis）。
+ * `probeHost` 必须是诊断专用的实例，不能和打印共用打印状态 / RAW 发送的那一个：诊断的查询
+ * （USB、队列、驱动纸张选项）比打印状态慢得多，一旦超时，探测进程会被整个重启，共用的话会连累
+ * 正在排队的打印请求。调用方（index.ts）负责各建一个 `PrinterProbeHost`。
+ */
 export function createDiagnosisSystem(platform: NodeJS.Platform, probeHost: PrinterProbeHost | null): DiagnosisSystem {
   if (platform === 'win32' && probeHost !== null) {
     return new WindowsDiagnosis({

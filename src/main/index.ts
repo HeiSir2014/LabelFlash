@@ -299,6 +299,15 @@ async function bootstrap(): Promise<void> {
       ? new PrinterProbeHost(spawnPowerShellProbe, PROBE_QUERY_TIMEOUT_MS, (message) => console.warn(message))
       : null;
   /**
+   * 诊断的查询（USB、队列、驱动纸张选项）单独开一个常驻探测进程，不跟打印共用 `probeHost`：
+   * 诊断查的东西比打印状态慢得多（枚举整条 USB 总线、读驱动的全部纸张选项、列队列），
+   * 超时或出错时只重启这一个进程，不会连累正在排队的 RAW 发送和打印机状态轮询。
+   */
+  const diagnosisProbeHost =
+    process.platform === 'win32' && fakePrinters === null
+      ? new PrinterProbeHost(spawnPowerShellProbe, PROBE_QUERY_TIMEOUT_MS, (message) => console.warn(message))
+      : null;
+  /**
    * 系统里有没有这台打印机。读打印机列表要用主窗口，启动时窗口还没建好会抛错：这时按「没有」处理，
    * 下一轮状态检测（窗口建好之后）再查。
    */
@@ -390,7 +399,7 @@ async function bootstrap(): Promise<void> {
         },
       };
   const diagnosis = new DiagnosisStation({
-    system: fakeDiagnosis ?? createDiagnosisSystem(process.platform, probeHost),
+    system: fakeDiagnosis ?? createDiagnosisSystem(process.platform, diagnosisProbeHost),
     // 系统打印机列表（读它要用主窗口；诊断由界面触发，那时窗口一定在）。
     isKnownPrinter: (name) => adapter.hasPrinter(name),
     driverPaper: (name) => profiles.fresh(name),
@@ -713,6 +722,7 @@ async function bootstrap(): Promise<void> {
     outbox.stop();
     status.stop();
     probeHost?.dispose();
+    diagnosisProbeHost?.dispose();
     tray?.destroy();
     closeDatabase();
   });

@@ -158,6 +158,7 @@ export function useAppView({ platform, canOpen, editor, onClosed }: AppViewOptio
         break;
       case 'close-config':
       case 'close-batch':
+      case 'close-pdf':
         close();
         break;
       case 'none':

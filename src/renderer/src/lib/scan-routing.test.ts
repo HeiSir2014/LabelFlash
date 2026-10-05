@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { BATCH_VIEW, WORKBENCH } from './app-view';
+import { BATCH_VIEW, PDF_VIEW, WORKBENCH } from './app-view';
 import { isWorkbenchActive, scanTargetFor } from './scan-routing';
 
 describe('scanTargetFor', () => {
@@ -13,6 +13,7 @@ describe('scanTargetFor', () => {
     expect(scanTargetFor({ kind: 'config', page: 'general' })).toBe('sink');
     expect(scanTargetFor({ kind: 'config', page: 'secrets' })).toBe('sink');
     expect(scanTargetFor(BATCH_VIEW)).toBe('sink');
+    expect(scanTargetFor(PDF_VIEW)).toBe('sink');
   });
 });
 
@@ -21,5 +22,6 @@ describe('isWorkbenchActive', () => {
     expect(isWorkbenchActive(WORKBENCH)).toBe(true);
     expect(isWorkbenchActive({ kind: 'config', page: 'about' })).toBe(false);
     expect(isWorkbenchActive(BATCH_VIEW)).toBe(false);
+    expect(isWorkbenchActive(PDF_VIEW)).toBe(false);
   });
 });

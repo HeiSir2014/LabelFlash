@@ -12,6 +12,7 @@ import {
   allowSlowScannerLines,
   blurActiveElement,
   callApi,
+  fakePrints,
   openConfig,
   recordClipboard,
   scan,
@@ -43,7 +44,7 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的 V01–V44）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 视觉验收（设计文档 §8.2 的验收项，V01 起；批量打印是 V60–V62）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
  * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
@@ -161,6 +162,31 @@ const PAPER_PRINTERS: FakePrinterSpec[] = [
   { name: '面单机C', paper: { widthMm: 100, heightMm: 180, dpi: 300 }, readiness: { ready: true } },
   { name: '家用打印机', paper: { widthMm: 210, heightMm: 297, dpi: 600 }, readiness: null },
 ];
+
+/** V60–V62：一台 60×40 的假标签机，每张打 300ms（V62 要在打完之前暂停）。 */
+const BATCH_PRINTERS: FakePrinterSpec[] = [
+  {
+    name: '标签机A',
+    paper: { widthMm: 60, heightMm: 40, dpi: 203 },
+    readiness: { ready: true },
+    printDelayMs: 300,
+  },
+];
+/** V61：12 行，第 5 行缺颜色（标黄）；表里没有「货架号」（对列标红）。 */
+const BATCH_CSV = [
+  '编码,颜色,尺码,备注',
+  ...Array.from({ length: 12 }, (_, index) => `CL${5640 + index},${index === 4 ? '' : '图片色'},XL,第 ${index + 1} 箱`),
+].join('\n');
+/** V62：只按序号打这么多张，暂停时还剩很多。 */
+const BATCH_SERIAL_COUNT = 30;
+
+async function openBatchPage(page: Page): Promise<void> {
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A' } });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await page.getByRole('button', { name: '批量打印' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '批量打印' })).toBeVisible();
+}
 
 /** 复制通用模板，改成指定的纸张（和打印机）后保存；返回新模板的 id。 */
 async function saveCopyOnPaper(
@@ -1221,6 +1247,56 @@ const ITEMS: Item[] = [
       await scan(page, 'CL5640-TK-图片色-XL');
       await openConfig(page, '模板');
       await page.locator('.template-item', { hasText: '吊牌（自由设计示例）' }).click();
+    },
+  },
+  {
+    id: 'V60',
+    title: '批量打印 · 刚打开',
+    points:
+      '页头「← 返回工作台」和标题「批量打印」；五段（模板、数据、对列、序号与份数、预览）自上而下，没有数据时预览段只有一句说明；底部操作条「打印 0 张」灰掉；标题栏「批量打印」是按下状态，「配置」不是；1024 宽时标题栏不换行、不溢出',
+    launch: { fakePrinters: BATCH_PRINTERS },
+    setup: async ({ page }) => {
+      await openBatchPage(page);
+    },
+  },
+  {
+    id: 'V61',
+    title: '批量打印 · 导入后的对列和预览',
+    points:
+      '数据行「batch.csv · 12 行 · 4 列」；对列表里 {货架号} 标红并说明可以不填；第 5 行（缺颜色）整行标黄、悬停能看到「缺：颜色」；表头固定，列多时表格自己横向滚动、页面不变宽；右侧是当前行的真实预览（吊牌），上方「上一张 / 下一张」；预览段顶部「共 12 行 · 打 12 张 · 1 行有问题（标黄）」；1024 宽时表格和预览上下排列',
+    launch: { fakePrinters: BATCH_PRINTERS },
+    setup: async ({ app, page, userData }) => {
+      const path = join(userData, 'batch.csv');
+      await writeFile(path, BATCH_CSV, 'utf8');
+      await stubOpenDialog(app, path);
+      await openBatchPage(page);
+      // 工作台一直挂载在后面（只是不显示），同名的「模板」控件不止一个：只认批量打印页里的。
+      await page
+        .locator('.batch-page')
+        .getByLabel('模板', { exact: true })
+        .selectOption({ label: '吊牌（自由设计示例）' });
+      await page.getByRole('button', { name: '选择文件…' }).click();
+      await expect(page.getByText('batch.csv · 12 行 · 4 列')).toBeVisible();
+      // 检查条码和排版期间汇总后面带着「正在检查…」：等它查完再截图。
+      await expect(page.locator('.batch-preview__summary')).toHaveText('共 12 行 · 打 12 张 · 1 行有问题（标黄）');
+      await page.getByRole('heading', { level: 2, name: '5 预览' }).scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    id: 'V62',
+    title: '批量打印 · 暂停中',
+    points:
+      '底部操作条：「已暂停（点继续接着打）· 已发送 n / 30 张」、进度条、「继续」（主按钮）「取消」；标题栏「批量打印」按钮上的进度「n/30」用等宽数字；提示条不盖住操作条',
+    launch: { fakePrinters: BATCH_PRINTERS },
+    setup: async ({ app, page }) => {
+      await openBatchPage(page);
+      await page.getByRole('button', { name: '只按序号打' }).click();
+      await page.getByLabel('张数').fill(String(BATCH_SERIAL_COUNT));
+      await page.getByRole('button', { name: `打印 ${BATCH_SERIAL_COUNT} 张` }).click();
+      // 进度是合并推送的，文字可能跳过某个数：按假打印机实际收到的张数等。
+      await expect.poll(async () => (await fakePrints(app)).length).toBeGreaterThanOrEqual(2);
+      await page.getByRole('button', { name: '暂停' }).click();
+      await expect(page.locator('.batch-actions').getByRole('status')).toContainText('已暂停');
     },
   },
 ];

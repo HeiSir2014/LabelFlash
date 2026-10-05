@@ -69,6 +69,11 @@ export async function launchApp(userData?: string, options: LaunchOptions = {}):
   try {
     page = await app.firstWindow();
     await expect(page.locator('.scan-bar__input')).toBeVisible();
+    // 批量打印还有没打完的标签时退出会弹确认（index.ts 的 before-quit）：测试里没人去点，
+    // 统一选「仍要退出」，否则关程序会一直卡住等对话框。目前只有这一处用 showMessageBoxSync。
+    await app.evaluate(({ dialog }) => {
+      dialog.showMessageBoxSync = (() => 1) as typeof dialog.showMessageBoxSync;
+    });
   } catch (error) {
     // 调用方还没拿到这个程序，没法关它：启动没完成就在这里关掉，免得残留的进程占着数据目录。
     await app.close().catch(() => undefined);

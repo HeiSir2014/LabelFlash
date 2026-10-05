@@ -9,6 +9,8 @@ import {
   shell,
 } from 'electron';
 import { BATCH_LIMITS } from '../core/batch/batch-model';
+import { PDF_LIMITS, PDF_PIECE_RETENTION_MS } from '../core/pdf/pdf-model';
+import { pieceTemplate } from '../core/pdf/piece-template';
 import { fieldsRuleFor, fieldsScan, type PrintService } from '../core/print-service';
 import type { PrinterChoice } from '../core/printing/resolve-printer';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
@@ -18,7 +20,7 @@ import { WAYBILL_SAMPLE_FIELDS } from '../core/templates/builtin-waybills';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
 import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
-import type { PreviewResult } from '../core/types';
+import type { JobRecord, PdfRef, PreviewResult } from '../core/types';
 import type { BatchTableResult } from '../shared/batch';
 import { BRAND } from '../shared/brand';
 import { checkDriverPaper } from '../shared/driver-paper';
@@ -31,6 +33,7 @@ import {
 } from '../shared/ipc-contract';
 import { DEFAULT_PAPER } from '../shared/label-paper';
 import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
+import type { PdfOpenResult } from '../shared/pdf';
 import { NO_RENDER_WARNINGS } from '../shared/render-warnings';
 import type { AppSettings } from '../shared/settings';
 import type { LocalApi } from './api/local-api';
@@ -49,12 +52,16 @@ import {
   requireLookupTableId,
   requireMobilePhoneId,
   requirePaperKey,
+  requirePdfLayout,
+  requirePdfPrintRequest,
+  requirePieceId,
   requirePositiveInteger,
   requirePrinterAction,
   requirePrinterCommandConfig,
   requirePrintOptions,
   requireRaw,
   requireRecord,
+  requireRunId,
   requireSecretName,
   requireSettingsPatch,
   requireString,
@@ -66,6 +73,8 @@ import {
 import type { LookupTables } from './lookup/lookup-tables';
 import type { MobileStation } from './mobile/mobile-station';
 import type { WebhookOutbox } from './notify/webhook-outbox';
+import { PDF_BLOCKS_UPDATE_ISSUE } from './pdf/pdf-quit';
+import type { PdfStation } from './pdf/pdf-station';
 import { type PrintTemplate, resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences } from './printing/driver-paper';
 import { renderLabelHtml } from './printing/label-html';
@@ -103,6 +112,8 @@ export interface IpcDeps {
   adapter: PrinterDriver;
   /** 批量打印：读表格、预览、检查、开打。 */
   batch: BatchStation;
+  /** PDF 打印：打开、出块、预览、打印；打印记录的预览、重打读它缓存的位图。 */
+  pdf: PdfStation;
   jobs: SqliteJobStore;
   settings: SqliteSettingsStore;
   templates: TemplateCatalog;
@@ -164,25 +175,45 @@ export function registerIpc(deps: IpcDeps): void {
     }
     return printerName;
   };
-  /**
-   * 按原样重打要用的记录、模板和字段。界面按 reprintMode 只对能重打的记录显示按钮，
-   * 这里再遇到缺东西（刚好被环形保留删掉、模板刚被删）就报错，由界面提示。
-   */
-  const storedLabelOf = (value: unknown) => {
+  const jobOf = (value: unknown): JobRecord => {
     const jobId = requireString(value, 'jobId', MAX_JOB_ID_LENGTH);
     const job = deps.jobs.get(jobId);
     if (job === null) {
       throw new Error(`Job not found: ${jobId}`);
     }
+    return job;
+  };
+  /**
+   * 按原样重打要用的模板和字段（本机接口、批量打印的记录）。界面按 reprintMode 只对能重打的记录显示按钮，
+   * 这里再遇到缺东西（刚好被环形保留删掉、模板刚被删）就报错，由界面提示。
+   */
+  const storedLabelOf = (job: JobRecord) => {
     if (job.templateId === undefined || job.fields === undefined) {
-      throw new Error(`Job ${jobId} has no stored template or fields`);
+      throw new Error(`Job ${job.id} has no stored template or fields`);
     }
     const template = deps.templates.get(job.templateId);
     if (template === null) {
-      throw new Error(`Template of job ${jobId} was deleted: ${job.templateId}`);
+      throw new Error(`Template of job ${job.id} was deleted: ${job.templateId}`);
     }
-    return { job, template, fields: job.fields };
+    return { template, fields: job.fields };
   };
+  /**
+   * PDF 打印的记录：模板用缓存的黑白位图临时包出来。界面只对保留期内的记录显示按钮；
+   * 位图已被清理（刚好过期）就报错，由界面提示。
+   */
+  const pdfLabelOf = async (job: JobRecord, pdf: PdfRef) => {
+    const paper = job.paper === undefined ? null : parsePaperKey(job.paper);
+    if (paper === null) {
+      throw new Error(`PDF job ${job.id} has no paper`);
+    }
+    const bitmap = await deps.pdf.storedPiece(pdf.bitmap);
+    if (bitmap === null) {
+      throw new Error(`The bitmap of PDF job ${job.id} is gone (kept ${PDF_PIECE_RETENTION_MS}ms): ${pdf.bitmap}`);
+    }
+    return { template: pieceTemplate(bitmap, paper), fields: job.fields ?? [] };
+  };
+  const labelOf = (job: JobRecord) =>
+    job.pdf === undefined ? Promise.resolve(storedLabelOf(job)) : pdfLabelOf(job, job.pdf);
   const scanOf = (result: PreviewResult) => (result.status === 'ok' ? result.scan : null);
   const printTemplateFor = (result: PreviewResult) =>
     resolvePrintTemplate(deps.templates, deps.settings.current, scanOf(result));
@@ -269,7 +300,8 @@ export function registerIpc(deps: IpcDeps): void {
   });
   handle(IpcChannel.ListJobs, (query) => deps.jobs.listPage(requireJobQuery(query)));
   handle(IpcChannel.PreviewJob, async (jobId) => {
-    const { job, template, fields } = storedLabelOf(jobId);
+    const job = jobOf(jobId);
+    const { template, fields } = await labelOf(job);
     const result: PreviewResult = {
       status: 'ok',
       scan: fieldsScan(job.raw, fields, fieldsRuleFor(job)),
@@ -277,10 +309,13 @@ export function registerIpc(deps: IpcDeps): void {
       lookupFailure: null,
       printer: await deps.choosePrinter(template),
     };
-    return renderPreview(result, { template, isBound: false }, await dpiFor(result));
+    const preview = renderPreview(result, { template, isBound: false }, await dpiFor(result));
+    // PDF 的一块铺满整张纸：自由设计的「靠近纸边」检查对它没有意义，预览上不显示。
+    return job.pdf === undefined ? preview : { ...preview, warnings: NO_RENDER_WARNINGS };
   });
-  handle(IpcChannel.ReprintJob, (jobId) => {
-    const { job, template, fields } = storedLabelOf(jobId);
+  handle(IpcChannel.ReprintJob, async (jobId) => {
+    const job = jobOf(jobId);
+    const { template, fields } = await labelOf(job);
     return deps.service.printFields({
       template,
       fields,
@@ -288,8 +323,9 @@ export function registerIpc(deps: IpcDeps): void {
       source: 'history',
       caller: job.caller ?? null,
       printerName: null,
-      // 批量打的重打后还算这一批的这一行这一份：整批重打失败的时，重打成功的不再算失败。
+      // 批量打的重打后还算这一批的这一行这一份（重打成功的不再算失败）；PDF 的重打指着同一张位图。
       ...(job.batch === undefined ? {} : { batch: job.batch }),
+      ...(job.pdf === undefined ? {} : { pdf: job.pdf }),
     });
   });
   handle(IpcChannel.GetSettings, () => deps.settings.current);
@@ -371,9 +407,12 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
   handle(IpcChannel.InstallUpdate, () => {
     // quitAndInstall 会在任何确认之前就把安装程序拉起来：不像正常退出能先弹确认框，
-    // 批量打印还在打或暂停中时只能直接拒绝，让操作员自己先打完或取消这一批。
+    // 批量打印、PDF 还在打或暂停中时只能直接拒绝，让操作员自己先打完或取消。
     if (deps.batch.pendingQuit() !== null) {
       return { status: 'refused', issue: BATCH_BLOCKS_UPDATE_ISSUE } as const;
+    }
+    if (deps.pdf.pendingQuit() !== null) {
+      return { status: 'refused', issue: PDF_BLOCKS_UPDATE_ISSUE } as const;
     }
     deps.updater.install('front');
     return { status: 'ok' } as const;
@@ -448,6 +487,40 @@ export function registerIpc(deps: IpcDeps): void {
     deps.batch.retryFailed(requireBatchId(batchId), row === null ? null : requirePositiveInteger(row, 'row')),
   );
   handle(IpcChannel.BatchStatus, () => deps.batch.status());
+
+  handle(IpcChannel.PdfOpenFile, async (): Promise<PdfOpenResult> => {
+    const window = deps.getWindow();
+    const options: OpenDialogOptions = {
+      title: '选择要打印的 PDF',
+      filters: [{ name: 'PDF 文件', extensions: ['pdf'] }],
+      properties: ['openFile'],
+    };
+    const { canceled, filePaths } = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options);
+    const [path] = filePaths;
+    if (canceled || path === undefined) {
+      return { status: 'canceled' };
+    }
+    return deps.pdf.loadPath(path);
+  });
+  // 拖进来的文件只收字节，不收路径：页面给不了主进程任何路径。超过上限的界面会先拦下并说明，这里只兜底。
+  handle(IpcChannel.PdfReadDropped, (name, bytes) =>
+    deps.pdf.loadBytes(
+      requireString(name, 'file name', MAX_FILE_NAME_LENGTH),
+      requireBytes(bytes, 'PDF file', PDF_LIMITS.fileBytes),
+    ),
+  );
+  handle(IpcChannel.PdfLayout, (layout) => deps.pdf.layout(requirePdfLayout(layout)));
+  handle(IpcChannel.PdfPreviewPiece, (runId, pieceId) =>
+    deps.pdf.previewPiece(requireRunId(runId), requirePieceId(pieceId)),
+  );
+  handle(IpcChannel.PdfPrint, (request) => deps.pdf.print(requirePdfPrintRequest(request)));
+  handle(IpcChannel.PdfPause, () => deps.pdf.pause());
+  handle(IpcChannel.PdfResume, () => deps.pdf.resume());
+  handle(IpcChannel.PdfCancel, () => deps.pdf.cancel());
+  handle(IpcChannel.PdfClose, () => deps.pdf.closeDocument());
+  handle(IpcChannel.PdfStatus, () => deps.pdf.status());
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());
   on(IpcChannel.WindowToggleMaximize, () => {

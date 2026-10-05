@@ -93,6 +93,17 @@ const api: LabelFlashApi = {
   retryBatchFailures: (batchId, row) => ipcRenderer.invoke(IpcChannel.BatchRetryFailed, batchId, row),
   getBatchStatus: () => ipcRenderer.invoke(IpcChannel.BatchStatus),
   onBatchStatus: (listener) => subscribe(IpcChannel.BatchStatusChanged, listener),
+  openPdfFile: () => ipcRenderer.invoke(IpcChannel.PdfOpenFile),
+  readDroppedPdf: (name, bytes) => ipcRenderer.invoke(IpcChannel.PdfReadDropped, name, bytes),
+  layoutPdf: (layout) => ipcRenderer.invoke(IpcChannel.PdfLayout, layout),
+  previewPdfPiece: (runId, pieceId) => ipcRenderer.invoke(IpcChannel.PdfPreviewPiece, runId, pieceId),
+  printPdf: (request) => ipcRenderer.invoke(IpcChannel.PdfPrint, request),
+  pausePdf: () => ipcRenderer.invoke(IpcChannel.PdfPause),
+  resumePdf: () => ipcRenderer.invoke(IpcChannel.PdfResume),
+  cancelPdf: () => ipcRenderer.invoke(IpcChannel.PdfCancel),
+  closePdf: () => ipcRenderer.invoke(IpcChannel.PdfClose),
+  getPdfStatus: () => ipcRenderer.invoke(IpcChannel.PdfStatus),
+  onPdfStatus: (listener) => subscribe(IpcChannel.PdfStatusChanged, listener),
 };
 
 const windowControls: WindowControlsApi = {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { BatchPlan } from '../core/batch/batch-model';
+import type { PdfLayout } from '../core/pdf/pdf-model';
 import {
   MAX_IPC_STRING_LENGTH,
   MAX_RAW_INPUT_LENGTH,
@@ -14,6 +15,9 @@ import {
   requireLookupTableId,
   requireMobilePhoneId,
   requirePaperKey,
+  requirePdfLayout,
+  requirePdfPrintRequest,
+  requirePieceId,
   requirePositiveInteger,
   requirePrinterAction,
   requirePrinterCommandConfig,
@@ -22,6 +26,7 @@ import {
   requireRuleId,
   requireRuleIds,
   requireRuleKind,
+  requireRunId,
   requireSecretName,
   requireSettingsPatch,
   requireString,
@@ -164,6 +169,23 @@ describe('ipc validators', () => {
     expect(requireIndex(0, 'row index')).toBe(0);
     expect(() => requireIndex(-1, 'row index')).toThrow('Invalid row index');
     expect(() => requireIndex(1.5, 'row index')).toThrow('Invalid row index');
+  });
+
+  test('PDF layouts, print requests, run ids and piece ids are checked', () => {
+    const layout: PdfLayout = { paperKey: '100x150', crop: 'split', boxes: [], mono: 'threshold', threshold: 128 };
+    expect(requirePdfLayout(layout)).toEqual(layout);
+    expect(() => requirePdfLayout({ ...layout, crop: 'x' })).toThrow('Invalid PDF layout');
+    const runId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    expect(requirePdfPrintRequest({ runId, pieceIds: ['1-1'], copies: 1 })).toEqual({
+      runId,
+      pieceIds: ['1-1'],
+      copies: 1,
+    });
+    expect(() => requirePdfPrintRequest({ runId, pieceIds: [], copies: 1 })).toThrow('Invalid PDF print request');
+    expect(requireRunId(runId)).toBe(runId);
+    expect(() => requireRunId('x')).toThrow('Invalid PDF run id');
+    expect(requirePieceId('2-3')).toBe('2-3');
+    expect(() => requirePieceId('../x')).toThrow('Invalid PDF piece id');
   });
 
   test('requirePrinterCommandConfig accepts only a complete, valid config', () => {

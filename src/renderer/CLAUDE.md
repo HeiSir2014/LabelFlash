@@ -54,6 +54,7 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 - **扫码**：画布是可聚焦的 `div`，不是输入框；只处理方向键、Delete / Backspace、Esc、Ctrl / ⌘ 组合键（`designerCommand`，有测试）。不要拦字母、数字做快捷键，也不要给画布加 `data-keep-focus`（那只对工作台有意义）：配置中心要把扫码枪的字符送进「预览内容」。
 - **改模板只经 `commit`**：先记撤销历史再交给草稿；同一个字段的连续输入用同一个合并键。
 - **剪贴板**在设计器的内存里；**图片**在页面里解码，模板只存灰度像素。
+- **模板库**：模板页的第三个视图（列表 / 编辑 / 模板库），算作模板页的「编辑器」（Esc、面包屑回到列表）。筛选和缩略图比例在 `lib/template-library.ts`，读取在 `view-models/use-template-library.ts`，组件 `components/TemplateLibrary.tsx`；缩略图是 `sandbox=""` 的 iframe，不要换成能跑脚本的方式。「用这个模板」之后预览内容绑着模板库示例（`use-sample-content.ts` 的 `library`，只对复制出的那个模板生效，`librarySampleIdFor`），改预览内容就解除。
 
 ## 播报与提示音
 

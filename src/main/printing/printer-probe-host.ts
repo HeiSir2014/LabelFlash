@@ -152,6 +152,8 @@ namespace LabelFlash {
  *   `-InputObject` 是因为只有一个元素的数组用管道传给 `ConvertTo-Json` 会被拆开，变成对象而不是数组；
  *   `Get-PnpDevice -InstanceId 'USBPRINT\\*'` 包括现在不在的设备（Present = $false），
  *   所以能说「系统记得它，但现在没连上」，问题代码用 Win32_PnPEntity 自带的 ConfigManagerErrorCode；
+ *   拔过的旧 USB 打印设备会一直留在这个列表里，超过上限要截断时先把 Present 的排到前面，
+ *   不然当前这台可能因为排在旧设备后面被截掉、查成「找不到」；
  *   `paper-options` 用 .NET 的 System.Printing（全局程序集缓存里的系统程序集，不是编译出来的代码）
  *   读驱动的 PrintCapabilities；XmlResolver 设为 $null 不解析外部实体；这些命令都在下面的 try 里，
  *   出错一样回 err …，主进程按「查不到」处理。
@@ -197,7 +199,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
       'usb' {
         $printer = Get-Printer -Name ([Management.Automation.WildcardPattern]::Escape($name))
         $devices = @(Get-PnpDevice -InstanceId 'USBPRINT\\*' -ErrorAction SilentlyContinue |
-          Select-Object -First ${DIAGNOSIS_LIMITS.usbDevices} | ForEach-Object {
+          Sort-Object -Property Present -Descending | Select-Object -First ${DIAGNOSIS_LIMITS.usbDevices} | ForEach-Object {
             [ordered]@{ instanceId = [string]$_.InstanceId; name = [string]$_.FriendlyName; present = [bool]$_.Present; problem = [int]$_.ConfigManagerErrorCode }
           })
         $reply = 'ok ' + (ConvertTo-Json -Compress -Depth 4 -InputObject ([ordered]@{ port = [string]$printer.PortName; devices = $devices }))

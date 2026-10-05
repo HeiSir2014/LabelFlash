@@ -270,4 +270,11 @@ describe('PrinterProbeHost', () => {
       expect(PROBE_SCRIPT).toContain(`'${command}' {`);
     }
   });
+
+  // 一台电脑上拔过的旧 USB 打印设备会一直留在 Get-PnpDevice 里：设备超过上限时，截断前先把
+  // 现在接着的（Present）排到前面，不然当前这台可能因为排在旧设备后面被截断掉、查成「找不到」。
+  test('sorts present USB devices first before truncating the list', () => {
+    const usbCase = PROBE_SCRIPT.slice(PROBE_SCRIPT.indexOf("'usb' {"), PROBE_SCRIPT.indexOf("'jobs' {"));
+    expect(usbCase).toMatch(/Sort-Object\s+-Property\s+Present\s+-Descending\s*\|\s*Select-Object\s+-First/);
+  });
 });

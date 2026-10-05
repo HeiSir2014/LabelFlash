@@ -198,3 +198,13 @@ export function requirePrinterAction(value: unknown): PrinterAction {
   }
   return value;
 }
+
+/**
+ * settings:update 的补丁：是一个对象即可，但 printerCommands 只能经 printer:commands-apply 的严格校验
+ * （认指令集、核对打印机在系统列表里、按范围把关）写入，这里要把它挡在外面，不让界面绕过去直接改设置表。
+ */
+export function requireSettingsPatch(value: unknown): Record<string, unknown> {
+  const patch = requireRecord(value, 'settings patch');
+  const { printerCommands: _ignored, ...rest } = patch;
+  return rest;
+}

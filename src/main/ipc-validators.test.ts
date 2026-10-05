@@ -18,6 +18,7 @@ import {
   requireRuleIds,
   requireRuleKind,
   requireSecretName,
+  requireSettingsPatch,
   requireString,
   requireTemplateId,
   requireVoiceCue,
@@ -156,5 +157,13 @@ describe('ipc validators', () => {
   test('requirePrinterAction accepts the four actions only', () => {
     expect(requirePrinterAction('factoryReset')).toBe('factoryReset');
     expect(() => requirePrinterAction('raw')).toThrow('Invalid printer action');
+  });
+
+  // printerCommands 只能经 printer:commands-apply 的严格校验写入；settings:update 要把它挡在外面，
+  // 不然界面可以绕过指令集范围检查、绕过「只发给系统里有的打印机」的核对，直接把任意内容写进设置表。
+  test('requireSettingsPatch strips printerCommands but keeps other keys', () => {
+    const patch = { autoPrint: false, printerCommands: { 标签机A: { commandSet: 'tspl' } } };
+    expect(requireSettingsPatch(patch)).toEqual({ autoPrint: false });
+    expect(() => requireSettingsPatch('x')).toThrow(TypeError);
   });
 });

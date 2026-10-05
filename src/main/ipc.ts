@@ -48,6 +48,7 @@ import {
   requireRaw,
   requireRecord,
   requireSecretName,
+  requireSettingsPatch,
   requireString,
   requireTemplateId,
   requireVoiceCue,
@@ -278,7 +279,7 @@ export function registerIpc(deps: IpcDeps): void {
     });
   });
   handle(IpcChannel.GetSettings, () => deps.settings.current);
-  handle(IpcChannel.UpdateSettings, (patch) => updateSettings(requireRecord(patch, 'settings patch')));
+  handle(IpcChannel.UpdateSettings, (patch) => updateSettings(requireSettingsPatch(patch)));
   handle(IpcChannel.ListTemplates, () => deps.templates.list());
   handle(IpcChannel.DuplicateTemplate, (sourceId) => deps.templates.duplicate(requireTemplateId(sourceId)));
   // 没有参数：主进程自己建空白模板，页面传不进任何内容（新通道只给最小能力）。

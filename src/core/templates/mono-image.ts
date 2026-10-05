@@ -140,6 +140,11 @@ const BMP_DATA_OFFSET = BMP_FILE_HEADER_BYTES + BMP_INFO_HEADER_BYTES + BMP_PALE
 /** 转 base64 时分块处理的字节数，避免把几十万字节的数组一次性展开成函数实参。 */
 const BASE64_CHUNK_BYTES = 0x8000;
 
+/** 灰度图 → base64（decodeGray 的反过程）：PDF 的一块交给自由设计的图片元素时用。 */
+export function encodeGray(image: GrayImage): string {
+  return bytesToBase64(image.pixels);
+}
+
 /**
  * 黑白点 → 1 位 BMP 的 base64：调色板索引 0 = 白、索引 1 = 黑，和 mono 里 1 = 黑点一一对应。
  * 不依赖任何图片编码库，Chromium 能直接把结果当 `data:image/bmp;base64,...` 渲染。

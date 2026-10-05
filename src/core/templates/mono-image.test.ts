@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { decodeGray, fitContain, monoBmp, resizeGray, toMono } from './mono-image';
+import { decodeGray, encodeGray, fitContain, monoBmp, resizeGray, toMono } from './mono-image';
 
 /** 把 0–255 的数组编码成 base64，方便写用例。 */
 function base64(values: number[]): string {
@@ -97,5 +97,12 @@ describe('mono image', () => {
     const bytes = bytesFromBase64(monoBmp(mono, width, height));
     const rowBytesPadded = 100; // ceil(787 / 8) = 99，再补到 4 的倍数 = 100
     expect(bytes.length).toBe(62 + rowBytesPadded * height);
+  });
+});
+
+describe('encodeGray', () => {
+  test('is the inverse of decodeGray', () => {
+    const image = { width: 3, height: 2, pixels: Uint8Array.of(0, 64, 128, 192, 255, 7) };
+    expect(decodeGray(encodeGray(image), 3, 2)).toEqual(image);
   });
 });

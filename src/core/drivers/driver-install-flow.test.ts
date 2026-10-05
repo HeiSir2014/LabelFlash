@@ -89,6 +89,12 @@ describe('runDriverInstall', () => {
     expect(invalid.installer.installed).toEqual([]);
   });
 
+  test('never runs an installer when the signature itself could not be checked', async () => {
+    const context = setup({ verifier: new FakeVerifier({ status: 'unverifiable', detail: 'query failed (exit 1)' }) });
+    expect((await run(context)).result).toMatchObject({ failure: 'signature-unverifiable' });
+    expect(context.installer.installed).toEqual([]);
+  });
+
   test('reports a declined admin prompt and an installer error with its exit code', async () => {
     expect((await run(setup({ installer: new FakeInstaller({ kind: 'declined' }) }))).result).toMatchObject({
       failure: 'admin-declined',
@@ -109,6 +115,16 @@ describe('runDriverInstall', () => {
   test('stops before verifying when the operator cancels right after the download', async () => {
     const controller = new AbortController();
     const context = setup({ downloader: new FakeDownloader(FAKE_DOWNLOAD, [], () => controller.abort()) });
+    expect((await run(context, controller.signal)).result).toMatchObject({ failure: 'canceled' });
+    expect(context.installer.installed).toEqual([]);
+    expect(context.downloader.discarded).toEqual([FAKE_DOWNLOAD.path]);
+  });
+
+  test('stops before installing when the operator cancels during the signature check', async () => {
+    const controller = new AbortController();
+    const context = setup({
+      verifier: new FakeVerifier({ status: 'valid', signer: EXAMPLE_SIGNER }, () => controller.abort()),
+    });
     expect((await run(context, controller.signal)).result).toMatchObject({ failure: 'canceled' });
     expect(context.installer.installed).toEqual([]);
     expect(context.downloader.discarded).toEqual([FAKE_DOWNLOAD.path]);

@@ -12,6 +12,7 @@ export type InstallFailure =
   | 'size-mismatch'
   | 'hash-mismatch'
   | 'signature-invalid'
+  | 'signature-unverifiable'
   | 'signer-mismatch'
   | 'admin-declined'
   | 'installer-failed'
@@ -58,8 +59,15 @@ export interface InstallerDownloader {
   discard(file: DownloadedFile): Promise<void>;
 }
 
-/** valid：签名有效，signer 是签名证书的名字（Windows 的 Subject、macOS 证书链第一行）。 */
-export type SignatureCheck = { status: 'valid'; signer: string } | { status: 'invalid'; detail: string };
+/**
+ * valid：签名有效，signer 是签名证书的名字（Windows 的 Subject、macOS 证书链第一行）；
+ * unverifiable：查询本身失败（例如 PowerShell 没能运行），不是「这份签名无效」——不能说「签名无效」，
+ * 只能说核对不了，交给操作员看日志排查。
+ */
+export type SignatureCheck =
+  | { status: 'valid'; signer: string }
+  | { status: 'invalid'; detail: string }
+  | { status: 'unverifiable'; detail: string };
 
 export interface InstallerVerifier {
   check(file: DownloadedFile, target: InstallTarget): Promise<SignatureCheck>;
@@ -151,9 +159,10 @@ export async function runDriverInstall(
       return fail('hash-mismatch');
     }
     const signature = await deps.verifier.check(file, target);
-    deps.log(
-      `${label}: signature ${signature.status === 'valid' ? `valid, signed by ${signature.signer}` : `invalid (${signature.detail})`}`,
-    );
+    deps.log(`${label}: signature ${signatureLogText(signature)}`);
+    if (signature.status === 'unverifiable') {
+      return fail('signature-unverifiable');
+    }
     if (signature.status !== 'valid') {
       return fail('signature-invalid');
     }
@@ -218,4 +227,15 @@ async function listOrNull(deps: InstallFlowDeps): Promise<Set<string> | null> {
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function signatureLogText(signature: SignatureCheck): string {
+  switch (signature.status) {
+    case 'valid':
+      return `valid, signed by ${signature.signer}`;
+    case 'unverifiable':
+      return `could not be checked (${signature.detail})`;
+    case 'invalid':
+      return `invalid (${signature.detail})`;
+  }
 }

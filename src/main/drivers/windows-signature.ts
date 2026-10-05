@@ -1,6 +1,6 @@
 import type { SignatureCheck } from '../../core/drivers/driver-install-flow';
 import { powerShellLiteral } from '../../shared/firewall-rule';
-import { runPowerShell } from './run-command';
+import { type CommandResult, runPowerShell } from './run-command';
 
 /** 核对签名最多等 60 秒：要联网查证书吊销列表，网络慢时要十几秒。 */
 const SIGNATURE_TIMEOUT_MS = 60_000;
@@ -36,10 +36,17 @@ export function parseAuthenticode(output: string): SignatureCheck {
   }
 }
 
-export async function checkWindowsSignature(path: string): Promise<SignatureCheck> {
-  const result = await runPowerShell(authenticodeScript(path), SIGNATURE_TIMEOUT_MS);
+/**
+ * 查询本身没跑起来（PowerShell 报错、超时……）时不代表「这份签名无效」：只能说核对不了，
+ * 不能说「签名无效」误导操作员以为安装包有问题。拆成纯函数方便不启动真进程测试。
+ */
+export function interpretSignatureQuery(result: CommandResult): SignatureCheck {
   if (result.exitCode !== 0) {
-    return { status: 'invalid', detail: `query failed (exit ${result.exitCode})` };
+    return { status: 'unverifiable', detail: `query failed (exit ${result.exitCode})` };
   }
   return parseAuthenticode(result.stdout);
+}
+
+export async function checkWindowsSignature(path: string): Promise<SignatureCheck> {
+  return interpretSignatureQuery(await runPowerShell(authenticodeScript(path), SIGNATURE_TIMEOUT_MS));
 }

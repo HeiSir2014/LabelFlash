@@ -119,6 +119,9 @@ describe('install progress', () => {
     expect(
       installText(install({ phase: 'failed', failure: 'admin-declined', exitCode: null }), 'windows').text,
     ).toContain('再点一次');
+    expect(
+      installText(install({ phase: 'failed', failure: 'signature-unverifiable', exitCode: null }), 'windows').text,
+    ).toBe('核对签名失败，详情见日志');
   });
 
   test('marks the steps before, at and after the current one', () => {

@@ -173,6 +173,8 @@ function failureText(failure: InstallFailure, exitCode: number | null, platform:
       return '下载到的文件和清单里的 SHA-256 不一致，可能被替换过，没有安装';
     case 'signature-invalid':
       return '安装包的数字签名无效，没有安装：请联系出品方';
+    case 'signature-unverifiable':
+      return '核对签名失败，详情见日志';
     case 'signer-mismatch':
       return '安装包不是清单要求的厂家签名的，没有安装：请联系出品方';
     case 'admin-declined':

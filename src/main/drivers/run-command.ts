@@ -50,11 +50,25 @@ export function encodePowerShell(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
 }
 
+/**
+ * 去掉 PSModulePath：这台电脑上如果另外装过一套 PowerShell（例如 PowerShell 7），它的模块路径可能排在
+ * Windows PowerShell 5.1 自己的模块路径前面；5.1 的内置模块（例如 Get-AuthenticodeSignature 所在的
+ * Microsoft.PowerShell.Security）按名字自动加载时会先找到那个版本不兼容的模块而加载失败，报错但退出码
+ * 未必是 0 以外的「我们认识的」失败（2026-10-05 在开发机上实测复现）。去掉这个环境变量后，PowerShell
+ * 自己用内置的默认模块路径（含系统目录下的 WindowsPowerShell\v1.0\Modules），不受外部环境影响。
+ * 这是所有调用 runPowerShell 的脚本共用的问题（设备检测、签名核对、提权安装的外层脚本），
+ * 所以在这个共用的函数里统一处理，不是哪一个脚本自己的事。
+ */
+export function withoutPSModulePath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const { PSModulePath: _ignored, ...rest } = env;
+  return rest;
+}
+
 /** 系统目录下的 PowerShell（不按名字在搜索路径里找），整段脚本 Base64 传入。 */
 export function runPowerShell(script: string, timeoutMs: number): Promise<CommandResult> {
   return runFile(
     powerShellPath(process.env),
     ['-NoProfile', '-NonInteractive', '-NoLogo', '-EncodedCommand', encodePowerShell(script)],
-    { timeoutMs },
+    { timeoutMs, env: withoutPSModulePath(process.env) },
   );
 }

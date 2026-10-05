@@ -191,7 +191,7 @@
 以下是本次开发中在这台开发机上做过的验证，不算真机验收，但记录以备查：
 
 - `detectWindowsDevices()`：在没有接驱动不全的 USB 打印设备时跑通，返回 `[]`，脚本本身能运行、输出能解析（2026-10-05）。
-- `checkWindowsSignature()` / `driver-catalog:describe`：在这台开发机上读 `notepad.exe` 的大小和 SHA-256 成功；读 Authenticode 签名时因为这台机器的 `PSModulePath` 里手工装的 PowerShell 7 的模块路径排在 Windows PowerShell 5.1 自己的模块路径之前，`Get-AuthenticodeSignature` 所在的 `Microsoft.PowerShell.Security` 模块加载到不兼容的版本而失败（`query failed (exit 1)`）；清空 `PSModulePath` 只留系统自带路径后手动复核，签名读取本身是对的（状态 `Valid`）。这是这台开发机的环境问题，不是代码缺陷：和已经上线的防火墙功能（`firewall.ts`）用的是同一个「系统目录下的 Windows PowerShell」调用方式；在没有手工装过 pwsh 7、或 `PSModulePath` 没被改写的机器上不会复现。记在这里供真机验收时留意。
+- `checkWindowsSignature()` / `driver-catalog:describe`：在这台开发机上读 `notepad.exe` 的大小和 SHA-256 成功。最初读 Authenticode 签名失败，原因是这台机器的 `PSModulePath` 里手工装的 PowerShell 7 的模块路径排在 Windows PowerShell 5.1 自己的模块路径之前，`Get-AuthenticodeSignature` 所在的 `Microsoft.PowerShell.Security` 模块加载到不兼容的版本而失败（`query failed (exit 1)`）。代码审查后在 `run-command.ts` 的 `runPowerShell`（所有调用它的脚本共用）里去掉了子进程环境里的 `PSModulePath`，重新验证：`checkWindowsSignature(notepad.exe 的路径)` 现在返回 `{ status: 'valid', signer: 'CN=Microsoft Windows, …' }`，问题已解决。
 
 ## 已知限制
 

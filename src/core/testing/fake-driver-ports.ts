@@ -47,13 +47,18 @@ export class FakeDownloader implements InstallerDownloader {
   }
 }
 
+/** afterCheck 用来模拟核对签名的那一刻操作员点了取消（check() 返回之前触发）。 */
 export class FakeVerifier implements InstallerVerifier {
   readonly checked: string[] = [];
 
-  constructor(private readonly result: SignatureCheck) {}
+  constructor(
+    private readonly result: SignatureCheck,
+    private readonly afterCheck: () => void = () => undefined,
+  ) {}
 
   async check(file: DownloadedFile): Promise<SignatureCheck> {
     this.checked.push(file.path);
+    this.afterCheck();
     return this.result;
   }
 }

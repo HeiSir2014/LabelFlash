@@ -20,16 +20,14 @@ import { effectiveCommandSet } from '../../../core/printer-commands/command-set'
 import type { PaperSize } from '../../../shared/paper-sizes';
 import {
   DEFAULT_PRINTER_DPI,
-  type NotSentReason,
+  notSentText,
   type PrinterCommandResult,
   type PrinterCommandsView,
-  type RawSendFailureKind,
+  rawSendFailureText,
 } from '../../../shared/printer-commands';
 
 /** 下拉框里「不改」对应的值。 */
 export const UNCHANGED = '';
-/** 失败时系统给的说明最多显示这么多字，完整的在日志里。 */
-const MAX_DETAIL_CHARS = 80;
 
 export interface SelectOption {
   value: string;
@@ -245,37 +243,12 @@ export function actionsHint(savedSet: CommandSet | null, isDirty: boolean): stri
   return null;
 }
 
-const NOT_SENT_TEXTS: Readonly<Record<NotSentReason, string>> = {
-  'no-command-set': '这台打印机设为「不发指令」，没有发送',
-  'unknown-command-set': '认不出这台打印机用哪种指令，没有发送：请在「指令集」里选一种',
-  'nothing-to-send': '各项都是「不改」，没有要发送的设置',
-};
-
 /** failureText 里几种开头的说法，保存成功但没发出去时要换成「设置已保存，但没有发到打印机」，不重复说一遍「失败」。 */
 const FAILURE_LEAD_PATTERN = /^(发送失败|没有发出去|不确定有没有发出去)：/;
 
 /** 保存已经成功、只是没发出去：和纯动作的失败分开说，操作员不用怀疑设置有没有存住。 */
 function withSavedButNotSent(text: string): string {
   return `设置已保存，但没有发到打印机：${text.replace(FAILURE_LEAD_PATTERN, '')}`;
-}
-
-function failureText(reason: RawSendFailureKind, detail: string): string {
-  switch (reason) {
-    case 'not-found':
-      return '发送失败：系统里找不到这台打印机。点「刷新」看看它还在不在';
-    case 'access-denied':
-      return '发送失败：没有向这台打印机发送的权限。在 Windows 打印机属性的「安全」里给当前用户「打印」权限后再试';
-    case 'raw-rejected':
-      return '发送失败：这台打印机的驱动不接受直接发送的指令。装热敏标签机厂家的驱动后再试；只想正常打印的话，把指令集改成「不发指令」';
-    case 'not-sent':
-      return '没有发出去：排队时探测进程重启了，这条还没轮到就被取消。请重试';
-    case 'uncertain':
-      return '不确定有没有发出去：系统的打印服务没有及时回应。看看打印机有没有动作，再决定要不要重发';
-    case 'unsupported':
-      return '这个系统上不能直接向打印机发送指令';
-    case 'error':
-      return `发送失败：${detail.slice(0, MAX_DETAIL_CHARS)}。检查打印机是否开着、连好，再试一次`;
-  }
 }
 
 /** 结果 → 面板上的一句话。只说程序知道的：发出去了，不说生效了。 */
@@ -290,11 +263,11 @@ export function describeCommandResult(result: PrinterCommandResult, request: Com
             : `${ACTION_NAMES[request]}指令已发出`,
       };
     case 'not-sent':
-      return { tone: 'info', text: `${request === 'save' ? '已保存。' : ''}${NOT_SENT_TEXTS[result.reason]}` };
+      return { tone: 'info', text: `${request === 'save' ? '已保存。' : ''}${notSentText(result.reason)}` };
     case 'invalid':
       return { tone: 'error', text: result.issue };
     case 'failed': {
-      const text = failureText(result.reason, result.detail);
+      const text = rawSendFailureText(result.reason, result.detail);
       // 保存设置和发出去是两步：第一步已经成功，不能让操作员以为设置也没保住。
       return { tone: 'error', text: request === 'save' ? withSavedButNotSent(text) : text };
     }

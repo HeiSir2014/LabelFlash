@@ -21,6 +21,7 @@ import { type PrinterInfo, systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { IpcChannel } from '../shared/ipc-contract';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
+import { notSentText, rawSendFailureText } from '../shared/printer-commands';
 import { phonePrinterLabel } from '../shared/printer-summary';
 import type { SocketLike } from '../shared/relay-socket';
 import { secondsToMs } from '../shared/settings';
@@ -390,11 +391,13 @@ async function bootstrap(): Promise<void> {
             case 'sent':
               return { kind: 'done' };
             case 'not-sent':
-              return { kind: 'failed', detail: result.reason };
+              return { kind: 'failed', detail: notSentText(result.reason) };
             case 'invalid':
               return { kind: 'failed', detail: result.issue };
             case 'failed':
-              return { kind: 'failed', detail: result.detail };
+              // rawSendFailureText 把 uncertain 说成「不确定有没有发出去」，不是「没做成」：
+              // 排到的请求因为探测进程没有及时回应而说不清结果，打印机可能已经收到了。
+              return { kind: 'failed', detail: rawSendFailureText(result.reason, result.detail) };
           }
         },
       };

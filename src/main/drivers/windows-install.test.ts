@@ -20,6 +20,12 @@ describe('elevatedInstallScript', () => {
     expect(script).toContain('$SuccessCodes = @(0, 3010, 1641)');
   });
 
+  test('points the installer at the protected folder for TEMP and TMP, not the user profile', () => {
+    const script = elevatedInstallScript(PATH, pkg);
+    expect(script).toContain("$start.EnvironmentVariables['TEMP'] = $dir");
+    expect(script).toContain("$start.EnvironmentVariables['TMP'] = $dir");
+  });
+
   test('runs an msi through msiexec quietly', () => {
     const script = elevatedInstallScript(PATH, { ...pkg, kind: 'msi', silentArgs: ['ALLUSERS=1'] });
     expect(script).toContain("$Kind = 'msi'");

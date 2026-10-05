@@ -73,6 +73,10 @@ try {
   } else {
     $start = [Diagnostics.ProcessStartInfo]::new()
     $start.UseShellExecute = $false
+    # 安装程序自己解压时常用 %TEMP%：那是这个用户的普通临时目录，同一用户的其他程序能在安装程序读之前换掉
+    # 释放出来的文件。把安装程序看到的 TEMP/TMP 指到这个管理员专属目录，解压也在复核过哈希的目录里进行。
+    $start.EnvironmentVariables['TEMP'] = $dir
+    $start.EnvironmentVariables['TMP'] = $dir
     if ($Kind -eq 'msi') {
       $start.FileName = [IO.Path]::Combine($system, 'msiexec.exe')
       $start.Arguments = '/i "' + $file + '" /qn /norestart ' + $Arguments

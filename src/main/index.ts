@@ -6,6 +6,7 @@ import { app, type BrowserWindow, dialog, Menu, Notification, nativeImage, net }
 import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { DedupGuard } from '../core/dedup-guard';
+import { NO_DRIVER_HINTS } from '../core/drivers/driver-hints';
 import { PrintQueue } from '../core/print-queue';
 import { PrintService } from '../core/print-service';
 import { type PrinterChoice, resolvePrinter } from '../core/printing/resolve-printer';
@@ -52,10 +53,13 @@ import { queryDriverPaper } from './printing/driver-paper';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { FakeDriverAdapter, FakePrinters, parseFakePrinters } from './printing/fake-printers';
 import { createPrinterAlertNotifier } from './printing/printer-alerts';
+import { PrinterCommands } from './printing/printer-commands-station';
 import type { PrinterDriver } from './printing/printer-driver';
+import { queryDriverName } from './printing/printer-identity';
 import { PROBE_QUERY_TIMEOUT_MS, PrinterProbeHost, spawnPowerShellProbe } from './printing/printer-probe-host';
 import { PrinterProfiles } from './printing/printer-profiles';
 import { createReadinessProbe, type PrinterReadiness, PrinterStatusMonitor } from './printing/printer-status';
+import { createRawSender } from './printing/raw-sender';
 import { RelaunchIntents, UPDATED_ARG } from './relaunch-intent';
 import { createHttpStepRunner } from './scan/http-step';
 import { RuleService } from './scan/rule-service';
@@ -323,6 +327,25 @@ async function bootstrap(): Promise<void> {
     async (name): Promise<PrinterReadiness | null> => ((await isInstalled(name)) ? probeReadiness(name) : null),
     createPrinterAlertNotifier(new AlertThrottle(systemClock), showMainWindow),
   );
+  // 标签机指令：只发给系统打印机列表里有的打印机；设置存在设置表的 printerCommands 里。
+  // Windows 经常驻探测进程（winspool RAW），macOS 用 lp -o raw；E2E 用假打印机记下来。
+  const printerCommands = new PrinterCommands({
+    configs: () => settings.current.printerCommands,
+    // 只改这一项：不影响别的设置，不需要走 onSettingsChanged。
+    saveConfigs: (next) => {
+      settings.update({ printerCommands: next });
+    },
+    driverNameOf: (name) => (fakePrinters ? fakePrinters.driverName(name) : queryDriverName(name, probeHost)),
+    driverDpi: async (name) => (await profiles.get(name))?.dpi ?? null,
+    // 5c（驱动安装）的在线驱动清单接进来之前，「自动」只按驱动名认。
+    hints: NO_DRIVER_HINTS,
+    sender: fakePrinters
+      ? { send: (name, data) => fakePrinters.sendRaw(name, data) }
+      : createRawSender(process.platform, probeHost),
+    hasPrinter: (name) => adapter.hasPrinter(name),
+    log: (message) => console.info(message),
+    warn: (message) => console.warn(message),
+  });
   /** 要检测状态的打印机：纸张分配和模板指定里出现的（交给探测进程前再核对系统里有）。 */
   const assignedPrinterNames = (): string[] => [
     ...new Set([
@@ -522,6 +545,7 @@ async function bootstrap(): Promise<void> {
     mobile,
     localApi,
     profiles,
+    printerCommands,
     getWindow: () => mainWindow,
     choosePrinter,
     onTemplatesChanged: () => {

@@ -10,6 +10,8 @@ import {
   requireMobilePhoneId,
   requirePaperKey,
   requirePositiveInteger,
+  requirePrinterAction,
+  requirePrinterCommandConfig,
   requirePrintOptions,
   requireRaw,
   requireRuleId,
@@ -133,5 +135,26 @@ describe('ipc validators', () => {
     expect(requireWebOrigin('https://erp.example.com')).toBe('https://erp.example.com');
     expect(() => requireWebOrigin('null')).toThrow(TypeError);
     expect(() => requireWebOrigin(7)).toThrow(TypeError);
+  });
+
+  test('requirePrinterCommandConfig accepts only a complete, valid config', () => {
+    const config = {
+      commandSet: 'zpl',
+      density: 30,
+      speed: 6,
+      media: null,
+      orientation: 'normal',
+      finish: 'peel',
+      dpi: 300,
+    } as const;
+    expect(requirePrinterCommandConfig(config)).toEqual(config);
+    expect(() => requirePrinterCommandConfig({ ...config, density: 31 })).toThrow('Invalid printer command config');
+    expect(() => requirePrinterCommandConfig({ commandSet: 'zpl' })).toThrow('Invalid printer command config');
+    expect(() => requirePrinterCommandConfig('zpl')).toThrow('Invalid printer command config');
+  });
+
+  test('requirePrinterAction accepts the four actions only', () => {
+    expect(requirePrinterAction('factoryReset')).toBe('factoryReset');
+    expect(() => requirePrinterAction('raw')).toThrow('Invalid printer action');
   });
 });

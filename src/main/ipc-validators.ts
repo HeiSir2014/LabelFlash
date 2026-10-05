@@ -1,4 +1,6 @@
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
+import { isPrinterAction, type PrinterAction, type PrinterCommandConfig } from '../core/printer-commands/command-model';
+import { parseCommandConfig } from '../core/printer-commands/sanitize-command-config';
 import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-model';
@@ -177,6 +179,22 @@ export function requireApiKeyName(value: unknown): string {
 export function requireWebOrigin(value: unknown): string {
   if (typeof value !== 'string' || value.length > MAX_IPC_STRING_LENGTH || !isWebOrigin(value)) {
     throw new TypeError('Invalid web origin');
+  }
+  return value;
+}
+
+/** 标签机指令的设置：每一项都要有、都合法（core 的严格校验），不纠正。 */
+export function requirePrinterCommandConfig(value: unknown): PrinterCommandConfig {
+  const config = parseCommandConfig(value);
+  if (config === null) {
+    throw new TypeError('Invalid printer command config');
+  }
+  return config;
+}
+
+export function requirePrinterAction(value: unknown): PrinterAction {
+  if (!isPrinterAction(value)) {
+    throw new TypeError('Invalid printer action');
   }
   return value;
 }

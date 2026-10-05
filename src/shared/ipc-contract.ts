@@ -1,5 +1,6 @@
 import type { LookupTableData, LookupTableInfo } from '../core/lookup/lookup-model';
 import type { Delivery } from '../core/notify/delivery';
+import type { PrinterAction, PrinterCommandConfig } from '../core/printer-commands/command-model';
 import type { RuleKind, ScanRule } from '../core/scan/rule-model';
 import type { RuleSetting } from '../core/scan/rule-settings';
 import type { CanvasTemplate } from '../core/templates/canvas-model';
@@ -10,6 +11,7 @@ import type { JobPage, JobQuery } from './job-history';
 import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from './local-api';
 import type { MobileStatus } from './mobile-status';
 import type { PaperSize } from './paper-sizes';
+import type { PrinterCommandResult, PrinterCommandsView } from './printer-commands';
 import type { PrinterReadiness } from './printer-readiness';
 import type { RenderWarnings } from './render-warnings';
 import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
@@ -28,6 +30,9 @@ export const IpcChannel = {
   PrinterStatus: 'printer:status',
   CheckDriverPaper: 'printer:driver-paper',
   OpenPrinterPreferences: 'printer:open-preferences',
+  PrinterCommands: 'printer:commands',
+  ApplyPrinterCommands: 'printer:commands-apply',
+  RunPrinterAction: 'printer:commands-action',
   ListJobs: 'jobs:list',
   PreviewJob: 'jobs:preview',
   ReprintJob: 'jobs:reprint',
@@ -156,6 +161,12 @@ export interface LabelFlashApi {
   checkDriverPaper(printerName: string, paperKey: string): Promise<PaperCheck>;
   /** 打开驱动的「打印首选项」窗口；窗口关闭后才完成。 */
   openPrinterPreferences(printerName: string): Promise<void>;
+  /** 「标签机指令」面板：保存的设置、「自动」认出的指令集、驱动名和驱动报告的分辨率。只接受系统里有的打印机。 */
+  printerCommands(printerName: string): Promise<PrinterCommandsView>;
+  /** 保存这台打印机的指令设置并发给打印机一次（以后打印前不再发）；不合这种指令集时不保存，返回原因。 */
+  applyPrinterCommands(printerName: string, config: PrinterCommandConfig): Promise<PrinterCommandResult>;
+  /** 纸张校准、走一张纸、打印自检页、恢复出厂设置：按保存的指令集发一次。 */
+  runPrinterAction(printerName: string, action: PrinterAction): Promise<PrinterCommandResult>;
   listJobs(query: JobQuery): Promise<JobPage>;
   /** 按记录里的模板和字段预览（本机接口的记录，见 lib/reprint.ts）；记录或模板不在了会失败。 */
   previewJob(jobId: string): Promise<LabelPreview>;

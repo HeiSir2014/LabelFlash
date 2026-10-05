@@ -1,6 +1,7 @@
 import type { BatchPlan } from '../core/batch/batch-model';
 import { BATCH_ID_PATTERN } from '../core/batch/batch-model';
 import { parseBatchPlan } from '../core/batch/parse-batch-plan';
+import type { RequestedDiagnosisFix } from '../core/diagnosis/diagnosis-model';
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { isPrinterAction, type PrinterAction, type PrinterCommandConfig } from '../core/printer-commands/command-model';
 import { parseCommandConfig } from '../core/printer-commands/sanitize-command-config';
@@ -9,6 +10,7 @@ import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-model';
 import { LIBRARY_TEMPLATE_ID_PATTERN } from '../core/templates/library/library-model';
 import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
+import { type DiagnosisCheckId, isDiagnosisCheckId, isDiagnosisFixId } from '../shared/diagnosis';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
 import { isWebOrigin, normalizeApiKeyName } from '../shared/local-api';
@@ -255,4 +257,33 @@ export function requireSettingsPatch(value: unknown): Record<string, unknown> {
   const patch = requireRecord(value, 'settings patch');
   const { printerCommands: _ignored, ...rest } = patch;
   return rest;
+}
+
+export function requireDiagnosisCheck(value: unknown): DiagnosisCheckId {
+  if (!isDiagnosisCheckId(value)) {
+    throw new TypeError('Invalid diagnosis check');
+  }
+  return value;
+}
+
+/** 打印机名可以为 null（只查、只修后台打印服务时）。 */
+export function requireNullablePrinterName(value: unknown): string | null {
+  return value === null ? null : requireString(value, 'printerName');
+}
+
+/**
+ * 修复请求：修复项是枚举，管理员是布尔；要取消哪些任务、写什么纸张都由主进程自己查，请求里没有
+ * （M2：纸张不收渲染进程报来的纸张键，DiagnosisStation.fix 按打印机名现查设置和模板）。
+ */
+export function requireDiagnosisFixRequest(value: unknown): RequestedDiagnosisFix {
+  const record = requireRecord(value, 'diagnosis fix request');
+  const fix = record['fix'];
+  if (!isDiagnosisFixId(fix)) {
+    throw new TypeError('Invalid diagnosis fix');
+  }
+  return {
+    printerName: requireNullablePrinterName(record['printerName']),
+    fix,
+    admin: requireBoolean(record['admin'], 'admin'),
+  };
 }

@@ -17,10 +17,12 @@ import appIcon from '../../resources/icon.png?asset';
 import trayIcon from '../../resources/tray.png?asset';
 import { batchIdFor } from '../core/batch/batch-model';
 import { DedupGuard } from '../core/dedup-guard';
+import { SubmittedJobs } from '../core/diagnosis/submitted-jobs';
 import { NO_DRIVER_HINTS } from '../core/drivers/driver-hints';
 import { PrintQueue } from '../core/print-queue';
 import { BATCH_RULE, fieldsScan, PrintService } from '../core/print-service';
-import { type PrinterChoice, resolvePrinter } from '../core/printing/resolve-printer';
+import { effectiveCommandSet } from '../core/printer-commands/command-set';
+import { type PrinterChoice, resolvePrinter, responsiblePaper } from '../core/printing/resolve-printer';
 import { type EnrichDeps, enrich } from '../core/scan/enrich';
 import { recognize } from '../core/scan/recognize';
 import { RuleCatalog } from '../core/scan/rule-catalog';
@@ -30,6 +32,7 @@ import { type PrinterInfo, systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { IpcChannel } from '../shared/ipc-contract';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
+import { notSentText, rawSendFailureText } from '../shared/printer-commands';
 import { phonePrinterLabel } from '../shared/printer-summary';
 import type { SocketLike } from '../shared/relay-socket';
 import { secondsToMs } from '../shared/settings';
@@ -45,6 +48,11 @@ import { BatchStation } from './batch/batch-station';
 import batchReaderPath from './batch/reader-worker?modulePath';
 import { TableReaderHost } from './batch/table-reader-host';
 import { BUILD_NUMBER } from './build-info';
+import { createDiagnosisSystem } from './diagnosis/create-diagnosis-system';
+import { DiagnosisStation } from './diagnosis/diagnosis-station';
+import { diagnosisPlatformOf } from './diagnosis/diagnosis-system';
+import { FakeDiagnosis, FakeLabelCommands } from './diagnosis/fake-diagnosis';
+import type { LabelCommandsSeam } from './diagnosis/seams';
 import { addFirewallRule, firewallStatus } from './firewall';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
@@ -64,7 +72,7 @@ import { missingOcrFiles, ocrFiles } from './ocr/ocr-files';
 import { OCR_SAMPLES_DIR_NAME, OCR_SAMPLES_KEPT, OcrSamples } from './ocr/ocr-samples';
 import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
-import { queryDriverPaper } from './printing/driver-paper';
+import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
 import { ElectronDriverAdapter } from './printing/electron-driver-adapter';
 import { FakeDriverAdapter, FakePrinters, parseFakePrinters } from './printing/fake-printers';
 import { renderLabelHtml } from './printing/label-html';
@@ -325,6 +333,15 @@ async function bootstrap(): Promise<void> {
       ? new PrinterProbeHost(spawnPowerShellProbe, PROBE_QUERY_TIMEOUT_MS, (message) => console.warn(message))
       : null;
   /**
+   * 诊断的查询（USB、队列、驱动纸张选项）单独开一个常驻探测进程，不跟打印共用 `probeHost`：
+   * 诊断查的东西比打印状态慢得多（枚举整条 USB 总线、读驱动的全部纸张选项、列队列），
+   * 超时或出错时只重启这一个进程，不会连累正在排队的 RAW 发送和打印机状态轮询。
+   */
+  const diagnosisProbeHost =
+    process.platform === 'win32' && fakePrinters === null
+      ? new PrinterProbeHost(spawnPowerShellProbe, PROBE_QUERY_TIMEOUT_MS, (message) => console.warn(message))
+      : null;
+  /**
    * 系统里有没有这台打印机。读打印机列表要用主窗口，启动时窗口还没建好会抛错：这时按「没有」处理，
    * 下一轮状态检测（窗口建好之后）再查。
    */
@@ -340,6 +357,8 @@ async function bootstrap(): Promise<void> {
       return false;
     }
   };
+  // 本程序交给打印队列的任务（只在内存里）：诊断「队列里有卡住的任务」时据此认出哪些是本程序发的。
+  const submittedJobs = new SubmittedJobs(systemClock);
   const profiles = new PrinterProfiles(
     (name) => (fakePrinters ? fakePrinters.driverPaper(name) : queryDriverPaper(name, probeHost)),
     systemClock,
@@ -351,6 +370,7 @@ async function bootstrap(): Promise<void> {
         (name): PrinterReadiness | null => status.get(name),
         systemClock,
         profiles,
+        submittedJobs,
       );
   const probeReadiness = fakePrinters
     ? (name: string) => fakePrinters.readiness(name)
@@ -379,6 +399,56 @@ async function bootstrap(): Promise<void> {
     hasPrinter: (name) => adapter.hasPrinter(name),
     log: (message) => console.info(message),
     warn: (message) => console.warn(message),
+    clock: systemClock,
+    submitted: submittedJobs,
+  });
+  // 仅开发 / E2E：假打印机也能诊断（见 diagnosis/fake-diagnosis.ts），安装版不会走到这里。
+  const fakeDiagnosis =
+    fakeSpecs && fakePrinters
+      ? new FakeDiagnosis(diagnosisPlatformOf(process.platform), fakeSpecs, fakePrinters, submittedJobs, systemClock)
+      : null;
+  if (fakeDiagnosis) {
+    (globalThis as { e2eFakeDiagnosis?: FakeDiagnosis }).e2eFakeDiagnosis = fakeDiagnosis;
+  }
+  // 5a（标签机指令）的发送入口：诊断的「指令集」「走一张纸」「纸张校准」都经这个接缝，不直接碰 PrinterCommands。
+  const labelCommands: LabelCommandsSeam = fakeSpecs
+    ? new FakeLabelCommands(fakeSpecs)
+    : {
+        effectiveCommandSet: async (name) => {
+          const view = await printerCommands.describe(name);
+          return effectiveCommandSet(view.config.commandSet, view.detected) ?? 'none';
+        },
+        send: async (name, action) => {
+          const result = await printerCommands.run(name, action);
+          switch (result.status) {
+            case 'sent':
+              return { kind: 'done' };
+            case 'not-sent':
+              return { kind: 'failed', detail: notSentText(result.reason) };
+            case 'invalid':
+              return { kind: 'failed', detail: result.issue };
+            case 'failed':
+              // rawSendFailureText 把 uncertain 说成「不确定有没有发出去」，不是「没做成」：
+              // 排到的请求因为探测进程没有及时回应而说不清结果，打印机可能已经收到了。
+              return { kind: 'failed', detail: rawSendFailureText(result.reason, result.detail) };
+          }
+        },
+      };
+  const diagnosis = new DiagnosisStation({
+    system: fakeDiagnosis ?? createDiagnosisSystem(process.platform, diagnosisProbeHost),
+    // 系统打印机列表（读它要用主窗口；诊断由界面触发，那时窗口一定在）。
+    isKnownPrinter: (name) => adapter.hasPrinter(name),
+    driverPaper: (name) => profiles.fresh(name),
+    // M2：这台打印机负责的纸由主进程按设置和模板自己查，不收渲染进程报来的纸张键。
+    responsiblePaper: (name) => responsiblePaper(name, settings.current.paperPrinters, templates.list()),
+    forgetProfile: (name) => profiles.forget(name),
+    openPreferences: fakeDiagnosis ? (name) => fakeDiagnosis.openPreferences(name) : openPrinterPreferences,
+    submitted: submittedJobs,
+    commands: labelCommands,
+    // 5c（驱动安装）的计划把这里换成它的实现；在那之前「重新安装驱动」不出现。
+    drivers: null,
+    clock: systemClock,
+    log: (message) => console.info(message),
   });
   /** 要检测状态的打印机：纸张分配和模板指定里出现的（交给探测进程前再核对系统里有）。 */
   const assignedPrinterNames = (): string[] => [
@@ -691,6 +761,7 @@ async function bootstrap(): Promise<void> {
       },
     }),
     status,
+    diagnosis,
     appInfo: {
       productName: BRAND.productName,
       brandOwner: BRAND.owner,
@@ -817,6 +888,7 @@ async function bootstrap(): Promise<void> {
     outbox.stop();
     status.stop();
     probeHost?.dispose();
+    diagnosisProbeHost?.dispose();
     tray?.destroy();
     closeDatabase();
   });

@@ -9,6 +9,8 @@ import {
   requireBatchPlan,
   requireBoolean,
   requireBytes,
+  requireDiagnosisCheck,
+  requireDiagnosisFixRequest,
   requireIndex,
   requireJobQuery,
   requireLibraryTemplateId,
@@ -201,5 +203,35 @@ describe('ipc validators', () => {
     const patch = { autoPrint: false, printerCommands: { 标签机A: { commandSet: 'tspl' } } };
     expect(requireSettingsPatch(patch)).toEqual({ autoPrint: false });
     expect(() => requireSettingsPatch('x')).toThrow(TypeError);
+  });
+});
+
+describe('diagnosis validators', () => {
+  test('accepts only known checks', () => {
+    expect(requireDiagnosisCheck('queue')).toBe('queue');
+    expect(() => requireDiagnosisCheck('rm -rf')).toThrow('Invalid diagnosis check');
+  });
+
+  // M2：纸张不是请求的一部分（主进程自己按设置和模板查），渲染进程传了也不会被读取。
+  test('parses a fix request without reading any paper from it, and rejects anything else', () => {
+    expect(requireDiagnosisFixRequest({ printerName: '标签机A', fix: 'set-driver-paper', admin: true })).toEqual({
+      printerName: '标签机A',
+      fix: 'set-driver-paper',
+      admin: true,
+    });
+    expect(requireDiagnosisFixRequest({ printerName: null, fix: 'restart-spooler', admin: true })).toEqual({
+      printerName: null,
+      fix: 'restart-spooler',
+      admin: true,
+    });
+    expect(() => requireDiagnosisFixRequest({ printerName: 'A', fix: 'change-command-set', admin: false })).toThrow(
+      'Invalid diagnosis fix',
+    );
+    expect(() => requireDiagnosisFixRequest({ printerName: 'A', fix: 'feed', admin: 'yes' })).toThrow();
+    expect(() => requireDiagnosisFixRequest([])).toThrow();
+    // 多传的 paperKey 被忽略，不是校验错误，也不会出现在结果里。
+    expect(
+      requireDiagnosisFixRequest({ printerName: 'A', fix: 'feed', admin: false, paperKey: '60x40' }),
+    ).not.toHaveProperty('paper');
   });
 });

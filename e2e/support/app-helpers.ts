@@ -80,6 +80,13 @@ export function fakeRawJobs(app: ElectronApplication): Promise<FakeRawJob[]> {
   );
 }
 
+/** 假打印机诊断弹过的「管理员确认」（见 src/main/diagnosis/fake-diagnosis.ts）。 */
+export function fakeAdminPrompts(app: ElectronApplication): Promise<string[]> {
+  return app.evaluate(
+    () => (globalThis as { e2eFakeDiagnosis?: { adminPrompts: string[] } }).e2eFakeDiagnosis?.adminPrompts ?? [],
+  );
+}
+
 /**
  * 点一个开关：原生复选框被画出来的滑轨盖着，像用户一样点开关本身。
  * scope 传 page：对 getByRole('region', …) 这类按名字过滤出来的动态定位器再叠一层 filter({ has }) 不可靠

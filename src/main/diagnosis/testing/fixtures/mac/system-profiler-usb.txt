@@ -1,0 +1,21 @@
+{
+  "SPUSBDataType" : [
+    {
+      "_items" : [
+        {
+          "_items" : [
+            {
+              "_name" : "Label Printer 203",
+              "manufacturer" : "Label Maker",
+              "product_id" : "0x0123",
+              "serial_num" : "LBL0001",
+              "vendor_id" : "0x1234  (Label Maker)"
+            }
+          ],
+          "_name" : "USB2.0 Hub"
+        }
+      ],
+      "_name" : "USB31Bus"
+    }
+  ]
+}

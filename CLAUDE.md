@@ -27,6 +27,7 @@
 | 图中文字识别（货架号，本地 OCR） | ✅ 安装包带扩展和模型（`resources/ocr/`）；扩展静态链接自己编的 ONNX Runtime（/MT），不需要 VC++ 运行库，不要求 AVX2 | 未做：不带 OCR，这一步跳过，电脑不向手机要图 |
 | 本机接口（HTTP） | ✅ 防火墙规则：安装时和配置页按钮（PowerShell NetSecurity，弹 UAC）；占用端口的程序用 `Get-NetTCPConnection` 查 | ✅（未在 Mac 上验证）pkg 装完把程序加进系统防火墙允许列表；占用端口的程序用 `lsof` 查 |
 | 打印机状态检测与异常通知 | ✅ | 未做：状态按「未知」处理，不阻止打印；计划改用 CUPS 的 `printer-state-reasons` |
+| 打印机诊断修复 | ✅ 探测进程查服务、状态、USB（PnP）、队列；修复经一次性 / 提权的 PowerShell（UAC） | ✅（未在 Mac 上验证）`lpstat`、`ipptool`、`system_profiler`；改 CUPS 先以当前用户，被拒再经 `osascript` 要管理员密码 |
 | 窗口按钮 | 自绘最小化 / 最大化 / 关闭 | 系统红绿灯；快捷键显示 ⌘ |
 | 密钥加密 | DPAPI | 钥匙串 |
 | 安装包与自动更新 | ✅ 自绘 NSIS 安装包、差分更新 | pkg 安装包（universal，ad-hoc 签名，未公证）；不自动更新，新版本到发布页下载 |

@@ -23,6 +23,8 @@ const api: LabelFlashApi = {
   printerStatus: (printerName) => ipcRenderer.invoke(IpcChannel.PrinterStatus, printerName),
   checkDriverPaper: (printerName, paperKey) => ipcRenderer.invoke(IpcChannel.CheckDriverPaper, printerName, paperKey),
   openPrinterPreferences: (printerName) => ipcRenderer.invoke(IpcChannel.OpenPrinterPreferences, printerName),
+  runDiagnosisCheck: (printerName, check) => ipcRenderer.invoke(IpcChannel.DiagnosisCheck, printerName, check),
+  applyDiagnosisFix: (request) => ipcRenderer.invoke(IpcChannel.DiagnosisFix, request),
   printerCommands: (printerName) => ipcRenderer.invoke(IpcChannel.PrinterCommands, printerName),
   applyPrinterCommands: (printerName, config) =>
     ipcRenderer.invoke(IpcChannel.ApplyPrinterCommands, printerName, config),

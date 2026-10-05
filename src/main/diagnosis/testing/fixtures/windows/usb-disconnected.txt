@@ -1,0 +1,1 @@
+{"port":"USB001","devices":[{"instanceId":"USBPRINT\\LABELPRINTER\\7&2A1B3C4D&0&USB001","name":"热敏标签机","present":false,"problem":45}]}

@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer, type Server, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { type HttpStep, STEP_LIMITS } from '../../src/core/scan/enrich-model';
 import type { FakePrinterSpec } from '../../src/main/printing/fake-printers';
 import { RECENT_DELIVERY_COUNT } from '../../src/shared/ipc-contract';
@@ -12,6 +12,7 @@ import {
   allowSlowScannerLines,
   blurActiveElement,
   callApi,
+  clickSwitch,
   openConfig,
   recordClipboard,
   scan,
@@ -44,7 +45,7 @@ import { type Issue, pageChecks } from './checks';
 
 /**
  * 视觉验收（设计文档 §8.2 的 V01–V48）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
- * 结果写进 manifest.json，供验收页面逐项展示和确认。
+ * 结果写进 manifest.json，供验收页面逐项展示和确认，标签机指令是 V80–V83。
  */
 
 const OUT_DIR = join(APP_ROOT, 'test-results', 'visual-acceptance');
@@ -119,6 +120,40 @@ interface Item {
     ctx: Context,
     record: (label: string, size: string, png: Buffer, issues: Issue[]) => Promise<void>,
   ) => Promise<void>;
+}
+
+/** V80–V83：认得出指令集的标签机、驱动不收 RAW 的面单机、认不出的家用打印机。 */
+const COMMAND_PRINTERS: FakePrinterSpec[] = [
+  {
+    name: '标签机A',
+    paper: { widthMm: 60, heightMm: 40, dpi: 203 },
+    readiness: { ready: true },
+    driverName: 'Label Printer TSPL',
+  },
+  {
+    name: '面单机B',
+    paper: { widthMm: 100, heightMm: 150, dpi: 203 },
+    readiness: { ready: true },
+    driverName: 'Label Printer ZPL',
+    rawFailure: 'raw-rejected',
+  },
+  {
+    name: '家用打印机',
+    paper: { widthMm: 210, heightMm: 297, dpi: 600 },
+    readiness: null,
+    driverName: 'Office Inkjet',
+  },
+];
+
+/** 分配好纸张、打开打印机页，展开这台打印机的「标签机指令」。 */
+async function openPrinterCommands(page: Page, printerName: string): Promise<Locator> {
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x150': '面单机B' } });
+  await page.reload();
+  await openConfig(page, '打印机');
+  await page.locator('.printer-row', { hasText: printerName }).getByRole('button', { name: '标签机指令' }).click();
+  const panel = page.getByRole('region', { name: `${printerName} 的标签机指令` });
+  await expect(panel.getByLabel('指令集')).toBeVisible();
+  return panel;
 }
 
 interface ShotRecord {
@@ -1288,6 +1323,61 @@ const ITEMS: Item[] = [
       { label: '矩形', prepare: ({ page }) => selectLayer(page, '矩形（矩形）') },
       { label: '表格', prepare: ({ page }) => selectLayer(page, '颜色尺码（表格）') },
     ],
+  },
+  {
+    id: 'V80',
+    title: '打印机 · 标签机指令（认出 TSPL，已发送）',
+    points:
+      '「标签机A」一行右侧「测试页」「标签机指令」两个按钮同高，后者按下；下面展开浅底面板：指令集「自动（TSPL）」和一句认出的依据；浓度、速度、设置纸张（纸宽、纸高、纸张类型、间隙）、打印方向、出纸方式逐行对齐，TSPL 不显示分辨率；单向提示完整换行；「保存并发送」主按钮；四个动作按钮一行（窄时换行，不溢出）；绿色「设置已发送到打印机（TSPL）…」；1024 宽时面板不撑宽页面、没有横向滚动',
+    launch: { fakePrinters: COMMAND_PRINTERS },
+    setup: async ({ page }) => {
+      const panel = await openPrinterCommands(page, '标签机A');
+      await panel.getByLabel('浓度').selectOption('8');
+      await panel.getByLabel('速度').selectOption('4');
+      // 用 page 作范围：对 getByRole('region', …) 这样按名字过滤出来的动态定位器再叠一层 filter({ has }) 不可靠
+      // （Playwright 的已知限制），同一时间只有一台打印机的面板打开，用整页范围找这个开关没有歧义。
+      await clickSwitch(page, '设置纸张');
+      await panel.getByLabel('出纸方式').selectOption('tear');
+      await panel.getByRole('button', { name: '保存并发送' }).click();
+      await expect(panel.getByRole('status')).toContainText('设置已发送到打印机（TSPL）');
+    },
+  },
+  {
+    id: 'V81',
+    title: '打印机 · 标签机指令（认不出）',
+    points:
+      '指令集「自动（认不出）」，下面一句说明从驱动名认不出、请手动选择或选「不发指令」；没有设置项；四个动作按钮灰掉，下面说明原因；面板高度随内容收拢，不留大块空白',
+    launch: { fakePrinters: COMMAND_PRINTERS },
+    setup: async ({ page }) => {
+      const panel = await openPrinterCommands(page, '家用打印机');
+      await expect(panel.getByRole('button', { name: '纸张校准' })).toBeDisabled();
+    },
+  },
+  {
+    id: 'V82',
+    title: '打印机 · 标签机指令（发送失败）',
+    points:
+      '指令集「自动（ZPL）」；浓度选项到 30；「分辨率」一行显示「按驱动（203dpi）」；红色提示说明驱动不接受直接发送的指令和下一步，完整换行、不被按钮遮住',
+    launch: { fakePrinters: COMMAND_PRINTERS },
+    setup: async ({ page }) => {
+      const panel = await openPrinterCommands(page, '面单机B');
+      await panel.getByLabel('浓度').selectOption('10');
+      await panel.getByRole('button', { name: '保存并发送' }).click();
+      await expect(panel.getByRole('alert')).toContainText('驱动不接受直接发送的指令');
+    },
+  },
+  {
+    id: 'V83',
+    title: '打印机 · 恢复出厂设置的二次确认',
+    points:
+      '模态对话框：标题「恢复出厂设置」、说明会回到出厂值、要重新校准、程序里保存的设置不变；「不恢复」是默认焦点的主按钮，「恢复出厂设置」是次要按钮；背后的页面变暗、不可操作',
+    launch: { fakePrinters: COMMAND_PRINTERS },
+    setup: async ({ page }) => {
+      const panel = await openPrinterCommands(page, '标签机A');
+      await panel.getByRole('button', { name: '恢复出厂设置' }).click();
+      await panel.getByRole('button', { name: '确认恢复出厂？' }).click();
+      await expect(page.getByRole('alertdialog', { name: '恢复出厂设置' })).toBeVisible();
+    },
   },
 ];
 

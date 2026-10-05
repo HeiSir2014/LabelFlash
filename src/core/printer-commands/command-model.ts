@@ -75,9 +75,9 @@ export interface CommandSetLimits {
 }
 
 /**
- * 取值依据见计划「依据的指令」一节；手册的机型表里不是所有机型都有的速度不列。
- * TSPL 的 SPEED 速度表随机型不同（例如有的 200dpi 机型只列 4、6 ips，有的 300dpi 机型只列 3、5 ips）；
- * 手册里没有统一给出「桌面机通用」的档位，这里按多份 TSC 桌面机手册的交集取 2–5 ips，偏保守，
+ * 取值依据见计划「依据的指令」一节；《TSPL/TSPL2 编程手册》的机型表里不是所有机型都有的速度不列。
+ * TSPL 的 SPEED 速度表随机型不同（例如有的 200dpi 机型只列 4、6 ips，有的 300dpi 机型只列 3、5 ips），
+ * 手册也没有统一给出「桌面机通用」的档位；这里列出的 2–5 ips 是几份机型表取并集后的结果，没有逐台机型验证过，
  * 真机验收时如果某一档打印机不认，再从这里删掉。
  */
 export const COMMAND_SET_LIMITS: Readonly<Record<CommandSet, CommandSetLimits>> = {

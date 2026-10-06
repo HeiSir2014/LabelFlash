@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { BatchPlan } from '../core/batch/batch-model';
 import type { PdfLayout } from '../core/pdf/pdf-model';
 import {
+  driverInstallBlocksUpdate,
   MAX_IPC_STRING_LENGTH,
   MAX_RAW_INPUT_LENGTH,
   requireApiKeyId,
@@ -10,8 +11,12 @@ import {
   requireBatchPlan,
   requireBoolean,
   requireBytes,
+  requireDiagnosisCheck,
+  requireDiagnosisFixRequest,
+  requireDriverDeviceKey,
   requireIndex,
   requireJobQuery,
+  requireLibraryTemplateId,
   requireLookupTableId,
   requireMobilePhoneId,
   requirePaperKey,
@@ -106,6 +111,13 @@ describe('ipc validators', () => {
     );
     expect(() => requireTemplateId('../../etc')).toThrow(TypeError);
     expect(() => requireTemplateId('custom:')).toThrow(TypeError);
+  });
+
+  test('requireLibraryTemplateId accepts library ids only', () => {
+    expect(requireLibraryTemplateId('library:price-simple')).toBe('library:price-simple');
+    expect(() => requireLibraryTemplateId('custom:abc')).toThrow(TypeError);
+    expect(() => requireLibraryTemplateId('library:../x')).toThrow(TypeError);
+    expect(() => requireLibraryTemplateId(42)).toThrow(TypeError);
   });
 
   test('requireVoiceCue accepts known cues only', () => {
@@ -215,5 +227,53 @@ describe('ipc validators', () => {
     const patch = { autoPrint: false, printerCommands: { 标签机A: { commandSet: 'tspl' } } };
     expect(requireSettingsPatch(patch)).toEqual({ autoPrint: false });
     expect(() => requireSettingsPatch('x')).toThrow(TypeError);
+  });
+});
+
+describe('requireDriverDeviceKey', () => {
+  test('accepts device keys and rejects anything else', () => {
+    expect(requireDriverDeviceKey('usb-1234-abcd-0a1b2c3d')).toBe('usb-1234-abcd-0a1b2c3d');
+    expect(() => requireDriverDeviceKey('https://example.invalid/x.exe')).toThrow();
+    expect(() => requireDriverDeviceKey(7)).toThrow();
+  });
+});
+
+describe('driverInstallBlocksUpdate', () => {
+  test('blocks installing an update while a driver install is running', () => {
+    expect(driverInstallBlocksUpdate(true)).toContain('正在安装驱动');
+  });
+
+  test('allows installing an update when no driver install is running', () => {
+    expect(driverInstallBlocksUpdate(false)).toBeNull();
+  });
+});
+
+describe('diagnosis validators', () => {
+  test('accepts only known checks', () => {
+    expect(requireDiagnosisCheck('queue')).toBe('queue');
+    expect(() => requireDiagnosisCheck('rm -rf')).toThrow('Invalid diagnosis check');
+  });
+
+  // M2：纸张不是请求的一部分（主进程自己按设置和模板查），渲染进程传了也不会被读取。
+  test('parses a fix request without reading any paper from it, and rejects anything else', () => {
+    expect(requireDiagnosisFixRequest({ printerName: '标签机A', fix: 'set-driver-paper', admin: true })).toEqual({
+      printerName: '标签机A',
+      fix: 'set-driver-paper',
+      admin: true,
+    });
+    expect(requireDiagnosisFixRequest({ printerName: null, fix: 'restart-spooler', admin: true })).toEqual({
+      printerName: null,
+      fix: 'restart-spooler',
+      admin: true,
+    });
+    expect(() => requireDiagnosisFixRequest({ printerName: 'A', fix: 'change-command-set', admin: false })).toThrow(
+      'Invalid diagnosis fix',
+    );
+    expect(() => requireDiagnosisFixRequest({ printerName: 'A', fix: 'feed', admin: 'yes' })).toThrow();
+    expect(() => requireDiagnosisFixRequest([])).toThrow();
+    // 多传的 paperKey 被忽略，不是校验错误，也不会出现在结果里。
+    expect(
+      requireDiagnosisFixRequest({ printerName: 'A', fix: 'feed', admin: false, paperKey: '60x40' }),
+    ).not.toHaveProperty('paper');
   });
 });

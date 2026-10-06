@@ -17,6 +17,8 @@ import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import type { ScanResult } from '../core/scan/scan-result';
 import { DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE } from '../core/templates/builtin-templates';
 import { WAYBILL_SAMPLE_FIELDS } from '../core/templates/builtin-waybills';
+import { type LibrarySample, librarySampleScan } from '../core/templates/library/library-model';
+import { findLibraryEntry, TEMPLATE_LIBRARY } from '../core/templates/library/template-library';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
 import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
@@ -39,18 +41,26 @@ import type { AppSettings } from '../shared/settings';
 import type { LocalApi } from './api/local-api';
 import { BATCH_BLOCKS_UPDATE_ISSUE } from './batch/batch-quit';
 import type { BatchStation } from './batch/batch-station';
+import type { DiagnosisStation } from './diagnosis/diagnosis-station';
+import type { DriverStation } from './drivers/driver-station';
 import { logFailures } from './ipc-errors';
 import {
+  driverInstallBlocksUpdate,
   requireApiKeyId,
   requireApiKeyName,
   requireBatchId,
   requireBatchPlan,
   requireBoolean,
   requireBytes,
+  requireDiagnosisCheck,
+  requireDiagnosisFixRequest,
+  requireDriverDeviceKey,
   requireIndex,
   requireJobQuery,
+  requireLibraryTemplateId,
   requireLookupTableId,
   requireMobilePhoneId,
+  requireNullablePrinterName,
   requirePaperKey,
   requirePdfLayout,
   requirePdfPrintRequest,
@@ -78,6 +88,7 @@ import type { PdfStation } from './pdf/pdf-station';
 import { type PrintTemplate, resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences } from './printing/driver-paper';
 import { renderLabelHtml } from './printing/label-html';
+import { renderLibraryPreviews } from './printing/library-previews';
 import type { PrinterCommands } from './printing/printer-commands-station';
 import type { PrinterDriver } from './printing/printer-driver';
 import type { PrinterProfiles } from './printing/printer-profiles';
@@ -127,8 +138,14 @@ export interface IpcDeps {
   voice: VoiceClips;
   mobile: MobileStation;
   localApi: LocalApi;
+  /** 驱动安装（打印机页的「驱动」一节）。 */
+  drivers: DriverStation;
+  /** 打印机的驱动名（按驱动名查清单）。 */
+  driverNameOf: (printerName: string) => Promise<string | null>;
   /** 每台打印机的驱动纸张和分辨率（短时缓存）。 */
   profiles: PrinterProfiles;
+  /** 打印机页的「诊断」。 */
+  diagnosis: DiagnosisStation;
   /** 标签机指令（printing/printer-commands-station.ts）。 */
   printerCommands: PrinterCommands;
   getWindow: () => BrowserWindow | null;
@@ -235,17 +252,33 @@ export function registerIpc(deps: IpcDeps): void {
     const result = await deps.service.preview(requireRaw(raw));
     return renderPreview(result, printTemplateFor(result), await dpiFor(result));
   });
-  handle(IpcChannel.PreviewTemplate, async (raw, template) => {
+  /**
+   * 预览、试打用模板库的示例数据：页面只交模板库的编号（不能交任意字段），示例数据由主进程按编号取。
+   * 没交（null / undefined）就按预览内容识别；编号不对就报错。
+   */
+  const librarySampleOf = (value: unknown): LibrarySample | null => {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const id = requireLibraryTemplateId(value);
+    const entry = findLibraryEntry(id);
+    if (entry === null) {
+      throw new Error(`Library template not found: ${id}`);
+    }
+    return entry.sample;
+  };
+  handle(IpcChannel.PreviewTemplate, async (raw, template, librarySampleId) => {
     const content = requireRaw(raw);
     const input = requireRecord(template, 'template');
-    // 面单设计时看的是排版：用示例面单数据预览，不识别、不加工预览内容（加工步骤可能要发 HTTP 查询，结果也用不上）。
-    // 模板页指定了要看的模板，不是规则选的；打印机也按这个模板重新决定。
-    if (input['kind'] === 'waybill') {
+    const librarySample = librarySampleOf(librarySampleId);
+    // 面单设计时看的是排版：用示例面单数据预览，不识别、不加工预览内容（加工步骤可能要发 HTTP 查询，结果也用不上）；
+    // 从模板库复制出的模板同理，先看它自己的示例数据。模板页指定了要看的模板，不是规则选的；打印机也按这个模板重新决定。
+    if (input['kind'] === 'waybill' || librarySample !== null) {
       const draft = sanitizeTemplate(input, DRAFT_TEMPLATE_ID, GENERIC_TEMPLATE);
       const printer = await deps.choosePrinter(draft);
       const sample: PreviewResult = {
         status: 'ok',
-        scan: waybillSampleScan(),
+        scan: librarySample === null ? waybillSampleScan() : librarySampleScan(librarySample),
         recent: null,
         lookupFailure: null,
         printer,
@@ -262,12 +295,12 @@ export function registerIpc(deps: IpcDeps): void {
     deps.service.submit({ raw: requireRaw(raw), ...requirePrintOptions(options) }),
   );
   // 「打印一张试试」：草稿和预览一样先校验（不可信的输入）；按钮只在设计器里有，只接受自由设计模板（最小权限）。
-  handle(IpcChannel.PrintSample, (raw, template) => {
+  handle(IpcChannel.PrintSample, (raw, template, librarySampleId) => {
     const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, GENERIC_TEMPLATE);
     if (draft.kind !== 'canvas') {
       throw new Error(`label:print-sample only accepts canvas templates, got kind "${draft.kind}"`);
     }
-    return deps.service.printSample(requireRaw(raw), draft);
+    return deps.service.printSample(requireRaw(raw), draft, librarySampleOf(librarySampleId));
   });
   // 打印机名不在这里核对：找不到时由适配器返回 PRINTER_NOT_FOUND，和正式打印一样显示在界面上。
   handle(IpcChannel.PrintTest, (printerName, key) =>
@@ -286,6 +319,11 @@ export function registerIpc(deps: IpcDeps): void {
     // 操作员可能刚改了纸张：界面随后重新检查时要读到新的设置。
     deps.profiles.forget(name);
   });
+  // 打印机名在 DiagnosisStation 里核对（不在系统列表里的不交给系统命令）；这里只核对形状。
+  handle(IpcChannel.DiagnosisCheck, (printerName, check) =>
+    deps.diagnosis.check(requireNullablePrinterName(printerName), requireDiagnosisCheck(check)),
+  );
+  handle(IpcChannel.DiagnosisFix, (request) => deps.diagnosis.fix(requireDiagnosisFixRequest(request)));
   // 先做不用等系统的校验，再核对打印机在系统列表里（只发给系统里有的打印机）。
   handle(IpcChannel.PrinterCommands, async (printerName) =>
     deps.printerCommands.describe(await requireKnownPrinter(printerName)),
@@ -334,6 +372,12 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.DuplicateTemplate, (sourceId) => deps.templates.duplicate(requireTemplateId(sourceId)));
   // 没有参数：主进程自己建空白模板，页面传不进任何内容（新通道只给最小能力）。
   handle(IpcChannel.CreateCanvasTemplate, () => deps.templates.createCanvas());
+  // 模板库的缩略图：主进程按示例数据现排（和打印同一份 HTML），页面只拿到结果。
+  handle(IpcChannel.ListTemplateLibrary, () => renderLibraryPreviews(TEMPLATE_LIBRARY, Date.now()));
+  // 只收模板库的编号：复制什么由主进程决定，页面交不进模板内容（新通道只给最小能力）。
+  handle(IpcChannel.CreateTemplateFromLibrary, (libraryId) =>
+    deps.templates.createFromLibrary(requireLibraryTemplateId(libraryId)),
+  );
   handle(IpcChannel.SaveTemplate, (template) => {
     const record = requireRecord(template, 'template');
     const saved = deps.templates.save(requireTemplateId(record['id']), record);
@@ -406,8 +450,12 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
   handle(IpcChannel.InstallUpdate, () => {
-    // quitAndInstall 会在任何确认之前就把安装程序拉起来：不像正常退出能先弹确认框，
-    // 批量打印、PDF 还在打或暂停中时只能直接拒绝，让操作员自己先打完或取消。
+    // quitAndInstall 会在任何确认之前就把安装程序拉起来：不像正常退出能先弹确认框，批量打印、PDF
+    // 还在打或暂停中、或者正在装驱动时只能直接拒绝，让操作员自己先打完 / 取消，或者等驱动装完。
+    const driverIssue = driverInstallBlocksUpdate(deps.drivers.isInstalling);
+    if (driverIssue !== null) {
+      return { status: 'refused', issue: driverIssue } as const;
+    }
     if (deps.batch.pendingQuit() !== null) {
       return { status: 'refused', issue: BATCH_BLOCKS_UPDATE_ISSUE } as const;
     }
@@ -448,6 +496,21 @@ export function registerIpc(deps: IpcDeps): void {
   );
   handle(IpcChannel.FirewallStatus, () => deps.localApi.checkFirewall());
   handle(IpcChannel.AddFirewallRule, () => deps.localApi.addFirewallRule());
+  handle(IpcChannel.GetDriverStatus, () => deps.drivers.status());
+  handle(IpcChannel.DetectDrivers, (force) => deps.drivers.detect(requireBoolean(force, 'force')));
+  handle(IpcChannel.InstallDriver, (deviceKey) => deps.drivers.install(requireDriverDeviceKey(deviceKey)));
+  handle(IpcChannel.CancelDriverInstall, () => deps.drivers.cancelInstall());
+  handle(IpcChannel.OpenDriverDownloadPage, (deviceKey) =>
+    deps.drivers.openDownloadPage(requireDriverDeviceKey(deviceKey)),
+  );
+  handle(IpcChannel.ReinstallPrinterDriver, async (printerName) => {
+    const name = await requireKnownPrinter(printerName);
+    const driverName = await deps.driverNameOf(name);
+    if (driverName === null) {
+      throw new Error(`Cannot read the driver name of ${name}`);
+    }
+    return deps.drivers.installForDriverName(driverName);
+  });
 
   handle(IpcChannel.BatchOpenFile, async (): Promise<BatchTableResult> => {
     const window = deps.getWindow();

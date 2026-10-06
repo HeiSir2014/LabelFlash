@@ -4,7 +4,10 @@ import { createInterface } from 'node:readline';
 import { PassThrough } from 'node:stream';
 import { RAW_COMMAND_MAX_BYTES } from '../../core/printer-commands/command-model';
 import {
+  MAX_PROBE_REPLY_LENGTH,
+  PROBE_COMMANDS,
   PROBE_QUERY_TIMEOUT_MS,
+  PROBE_SCRIPT,
   PrinterProbeHost,
   type ProbeProcess,
   probeArguments,
@@ -242,4 +245,36 @@ describe('PrinterProbeHost', () => {
     },
     REAL_PROBE_TEST_TIMEOUT_MS,
   );
+
+  // 系统级的查询（后台打印服务）没有打印机名：请求行的数据部分是空的 base64。
+  test('sends a query without a printer name', async () => {
+    const { host, spawned } = harness();
+    const answer = host.query('spooler', '');
+    const [probe] = spawned;
+    expect(await nextRequests(probe as FakeProbe, 1)).toEqual(['spooler ']);
+    probe?.reply('ok {"status":"Running","startType":"Automatic"}');
+    expect(await answer).toBe('{"status":"Running","startType":"Automatic"}');
+  });
+
+  // 回答不可信（文档名来自别的程序）：超长的整行丢掉，按「查不到」处理。
+  test('drops an answer longer than the limit', async () => {
+    const { host, spawned, warnings } = harness();
+    const answer = host.query('jobs', '标签机A');
+    spawned[0]?.reply(`ok ${'x'.repeat(MAX_PROBE_REPLY_LENGTH)}`);
+    expect(await answer).toBeNull();
+    expect(warnings.some((message) => message.includes('dropped'))).toBe(true);
+  });
+
+  test('the resident script answers every command the host can send', () => {
+    for (const command of PROBE_COMMANDS) {
+      expect(PROBE_SCRIPT).toContain(`'${command}' {`);
+    }
+  });
+
+  // 一台电脑上拔过的旧 USB 打印设备会一直留在 Get-PnpDevice 里：设备超过上限时，截断前先把
+  // 现在接着的（Present）排到前面，不然当前这台可能因为排在旧设备后面被截断掉、查成「找不到」。
+  test('sorts present USB devices first before truncating the list', () => {
+    const usbCase = PROBE_SCRIPT.slice(PROBE_SCRIPT.indexOf("'usb' {"), PROBE_SCRIPT.indexOf("'jobs' {"));
+    expect(usbCase).toMatch(/Sort-Object\s+-Property\s+Present\s+-Descending\s*\|\s*Select-Object\s+-First/);
+  });
 });

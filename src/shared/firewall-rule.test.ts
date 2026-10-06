@@ -1,10 +1,45 @@
 import { describe, expect, test } from 'bun:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { FIREWALL_RULE_NAME, firewallInstallerScript, firewallScript, powerShellLiteral } from './firewall-rule';
+
+const execFileAsync = promisify(execFile);
 
 describe('firewall rule scripts', () => {
   test('quotes a path as a PowerShell literal, doubling single quotes', () => {
     expect(powerShellLiteral("C:\\Users\\O'Neil\\CDL-LabelFlash.exe")).toBe("'C:\\Users\\O''Neil\\CDL-LabelFlash.exe'");
   });
+
+  // PowerShell 的分词器把几种 Unicode 「智能引号」也当单引号用（Word 粘贴常见），不只是 U+0027：
+  // 一个叫 `Label' ; Write-Output INJECTED; '` 或用弯引号写同样内容的打印机名，不把这几种都转义就能跳出字符串字面量。
+  const SINGLE_QUOTE_VARIANTS = ["'", '\u2018', '\u2019', '\u201A', '\u201B'];
+  test.each(SINGLE_QUOTE_VARIANTS)(
+    'doubles the smart-quote variant %s so it cannot close the literal early',
+    (quote) => {
+      const text = `Label${quote}; Write-Output INJECTED; ${quote}`;
+      const literal = powerShellLiteral(text);
+      expect(literal).toBe(`'Label${quote}${quote}; Write-Output INJECTED; ${quote}${quote}'`);
+    },
+  );
+
+  // 真的跑一次 PowerShell：把转义后的字面量原样输出，核对解析出来的字符串和原文一致（不会被当成提前结束的引号、也没有被当成命令执行）。
+  test.skipIf(process.platform !== 'win32')(
+    'round-trips every quote variant through real PowerShell',
+    async () => {
+      for (const quote of SINGLE_QUOTE_VARIANTS) {
+        const text = `Label${quote}; Write-Output INJECTED; ${quote}`;
+        const literal = powerShellLiteral(text);
+        const { stdout } = await execFileAsync('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `$Name = ${literal}; Write-Output $Name`,
+        ]);
+        expect(stdout.trim()).toBe(text);
+      }
+    },
+    30_000,
+  );
 
   // 只动这个程序路径下的规则：同名规则和针对本程序的阻止规则（Windows 留下的阻止规则优先于放行）。
   test('replaces only the rules for this program before allowing it on every network type', () => {

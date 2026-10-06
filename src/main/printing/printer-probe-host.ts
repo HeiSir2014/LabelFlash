@@ -1,10 +1,22 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
+import { DIAGNOSIS_LIMITS } from '../../core/diagnosis/diagnosis-model';
 import { RAW_COMMAND_MAX_BYTES } from '../../core/printer-commands/command-model';
 import { BRAND } from '../../shared/brand';
 
-export type ProbeCommand = 'status' | 'paper' | 'driver';
+/** 常驻探测进程能回答的问题：状态、驱动纸张、驱动名（打印时用），以及诊断用的几项（打印机页点「诊断」时才问）。 */
+export const PROBE_COMMANDS = [
+  'status',
+  'paper',
+  'driver',
+  'spooler',
+  'printer',
+  'usb',
+  'jobs',
+  'paper-options',
+] as const;
+export type ProbeCommand = (typeof PROBE_COMMANDS)[number];
 
 /**
  * 一次请求的回答：ok 带内容；否则 error 是探测进程报的原因（Win32 错误写成「win32:<错误码> <说明>」）。
@@ -33,6 +45,13 @@ export const PROBE_QUERY_TIMEOUT_MS = 10_000;
  */
 export const RAW_SEND_TIMEOUT_MS = 30_000;
 const MAX_STDERR_LOG_LENGTH = 500;
+/**
+ * 一行回答的长度上限（字符）：最长的是队列（100 个任务 × 约 300 字）和纸张选项（200 种 × 约 150 字），
+ * 都在 4 万字以内；512K 是给异常输出的硬上限，超过的整行丢掉、按「查不到」处理。
+ */
+export const MAX_PROBE_REPLY_LENGTH = 512 * 1024;
+/** Print Schema 的命名空间名（不是网络地址）：读驱动的 PrintCapabilities 要用它定位节点。 */
+const PRINT_SCHEMA_FRAMEWORK = 'http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework';
 
 /**
  * 原样发送字节（RAW）的 C# 辅助类，探测进程第一次收到 raw 请求时用 Add-Type 编译，之后复用。
@@ -129,8 +148,21 @@ namespace LabelFlash {
  * - Get-Printer -Name 支持通配符，名字要先转义；纸张用 Where-Object 精确匹配，不拼进 WQL。
  * - raw：数据 1–RAW_COMMAND_MAX_BYTES 字节（主进程查过，这里再查一次）；C# 第一次用到时才编译。
  * - 输出被重定向时，PowerShell 会把加载模块的进度条序列化成 CLIXML 写到 stderr，所以关掉进度输出。
+ * - 诊断用的几个命令（spooler/printer/usb/jobs/paper-options）只在点「诊断」时才问，一问一答开销不大：
+ *   `-InputObject` 是因为只有一个元素的数组用管道传给 `ConvertTo-Json` 会被拆开，变成对象而不是数组；
+ *   `Get-PnpDevice -InstanceId 'USBPRINT\\*'` 包括现在不在的设备（Present = $false），
+ *   所以能说「系统记得它，但现在没连上」，问题代码用 Win32_PnPEntity 自带的 ConfigManagerErrorCode；
+ *   拔过的旧 USB 打印设备会一直留在这个列表里，超过上限要截断时先把 Present 的排到前面，
+ *   不然当前这台可能因为排在旧设备后面被截掉、查成「找不到」；
+ *   `paper-options` 用 .NET 的 System.Printing（全局程序集缓存里的系统程序集，不是编译出来的代码）
+ *   读驱动的 PrintCapabilities；XmlResolver 设为 $null 不解析外部实体；
+ *   `jobs` 的 `SubmittedTime` 转成带偏移量的 ISO 字符串（`zzz`），不在这里转成 Unix 毫秒：
+ *   `Get-PrintJob` 给的 `[DateTime]` 的 `Kind` 不确定是 Local 还是 Unspecified，转 `[DateTimeOffset]`
+ *   时按「当前系统时区」当成本地时间处理——这是假设，真的是不是本地时间还没有在真机（尤其中文 Windows）
+ *   上核对过（见 docs/roadmap.md）；带偏移量的字符串至少能让主进程按偏移量正确解析，不会多一次
+ *   「当成 UTC 直接读」的错误；这些命令都在下面的 try 里，出错一样回 err …，主进程按「查不到」处理。
  */
-const PROBE_SCRIPT = `
+export const PROBE_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
@@ -157,6 +189,63 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
       'driver' {
         $printer = Get-Printer -Name ([Management.Automation.WildcardPattern]::Escape($name))
         $reply = 'ok ' + ($printer.DriverName -replace '\\s+', ' ')
+      }
+      'spooler' {
+        $service = Get-Service -Name 'Spooler'
+        $reply = 'ok ' + (ConvertTo-Json -Compress -InputObject ([ordered]@{
+          status = $service.Status.ToString(); startType = $service.StartType.ToString() }))
+      }
+      'printer' {
+        $printer = Get-Printer -Name ([Management.Automation.WildcardPattern]::Escape($name))
+        $reply = 'ok ' + (ConvertTo-Json -Compress -InputObject ([ordered]@{
+          status = $printer.PrinterStatus.ToString(); portName = [string]$printer.PortName; driverName = [string]$printer.DriverName }))
+      }
+      'usb' {
+        $printer = Get-Printer -Name ([Management.Automation.WildcardPattern]::Escape($name))
+        $devices = @(Get-PnpDevice -InstanceId 'USBPRINT\\*' -ErrorAction SilentlyContinue |
+          Sort-Object -Property Present -Descending | Select-Object -First ${DIAGNOSIS_LIMITS.usbDevices} | ForEach-Object {
+            [ordered]@{ instanceId = [string]$_.InstanceId; name = [string]$_.FriendlyName; present = [bool]$_.Present; problem = [int]$_.ConfigManagerErrorCode }
+          })
+        $reply = 'ok ' + (ConvertTo-Json -Compress -Depth 4 -InputObject ([ordered]@{ port = [string]$printer.PortName; devices = $devices }))
+      }
+      'jobs' {
+        $printer = Get-Printer -Name ([Management.Automation.WildcardPattern]::Escape($name))
+        $all = @(Get-PrintJob -PrinterObject $printer)
+        $jobs = @($all | Select-Object -First ${DIAGNOSIS_LIMITS.jobs} | ForEach-Object {
+          $document = [string]$_.DocumentName
+          [ordered]@{
+            id = [int]$_.Id
+            document = $document.Substring(0, [Math]::Min($document.Length, ${DIAGNOSIS_LIMITS.textLength}))
+            user = [string]$_.UserName
+            status = $_.JobStatus.ToString()
+            submittedAt = ([DateTimeOffset]$_.SubmittedTime).ToString('yyyy-MM-ddTHH:mm:sszzz')
+          }
+        })
+        $reply = 'ok ' + (ConvertTo-Json -Compress -Depth 4 -InputObject ([ordered]@{ user = [Environment]::UserName; total = $all.Count; jobs = $jobs }))
+      }
+      'paper-options' {
+        Add-Type -AssemblyName System.Printing
+        $queue = (New-Object System.Printing.LocalPrintServer).GetPrintQueue($name)
+        $xml = New-Object System.Xml.XmlDocument
+        $xml.XmlResolver = $null
+        $xml.Load($queue.GetPrintCapabilitiesAsXml())
+        $ns = New-Object System.Xml.XmlNamespaceManager $xml.NameTable
+        $ns.AddNamespace('psf', '${PRINT_SCHEMA_FRAMEWORK}')
+        $options = @($xml.SelectNodes("//psf:Feature[substring-after(@name, ':') = 'PageMediaSize']/psf:Option", $ns) |
+          Select-Object -First ${DIAGNOSIS_LIMITS.paperOptions} | ForEach-Object {
+            $qname = [string]$_.GetAttribute('name')
+            $prefix = if ($qname.Contains(':')) { $qname.Split(':')[0] } else { '' }
+            $width = $_.SelectSingleNode("psf:ScoredProperty[substring-after(@name, ':') = 'MediaSizeWidth']/psf:Value", $ns)
+            $height = $_.SelectSingleNode("psf:ScoredProperty[substring-after(@name, ':') = 'MediaSizeHeight']/psf:Value", $ns)
+            [ordered]@{
+              namespace = [string]$_.GetNamespaceOfPrefix($prefix)
+              localName = $qname.Substring($qname.IndexOf(':') + 1)
+              width = if ($width) { [int]$width.InnerText } else { $null }
+              height = if ($height) { [int]$height.InnerText } else { $null }
+            }
+          })
+        $custom = $null -ne $xml.SelectSingleNode("//psf:ParameterDef[substring-after(@name, ':') = 'PageMediaSizeMediaSizeWidth']", $ns)
+        $reply = 'ok ' + (ConvertTo-Json -Compress -Depth 4 -InputObject ([ordered]@{ options = $options; custom = $custom }))
       }
       'raw' {
         $data = [Convert]::FromBase64String($payload)
@@ -305,6 +394,11 @@ export class PrinterProbeHost {
     }
     if (query.timer) {
       clearTimeout(query.timer);
+    }
+    if (line.length > MAX_PROBE_REPLY_LENGTH) {
+      this.warn(`[printer-probe] dropped a ${line.length}-character answer (limit ${MAX_PROBE_REPLY_LENGTH})`);
+      query.resolve({ ok: false, error: null });
+      return;
     }
     if (line.startsWith('ok')) {
       query.resolve({ ok: true, payload: line.slice('ok'.length).trim() });

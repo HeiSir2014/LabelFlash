@@ -12,6 +12,7 @@ import { CanvasDesigner } from '../../canvas-editor/CanvasDesigner';
 import { LabelPreview } from '../../LabelPreview';
 import { type SampleContent, SampleInput } from '../../SampleInput';
 import { TemplateEditor } from '../../TemplateEditor';
+import { TemplateLibrary, type TemplateLibraryProps } from '../../TemplateLibrary';
 import { WaybillEditor } from '../../WaybillEditor';
 
 /** 模板页的标签比工作台的更大：这里就是看效果的地方。 */
@@ -50,6 +51,9 @@ export interface TemplatesPageProps {
   onCreateCanvas: () => void;
   /** 「新建自由设计模板」正在进行：按钮禁用，避免连点建出好几个空白模板。 */
   isCreatingCanvas: boolean;
+  /** 「从模板库新建」打开时是模板库；没打开时为 null。 */
+  library: TemplateLibraryProps | null;
+  onOpenLibrary: () => void;
   /** 「打印一张试试」：按预览内容打印正在编辑的草稿（只在设计器里有）。 */
   onPrintSample: () => void;
   /** 「打印一张试试」正在进行：按钮禁用，避免连点打出好几张一样的草稿。 */
@@ -61,7 +65,13 @@ export function TemplatesPage(props: TemplatesPageProps) {
   const { draft, fieldNames } = props;
   return (
     <>
-      {draft ? <EditView {...props} draft={draft} /> : <ListView {...props} />}
+      {draft ? (
+        <EditView {...props} draft={draft} />
+      ) : props.library ? (
+        <TemplateLibrary {...props.library} />
+      ) : (
+        <ListView {...props} />
+      )}
       <datalist id={FIELD_NAME_LIST_ID}>
         {fieldNames.map((name) => (
           <option key={name} value={name} />
@@ -84,6 +94,7 @@ function ListView({
   onRemove,
   onCreateCanvas,
   isCreatingCanvas,
+  onOpenLibrary,
   printers,
   paperPrinters,
 }: TemplatesPageProps) {
@@ -103,17 +114,22 @@ function ListView({
         <TemplateGroup
           label="自定义"
           items={custom}
-          empty="还没有自定义模板：选一套模板，点「复制」生成后再编辑。"
+          empty="还没有自定义模板：选一套模板点「复制」，或从模板库新建。"
           {...groupProps}
         />
-        <button
-          type="button"
-          className="button button--small button--quiet template-list__create"
-          disabled={isCreatingCanvas}
-          onClick={onCreateCanvas}
-        >
-          {isCreatingCanvas ? '正在新建…' : '新建自由设计模板'}
-        </button>
+        <div className="template-list__create">
+          <button
+            type="button"
+            className="button button--small button--quiet"
+            disabled={isCreatingCanvas}
+            onClick={onCreateCanvas}
+          >
+            {isCreatingCanvas ? '正在新建…' : '新建自由设计模板'}
+          </button>
+          <button type="button" className="button button--small button--quiet" onClick={onOpenLibrary}>
+            从模板库新建
+          </button>
+        </div>
       </div>
       <section className="template-stage" aria-label="模板预览">
         <PreviewSource template={selected} sample={sample} />

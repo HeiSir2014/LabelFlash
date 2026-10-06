@@ -1,0 +1,14 @@
+"/usr/share/cups/ipptool/get-printer-attributes.test":
+    Get-Printer-Attributes                                               [PASS]
+        RECEIVED: 3164 bytes in response
+        status-code = successful-ok (successful-ok)
+        attributes-charset (charset) = utf-8
+        attributes-natural-language (naturalLanguage) = en
+        printer-make-and-model (textWithoutLanguage) = Label Printer 203dpi
+        printer-state (enum) = stopped
+        printer-state-reasons (1setOf keyword) = paused,media-empty-error
+        printer-is-accepting-jobs (boolean) = true
+        media-default (keyword) = oe_4x6-label_4x6in
+        media-supported (1setOf keyword) = oe_4x6-label_4x6in,om_60x40mm_60x40mm,custom_min_25.4x12.7mm,custom_max_104x990mm
+        media-col-default (collection) = {media-size={x-dimension=10160 y-dimension=15240} media-top-margin=0}
+        printer-resolution-default (resolution) = 203dpi

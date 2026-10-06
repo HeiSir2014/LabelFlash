@@ -1,6 +1,8 @@
 import type { BatchPlan } from '../core/batch/batch-model';
 import { BATCH_ID_PATTERN } from '../core/batch/batch-model';
 import { parseBatchPlan } from '../core/batch/parse-batch-plan';
+import type { RequestedDiagnosisFix } from '../core/diagnosis/diagnosis-model';
+import { DEVICE_KEY_PATTERN } from '../core/drivers/detected-device';
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { parsePdfLayout, parsePdfPrintRequest, RUN_ID_PATTERN } from '../core/pdf/parse-pdf-request';
 import { type PdfLayout, type PdfPrintRequest, PIECE_ID_PATTERN } from '../core/pdf/pdf-model';
@@ -9,7 +11,9 @@ import { parseCommandConfig } from '../core/printer-commands/sanitize-command-co
 import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-model';
+import { LIBRARY_TEMPLATE_ID_PATTERN } from '../core/templates/library/library-model';
 import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
+import { type DiagnosisCheckId, isDiagnosisCheckId, isDiagnosisFixId } from '../shared/diagnosis';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
 import { isWebOrigin, normalizeApiKeyName } from '../shared/local-api';
@@ -101,6 +105,14 @@ export function requireRecord(value: unknown, name: string): Record<string, unkn
 export function requireTemplateId(value: unknown): string {
   if (typeof value !== 'string' || !TEMPLATE_ID_PATTERN.test(value)) {
     throw new TypeError('Invalid template id');
+  }
+  return value;
+}
+
+/** 模板库里模板的编号（library:xxx）；模板库里有没有这个模板由 TemplateCatalog / findLibraryEntry 核对。 */
+export function requireLibraryTemplateId(value: unknown): string {
+  if (typeof value !== 'string' || !LIBRARY_TEMPLATE_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid library template id');
   }
   return value;
 }
@@ -282,4 +294,52 @@ export function requireSettingsPatch(value: unknown): Record<string, unknown> {
   const patch = requireRecord(value, 'settings patch');
   const { printerCommands: _ignored, ...rest } = patch;
   return rest;
+}
+
+/** 设备编号来自主进程的检测结果（usb-厂商号-产品号-摘要）；界面传不进地址或路径。 */
+export function requireDriverDeviceKey(value: unknown): string {
+  if (typeof value !== 'string' || !DEVICE_KEY_PATTERN.test(value)) {
+    throw new TypeError('Invalid driver device key');
+  }
+  return value;
+}
+
+export function requireDiagnosisCheck(value: unknown): DiagnosisCheckId {
+  if (!isDiagnosisCheckId(value)) {
+    throw new TypeError('Invalid diagnosis check');
+  }
+  return value;
+}
+
+/** 打印机名可以为 null（只查、只修后台打印服务时）。 */
+export function requireNullablePrinterName(value: unknown): string | null {
+  return value === null ? null : requireString(value, 'printerName');
+}
+
+/**
+ * 修复请求：修复项是枚举，管理员是布尔；要取消哪些任务、写什么纸张都由主进程自己查，请求里没有
+ * （M2：纸张不收渲染进程报来的纸张键，DiagnosisStation.fix 按打印机名现查设置和模板）。
+ */
+export function requireDiagnosisFixRequest(value: unknown): RequestedDiagnosisFix {
+  const record = requireRecord(value, 'diagnosis fix request');
+  const fix = record['fix'];
+  if (!isDiagnosisFixId(fix)) {
+    throw new TypeError('Invalid diagnosis fix');
+  }
+  return {
+    printerName: requireNullablePrinterName(record['printerName']),
+    fix,
+    admin: requireBoolean(record['admin'], 'admin'),
+  };
+}
+
+/**
+ * 正在装驱动时不让「重启更新」结束程序：提权安装是系统在跑，程序退出后没人等它结束，装到一半也没法恢复。
+ * 装完（成功或失败）再点一次「重启更新」就行。和批量打印的 BATCH_BLOCKS_UPDATE_ISSUE 同一个做法：不抛异常，
+ * 回一句能直接给操作员看的中文说明（或 null = 不挡），ipc.ts 按它决定要不要真的调用 updater.install。
+ */
+export const DRIVER_INSTALL_BLOCKS_UPDATE_ISSUE = '正在安装驱动：请等它装完（成功或失败）后再重启更新';
+
+export function driverInstallBlocksUpdate(isInstalling: boolean): string | null {
+  return isInstalling ? DRIVER_INSTALL_BLOCKS_UPDATE_ISSUE : null;
 }

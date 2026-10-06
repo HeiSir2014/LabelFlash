@@ -9,6 +9,7 @@
   - `log-files.ts`、`ipc-errors.ts`、`ipc-validators.ts`、`update-settings.ts`
   - `printing/printer-status.ts`、`printing/printer-profiles.ts`、`printing/page-size.ts`、`printing/fake-printers.ts`
   - `mobile/` 整个目录
+  - `diagnosis/` 除了 `create-diagnosis-system.ts`（接上真实进程和文件）都不 import electron
 - **接线文件保持薄**：`window.ts`、`window-placement.ts`、`updater.ts`、`index.ts` 这类只负责接线，不写业务判断。
 - **依赖注入**：外部依赖由构造参数传入，测试时换成假的，例如 `PrinterProbeHost` 的进程工厂。
 
@@ -47,6 +48,7 @@
 - **页面尺寸** `page-size.ts`：按模板的纸张算 `webContents.print` 的 pageSize。
 - **决定打印机**：规则在 core 的 `printing/resolve-printer.ts`，主进程只提供本机打印机列表（`PrinterDriver.knownPrinterNames`）。读打印机列表要用主窗口，启动时窗口还没建好，检测和预读在窗口建好之后再做。
 - **假打印机** `fake-printers.ts`：环境变量 `CDL_LABELFLASH_FAKE_PRINTERS`（只对未打包的程序生效）换掉适配器、驱动纸张查询和状态探测，E2E 和视觉验收用。
+- **模板库** `library-previews.ts`：按每个模板的示例数据排出缩略图 HTML（`renderLabelHtml`，203dpi），`templates:library` 每次现排、不缓存；`library-html.test.ts` 核对每个模板在 203、300dpi 都印得出并做 HTML 快照。预览、试打带模板库编号时，`ipc.ts` 的 `librarySampleOf` 按编号取示例数据（页面不能交字段）。
 - **标签机指令** `printer-commands-station.ts`：核对打印机在系统列表里 → 认指令集（手动 / 在线驱动清单 / 驱动名）→ 按范围把关 → 保存（设置的 `printerCommands`）→ 经 `raw-sender.ts` 发送一次。发送方式：Windows 探测进程、macOS `lp -o raw`（参数数组，字节走标准输入）、其他平台「不支持」。驱动名在 `printer-identity.ts`（macOS 取 `printer-make-and-model`）。不经 `PrintService`、不写打印记录，每次发送写日志。假打印机记下收到的指令文字（`rawJobs`）。
 
 ## 其他子系统
@@ -65,6 +67,17 @@
 | `security.ts`、`app-protocol.ts` | 拒绝导航、新窗口、重定向和 webview；只经 `app://bundle/` 提供界面文件 |
 | `mobile/` | 手机扫码的电脑端，见下一节 |
 
+## 诊断（`diagnosis/`）
+
+设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 7.2 节。
+
+- **分层**：系统命令的输出由 `windows-facts.ts`、`mac-facts.ts` 解析成 core 的「事实」，结论在 core 的 `verdicts.ts`；`windows-diagnosis.ts`、`mac-diagnosis.ts`、`fake-diagnosis.ts` 实现同一个 `DiagnosisSystem`，依赖由构造参数传入；样本在 `testing/fixtures/{windows,mac}/`，按原样保存。
+- **`diagnosis-station.ts`**：打印机名不在系统列表里的，检查只说「已经没有这台了」，修复直接拒绝；修复按 core 的管理员策略核对，同一时间只做一个；检查和修复都写日志，「查不到」的英文原因也写。
+- **Windows**：查询走常驻探测进程（`spooler`、`printer`、`usb`、`jobs`、`paper-options`，回答一行 JSON，长度有上限）；取消本程序的任务用一次性 PowerShell；要管理员的用 `windows-powershell.ts`（防火墙的做法：外层 `Start-Process -Verb RunAs`，内层 Base64，确认框没成退出 1223），提权脚本第一行把 `PSModulePath` 收紧到 `$PSHOME`，只用 .NET 系统程序集和 `[Environment]::SystemDirectory` 下的 `sc.exe`，结果靠退出码带回（`windows-scripts.ts` 的 `SCRIPT_EXIT`）。
+- **macOS**：`command-runner.ts` 跑命令（参数数组、英文环境、关 stdin、独立会话——CUPS 要密码时不会去终端上等）；改 CUPS 的先以当前用户做，`Forbidden` 时返回 needs-admin，操作员点管理员按钮后经 `osascript … with administrator privileges`（命令、提示经 argv，`shellCommand` 逐个单引号转义）。Get-Jobs 用自己的 ipptool 测试文件（`CUPS_GET_JOBS_TEST`），用时写进临时目录、用完删掉。
+- **账本**：`ElectronDriverAdapter` 和 5a 的 RAW 下发在任务进了系统队列后 `SubmittedJobs.record`，只在内存里。
+- **接缝**：5a（指令集、走纸、校准）和 5c（重装驱动）只经 `seams.ts` 的两个接口，`index.ts` 里接上；5c 合并前 `drivers` 是 null，按钮不出现。
+
 ## 批量打印（`batch/`）
 
 设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 5 节。
@@ -73,6 +86,16 @@
 - **`batch-station.ts`**：只留最近一张表；预览、检查（把每行排一遍找出条码印不了的，分段让出主线程，新的检查开始时放弃旧的）和打印用同一份 HTML；同一时间只有一批在打；进度最多 0.25 秒推一次（`batch:status-changed`），状态变化立即推，同时推 `jobs:changed`。
 - **拖进窗口的文件**：界面读成字节经 `batch:read-dropped` 交来，主进程不接受任何路径（打开对话框选的文件由主进程自己读）。
 - **静默更新**：批量打印还有没打的（含暂停中的）时不静默更新。
+
+## 驱动安装（`drivers/`）
+
+设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 7.3 节，给出品方的说明在 `docs/driver-catalog.md`。
+
+- **清单**：`catalog-signature.ts`（Ed25519 信封，不依赖 electron，签名脚本也用）、`catalog-client.ts`（`net.fetch`、2MB 上限、15 秒超时、验签 → `sanitizeCatalog` → 过期和防回滚、退回同一地址上次的清单）、`catalog-state-store.ts`（最高版本和上次的清单存在 settings 表的独立键里，界面改不到）。地址：设置 `driverCatalogUrl` 优先，构建时注入的默认值（`build-defaults.ts`）兜底；代码里不写域名。内置公钥表是空的（开源 / 自己构建没填）时，清单直接按 `no-keys` 处理，不下载、也不提示填地址。
+- **下载**：`installer-downloader.ts`：只要 https（跳转后也是），按清单的大小截断，边写边算 SHA-256，空闲 60 秒 / 总共 30 分钟超时，只删自己建的临时目录；启动时 `cleanupOldDownloads` 清一遍上次没清干净的临时目录。
+- **平台**：`windows-devices.ts`（一次性 PowerShell 查 `Win32_PnPEntity`，不放进常驻探测进程）、`windows-signature.ts`（Authenticode，查询失败是 `unverifiable`，不等同「签名无效」）、`windows-install.ts`（一次 UAC；提权脚本只用 .NET 类型，在管理员专属目录复核哈希后运行，安装程序的 TEMP/TMP 也指到这个目录）、`mac-devices.ts`、`mac-install.ts`（`osascript … with administrator privileges` 运行固定脚本）；解析都是纯函数，按平台测试。平台选择只在 `driver-ports.ts`。共用的 `runPowerShell`（`run-command.ts`）会去掉子进程环境里的 `PSModulePath`，避免另外装的 PowerShell（例如 7）的模块路径抢在 Windows PowerShell 5.1 自己的模块路径前面。
+- **编排**：`driver-station.ts`：同一时间一个安装；界面只能按设备编号装、打开清单里的 https 下载页；进度最多 0.25 秒推一次（`drivers:status-changed`）；装驱动时不静默更新、不能「重启更新」。`hints()` 给 5a、5b 按驱动名查；`reinstall(driverName)` 是 5b 用的接口，等真正装完（成功或失败）才返回，和 IPC 的 `drivers:reinstall-for-printer`（立即返回、进度照推）是两条路。按驱动名重装（`deviceKey` 为 null）跳过「找新打印机」，装完说「驱动已重新安装」。
+- **假环境**：`fake-drivers.ts`（`CDL_LABELFLASH_FAKE_DRIVERS`、`CDL_LABELFLASH_DRIVER_CATALOG_TEST_KEY`，只对未打包的程序生效），一律走 Windows 流程；清单照样真实下载、真实验签。
 
 ## 本机接口（`api/`）
 
@@ -135,6 +158,7 @@
 | `window.ts` + `src/shared/window-chrome.ts` | 无边框窗口，按钮由界面自绘 | `titleBarStyle: 'hidden'`，保留系统红绿灯 |
 | `tray.ts` | 第一次隐藏到托盘时弹气泡提示 | 不弹 |
 | `secrets/` | DPAPI | 钥匙串 |
+| `diagnosis/` | 探测进程的诊断查询；提权 PowerShell（UAC） | `lpstat`、`ipptool`、`system_profiler`；`osascript` 要管理员密码 |
 
 - **解析和调用分开**：解析系统命令输出的函数写成纯函数，每个平台单独测试；调用系统命令的代码保持很薄。
 - **不经过 shell**：系统命令一律用参数数组调用，打印机名只经参数或环境变量传入，并且必须是系统打印机列表里存在的打印机。

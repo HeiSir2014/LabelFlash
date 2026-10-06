@@ -11,6 +11,7 @@ import { BatchPage } from './components/batch/BatchPage';
 import { ConfigCenter } from './components/config/ConfigCenter';
 import { ConfigPages } from './components/config/ConfigPages';
 import { ConfirmDialog } from './components/config/ConfirmDialog';
+import { DriverSection } from './components/DriverSection';
 import { JobLog } from './components/JobLog';
 import { MOBILE_QR_SIZE_PX, MobileOverlay } from './components/MobileOverlay';
 import { NoticeBar } from './components/NoticeBar';
@@ -44,6 +45,8 @@ import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
 import { useBatch } from './view-models/use-batch';
 import { useConfigCenter } from './view-models/use-config-center';
+import { useDiagnosis } from './view-models/use-diagnosis';
+import { useDrivers } from './view-models/use-drivers';
 import { useFeedback } from './view-models/use-feedback';
 import { useFileDrop } from './view-models/use-file-drop';
 import { useHotkey } from './view-models/use-hotkey';
@@ -135,6 +138,7 @@ export function App() {
     [installedNames, responsibilitiesByName],
   );
   const printerProfiles = usePrinterProfiles(installedNames, assignedNames, expectedPapers);
+  const diagnosis = useDiagnosis();
   /** 这台打印机负责的纸：标签机指令的纸张按它预填；没负责纸张时按 60×40。 */
   const paperForPrinter = useCallback(
     (name: string) => parsePaperKey(expectedPapers[name] ?? '') ?? DEFAULT_PAPER,
@@ -197,6 +201,9 @@ export function App() {
   const { appView } = config;
   const isWorkbench = isWorkbenchActive(appView.view);
 
+  // 打印机页打开时检测缺驱动的设备；装好之后立即刷新打印机列表（新打印机出现、驱动纸张的「建议」跟着出现）。
+  const refreshPrinters = useCallback(() => void printers.refresh(), [printers.refresh]);
+  const drivers = useDrivers(appView.view.kind === 'config' && appView.view.page === 'printers', refreshPrinters);
   // 批量打印：设置留在这里（关掉页面再打开都还在），批次本身在主进程里跑。
   const isBatchOpen = appView.view.kind === 'batch';
   const batch = useBatch({
@@ -428,7 +435,21 @@ export function App() {
               onCancel: templates.cancelEdit,
               onCreateCanvas: () => void templates.createCanvas(),
               isCreatingCanvas: templates.isCreatingCanvas,
-              onPrintSample: () => void templates.printSample(config.templatePage.sample.value),
+              library: templates.isLibraryOpen
+                ? {
+                    items: config.templateLibrary.items,
+                    hasError: config.templateLibrary.hasError,
+                    view: config.templateLibrary.view,
+                    category: config.templateLibrary.category,
+                    onCategory: config.templateLibrary.selectCategory,
+                    onPaper: config.templateLibrary.selectPaper,
+                    onUse: (item) => void config.templateLibrary.createFromLibrary(item),
+                    isCreating: templates.isCreatingFromLibrary,
+                    onClose: templates.closeLibrary,
+                  }
+                : null,
+              onOpenLibrary: templates.openLibrary,
+              onPrintSample: () => void templates.printSample(config.templatePage.sample.value, config.librarySampleId),
               isPrintingSample: templates.isPrintingSample,
               printers: printers.printers,
               paperPrinters,
@@ -477,6 +498,19 @@ export function App() {
                 onRefresh={() => void printers.refresh()}
                 onTestPrint={printTest}
                 commands={printerCommands}
+                diagnosis={diagnosis}
+              />
+            }
+            drivers={
+              <DriverSection
+                status={drivers.status}
+                catalogUrl={settings?.driverCatalogUrl ?? null}
+                defaultCatalogUrl={appInfo?.defaultDriverCatalogUrl ?? null}
+                onChangeCatalogUrl={async (driverCatalogUrl) => (await update({ driverCatalogUrl })) !== null}
+                onDetect={() => void drivers.detect(true)}
+                onInstall={(key) => void drivers.install(key)}
+                onCancel={() => void drivers.cancel()}
+                onOpenPage={(key) => void drivers.openPage(key)}
               />
             }
             localApi={localApi}

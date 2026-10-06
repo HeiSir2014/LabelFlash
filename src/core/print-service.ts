@@ -8,6 +8,7 @@ import { type EnrichContext, type EnrichResult, NO_ENRICH_CONTEXT } from './scan
 import { MAX_RAW_LENGTH, normalizeRaw } from './scan/normalize-raw';
 import type { ScanField, ScanResult } from './scan/scan-result';
 import { GENERIC_TEMPLATE } from './templates/builtin-templates';
+import { type LibrarySample, librarySampleScan } from './templates/library/library-model';
 import { type LabelTemplate, withPaper } from './templates/template-model';
 import type {
   BatchRef,
@@ -358,9 +359,35 @@ export class PrintService {
   /**
    * 模板页「打印一张试试」：按预览内容和正在编辑的草稿打一张，看实际出纸的效果。
    * 和预览一样识别、加工（看到的就是打出来的），加工步骤设为拦下的查询失败时和正式打印一样不打；
+   * 从模板库复制出的模板还在用示例数据预览时（sample 不为 null），按示例数据打、不识别预览内容。
    * 按草稿的纸张和打印机设置选打印机。不占防重复窗口、不写打印记录：这是在调模板，不是业务打印。
    */
-  async printSample(raw: string, template: LabelTemplate): Promise<PrintResult> {
+  async printSample(raw: string, template: LabelTemplate, sample: LibrarySample | null = null): Promise<PrintResult> {
+    const scanned = sample === null ? await this.sampleScan(raw) : librarySampleScan(sample);
+    if ('status' in scanned) {
+      return scanned;
+    }
+    const choice = await this.deps.choosePrinter(template);
+    if (choice.printerName === null) {
+      return { status: 'no-printer', paperKey: choice.paperKey, missingPrinter: choice.missingPrinter };
+    }
+    const printerName = choice.printerName;
+    try {
+      await this.deps.queue.enqueue(printerName, (signal) =>
+        this.deps.adapter.print(printerName, this.createJob(scanned, template), signal),
+      );
+      // 调试用：只记打到哪、什么纸、什么模板种类，不记标签内容（内容可能是顾客信息）。
+      console.info(`[PrintService] sample printed on ${printerName} (${paperKey(template.paper)}, ${template.kind})`);
+      // 不写记录，没有记录编号：和测试页一样给一个固定的说明性编号。
+      return { status: 'printed', jobId: 'sample', scan: scanned };
+    } catch (error) {
+      console.error('[PrintService] sample print failed', error);
+      return failed(toPrintFailure(error));
+    }
+  }
+
+  /** 「打印一张试试」按预览内容打时的识别结果；识别不了、查询被拦下时返回不打的原因。 */
+  private async sampleScan(raw: string): Promise<ScanResult | PrintResult> {
     const preview = await this.preview(raw);
     if (preview.status !== 'ok') {
       return preview;
@@ -371,24 +398,7 @@ export class PrintService {
     if (preview.lookupFailure !== null) {
       return { status: 'failed', reason: 'LOOKUP_FAILED', detail: preview.lookupFailure };
     }
-    const choice = await this.deps.choosePrinter(template);
-    if (choice.printerName === null) {
-      return { status: 'no-printer', paperKey: choice.paperKey, missingPrinter: choice.missingPrinter };
-    }
-    const printerName = choice.printerName;
-    const { scan } = preview;
-    try {
-      await this.deps.queue.enqueue(printerName, (signal) =>
-        this.deps.adapter.print(printerName, this.createJob(scan, template), signal),
-      );
-      // 调试用：只记打到哪、什么纸、什么模板种类，不记标签内容（内容可能是顾客信息）。
-      console.info(`[PrintService] sample printed on ${printerName} (${paperKey(template.paper)}, ${template.kind})`);
-      // 不写记录，没有记录编号：和测试页一样给一个固定的说明性编号。
-      return { status: 'printed', jobId: 'sample', scan };
-    } catch (error) {
-      console.error('[PrintService] sample print failed', error);
-      return failed(toPrintFailure(error));
-    }
+    return preview.scan;
   }
 
   /** 超时说明结果不确定（可能已出纸或仍在排队）：按已打印处理，避免重扫出第二张；确认没出纸再强制补打。 */

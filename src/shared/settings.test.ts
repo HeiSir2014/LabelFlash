@@ -55,6 +55,7 @@ describe('sanitizeSettings', () => {
         },
       ],
       mobileRelayUrl: 'https://relay.example.com/labelflash/',
+      driverCatalogUrl: 'https://catalog.example.com/driver-catalog.json',
       apiPort: 18000,
       apiLastPort: 17632,
       apiInstanceId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
@@ -274,5 +275,19 @@ describe('printerCommands', () => {
     const settings = sanitizeSettings(JSON.parse('{"printerCommands":{"__proto__":{"commandSet":"epl"}}}'));
     expect(Object.getPrototypeOf(settings.printerCommands)).toBe(Object.prototype);
     expect(Object.hasOwn(settings.printerCommands, '__proto__')).toBe(true);
+  });
+});
+
+describe('driverCatalogUrl', () => {
+  test('defaults to the address built into the installer', () => {
+    expect(DEFAULT_SETTINGS.driverCatalogUrl).toBeNull();
+  });
+
+  test('keeps https addresses and drops anything else', () => {
+    expect(
+      sanitizeSettings({ driverCatalogUrl: 'https://catalog.example.com/driver-catalog.json' }).driverCatalogUrl,
+    ).toBe('https://catalog.example.com/driver-catalog.json');
+    expect(sanitizeSettings({ driverCatalogUrl: 'http://catalog.example.com/c.json' }).driverCatalogUrl).toBeNull();
+    expect(sanitizeSettings({ driverCatalogUrl: 7 }).driverCatalogUrl).toBeNull();
   });
 });

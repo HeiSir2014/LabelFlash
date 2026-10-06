@@ -11,6 +11,9 @@
      背景色的小圆点（在线、打印机就绪……）不受影响，一起换成这个颜色也更耐看。 */
   --color-success: #167a4d;
   --color-warning: #e0752d;
+  /* 比 --color-warning 深：当文字颜色用（例如「驱动」卡片的提示）才够 4.5:1 的对比度，做法同 --color-success。
+     背景色、边框（提示条、开关）不受影响，仍用 --color-warning。 */
+  --color-warning-text: #a85a1e;
   --color-warning-wash: #fbe6d7;
   --color-error: #c8372d;
   --color-error-wash: #f8dedb;
@@ -58,6 +61,8 @@
   --config-label-width: 120px;
   /* 模板页左侧列表：放得下最长的内置模板名和「使用中」徽标 */
   --template-list-width: 320px;
+  /* 模板库左栏：放得下「珠宝 / 小商品」和个数 */
+  --template-library-nav-width: 184px;
   /* 识别规则页右侧「试一试」的宽度 */
   --tester-width: 360px;
   /* 设计器：左边元素栏放得下「二维码」三个字的按钮；右边属性栏放得下标签列和一个数字框 */
@@ -87,6 +92,7 @@
     --config-nav-width: 160px;
     /* 1024 宽的窗口里画布还要占一半以上 */
     --designer-panel-width: 260px;
+    --template-library-nav-width: 160px;
   }
 }
 

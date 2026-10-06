@@ -1,0 +1,1 @@
+device for Office: dnssd://Office%20Printer._ipp._tcp.local./?uuid=4509a320-00a0-008f-00b6-002507510eca

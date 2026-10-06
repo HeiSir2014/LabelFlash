@@ -9,7 +9,9 @@ import type { CanvasTemplate } from '../core/templates/canvas-model';
 import type { LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { BatchCheckResult, BatchPreviewResult, BatchStartResult, BatchStatus, BatchTableResult } from './batch';
+import type { CheckVerdict, DiagnosisCheckId, FixOutcome, FixRequest } from './diagnosis';
 import type { PaperCheck } from './driver-paper';
+import type { DriverStatus } from './drivers';
 import type { JobPage, JobQuery } from './job-history';
 import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from './local-api';
 import type { MobileStatus } from './mobile-status';
@@ -27,6 +29,7 @@ import type { PrinterReadiness } from './printer-readiness';
 import type { RenderWarnings } from './render-warnings';
 import type { RuleExportResult, RuleImportResult, RuleListing, RuleMutation, RuleTestResult } from './rule-api';
 import type { AppSettings } from './settings';
+import type { LibraryPreview } from './template-library';
 import type { InstallUpdateResult, UpdateStatus } from './update-status';
 import type { VoiceCue } from './voice';
 import type { WindowChrome } from './window-chrome';
@@ -41,6 +44,8 @@ export const IpcChannel = {
   PrinterStatus: 'printer:status',
   CheckDriverPaper: 'printer:driver-paper',
   OpenPrinterPreferences: 'printer:open-preferences',
+  DiagnosisCheck: 'printer:diagnosis-check',
+  DiagnosisFix: 'printer:diagnosis-fix',
   PrinterCommands: 'printer:commands',
   ApplyPrinterCommands: 'printer:commands-apply',
   RunPrinterAction: 'printer:commands-action',
@@ -52,6 +57,8 @@ export const IpcChannel = {
   ListTemplates: 'templates:list',
   DuplicateTemplate: 'templates:duplicate',
   CreateCanvasTemplate: 'templates:create-canvas',
+  ListTemplateLibrary: 'templates:library',
+  CreateTemplateFromLibrary: 'templates:create-from-library',
   SaveTemplate: 'templates:save',
   DeleteTemplate: 'templates:delete',
   ListRules: 'rules:list',
@@ -128,6 +135,13 @@ export const IpcChannel = {
   PdfClose: 'pdf:close',
   PdfStatus: 'pdf:status',
   PdfStatusChanged: 'pdf:status-changed',
+  GetDriverStatus: 'drivers:status',
+  DetectDrivers: 'drivers:detect',
+  InstallDriver: 'drivers:install',
+  CancelDriverInstall: 'drivers:cancel-install',
+  OpenDriverDownloadPage: 'drivers:open-download-page',
+  DriverStatusChanged: 'drivers:status-changed',
+  ReinstallPrinterDriver: 'drivers:reinstall-for-printer',
 } as const;
 
 /** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
@@ -175,26 +189,41 @@ export interface AppInfo {
   logsDir: string;
   /** 安装包自带的手机扫码中转地址（设置里没填时用它）；自己构建、没有注入时为 null。 */
   defaultRelayUrl: string | null;
+  /** 安装包自带的驱动清单地址（设置里没填时用它）；自己构建、没有注入时为 null。 */
+  defaultDriverCatalogUrl: string | null;
   /** 这台电脑能识别标签图上的字（加工步骤「图中文字识别」）；macOS 这一版和缺文件时为 false。 */
   canReadImageText: boolean;
 }
 
 export interface LabelFlashApi {
   preview(raw: string): Promise<LabelPreview>;
-  /** 模板编辑时的实时预览：用未保存的草稿模板渲染。 */
-  previewTemplate(raw: string, template: LabelTemplate): Promise<LabelPreview>;
+  /**
+   * 模板编辑时的实时预览：用未保存的草稿模板渲染。librarySampleId 是模板库的编号时按那个模板的示例数据预览，
+   * 不识别 raw（「用这个模板」复制出来、还没改过预览内容）。
+   */
+  previewTemplate(raw: string, template: LabelTemplate, librarySampleId?: string | null): Promise<LabelPreview>;
   /** 打到哪台打印机由主进程按模板决定（模板指定 → 纸张分配）；这种纸没有打印机时返回 no-printer。 */
   print(raw: string, options: PrintOptions): Promise<PrintResult>;
   /** 测试页按 paperKey（这台打印机负责的纸，例如 100x180）的尺寸打印。 */
   printTest(printerName: string, paperKey: string): Promise<PrintResult>;
-  /** 模板页「打印一张试试」：按预览内容打印没保存的草稿；不写打印记录、不占防重复窗口。 */
-  printSample(raw: string, template: LabelTemplate): Promise<PrintResult>;
+  /**
+   * 模板页「打印一张试试」：按预览内容打印没保存的草稿；不写打印记录、不占防重复窗口。
+   * librarySampleId 和 previewTemplate 的一样：预览用的是示例数据时，打的也是示例数据。
+   */
+  printSample(raw: string, template: LabelTemplate, librarySampleId?: string | null): Promise<PrintResult>;
   listPrinters(): Promise<PrinterInfo[]>;
   printerStatus(printerName: string): Promise<PrinterReadiness | null>;
   /** 驱动默认纸张和 paperKey（这台打印机应该装的纸）是否一致；驱动资料短时缓存，打开打印首选项后重新读取。 */
   checkDriverPaper(printerName: string, paperKey: string): Promise<PaperCheck>;
   /** 打开驱动的「打印首选项」窗口；窗口关闭后才完成。 */
   openPrinterPreferences(printerName: string): Promise<void>;
+  /**
+   * 诊断一项。printerName 为 null 时只能查后台打印服务（系统列不出打印机的时候）。
+   * 这台打印机负责的纸由主进程自己按设置和模板查（驱动纸张一项要用），不经这个调用传。
+   */
+  runDiagnosisCheck(printerName: string | null, check: DiagnosisCheckId): Promise<CheckVerdict>;
+  /** 做一个修复；要管理员权限的会弹系统的确认框。返回做了什么，是否解决由随后的重新检查说。 */
+  applyDiagnosisFix(request: FixRequest): Promise<FixOutcome>;
   /** 「标签机指令」面板：保存的设置、「自动」认出的指令集、驱动名和驱动报告的分辨率。只接受系统里有的打印机。 */
   printerCommands(printerName: string): Promise<PrinterCommandsView>;
   /** 保存这台打印机的指令设置并发给打印机一次（以后打印前不再发）；不合这种指令集时不保存，返回原因。 */
@@ -212,6 +241,10 @@ export interface LabelFlashApi {
   duplicateTemplate(sourceId: string): Promise<LabelTemplate>;
   /** 新建空白的自由设计模板（默认纸张），返回它；没有参数，页面不能指定内容。 */
   createCanvasTemplate(): Promise<CanvasTemplate>;
+  /** 模板库：每个模板的说明和按示例数据排好的 HTML（缩略图）。没有参数。 */
+  listTemplateLibrary(): Promise<LibraryPreview[]>;
+  /** 把模板库里的一个模板复制成自定义模板，返回它；只收模板库的编号（library:xxx）。 */
+  createTemplateFromLibrary(libraryId: string): Promise<CanvasTemplate>;
   saveTemplate(template: LabelTemplate): Promise<LabelTemplate>;
   /** 删除后若它正在使用，自动切回标准模板；返回最新设置。 */
   deleteTemplate(id: string): Promise<AppSettings>;
@@ -331,6 +364,18 @@ export interface LabelFlashApi {
   getPdfStatus(): Promise<PdfStatus>;
   /** 处理进度和打印进度（合并推送）。 */
   onPdfStatus(listener: (status: PdfStatus) => void): () => void;
+  getDriverStatus(): Promise<DriverStatus>;
+  /** 读驱动清单（force：重新下载）并检测缺驱动的 USB 设备。 */
+  detectDrivers(force: boolean): Promise<DriverStatus>;
+  /** 给「驱动」一节列出的一台设备装驱动（只能按设备编号，不能指定地址）；进度经 onDriverStatus 推送。 */
+  installDriver(deviceKey: string): Promise<DriverStatus>;
+  /** 取消下载（开始提权安装之后取消不了）。 */
+  cancelDriverInstall(): Promise<void>;
+  /** 用系统浏览器打开清单里这台设备的官方下载页（地址来自签过名的清单）。 */
+  openDriverDownloadPage(deviceKey: string): Promise<void>;
+  onDriverStatus(listener: (status: DriverStatus) => void): () => void;
+  /** 5b 诊断里的「重新安装驱动」：按这台打印机的驱动名在清单里找型号，走同一套下载、核对、提权安装；进度经 onDriverStatus 推送。 */
+  reinstallPrinterDriver(printerName: string): Promise<DriverStatus>;
 }
 
 export interface WindowControlsApi {

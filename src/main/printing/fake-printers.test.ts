@@ -53,6 +53,20 @@ describe('FakePrinters', () => {
     });
   });
 
+  test('adds a printer, as if a driver had just been installed', async () => {
+    const printers = new FakePrinters([]);
+    printers.add({ name: '示例标签机', paper: null, readiness: null });
+    expect((await printers.listPrinters()).map((printer) => printer.name)).toEqual(['示例标签机']);
+  });
+
+  // 诊断的「自动设置驱动纸张」改的是假驱动纸张：之后读到的是新纸张。
+  test('lets the driver paper be changed', async () => {
+    const printers = new FakePrinters(SPEC);
+    printers.setDriverPaper('面单机B', { widthMm: 60, heightMm: 40, dpi: 203 });
+    expect(await printers.driverPaper('面单机B')).toEqual({ widthMm: 60, heightMm: 40, dpi: 203 });
+    expect(await printers.driverPaper('标签机A')).toEqual({ widthMm: 60, heightMm: 40, dpi: 203 });
+  });
+
   // E2E 测暂停、取消：每张要花一点时间，按钮才点得到正在打的批次。
   test('takes the configured time for each print', async () => {
     const printers = new FakePrinters([{ ...SPEC[0], name: '慢标签机', printDelayMs: 50 } as FakePrinterSpec]);

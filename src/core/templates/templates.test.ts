@@ -4,6 +4,7 @@ import { InMemoryTemplateRepository } from '../testing/in-memory-repositories';
 import { labelOf, PICK_TEMPLATE } from '../testing/templates';
 import { CANVAS_TAG } from './builtin-canvas';
 import { BUILT_IN_TEMPLATES, currentTemplateId, DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE } from './builtin-templates';
+import { findLibraryEntry } from './library/template-library';
 import { expandNoteText } from './note-text';
 import { sanitizeTemplate } from './sanitize-template';
 import { NEW_CANVAS_TEMPLATE_NAME, TemplateCatalog, TemplateError } from './template-catalog';
@@ -81,6 +82,14 @@ describe('built-in templates', () => {
       '尺码：尺码',
       '货架号：货架号',
     ]);
+  });
+
+  // 30×20 是最小的常用标签：标签模板换上去，二维码跟着缩小、仍在纸内，纸张也存得住。
+  test('moves a label template onto 30x20 paper with its QR code still inside', () => {
+    const paper = { widthMm: 30, heightMm: 20 };
+    const small = withPaper(GENERIC_TEMPLATE, paper);
+    expect(small.qr.sizeMm).toBeLessThanOrEqual(maxQrSizeMm(paper, small.paddingMm));
+    expect(sanitizeLabel(small, small.id, GENERIC_TEMPLATE).paper).toEqual(paper);
   });
 });
 
@@ -249,6 +258,31 @@ describe('TemplateCatalog', () => {
       elements: [],
     });
     expect(repository.saved.get(created.id)).toEqual(created);
+  });
+
+  test('createFromLibrary saves an editable copy of a library template under its own name', () => {
+    const { catalog, repository } = createCatalog();
+    const entry = findLibraryEntry('library:price-simple');
+    if (entry === null) {
+      throw new Error('the library has no price-simple template');
+    }
+    const created = catalog.createFromLibrary(entry.template.id);
+    expect(created).toEqual({ ...entry.template, id: `${CUSTOM_TEMPLATE_PREFIX}t1` });
+    expect(created.elements).not.toBe(entry.template.elements);
+    expect(repository.saved.get(created.id)).toEqual(created);
+  });
+
+  // 模板库的模板只能复制后用：不在列表里，也找不到。
+  test('keeps library templates out of the template list', () => {
+    const { catalog } = createCatalog();
+    expect(catalog.list().some((template) => template.id.startsWith('library:'))).toBe(false);
+    expect(catalog.get('library:price-simple')).toBeNull();
+  });
+
+  test('createFromLibrary refuses an id that is not in the library', () => {
+    const { catalog, repository } = createCatalog();
+    expect(() => catalog.createFromLibrary('library:nope')).toThrow(TemplateError);
+    expect(repository.saved.size).toBe(0);
   });
 
   test('save sanitizes and persists a custom template', () => {

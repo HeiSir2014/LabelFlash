@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { type HttpStep, STEP_LIMITS } from '../../src/core/scan/enrich-model';
-import type { FakePrinterSpec } from '../../src/main/printing/fake-printers';
+import { TEMPLATE_LIBRARY } from '../../src/core/templates/library/template-library';
+import type { FakeDiagnosisSpec, FakePrinterSpec } from '../../src/main/printing/fake-printers';
 import { RECENT_DELIVERY_COUNT } from '../../src/shared/ipc-contract';
 import { HISTORY_LIMIT_RANGE } from '../../src/shared/settings';
 import {
@@ -21,6 +22,7 @@ import {
   stubPrinting,
   typeLikeScanner,
 } from '../support/app-helpers';
+import { catalogModel, catalogText, e2eCatalogKeys, fakeDrivers } from '../support/driver-catalog';
 import { APP_ROOT, type LaunchOptions } from '../support/electron-app';
 import { expect, test } from '../support/fixtures';
 import { writeGridPdf } from '../support/pdf-files';
@@ -47,8 +49,9 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的验收项，V01 起）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
- * 结果写进 manifest.json，供验收页面逐项展示和确认；批量打印是 V60–V63，打印 PDF 是 V70–V72，标签机指令是 V80–V83。
+ * 视觉验收（设计文档 §8.2 的验收项，V01 起；模板库是 V50–V55，批量打印是 V60–V63，打印 PDF 是 V70–V72，
+ * 标签机指令是 V80–V83，诊断是 V84–V86，驱动安装是 V87–V89）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
 const OUT_DIR = join(APP_ROOT, 'test-results', 'visual-acceptance');
@@ -148,6 +151,24 @@ const COMMAND_PRINTERS: FakePrinterSpec[] = [
   },
 ];
 
+/** V87–V89：测试现场生成的清单密钥（公钥经启动选项交给程序）。 */
+const DRIVER_KEYS = e2eCatalogKeys();
+/** V88：假的提权安装停在「安装」这一步，够截图。 */
+const DRIVER_INSTALL_HOLD_MS = 600_000;
+/** V89：60 天前签的清单（有效期 30 天），已过期。 */
+const EXPIRED_CATALOG_AGE_MS = 60 * 86_400_000;
+
+async function openDriverCard(ctx: Context, catalog: string): Promise<void> {
+  const server = await startServer((_request, response) => {
+    response.setHeader('Content-Type', 'application/json');
+    response.end(catalog);
+  });
+  ctx.cleanups.push(server.close);
+  await callApi(ctx.page, 'updateSettings', { driverCatalogUrl: `${server.origin}/driver-catalog.json` });
+  await openConfig(ctx.page, '打印机');
+  await ctx.page.getByRole('region', { name: '驱动' }).scrollIntoViewIfNeeded();
+}
+
 /** 分配好纸张、打开打印机页，展开这台打印机的「标签机指令」。 */
 async function openPrinterCommands(page: Page, printerName: string): Promise<Locator> {
   await callApi(page, 'updateSettings', { paperPrinters: { '60x40': '标签机A', '100x150': '面单机B' } });
@@ -199,6 +220,36 @@ const PAPER_PRINTERS: FakePrinterSpec[] = [
   { name: '面单机C', paper: { widthMm: 100, heightMm: 180, dpi: 300 }, readiness: { ready: true } },
   { name: '家用打印机', paper: { widthMm: 210, heightMm: 297, dpi: 600 }, readiness: null },
 ];
+
+/** V84–V86：一台 60×40 的假标签机，诊断的各项按需要设成好的或坏的。 */
+const DIAGNOSIS_PRINTER = '标签机A';
+
+function diagnosisPrinters(diagnosis: FakeDiagnosisSpec, overrides: Partial<FakePrinterSpec> = {}): FakePrinterSpec[] {
+  return [
+    {
+      name: DIAGNOSIS_PRINTER,
+      paper: { widthMm: 60, heightMm: 40, dpi: 203 },
+      readiness: { ready: true },
+      diagnosis,
+      ...overrides,
+    },
+  ];
+}
+
+/** 把 60×40 分给标签机A，打开「打印机」页，点「诊断」，等全部查完。 */
+async function openDiagnosisPanel(page: Page): Promise<Locator> {
+  await callApi(page, 'updateSettings', { paperPrinters: { '60x40': DIAGNOSIS_PRINTER } });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await openConfig(page, '打印机');
+  await page
+    .locator('.printer-row', { hasText: DIAGNOSIS_PRINTER })
+    .getByRole('button', { name: '诊断', exact: true })
+    .click();
+  const panel = page.getByRole('region', { name: `诊断：${DIAGNOSIS_PRINTER}` });
+  await expect(panel.locator('.diagnosis__summary')).toContainText('查完了');
+  return panel;
+}
 
 /** V60–V62：一台 60×40 的假标签机，每张打 300ms（V62 要在打完之前暂停）。 */
 const BATCH_PRINTERS: FakePrinterSpec[] = [
@@ -1470,6 +1521,84 @@ const ITEMS: Item[] = [
     ],
   },
   {
+    id: 'V50',
+    title: '模板库 · 全部',
+    points:
+      '左栏八项（全部 18、服装吊牌 3、价签 3、商品条码 3、鞋盒标 2、食品标签 2、珠宝 / 小商品 2、仓储 3），个数右对齐、等宽数字，「全部」是按下状态；右边「纸张」下拉和一行说明；缩略图网格：每张卡片缩略图框一样高、纸居中、有细边框，30×20 不放大，100×150 整张可见；名字、纸张和说明、「用这个模板」按钮在各卡片里对齐；1024 宽时少放几列、没有横向滚动；底部「18 个模板」「返回列表」；面包屑「模板 › 从模板库新建」',
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+    },
+  },
+  {
+    id: 'V51',
+    title: '模板库 · 仓储（大纸张的缩略图）',
+    points:
+      '「仓储」按下；三张卡片：货架 / 库位标（100×100，库位号大字、Code128）、资产标签（50×30，反白标题、表格、二维码）、箱标（100×150，表格、条码、二维码、备注折行），缩略图都没有被裁；纸张下拉只有全部纸张、50×30mm、100×100mm、100×150mm',
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+      await libraryCategory(page, '仓储').click();
+    },
+  },
+  {
+    id: 'V52',
+    title: '模板库 · 按纸张筛选（40×30）',
+    points: '「全部」下选 40×30mm：三张卡片（简洁价签、EAN-13 商品条码、小商品标），来自三个分类；底部「3 个模板」',
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+      await page.getByRole('region', { name: '模板库' }).getByLabel('纸张').selectOption('40x30');
+    },
+  },
+  {
+    id: 'V53',
+    title: '模板库 · 键盘焦点',
+    points: '用 Tab 走到的分类按钮、「用这个模板」按钮都有清楚的焦点框，没有被卡片边框或网格裁掉',
+    sizes: [SIZE_1280],
+    setup: async ({ page }) => {
+      await openTemplateLibrary(page);
+    },
+    shots: [
+      {
+        label: '分类按钮',
+        prepare: async ({ page }) => {
+          await libraryCategory(page, '全部').focus();
+          await page.keyboard.press('Tab');
+        },
+      },
+      {
+        label: '「用这个模板」',
+        prepare: async ({ page }) => {
+          const buttons = page.getByRole('region', { name: '模板库' }).getByRole('button', { name: '用这个模板' });
+          await buttons.nth(1).focus();
+          await page.keyboard.press('Shift+Tab');
+        },
+      },
+    ],
+  },
+  {
+    id: 'V54',
+    title: '模板库 · 用这个模板后进设计器',
+    points:
+      '复制「服装合格证」进设计器：画布是示例数据（反白「合 格 证」、参数表格线对齐、二维码、等级和安全类别、「零售价 ¥399.00」），工具条「预览内容 · 示例数据」；底部打印前检查「没有发现问题」；面包屑「编辑：服装合格证」；1024 宽时设计器同 V46',
+    setup: async ({ page }) => {
+      await openConfig(page, '模板');
+      await useLibraryTemplate(page, '服装合格证');
+    },
+  },
+  {
+    id: 'V55',
+    title: '模板库 · 逐个模板',
+    points:
+      '每个模板复制进设计器后的画布一张（示例数据）：所有文字、条码号码、表格、二维码都在纸内没有被裁；条码两侧留白、号码在条下居中；反白块的字在黑底中间；和缩略图一致；打印前检查「没有发现问题」',
+    sizes: [SIZE_1280],
+    setup: async ({ page }) => {
+      await openConfig(page, '模板');
+    },
+    shots: TEMPLATE_LIBRARY.map(({ template }) => ({
+      label: template.name,
+      prepare: ({ page }) => useLibraryTemplate(page, template.name),
+    })),
+  },
+  {
     id: 'V80',
     title: '打印机 · 标签机指令（认出 TSPL，已发送）',
     points:
@@ -1584,6 +1713,94 @@ const ITEMS: Item[] = [
       },
     ],
   },
+  {
+    id: 'V84',
+    title: '打印机 · 诊断 · 全部通过',
+    points:
+      '打印机行右侧「诊断」「测试页」并排、不换行；面板在行下面展开、占满整行；顶部「查完了：没发现问题，1 项待确认」和「重新检查」「打测试页」「收起」一行排开；六项依次是后台打印服务、打印机和驱动状态、USB 连接、打印队列、驱动纸张、指令集，标记分别是绿「通过」和橙「待确认」；指令集一项有「走一张纸」「纸张校准」「改指令集」；1024 宽时文字折行、不溢出',
+    launch: { fakePrinters: diagnosisPrinters({}) },
+    setup: async ({ page }) => {
+      await openDiagnosisPanel(page);
+    },
+  },
+  {
+    id: 'V85',
+    title: '打印机 · 诊断 · 发现问题',
+    points:
+      '红「有问题」的几项：驱动报告缺纸（下一步「装好标签纸…」、按钮「打开打印首选项」）、USB 没连上（下一步说换线换口）、队列卡住 3 个任务其中 1 个是本程序发的（「清除本程序的任务」「清除全部任务（需要管理员权限）」，Windows 上还有「打开打印队列」）、驱动纸张 100×150mm 不是 60×40mm（「自动设置驱动纸张（需要管理员权限）」，macOS 上没有括号）；按钮多时换行、和文字左对齐；顶部「查完了：4 项有问题，1 项待确认」',
+    launch: {
+      fakePrinters: diagnosisPrinters(
+        { usb: 'disconnected', stuckJobs: { ours: 1, others: 2 } },
+        {
+          paper: { widthMm: 100, heightMm: 150, dpi: 203 },
+          readiness: { ready: false, detail: '缺纸', issue: 'paperOut' },
+        },
+      ),
+    },
+    setup: async ({ page }) => {
+      await openDiagnosisPanel(page);
+    },
+  },
+  {
+    id: 'V86',
+    title: '打印机 · 诊断 · 修复之后',
+    points:
+      '队列一项下面绿色说明「已请求取消本程序的 1 个任务」，随后结论变成「…认不出是本程序发的」；点了管理员按钮又拒绝后，红色提示「没有拿到管理员权限…」（读屏按 alert 念）；指令集一项问「标签机走出一张空白标签了吗？」并点了「没反应」：变红「有问题」，下面出现指令集下拉（5a 的控件）；提示不遮挡按钮',
+    launch: { fakePrinters: diagnosisPrinters({ stuckJobs: { ours: 1, others: 1 }, adminPrompt: 'decline' }) },
+    setup: async ({ page }) => {
+      const panel = await openDiagnosisPanel(page);
+      const queue = panel.locator('.diagnosis-item', { hasText: '打印队列' });
+      await queue.getByRole('button', { name: '清除本程序的任务' }).click();
+      await expect(queue).toContainText('认不出是本程序发的');
+      await queue.getByRole('button', { name: '清除全部任务（需要管理员权限）' }).click();
+      await expect(queue.getByRole('alert')).toContainText('没有拿到管理员权限');
+      const commands = panel.locator('.diagnosis-item', { hasText: '指令集' });
+      await commands.getByRole('button', { name: '走一张纸' }).click();
+      await commands.getByRole('button', { name: '没反应' }).click();
+      await expect(commands).toContainText('标签机没有反应');
+    },
+  },
+  {
+    id: 'V87',
+    title: '打印机 · 驱动（发现缺驱动的设备）',
+    points:
+      '「驱动」卡片在打印机卡片下面，标题和「重新检测」同一行；清单那一行「驱动清单：… 签发，1 个型号，有效期到 …」是普通灰字；两台设备各一行：「示例品牌 示例型号 X1」右侧「安装驱动（0.0 MB）」按钮、下面「USB 1234:ABCD · 没装驱动」；另一台「USB 打印支持」没有按钮，下面是通用驱动的指引；长名字省略不撑宽；「驱动清单地址」收起；1024 宽时按钮不换到下一行',
+    launch: { fakePrinters: [], fakeDrivers: fakeDrivers(), driverCatalogKey: DRIVER_KEYS.publicKey },
+    setup: async (ctx) => {
+      await openDriverCard(ctx, catalogText(DRIVER_KEYS, [catalogModel()]));
+      await expect(ctx.page.getByRole('region', { name: '驱动' })).toContainText('1 个型号');
+    },
+  },
+  {
+    id: 'V88',
+    title: '打印机 · 驱动（正在安装）',
+    points:
+      '安装区淡黄底：步骤「下载 核对 安装 找打印机」前两步绿色、「安装」加粗、最后一步灰；下面一句「请在 Windows 弹出的窗口里点「是」…」完整换行不溢出；没有取消按钮（提权之后取消不了）；设备行的按钮和「重新检测」都灰掉',
+    launch: {
+      fakePrinters: [],
+      fakeDrivers: fakeDrivers({ installDelayMs: DRIVER_INSTALL_HOLD_MS }),
+      driverCatalogKey: DRIVER_KEYS.publicKey,
+    },
+    setup: async (ctx) => {
+      await openDriverCard(ctx, catalogText(DRIVER_KEYS, [catalogModel()]));
+      const card = ctx.page.getByRole('region', { name: '驱动' });
+      await card.getByRole('button', { name: /安装驱动/ }).click();
+      await expect(card.getByRole('status')).toContainText('点「是」');
+    },
+  },
+  {
+    id: 'V89',
+    title: '打印机 · 驱动（清单不能用）',
+    points:
+      '清单那一行红字「驱动清单不能用：驱动清单已在 … 过期（电脑时间是 …）…」完整换行；设备行都没有按钮，指引「驱动清单不可用，不能自动安装：…」；展开「驱动清单地址」后是一行地址设置（输入框、「恢复默认」），和「通用」页的中转地址那一行对齐方式一致',
+    launch: { fakePrinters: [], fakeDrivers: fakeDrivers(), driverCatalogKey: DRIVER_KEYS.publicKey },
+    setup: async (ctx) => {
+      await openDriverCard(ctx, catalogText(DRIVER_KEYS, [catalogModel()], Date.now() - EXPIRED_CATALOG_AGE_MS));
+      const card = ctx.page.getByRole('region', { name: '驱动' });
+      await expect(card).toContainText('过期');
+      await card.getByText('驱动清单地址', { exact: true }).first().click();
+    },
+  },
 ];
 
 /**
@@ -1611,6 +1828,34 @@ async function openCanvasDesigner(page: Page): Promise<void> {
   await page.locator('.template-item', { hasText: '吊牌（自由设计示例）' }).click();
   await page.getByRole('button', { name: '复制' }).click();
   await expect(page.getByRole('region', { name: '设计器' })).toBeVisible();
+}
+
+/** V50–V55：打开模板库，等缩略图出来。 */
+async function openTemplateLibrary(page: Page): Promise<void> {
+  await openConfig(page, '模板');
+  await page.getByRole('button', { name: '从模板库新建' }).click();
+  await expect(page.getByRole('region', { name: '模板库' }).getByRole('article')).toHaveCount(TEMPLATE_LIBRARY.length);
+}
+
+/** 模板库左栏的一个分类（名字后面跟着个数）。 */
+function libraryCategory(page: Page, label: string) {
+  return page.getByRole('navigation', { name: '模板库分类' }).getByRole('button', { name: new RegExp(`^${label}`) });
+}
+
+/** V54、V55：从模板库复制 name 进设计器（已在设计器里时先回到列表）。 */
+async function useLibraryTemplate(page: Page, name: string): Promise<void> {
+  const designer = page.getByRole('region', { name: '设计器' });
+  if (await designer.isVisible()) {
+    await page.getByRole('button', { name: '返回列表' }).click();
+  }
+  await page.getByRole('button', { name: '从模板库新建' }).click();
+  await page
+    .getByRole('region', { name: '模板库' })
+    .getByRole('article', { name, exact: true })
+    .getByRole('button', { name: '用这个模板' })
+    .click();
+  await expect(designer).toBeVisible();
+  await expect(page.getByRole('region', { name: '打印前检查' })).toContainText('没有发现问题');
 }
 
 /** 在图层列表里点选一个元素（名字形如「编码条码（条码）」）。 */

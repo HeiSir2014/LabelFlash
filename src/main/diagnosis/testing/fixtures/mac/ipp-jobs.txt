@@ -1,0 +1,18 @@
+"/var/folders/xy/T/labelflash-ipp-a1/labelflash-get-jobs.test":
+    LabelFlash Get-Jobs                                                  [PASS]
+        RECEIVED: 412 bytes in response
+        status-code = successful-ok (successful-ok)
+        attributes-charset (charset) = utf-8
+        attributes-natural-language (naturalLanguage) = en
+        job-id (integer) = 41
+        job-name (nameWithoutLanguage) = CL5640-TK-图片色-XL
+        job-originating-user-name (nameWithoutLanguage) = shop
+        job-state (enum) = processing-stopped
+        job-state-reasons (1setOf keyword) = printer-stopped
+        time-at-creation (integer) = 1790000000
+        job-id (integer) = 42
+        job-name (nameWithoutLanguage) = report.pdf
+        job-originating-user-name (nameWithoutLanguage) = boss
+        job-state (enum) = pending-held
+        job-state-reasons (keyword) = job-hold-until-specified
+        time-at-creation (integer) = 1789990000

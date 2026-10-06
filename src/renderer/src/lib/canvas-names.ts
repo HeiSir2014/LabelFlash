@@ -48,6 +48,10 @@ export function displayName(element: CanvasElement): string {
     return element.name;
   }
   const summary = summaryOf(element);
+  // 新文字的内容还是占位的「文字」：摘要和种类名一样，几个新文字分不清，用带编号的名字（「文字 2」）。
+  if (summary === CANVAS_ELEMENT_LABELS[element.kind]) {
+    return element.name;
+  }
   if (summary === null) {
     // 内容是空的文字、条码：「文字 2」的编号没有意义，只说种类；图片、形状保留编号，几个之间还分得清。
     return element.kind === 'text' || element.kind === 'barcode' || element.kind === 'qr'

@@ -45,6 +45,11 @@ describe('displayName', () => {
     expect(name.endsWith('…')).toBe(true);
   });
 
+  // 新加的文字内容就是「文字」：几个新文字的摘要一模一样，分不清，用带编号的名字。
+  test('keeps the numbered name while a new text still holds its placeholder content', () => {
+    expect(displayName(element('text', { name: '文字 3', text: '文字' }))).toBe('文字 3');
+  });
+
   test('falls back to the kind when an unnamed text or code is empty', () => {
     expect(displayName(element('text', { text: '  ' }))).toBe('文字');
     expect(displayName(element('barcode', { value: '' }))).toBe('条码');

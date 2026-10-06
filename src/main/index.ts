@@ -48,7 +48,7 @@ import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
-import { canceledJobRecords, shouldConfirmBatchQuit, waitForBatchIdle } from './batch/batch-quit';
+import { canceledJobRecords, quitStep, shouldConfirmBatchQuit, waitForBatchIdle } from './batch/batch-quit';
 import { BatchStation } from './batch/batch-station';
 import batchReaderPath from './batch/reader-worker?modulePath';
 import { TableReaderHost } from './batch/table-reader-host';
@@ -907,7 +907,18 @@ async function bootstrap(): Promise<void> {
       isSystemShutdown,
     );
     const needsTemplate = templateQuit.shouldConfirm(isSystemShutdown);
-    if (!needsBatchOrPdf && !needsTemplate) {
+    const step = quitStep({ isSystemShutdown, needsConfirm: needsBatchOrPdf || needsTemplate });
+    if (step === 'quit-now') {
+      // 系统在关机、注销：不拦这次退出去删缓存（见 quitStep）。
+      // macOS 上 powerMonitor 的 shutdown 和 before-quit 谁先到还没在真 Mac 上核对过（见上面 shutdown 处的说明）：
+      // before-quit 先到的话这里还认不出是关机，照常先删缓存再退出。
+      readyToQuit = true;
+      isQuitting = true;
+      pendingRelaunch.cancel();
+      mobile.quit();
+      return;
+    }
+    if (step === 'discard-cache-then-quit') {
       // 没有要确认的，但还要删掉这次出块里没打过的缓存位图（见 discardUnprintedCache）：这是异步的，
       // 不能让退出真的发生之后才做——进程可能在文件删掉之前就已经退出了。先拦住这一次，删完再调用
       // app.quit() 重新触发：这时 readyToQuit 已经是 true，下一次进这个处理器会直接放行，不会再拦一次。

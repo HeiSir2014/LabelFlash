@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { type CanvasElement, newCanvasElement } from '../../../core/templates/canvas-model';
-import { hitStack, hitTest, nextInStack } from './canvas-hit';
+import { hitStack, hitTest, marqueeHits, nextInStack } from './canvas-hit';
 import { PX_PER_MM } from './canvas-view';
 
 const PAPER = { widthMm: 60, heightMm: 40 };
@@ -72,6 +72,24 @@ describe('hitStack', () => {
     const below = at(newCanvasElement('text', 'below', PAPER), { x: 2, y: 16, width: 30, height: 7 });
     const block = { ...border, id: 'block', filled: true } as CanvasElement;
     expect(hitStack([block, below, price], { x: 10, y: 19 }, 1)).toEqual(['price', 'below', 'block']);
+  });
+});
+
+describe('marqueeHits', () => {
+  test('selects what the rectangle touches, top layer last as in the element order', () => {
+    expect(marqueeHits([price, line], { x: 1, y: 15, width: 5, height: 10 })).toEqual(['price', 'line']);
+  });
+
+  test('leaves out an outline-only rectangle when the marquee stays inside its border', () => {
+    expect(marqueeHits([price, border], { x: 1.5, y: 14, width: 30, height: 10 })).toEqual(['price']);
+  });
+
+  test('takes an outline-only rectangle when the marquee crosses its border', () => {
+    expect(marqueeHits([price, border], { x: 0, y: 14, width: 30, height: 10 })).toEqual(['price', 'border']);
+  });
+
+  test('never takes a locked element', () => {
+    expect(marqueeHits([{ ...price, locked: true }], { x: 0, y: 0, width: 60, height: 40 })).toEqual([]);
   });
 });
 

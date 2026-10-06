@@ -3,7 +3,6 @@ import type { CanvasTemplate } from '../../../core/templates/canvas-model';
 import {
   boundsOf,
   boxOf,
-  elementsInRect,
   moveBy,
   type Point,
   rectFromPoints,
@@ -24,7 +23,7 @@ import {
   rotationFromPointer,
   viewOf,
 } from '../lib/canvas-gesture';
-import { hitStack, hitTest, nextInStack } from '../lib/canvas-hit';
+import { hitStack, hitTest, marqueeHits, nextInStack } from '../lib/canvas-hit';
 import { neighbourGaps, snapTargets, snapThresholdMm } from '../lib/canvas-snap';
 import { pxToMm } from '../lib/canvas-view';
 
@@ -262,9 +261,8 @@ export function useCanvasGesture(options: GestureOptions): {
     if (current.kind === 'marquee') {
       const point = toPaper({ x: event.clientX, y: event.clientY });
       setBoth({ ...current, hasMoved: true, current: point });
-      // 框选和点选一样不碰锁定、隐藏的元素：它们只能在图层列表里选。
-      const selectable = { ...template, elements: hittable.filter((element) => !element.locked) };
-      const touched = elementsInRect(selectable, rectFromPoints(current.origin, point));
+      // 框选和点选一样不碰锁定、隐藏的元素（它们只能在图层列表里选）；只有边框的矩形要框到边框才算。
+      const touched = marqueeHits(hittable, rectFromPoints(current.origin, point));
       onSelect([...new Set([...current.base, ...touched])]);
       return;
     }

@@ -60,6 +60,39 @@ export function hitTest(elements: readonly CanvasElement[], point: Point, zoom: 
   return hitStack(elements, point, zoom)[0] ?? null;
 }
 
+function intersects(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function isInside(inner: Box, outer: Box): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
+/**
+ * 框选选中哪些（按元素顺序）：碰到就算（细线、小元素不用整个框住）。只有边框的矩形要碰到边框才算——
+ * 框整个落在它里面时不算，不然画满纸的边框会被每一次框选带上。锁定的不算，和点选一样。
+ */
+export function marqueeHits(elements: readonly CanvasElement[], rect: Box): string[] {
+  return elements
+    .filter((element) => {
+      if (element.locked || !intersects(element, rect)) {
+        return false;
+      }
+      if (!isOutlineOnly(element)) {
+        return true;
+      }
+      // 框选按实际的边框算，不加点选的容差：框选是有意画出来的范围，不怕手抖。
+      const inner = grow(element, -element.borderMm);
+      return inner.width <= 0 || inner.height <= 0 || !isInside(rect, inner);
+    })
+    .map((element) => element.id);
+}
+
 /**
  * Alt+点击轮流选叠在一起的元素：选中的那个在这一叠里时，换成它下面的一个（到底了回到最上面）；
  * 这一叠里一个也没选中时从最上面开始。

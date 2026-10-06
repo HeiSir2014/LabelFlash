@@ -6,10 +6,9 @@ import type { LabelTemplate } from './templates/template-model';
 
 /**
  * desktop = 扫码枪，history = 从打印记录重打，mobile = 手机，api = 本机接口，batch = 批量打印，
- * pdf / ipp / remote 是后续子项目（PDF 打印、局域网共享打印、远程打印）预留的取值：
- * 先占住数据库的 CHECK 约束和这个联合类型，各自的列和流程由那几个子项目的迁移再加。
+ * pdf = 打印 PDF，ipp = 局域网共享。同时是数据库里 CHECK 约束的取值（migrations.ts 第 6 条）。
  */
-export const PRINT_SOURCES = ['desktop', 'history', 'mobile', 'api', 'batch', 'pdf', 'ipp', 'remote'] as const;
+export const PRINT_SOURCES = ['desktop', 'history', 'mobile', 'api', 'batch', 'pdf', 'ipp'] as const;
 export type PrintSource = (typeof PRINT_SOURCES)[number];
 
 /** 批量打印的一张：哪一批、第几行（从 1 数，不含表头）、这一行的第几份。 */

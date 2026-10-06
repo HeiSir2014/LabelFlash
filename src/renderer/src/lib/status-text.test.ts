@@ -362,12 +362,10 @@ describe('describeSource', () => {
     expect(describeSource('api')).toBe('本机接口');
   });
 
-  // batch 现在接入；pdf / ipp / remote 的来源值已占住（各自的子项目接入时用），标签先写好。
-  test('names batch prints and the sources reserved for later sub-projects', () => {
+  test('names batch, PDF and LAN sharing prints', () => {
     expect(describeSource('batch')).toBe('批量');
     expect(describeSource('pdf')).toBe('PDF');
     expect(describeSource('ipp')).toBe('局域网共享');
-    expect(describeSource('remote')).toBe('远程');
   });
 });
 

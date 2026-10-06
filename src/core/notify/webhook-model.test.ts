@@ -29,7 +29,7 @@ describe('webhook sources', () => {
   });
 
   test('keeps the chosen sources and drops unknown ones', () => {
-    expect(sanitizeWebhooks([{ ...ENDPOINT, sources: ['batch', 'remote', 'scan'] }])[0]?.sources).toEqual([
+    expect(sanitizeWebhooks([{ ...ENDPOINT, sources: ['batch', 'bogus', 'scan'] }])[0]?.sources).toEqual([
       'scan',
       'batch',
     ]);

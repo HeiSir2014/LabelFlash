@@ -143,12 +143,14 @@ test('selects every unlocked element with Ctrl+A without selecting page text', a
   expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('');
 
   // Ctrl+点击（Windows 的习惯）减选、再点加回来；不是框选，也不清空别的。
-  await page.keyboard.down('Control');
+  // macOS 上 Ctrl+点击是系统的右键，加减选用 ⌘+点击。
+  const toggleKey = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await page.keyboard.down(toggleKey);
   await clickAt(page, d, 10, 19);
   await expect(layer(d, '¥199.00（文字）')).toHaveAttribute('aria-pressed', 'false');
   await expect(layer(d, '矩形（矩形）')).toHaveAttribute('aria-pressed', 'true');
   await clickAt(page, d, 10, 19);
-  await page.keyboard.up('Control');
+  await page.keyboard.up(toggleKey);
   await expect(layer(d, '¥199.00（文字）')).toHaveAttribute('aria-pressed', 'true');
   await expect(layer(d, '矩形（矩形）')).toHaveAttribute('aria-pressed', 'true');
 });

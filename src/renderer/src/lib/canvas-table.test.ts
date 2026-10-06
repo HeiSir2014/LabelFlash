@@ -13,6 +13,7 @@ import {
   rowsExtentMm,
   setColumnMm,
   setRowMm,
+  tableCellAt,
   updateTableCell,
 } from './canvas-table';
 
@@ -26,6 +27,25 @@ function table(): CanvasTable {
   }
   return element;
 }
+
+describe('tableCellAt', () => {
+  // 默认表格在 x 1.5、y 1.5（安全区左上角），两行 6mm + 6mm，两列 12mm + 24mm。
+  test('finds the cell under a point and its box on the paper', () => {
+    const t = table();
+    expect(tableCellAt(t, { x: t.x + 20, y: t.y + 8 })).toEqual({
+      row: 1,
+      column: 1,
+      box: { x: t.x + 12, y: t.y + 6, width: 24, height: 6 },
+    });
+    expect(tableCellAt(t, { x: t.x + 1, y: t.y + 1 })?.row).toBe(0);
+  });
+
+  test('is null outside the table and for a turned table', () => {
+    const t = table();
+    expect(tableCellAt(t, { x: t.x + 50, y: t.y + 1 })).toBeNull();
+    expect(tableCellAt({ ...t, rotation: 90 }, { x: t.x + 1, y: t.y + 1 })).toBeNull();
+  });
+});
 
 describe('table sizes', () => {
   test('the last row and column take what is left', () => {

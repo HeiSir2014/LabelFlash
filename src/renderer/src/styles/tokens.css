@@ -32,6 +32,8 @@
   --font-display: var(--font-body);
   --font-display-weight: 700;
   --font-data: "Cascadia Mono", Consolas, "SF Mono", monospace;
+  /* 标签上的字（和 main/printing/canvas-html 打印用的同一串字体）：设计器就地改字时输入框用它，改的时候和打出来一样宽 */
+  --font-label: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif;
 
   --space-1: 4px;
   --space-2: 8px;

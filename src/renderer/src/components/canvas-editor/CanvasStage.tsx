@@ -34,7 +34,8 @@ interface CanvasStageProps {
   overlayRef: RefObject<HTMLDivElement | null>;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onDropElement: (kind: CanvasElementKind, center: { x: number; y: number }) => void;
-  onEditText: (id: string) => void;
+  /** 双击：纸上的位置（mm）。调用方按选中的元素决定就地改哪段字。 */
+  onEditText: (point: { x: number; y: number }) => void;
   /** 右键（数位板笔杆上的按键、长按也是 contextmenu）：point 是纸上的毫米，client 是窗口坐标。 */
   onContextMenu: (point: { x: number; y: number }, client: { x: number; y: number }) => void;
   /** 浮在标签上面、跟着画布一起滚动的东西（浮动工具条）：放在覆盖层后面，画布有焦点时 Tab 就到。 */
@@ -140,11 +141,13 @@ export function CanvasStage({
             onPointerCancel={handlers.onPointerCancel}
             onLostPointerCapture={handlers.onLostPointerCapture}
             onPointerLeave={handlers.onPointerLeave}
-            onDoubleClick={() => {
-              // 指针被覆盖层捕获，双击事件落在覆盖层上：按刚才点选的元素判断是不是文字。
-              if (single?.kind === 'text') {
-                onEditText(single.id);
-              }
+            onDoubleClick={(event) => {
+              // 指针被覆盖层捕获，双击事件落在覆盖层上：调用方按刚才点选的元素和位置决定改哪段字（表格要知道哪一格）。
+              const rect = event.currentTarget.getBoundingClientRect();
+              onEditText({
+                x: pxToMm(event.clientX - rect.left, zoom),
+                y: pxToMm(event.clientY - rect.top, zoom),
+              });
             }}
             onDragOver={onDragOver}
             onDrop={onDrop}

@@ -6,7 +6,14 @@ import { boundsOf, clampAll, type Point, replaceElement, rotateElement } from '.
 import { growToPrint } from '../../lib/canvas-fix';
 import { basicsMergeKey, historyMergeKey } from '../../lib/canvas-history';
 import { hitTest } from '../../lib/canvas-hit';
+import {
+  applyInlineEdit,
+  type InlineEditorLayout,
+  type InlineTarget,
+  inlineEditorLayout,
+} from '../../lib/canvas-inline';
 import { contextMenuItems } from '../../lib/canvas-menu';
+import { tableCellAt } from '../../lib/canvas-table';
 import {
   designerCommand,
   hideElementsInHtml,
@@ -31,6 +38,7 @@ import { DesignerHeader, HistoryButtons, ZoomPill } from './DesignerToolbar';
 import { ElementPalette } from './ElementPalette';
 import { ElementContent, ElementGeometry, ElementWarnings } from './ElementProperties';
 import { FloatingToolbar } from './FloatingToolbar';
+import { InlineTextEditor } from './InlineTextEditor';
 import { Inspector, type InspectorTab } from './Inspector';
 import { LayerList } from './LayerList';
 
@@ -94,7 +102,8 @@ export function CanvasDesigner({
   const designer = useCanvasDesigner({ draft, onChange });
   const stageRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const [editTextId, setEditTextId] = useState<string | null>(null);
+  // 就地改字：改的是哪个元素（哪一格）、输入框盖在哪；没在改时为 null。
+  const [inline, setInline] = useState<{ target: InlineTarget; layout: InlineEditorLayout } | null>(null);
   const fitZoom = useFitScale(
     stageRef,
     draft.paper.widthMm + RULER_DEPTH_MM,
@@ -179,6 +188,39 @@ export function CanvasDesigner({
             draft.elements.filter((element) => menu.ids.includes(element.id)).every((element) => element.locked),
           platform,
         });
+
+  /**
+   * 双击选中的文字（或表格的一格）、浮动工具条的「改文字」：盖一个输入框就地改。
+   * 转过的表格不就地改（格子方向和屏幕对不上），翻到检查器的表格页去改。
+   */
+  const startInlineEdit = (point: Point | null) => {
+    if (selected === null) {
+      return;
+    }
+    const cell = selected.kind === 'table' && point !== null ? tableCellAt(selected, point) : null;
+    const layout = inlineEditorLayout(selected, cell);
+    if (layout === null) {
+      if (selected.kind === 'table') {
+        selectTab('main');
+      }
+      return;
+    }
+    setInline({
+      target: { elementId: selected.id, cell: cell === null ? null : { row: cell.row, column: cell.column } },
+      layout,
+    });
+  };
+  const endInlineEdit = (text: string | null) => {
+    if (inline !== null && text !== null) {
+      designer.commit(applyInlineEdit(draft, inline.target, text));
+    }
+    setInline(null);
+    // 用键盘改完（Ctrl+Enter、Esc）时焦点还在输入框里：还给画布。点到别处改完的，焦点已经被那里接走，不抢。
+    const active = document.activeElement;
+    if (active === null || active === document.body || active.classList.contains('inline-editor')) {
+      overlayRef.current?.focus();
+    }
+  };
 
   const growToPrintOf = (warning: ElementWarning) => {
     const grown = growToPrint(draft, warning);
@@ -272,8 +314,6 @@ export function CanvasDesigner({
             element={selected}
             paper={draft.paper}
             fieldNames={fieldNames}
-            editTextId={editTextId}
-            onTextEditStarted={() => setEditTextId(null)}
             onChange={onElementChange}
             onRotate={onRotate}
             onEndMerge={designer.endMerge}
@@ -361,13 +401,17 @@ export function CanvasDesigner({
           overlayRef={overlayRef}
           onKeyDown={onKeyDown}
           onDropElement={(kind, center) => designer.add(kind, center)}
-          onEditText={(id) => {
-            setEditTextId(id);
-            selectTab('main');
-          }}
+          onEditText={(point) => startInlineEdit(point)}
           onContextMenu={onCanvasContextMenu}
           floating={
-            selectionBox !== null && !gesture.isActive ? (
+            inline !== null ? (
+              <InlineTextEditor
+                key={`${inline.target.elementId}:${inline.target.cell?.row ?? ''}:${inline.target.cell?.column ?? ''}`}
+                layout={inline.layout}
+                onCommit={(text) => endInlineEdit(text)}
+                onCancel={() => endInlineEdit(null)}
+              />
+            ) : selectionBox !== null && !gesture.isActive ? (
               <FloatingToolbar
                 elements={selectedElements}
                 box={selectionBox}
@@ -379,12 +423,7 @@ export function CanvasDesigner({
                 fieldOptions={insertFieldOptions(fieldNames)}
                 canDistribute={designer.canDistribute}
                 onChange={(next) => designer.commit(replaceElement(draft, next))}
-                onEditText={() => {
-                  if (selected !== null) {
-                    setEditTextId(selected.id);
-                    selectTab('main');
-                  }
-                }}
+                onEditText={() => startInlineEdit(null)}
                 onGrowToPrint={growToPrintOf}
                 onDuplicate={designer.duplicate}
                 onDelete={designer.remove}

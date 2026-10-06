@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { useId, useRef } from 'react';
 import {
   barcodeGroups,
   barcodeType,
@@ -48,9 +48,6 @@ export interface ElementPropertiesProps {
   element: CanvasElement;
   paper: PaperSize;
   fieldNames: readonly string[];
-  /** 双击了哪个文字元素：它的「内容」框拿到焦点后调用 onTextEditStarted 清掉。 */
-  editTextId: string | null;
-  onTextEditStarted: () => void;
   onChange: ElementChange;
   onRotate: (rotation: Rotation) => void;
   /** 属性栏的文字 / 数字框失焦时调用：结束撤销历史的合并，不然焦点挪回来接着改会并进上一步。 */
@@ -187,8 +184,6 @@ export function ElementWarnings({
 function KindProperties({
   element,
   fieldNames,
-  editTextId,
-  onTextEditStarted,
   onChange,
   onEndMerge,
   onImportImage,
@@ -196,16 +191,7 @@ function KindProperties({
 }: ElementPropertiesProps) {
   switch (element.kind) {
     case 'text':
-      return (
-        <TextProperties
-          element={element}
-          fieldNames={fieldNames}
-          editTextId={editTextId}
-          onTextEditStarted={onTextEditStarted}
-          onChange={onChange}
-          onEndMerge={onEndMerge}
-        />
-      );
+      return <TextProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />;
     case 'barcode':
       return (
         <BarcodeProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />
@@ -234,28 +220,15 @@ function KindProperties({
 function TextProperties({
   element,
   fieldNames,
-  editTextId,
-  onTextEditStarted,
   onChange,
   onEndMerge,
 }: {
   element: CanvasText;
   fieldNames: readonly string[];
-  editTextId: string | null;
-  onTextEditStarted: () => void;
   onChange: ElementChange;
   onEndMerge: () => void;
 }) {
   const id = useId();
-  const textRef = useRef<HTMLTextAreaElement>(null);
-  // 双击了画布上的这个文字：直接在这里改内容（整段选中，打字即替换）。
-  useEffect(() => {
-    if (editTextId === element.id) {
-      textRef.current?.focus();
-      textRef.current?.select();
-      onTextEditStarted();
-    }
-  }, [editTextId, element.id, onTextEditStarted]);
   const setText = (text: string) => onChange({ ...element, text: text.slice(0, CANVAS_LIMITS.textLength) }, 'text');
   const { fontSizeMm } = CANVAS_LIMITS;
   return (
@@ -265,7 +238,6 @@ function TextProperties({
           内容
         </label>
         <textarea
-          ref={textRef}
           id={id}
           className="text-field text-area"
           rows={3}

@@ -3655,6 +3655,25 @@ fieldset.designer-zoom__menu {
   font-weight: 700;
 }
 
+/* 就地改字：盖在文字上、和打印同一种字体，白底蓝框一眼看出正在改；转过的文字绕左上角转（和打印的画法一样） */
+.inline-editor {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  outline: 2px solid var(--color-selection);
+  color: var(--color-ink);
+  background: var(--color-field);
+  box-shadow: var(--shadow-float);
+  font-family: var(--font-label);
+  white-space: pre-wrap;
+  resize: none;
+  transform-origin: 0 0;
+  pointer-events: auto;
+}
+
 /* 右键菜单：挂在 body 上，固定定位 */
 .context-menu {
   position: fixed;

@@ -1,4 +1,4 @@
-import type { CSSProperties, DragEvent, KeyboardEvent, RefObject } from 'react';
+import type { CSSProperties, DragEvent, KeyboardEvent, ReactNode, RefObject } from 'react';
 import {
   CANVAS_ELEMENT_KINDS,
   CANVAS_LIMITS,
@@ -35,6 +35,10 @@ interface CanvasStageProps {
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onDropElement: (kind: CanvasElementKind, center: { x: number; y: number }) => void;
   onEditText: (id: string) => void;
+  /** 右键（数位板笔杆上的按键、长按也是 contextmenu）：point 是纸上的毫米，client 是窗口坐标。 */
+  onContextMenu: (point: { x: number; y: number }, client: { x: number; y: number }) => void;
+  /** 浮在标签上面、跟着画布一起滚动的东西（浮动工具条）：放在覆盖层后面，画布有焦点时 Tab 就到。 */
+  floating?: ReactNode;
 }
 
 /** 框（毫米）→ 覆盖层上的位置：乘以 --mm（随缩放变化的每毫米像素数）。 */
@@ -74,6 +78,8 @@ export function CanvasStage({
   onKeyDown,
   onDropElement,
   onEditText,
+  onContextMenu,
+  floating,
 }: CanvasStageProps) {
   const { paper } = template;
   const single =
@@ -142,6 +148,15 @@ export function CanvasStage({
             }}
             onDragOver={onDragOver}
             onDrop={onDrop}
+            onContextMenu={(event) => {
+              // 拦下浏览器的右键：主进程的系统菜单只对输入框、选中的文字弹，画布上一律用页面自己的菜单。
+              event.preventDefault();
+              const rect = event.currentTarget.getBoundingClientRect();
+              onContextMenu(
+                { x: pxToMm(event.clientX - rect.left, zoom), y: pxToMm(event.clientY - rect.top, zoom) },
+                { x: event.clientX, y: event.clientY },
+              );
+            }}
           >
             <div
               className="canvas-overlay__safe"
@@ -202,6 +217,7 @@ export function CanvasStage({
               <div className="canvas-overlay__marquee" aria-hidden="true" style={boxStyle(gesture.marquee)} />
             )}
           </div>
+          {floating !== undefined && <div className="canvas-float-layer">{floating}</div>}
         </div>
       </div>
     </div>

@@ -34,6 +34,7 @@ import {
   type Stepped,
   undo as undoStep,
 } from '../lib/canvas-history';
+import type { MenuAction } from '../lib/canvas-menu';
 import type { DesignerCommand, LayerMove } from '../lib/canvas-view';
 import { deepEqual } from '../lib/deep-equal';
 import { megabytes } from '../lib/gray-image';
@@ -234,6 +235,43 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
   const toggleLock = (id: string) => updateElement(id, (element) => ({ ...element, locked: !element.locked }));
   const rename = (id: string, name: string) => updateElement(id, (element) => ({ ...element, name }));
   const reorder = (id: string, index: number) => commit(moveLayer(draft, id, index));
+  /** 选中的一起锁定或解锁（右键菜单、浮动工具条）：一步撤销。 */
+  const setLocked = (locked: boolean) =>
+    commit({
+      ...draft,
+      elements: draft.elements.map((element) =>
+        liveSelection.includes(element.id) ? { ...element, locked } : element,
+      ),
+    });
+  /** 右键菜单、浮动工具条「⋯」里的一项。 */
+  const runMenuAction = (action: MenuAction) => {
+    switch (action.kind) {
+      case 'copy':
+        copy();
+        return;
+      case 'paste':
+        paste();
+        return;
+      case 'duplicate':
+        duplicate();
+        return;
+      case 'delete':
+        remove();
+        return;
+      case 'selectAll':
+        selectAll();
+        return;
+      case 'layer':
+        moveLayers(action.move);
+        return;
+      case 'lock':
+        setLocked(action.locked);
+        return;
+      case 'align':
+        commit(alignElements(draft, liveSelection, action.alignment));
+        return;
+    }
+  };
   /** 图层的「隐藏」：只在设计器里看不见、点不中（照常打印），不进模板、不进撤销历史。 */
   const toggleHidden = (id: string) =>
     setHidden((current) => {
@@ -328,6 +366,9 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
       case 'help':
         setIsShortcutSheetOpen(true);
         return true;
+      case 'menu':
+        // 菜单开在哪儿是画布组件的事（要知道选中的东西在屏幕上的位置），这里不处理。
+        return false;
     }
   };
 
@@ -358,6 +399,8 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
     hidden,
     toggleHidden,
     toggleLock,
+    setLocked,
+    runMenuAction,
     rename,
     reorder,
     isShortcutSheetOpen,

@@ -3575,6 +3575,148 @@ fieldset.designer-zoom__menu {
   pointer-events: none;
 }
 
+/* 浮在标签上、跟着画布一起滚动的一层：和覆盖层同一个格子，本身不接指针，只有里面的工具条接 */
+.canvas-float-layer {
+  position: relative;
+  z-index: 3;
+  grid-area: label;
+  pointer-events: none;
+}
+
+/* 跟着选中走的浮动工具条：圆角、柔和阴影，淡入（prefers-reduced-motion 时 --ui-duration 是 0） */
+.floating-toolbar {
+  display: flex;
+  position: absolute;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--radius-float);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-float);
+  white-space: nowrap;
+  pointer-events: auto;
+  animation: floating-in var(--ui-duration) ease-out;
+}
+
+@keyframes floating-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.floating-toolbar__divider {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 var(--space-1);
+  background: var(--color-rule);
+}
+
+.floating-toolbar__value {
+  min-width: 2.5em;
+  color: var(--color-ink);
+  font: 12px var(--font-data);
+  text-align: center;
+}
+
+.floating-toolbar__field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 32px;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: 8px;
+  background: var(--color-housing);
+}
+
+.floating-toolbar__field-icon {
+  color: var(--color-ink-soft);
+  font: 700 12px var(--font-data);
+}
+
+.floating-toolbar__select {
+  max-width: 180px;
+  height: 28px;
+  border: 0;
+  color: var(--color-ink);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+}
+
+.floating-toolbar .floating-toolbar__fix {
+  color: var(--color-error);
+  font-weight: 700;
+}
+
+/* 右键菜单：挂在 body 上，固定定位 */
+.context-menu {
+  position: fixed;
+  z-index: var(--layer-notice);
+  min-width: 200px;
+  padding: var(--space-1);
+  border-radius: var(--radius-float);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-float);
+  font-size: 13px;
+  animation: floating-in var(--ui-duration) ease-out;
+}
+
+.context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: 6px;
+  color: var(--color-ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-menu__item:focus,
+.context-menu__item:hover {
+  background: var(--color-housing);
+  outline: none;
+}
+
+.context-menu__item[aria-disabled="true"] {
+  color: var(--color-ink-soft);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.context-menu__label {
+  flex: 1;
+}
+
+.context-menu__shortcut {
+  color: var(--color-ink-soft);
+  font: 12px var(--font-data);
+}
+
+.context-menu__chevron {
+  display: flex;
+  transform: rotate(-90deg);
+}
+
+.context-menu__separator {
+  height: 1px;
+  margin: var(--space-1) var(--space-2);
+  border: 0;
+  background: var(--color-rule);
+}
+
 /* 右：检查器。轻：不画重边框，顶上一排分段标签，下面按组排、留白 */
 .inspector {
   display: flex;
@@ -3763,11 +3905,6 @@ fieldset.designer-zoom__menu {
   box-shadow: inset 3px 0 0 var(--color-tape);
 }
 
-.layer-row--hidden .layer-row__name,
-.layer-row--hidden .layer-row__kind {
-  opacity: 0.45;
-}
-
 /* 拖动排序时落点上的一条线：放在这一行的上面或下面 */
 .layer-row--drop-above::before,
 .layer-row--drop-below::after {
@@ -3824,6 +3961,12 @@ fieldset.designer-zoom__menu {
   flex: 1;
   min-width: 0;
   height: 30px;
+}
+
+/* 设计器里隐藏的元素：名字和图标淡下去，一眼看出它现在看不见 */
+.layer-row--hidden .layer-row__name,
+.layer-row--hidden .layer-row__kind {
+  opacity: 0.45;
 }
 
 /* 隐藏、锁定：没开的平时淡一些，悬停这一行时才清楚；开着的一直看得见 */

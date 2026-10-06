@@ -95,7 +95,8 @@ export type DesignerCommand =
   | { kind: 'selectAll' }
   | { kind: 'layer'; move: LayerMove }
   | { kind: 'zoom'; to: 'fit' | 'actual' }
-  | { kind: 'help' };
+  | { kind: 'help' }
+  | { kind: 'menu' };
 
 /** 叠放：上移一层、下移一层、置顶、置底。 */
 export type LayerMove = 'forward' | 'backward' | 'front' | 'back';
@@ -199,6 +200,10 @@ export function designerCommand(event: DesignerKey): DesignerCommand | null {
   // F1 不是可打印字符，扫码枪不会发出它。
   if (event.key === 'F1') {
     return { kind: 'help' };
+  }
+  // 菜单键、Shift+F10：用键盘打开右键菜单（Windows 的通行做法）。
+  if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+    return { kind: 'menu' };
   }
   const arrow = ARROWS[event.key];
   if (arrow) {

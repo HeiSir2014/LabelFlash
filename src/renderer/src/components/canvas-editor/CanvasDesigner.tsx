@@ -1,11 +1,21 @@
-import { type KeyboardEvent, useRef, useState } from 'react';
+import { type KeyboardEvent, useCallback, useRef, useState } from 'react';
 import { CANVAS_ELEMENT_LABELS, type CanvasTemplate } from '../../../../core/templates/canvas-model';
 import { type ElementWarning, NO_RENDER_WARNINGS, renderWarningTexts } from '../../../../shared/render-warnings';
 import type { Platform } from '../../lib/app-view';
-import { clampAll, replaceElement, rotateElement } from '../../lib/canvas-edit';
+import { boundsOf, clampAll, type Point, replaceElement, rotateElement } from '../../lib/canvas-edit';
 import { growToPrint } from '../../lib/canvas-fix';
 import { basicsMergeKey, historyMergeKey } from '../../lib/canvas-history';
-import { designerCommand, hideElementsInHtml, undoShortcutLabel, zoomIn, zoomOut } from '../../lib/canvas-view';
+import { hitTest } from '../../lib/canvas-hit';
+import { contextMenuItems } from '../../lib/canvas-menu';
+import {
+  designerCommand,
+  hideElementsInHtml,
+  PX_PER_MM,
+  undoShortcutLabel,
+  zoomIn,
+  zoomOut,
+} from '../../lib/canvas-view';
+import { insertFieldOptions } from '../../lib/insert-field-options';
 import { useCanvasDesigner } from '../../view-models/use-canvas-designer';
 import { useCanvasGesture, useCtrlWheelZoom } from '../../view-models/use-canvas-gesture';
 import { useFitScale } from '../../view-models/use-fit-scale';
@@ -15,10 +25,12 @@ import type { SampleContent } from '../SampleInput';
 import { type PrinterChoices, TemplateBasics } from '../TemplateBasics';
 import { AlignButtons, DistributeButtons, LayerOrderButtons } from './ArrangeButtons';
 import { CanvasStage } from './CanvasStage';
+import { ContextMenu } from './ContextMenu';
 import { type CheckItem, DesignerChecks } from './DesignerChecks';
 import { DesignerHeader, HistoryButtons, ZoomPill } from './DesignerToolbar';
 import { ElementPalette } from './ElementPalette';
 import { ElementContent, ElementGeometry, ElementWarnings } from './ElementProperties';
+import { FloatingToolbar } from './FloatingToolbar';
 import { Inspector, type InspectorTab } from './Inspector';
 import { LayerList } from './LayerList';
 
@@ -116,6 +128,58 @@ export function CanvasDesigner({
   const requestedTab = tabState.key === selectionKey || tabState.tab === 'layers' ? tabState.tab : 'main';
   const selectTab = (tab: InspectorTabId) => setTabState({ key: selectionKey, tab });
 
+  // 右键菜单：打开的位置和打开那一刻选中的元素（右键点在没选中的元素上会先选中它）。
+  const [menu, setMenu] = useState<{ at: { x: number; y: number }; ids: readonly string[] } | null>(null);
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+    // 焦点在菜单里（键盘操作、选了一项）时还给画布，接着能用方向键；点到别处的话焦点由那里接走。
+    const active = document.activeElement;
+    if (active === null || active === document.body || active.closest('.context-menu') !== null) {
+      overlayRef.current?.focus();
+    }
+  }, []);
+  const visibleElements = draft.elements.filter((element) => !designer.hidden.has(element.id));
+  const selectedElements = visibleElements.filter((element) => designer.selection.includes(element.id));
+  const selectionBox = boundsOf(selectedElements);
+  const onCanvasContextMenu = (point: Point, client: Point) => {
+    // 点在已选中的东西上（包括锁定的）：菜单对整组；点在别的元素上先选中它；点在空白处清空选中（菜单只剩粘贴、全选）。
+    const isOnSelection = selectedElements.some(
+      (element) =>
+        point.x >= element.x &&
+        point.x <= element.x + element.width &&
+        point.y >= element.y &&
+        point.y <= element.y + element.height,
+    );
+    const hit = hitTest(visibleElements, point, zoom);
+    const ids = isOnSelection ? designer.selection : hit === null ? [] : [hit];
+    designer.select(ids);
+    setMenu({ at: client, ids });
+  };
+  /** 菜单键、Shift+F10：在选中的东西左下角（没选中时在画布左上角）打开菜单。 */
+  const openMenuFromKeyboard = () => {
+    const rect = overlayRef.current?.getBoundingClientRect();
+    const pxPerMm = PX_PER_MM * zoom;
+    const at =
+      selectionBox === null
+        ? { x: rect?.left ?? 0, y: rect?.top ?? 0 }
+        : {
+            x: (rect?.left ?? 0) + selectionBox.x * pxPerMm,
+            y: (rect?.top ?? 0) + (selectionBox.y + selectionBox.height) * pxPerMm,
+          };
+    setMenu({ at, ids: designer.selection });
+  };
+  const menuItems =
+    menu === null
+      ? []
+      : contextMenuItems({
+          selectionCount: menu.ids.length,
+          canPaste: designer.canPaste,
+          allLocked:
+            menu.ids.length > 0 &&
+            draft.elements.filter((element) => menu.ids.includes(element.id)).every((element) => element.locked),
+          platform,
+        });
+
   const growToPrintOf = (warning: ElementWarning) => {
     const grown = growToPrint(draft, warning);
     if (grown.status === 'grown') {
@@ -148,6 +212,12 @@ export function CanvasDesigner({
       }
       event.preventDefault();
       event.stopPropagation();
+      return;
+    }
+    if (command.kind === 'menu') {
+      event.preventDefault();
+      event.stopPropagation();
+      openMenuFromKeyboard();
       return;
     }
     // 只拦下设计器用掉的按键：没选中时的方向键、Esc 照常（Esc 冒泡到配置中心，返回模板列表）。
@@ -295,7 +365,41 @@ export function CanvasDesigner({
             setEditTextId(id);
             selectTab('main');
           }}
+          onContextMenu={onCanvasContextMenu}
+          floating={
+            selectionBox !== null && !gesture.isActive ? (
+              <FloatingToolbar
+                elements={selectedElements}
+                box={selectionBox}
+                zoom={zoom}
+                platform={platform}
+                stageRef={stageRef}
+                overlayRef={overlayRef}
+                warnings={selectedWarnings}
+                fieldOptions={insertFieldOptions(fieldNames)}
+                canDistribute={designer.canDistribute}
+                onChange={(next) => designer.commit(replaceElement(draft, next))}
+                onEditText={() => {
+                  if (selected !== null) {
+                    setEditTextId(selected.id);
+                    selectTab('main');
+                  }
+                }}
+                onGrowToPrint={growToPrintOf}
+                onDuplicate={designer.duplicate}
+                onDelete={designer.remove}
+                onSetLocked={designer.setLocked}
+                onLayer={designer.moveLayers}
+                onAlign={designer.align}
+                onDistribute={designer.distribute}
+                onMore={(at) => setMenu({ at, ids: designer.selection })}
+              />
+            ) : undefined
+          }
         />
+        {menu !== null && (
+          <ContextMenu items={menuItems} at={menu.at} onAction={designer.runMenuAction} onClose={closeMenu} />
+        )}
         <HistoryButtons designer={designer} platform={platform} />
         <ZoomPill designer={designer} zoom={zoom} platform={platform} />
       </div>

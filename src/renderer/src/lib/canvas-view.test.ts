@@ -126,6 +126,12 @@ describe('designerCommand', () => {
     expect(designerCommand(key('F1'))).toEqual({ kind: 'help' });
   });
 
+  test('opens the context menu with the menu key or Shift+F10', () => {
+    expect(designerCommand(key('ContextMenu'))).toEqual({ kind: 'menu' });
+    expect(designerCommand(key('F10', { shiftKey: true }))).toEqual({ kind: 'menu' });
+    expect(designerCommand(key('F10'))).toBeNull();
+  });
+
   test('deletes with Delete or Backspace and clears the selection with Escape', () => {
     expect(designerCommand(key('Delete'))).toEqual({ kind: 'delete' });
     expect(designerCommand(key('Backspace'))).toEqual({ kind: 'delete' });

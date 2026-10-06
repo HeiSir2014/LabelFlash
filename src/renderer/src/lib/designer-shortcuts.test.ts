@@ -27,6 +27,12 @@ describe('shortcutLabel and withShortcut', () => {
     expect(shortcutLabel('redo', 'mac')).toBe('⇧⌘Z');
   });
 
+  // Windows 上 Ctrl+点击加选减选，macOS 上是 ⌘+点击；Shift+点击两边都行。
+  test('lists both ways to add to or remove from the selection', () => {
+    expect(shortcutLabel('addToSelection', 'other')).toBe('Shift+点击 / Ctrl+点击');
+    expect(shortcutLabel('addToSelection', 'mac')).toBe('⇧点击 / ⌘点击');
+  });
+
   test('appends the shortcut to a button name for its tooltip', () => {
     expect(withShortcut('置顶', 'front', 'other')).toBe('置顶（Ctrl+Shift+]）');
     expect(withShortcut('置顶', 'front', 'mac')).toBe('置顶（⇧⌘]）');

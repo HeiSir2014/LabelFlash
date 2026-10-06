@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import type { CanvasTemplate } from '../../../core/templates/canvas-model';
+import type { Platform } from '../lib/app-view';
 import {
   boundsOf,
   boxOf,
@@ -27,6 +28,7 @@ import {
   gesturePhase,
   hasPassedDragThreshold,
   isResizeHandle,
+  isToggleClick,
   keepsRatio,
   moveGestureBox,
   ROTATE_HANDLE,
@@ -64,6 +66,8 @@ interface GestureOptions {
   selection: readonly string[];
   zoom: number;
   snap: boolean;
+  /** 加选减选的修饰键按平台：Windows 上 Ctrl+点击，macOS 上 ⌘+点击（见 isToggleClick）。 */
+  platform: Platform;
   overlayRef: RefObject<HTMLDivElement | null>;
   onSelect: (ids: readonly string[]) => void;
   onCommit: (next: CanvasTemplate) => void;
@@ -74,8 +78,8 @@ interface GestureOptions {
 const NO_HIDDEN: ReadonlySet<string> = new Set();
 
 /**
- * 画布上的鼠标操作：点选、Shift 加选、Alt+点击轮流选叠着的元素、拖动（选中的一起动）、拖控制点缩放、
- * 在空白处（或按住 Ctrl / ⌘）框选。按在哪个元素上由 lib/canvas-hit 的点中测试决定。
+ * 画布上的鼠标操作：点选、Shift+点击或 Ctrl+点击（macOS 上 ⌘+点击）加选减选、Alt+点击轮流选叠着的元素、
+ * 拖动（选中的一起动）、拖控制点缩放、在空白处（或按住 Ctrl / ⌘ 拖）框选。按在哪个元素上由 lib/canvas-hit 的点中测试决定。
  * 拖动中只更新覆盖层上的框和参考线；松手时把结果交给 onCommit，一次拖动是一步撤销。
  * 指针捕获在覆盖层上：拖出画布也不会丢。
  *
@@ -95,7 +99,7 @@ export function useCanvasGesture(options: GestureOptions): {
   isDragging: boolean;
   cancel: () => void;
 } {
-  const { template, selection, zoom, snap, overlayRef, onSelect, onCommit, hidden = NO_HIDDEN } = options;
+  const { template, selection, zoom, snap, platform, overlayRef, onSelect, onCommit, hidden = NO_HIDDEN } = options;
   // 手势的「现成事实」放在仓库里，指针事件之间同步读写，不依赖 state 在下一次渲染才更新：
   // 很快的一次「按下-挪动-松开」有可能在 React 重新渲染之前就把三个事件都派发完，
   // 只看渲染闭包里的值的话，读到的还是按下那一刻的（hasMoved: false），会把拖动误判成点击。
@@ -228,9 +232,19 @@ export function useCanvasGesture(options: GestureOptions): {
         box: boxOf(resized),
         guides: [],
       };
-    } else if (event.ctrlKey || event.metaKey) {
-      // Ctrl（⌘）+ 拖动一定是框选：从一个大元素上面开始框选里面的小元素。
-      next = marqueeOf(client, event.shiftKey);
+    } else if (isToggleClick(event, platform)) {
+      // Ctrl（macOS 上 ⌘）：点击是加选减选点中的元素；拖过阈值才是框选（从一个大元素上面开始框选里面的小元素）。
+      // 先不改选中：是点击还是拖动要等挪动或松手才知道。
+      const origin = toPaper(client);
+      next = {
+        kind: 'marquee',
+        client,
+        hasMoved: false,
+        origin,
+        current: origin,
+        base: event.shiftKey ? selection : [],
+        toggleOnClick: hitTest(hittable, origin, zoom),
+      };
     } else {
       // 按点中测试认元素，不按覆盖层上框的 DOM 顺序：只有边框的矩形、锁定的元素不挡住下面的。
       const point = toPaper(client);
@@ -319,6 +333,8 @@ export function useCanvasGesture(options: GestureOptions): {
     if (!current.hasMoved) {
       if (current.kind === 'move' && current.selectOnClick !== null) {
         onSelect([current.selectOnClick]);
+      } else if (current.kind === 'marquee' && current.toggleOnClick != null) {
+        onSelect(toggleId(selection, current.toggleOnClick));
       }
       return;
     }

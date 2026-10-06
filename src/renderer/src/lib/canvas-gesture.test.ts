@@ -8,6 +8,7 @@ import {
   gesturePhase,
   hasPassedDragThreshold,
   isResizeHandle,
+  isToggleClick,
   keepsRatio,
   moveGestureBox,
   NO_GESTURE_VIEW,
@@ -322,6 +323,16 @@ describe('createGestureStore', () => {
     store.setHover('e1');
     store.setGesture(gesture);
     expect(store.get()).toEqual({ gesture, hoverId: 'e1' });
+  });
+});
+
+describe('isToggleClick', () => {
+  // macOS 上 Ctrl+点击是右键（弹菜单），加选减选用 ⌘；Windows 上用 Ctrl。
+  test('uses Ctrl on Windows and ⌘ on macOS', () => {
+    expect(isToggleClick({ ctrlKey: true, metaKey: false }, 'other')).toBe(true);
+    expect(isToggleClick({ ctrlKey: false, metaKey: true }, 'other')).toBe(false);
+    expect(isToggleClick({ ctrlKey: false, metaKey: true }, 'mac')).toBe(true);
+    expect(isToggleClick({ ctrlKey: true, metaKey: false }, 'mac')).toBe(false);
   });
 });
 

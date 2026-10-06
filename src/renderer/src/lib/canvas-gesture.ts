@@ -9,6 +9,7 @@ import {
   type Rotation,
 } from '../../../core/templates/canvas-model';
 import type { PaperSize } from '../../../shared/paper-sizes';
+import type { Platform } from './app-view';
 import {
   type Box,
   boxOf,
@@ -74,6 +75,11 @@ export interface MarqueeGesture extends Pressed {
   current: Point;
   /** 按住 Shift 框选时原来就选中的。 */
   base: readonly string[];
+  /**
+   * Ctrl（macOS 上 ⌘）按下的：没拖动就松手是「点击加选减选」，切换这个元素（null = 点在空白处，选中不变）；
+   * 拖过阈值才是框选。不是 Ctrl / ⌘ 按下的框选没有这一项。
+   */
+  toggleOnClick?: string | null;
 }
 
 /** 拖旋转手柄：只转直角，松手时才改模板。 */
@@ -139,6 +145,14 @@ export function createGestureStore(): GestureStore {
     setGesture: (gesture) => update({ ...state, gesture }),
     setHover: (hoverId) => update({ ...state, hoverId }),
   };
+}
+
+/**
+ * 这次点击是不是「加选 / 减选」的修饰键：Windows 上 Ctrl，macOS 上 ⌘（macOS 的 Ctrl+点击是右键，弹菜单）。
+ * Shift+点击另算，两边都是加选减选。
+ */
+export function isToggleClick(event: { ctrlKey: boolean; metaKey: boolean }, platform: Platform): boolean {
+  return platform === 'mac' ? event.metaKey : event.ctrlKey;
 }
 
 /** 两组选中是不是同一些元素（不管顺序）。 */

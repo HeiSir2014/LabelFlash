@@ -58,7 +58,15 @@ export const DESIGNER_SHORTCUTS: readonly DesignerShortcut[] = [
   { id: 'editText', label: '改文字（就地编辑）', group: '编辑', combos: [{ pointer: '双击' }] },
   { id: 'commitText', label: '改完文字', group: '编辑', combos: [{ mod: true, key: 'Enter' }] },
   { id: 'selectAll', label: '全选（锁定的除外）', group: '选择', combos: [{ mod: true, key: 'A' }] },
-  { id: 'addToSelection', label: '加选 / 减选', group: '选择', combos: [{ shift: true, pointer: '点击' }] },
+  {
+    id: 'addToSelection',
+    label: '加选 / 减选',
+    group: '选择',
+    combos: [
+      { shift: true, pointer: '点击' },
+      { mod: true, pointer: '点击' },
+    ],
+  },
   { id: 'cycle', label: '选叠在下面的元素', group: '选择', combos: [{ alt: true, pointer: '点击' }] },
   { id: 'marquee', label: '框选（从元素上开始也行）', group: '选择', combos: [{ mod: true, pointer: '拖动' }] },
   { id: 'deselect', label: '取消选中', group: '选择', combos: [{ key: 'Esc' }] },

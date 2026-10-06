@@ -189,6 +189,7 @@ export function CanvasDesigner({
     selection: designer.selection,
     zoom,
     snap: designer.snap,
+    platform,
     overlayRef,
     hidden: designer.hidden,
     onSelect: designer.select,

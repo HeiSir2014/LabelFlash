@@ -4,6 +4,8 @@ import { parseBatchPlan } from '../core/batch/parse-batch-plan';
 import type { RequestedDiagnosisFix } from '../core/diagnosis/diagnosis-model';
 import { DEVICE_KEY_PATTERN } from '../core/drivers/detected-device';
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
+import { parsePdfLayout, parsePdfPrintRequest, RUN_ID_PATTERN } from '../core/pdf/parse-pdf-request';
+import { type PdfLayout, type PdfPrintRequest, PIECE_ID_PATTERN } from '../core/pdf/pdf-model';
 import { isPrinterAction, type PrinterAction, type PrinterCommandConfig } from '../core/printer-commands/command-model';
 import { parseCommandConfig } from '../core/printer-commands/sanitize-command-config';
 import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-model';
@@ -247,6 +249,40 @@ export function requireBytes(value: unknown, name: string, maxBytes: number): Ui
 export function requireIndex(value: unknown, name: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new TypeError(`Invalid ${name}`);
+  }
+  return value;
+}
+
+/** PDF 打印的裁切设置：逐项核对（见 core/pdf/parse-pdf-request.ts）。 */
+export function requirePdfLayout(value: unknown): PdfLayout {
+  const layout = parsePdfLayout(value);
+  if (layout === null) {
+    throw new TypeError('Invalid PDF layout');
+  }
+  return layout;
+}
+
+/** PDF 打印的打印设置：块编号、份数。 */
+export function requirePdfPrintRequest(value: unknown): PdfPrintRequest {
+  const request = parsePdfPrintRequest(value);
+  if (request === null) {
+    throw new TypeError('Invalid PDF print request');
+  }
+  return request;
+}
+
+/** PDF 一次出块的编号（主进程生成的 UUID）。 */
+export function requireRunId(value: unknown): string {
+  if (typeof value !== 'string' || !RUN_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid PDF run id');
+  }
+  return value;
+}
+
+/** PDF 一块的编号：页码-第几张。 */
+export function requirePieceId(value: unknown): string {
+  if (typeof value !== 'string' || !PIECE_ID_PATTERN.test(value)) {
+    throw new TypeError('Invalid PDF piece id');
   }
   return value;
 }

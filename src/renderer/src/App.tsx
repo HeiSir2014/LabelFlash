@@ -18,6 +18,7 @@ import { NoticeBar } from './components/NoticeBar';
 import { OriginRequests } from './components/OriginRequests';
 import type { PreviewOverride } from './components/PreviewStage';
 import { PrinterList } from './components/PrinterList';
+import { PdfPage } from './components/pdf/PdfPage';
 import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
@@ -27,6 +28,7 @@ import { describeCaller } from './lib/local-api-text';
 import { describeMobileButton, describeMobileOverlay } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
+import { isPdfFileName, paperOptions, pdfButtonProgress } from './lib/pdf-view';
 import { describePreviewUsage } from './lib/preview-usage';
 import {
   expectedPaperKey,
@@ -53,6 +55,7 @@ import { useLocalApi } from './view-models/use-local-api';
 import { useMediaQuery } from './view-models/use-media-query';
 import { useMobileStation } from './view-models/use-mobile-station';
 import { useNotices } from './view-models/use-notices';
+import { usePdf } from './view-models/use-pdf';
 import { usePrinterCommands } from './view-models/use-printer-commands';
 import { usePrinterProfiles } from './view-models/use-printer-profiles';
 import { usePrinters } from './view-models/use-printers';
@@ -99,7 +102,8 @@ export function App() {
   });
   // 打印记录的预览、重打：本机接口的记录按当时的模板和字段（模板删了就不能按原样重打）。
   const reprintModeOf = useCallback(
-    (job: JobRecord) => reprintMode(job, (id) => templates.templates.some((template) => template.id === id)),
+    (job: JobRecord) =>
+      reprintMode(job, (id) => templates.templates.some((template) => template.id === id), Date.now()),
     [templates.templates],
   );
   const historyTarget = useCallback(
@@ -208,9 +212,20 @@ export function App() {
     isOpen: isBatchOpen,
     historyLimit,
   });
-  // 把 .xlsx / .csv 拖进窗口：打开批量打印页并读这个文件（.xls 等由主进程说明为什么不行）。
-  // 读文件放进 openBatch 的回调里：操作员在编辑器里取消了「离开」，或者设置还没读到，就不读这个文件。
-  useFileDrop((file) => appView.openBatch(() => batch.dropFile(file)), settings !== null);
+  // 打印 PDF：设置留在这里，文件、出块、打印在主进程。
+  const isPdfOpen = appView.view.kind === 'pdf';
+  const pdf = usePdf({ paperPrinters });
+  const pdfPaperOptions = useMemo(() => paperOptions(paperPrinters), [paperPrinters]);
+
+  // 把文件拖进窗口：PDF 打开打印 PDF 页，其余（.xlsx / .csv / .xls）打开批量打印页，由那边说明认不认。
+  // 读文件放进 openBatch / openPdf 的回调里：操作员在编辑器里取消了「离开」，或者设置还没读到，就不读这个文件。
+  useFileDrop((file) => {
+    if (isPdfFileName(file.name)) {
+      appView.openPdf(() => pdf.dropFile(file));
+      return;
+    }
+    appView.openBatch(() => batch.dropFile(file));
+  }, settings !== null);
 
   // 手机扫码：浮层只在工作台上显示；在配置中心里点按钮会先回到工作台（经过未保存修改的确认）。
   const mobile = useMobileStation({ onJobsChanged: () => void jobLog.refresh() });
@@ -313,6 +328,11 @@ export function App() {
           isOpen: isBatchOpen,
           progress: batchButtonProgress(batch.status),
           onToggle: isBatchOpen ? appView.close : appView.openBatch,
+        }}
+        pdf={{
+          isOpen: isPdfOpen,
+          progress: pdfButtonProgress(pdf.status),
+          onToggle: isPdfOpen ? appView.close : appView.openPdf,
         }}
         mobile={{ view: describeMobileButton(mobile.status), isOpen: isMobileOverlayShown, onToggle: toggleMobile }}
         onInstallUpdate={updates.install}
@@ -516,6 +536,7 @@ export function App() {
       {settings !== null && isBatchOpen && (
         <BatchPage batch={batch} templates={templates.templates} onClose={appView.close} />
       )}
+      {settings !== null && isPdfOpen && <PdfPage pdf={pdf} paperOptions={pdfPaperOptions} onClose={appView.close} />}
       {isMobileOverlayShown && (
         <MobileOverlay
           view={describeMobileOverlay(mobile.status, {

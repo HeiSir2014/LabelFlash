@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { paperDots } from '../../core/pdf/piece-fit';
+import { pieceTemplate } from '../../core/pdf/piece-template';
 import {
   type CanvasElement,
   type CanvasTableCell,
@@ -6,6 +8,7 @@ import {
   newCanvasElement,
   snapBorderDots,
 } from '../../core/templates/canvas-model';
+import { monoBmp } from '../../core/templates/mono-image';
 import { renderWarningTexts } from '../../shared/render-warnings';
 import { renderCanvasHtml } from './canvas-html';
 import { mm } from './html-text';
@@ -397,5 +400,24 @@ describe('renderCanvasHtml', () => {
   test('pairs with renderWarningTexts: an EAN-13 barcode with non-ASCII content produces exactly one warning text', () => {
     const rendered = render([element('barcode', { name: '商品码', symbology: 'ean13', value: '{品名}' })]);
     expect(renderWarningTexts(rendered)).toHaveLength(1);
+  });
+});
+
+describe('PDF pieces', () => {
+  // 黑白位图按这台打印机的点做好，包进自由设计模板后不能再被缩放或重新转黑白：打出来的点和预览一模一样。
+  test('prints a PDF piece dot for dot', () => {
+    const paper = { widthMm: 60, heightMm: 40 };
+    const dots = paperDots(paper, 203);
+    const bits = new Uint8Array(dots.width * dots.height).map((_, index) => (index % 3 === 0 ? 1 : 0));
+    const rendered = renderCanvasHtml(
+      {
+        scan: { raw: 'x.pdf 第 1 页第 1 张', ruleId: 'pdf', ruleName: 'PDF 打印', fields: [] },
+        template: pieceTemplate({ width: dots.width, height: dots.height, bits }, paper),
+        printedAt: 0,
+      },
+      203,
+    );
+    expect(rendered.html).toContain(monoBmp(bits, dots.width, dots.height));
+    expect(renderWarningTexts(rendered)).toEqual([]);
   });
 });

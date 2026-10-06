@@ -3,7 +3,15 @@ import { DEFAULT_PAPER } from '../shared/label-paper';
 import { DedupGuard } from './dedup-guard';
 import { PrintError } from './errors';
 import { PrintQueue } from './print-queue';
-import { PrintService, TEST_RAW } from './print-service';
+import {
+  API_RULE,
+  BATCH_RULE,
+  type FieldsPrint,
+  fieldsRuleFor,
+  PDF_RULE,
+  PrintService,
+  TEST_RAW,
+} from './print-service';
 import type { PrinterChoice } from './printing/resolve-printer';
 import { BUILT_IN_RULES, DASH_THREE_RULE_ID, RAW_RULE_ID } from './scan/builtin-rules';
 import type { EnrichContext, EnrichResult } from './scan/enrich';
@@ -738,5 +746,40 @@ describe('PrintService.printFields for a batch', () => {
     await service.printFields(batchInput);
     service.restore();
     expect((await service.submit(request())).status).toBe('printed');
+  });
+});
+
+describe('PrintService.printFields for a PDF piece', () => {
+  const pdf = { file: '面单.pdf', page: 2, piece: 1, bitmap: '0f8fad5b-d9cb-469f-a165-70867728950e' };
+  const pdfInput: FieldsPrint = {
+    template: PICK_TEMPLATE,
+    fields: [{ name: '文件', value: '面单.pdf' }],
+    content: '面单.pdf 第 2 页第 1 张',
+    source: 'pdf',
+    caller: null,
+    printerName: null,
+    pdf,
+  };
+
+  test('records the piece and names PDF printing as the rule', async () => {
+    const { service, store, recorded } = createHarness();
+    expect((await service.printFields(pdfInput)).status).toBe('printed');
+    expect(store.listRecent(1)[0]).toMatchObject({ source: 'pdf', pdf });
+    expect(recorded.at(-1)?.scan).toMatchObject({ ruleId: 'pdf', ruleName: 'PDF 打印' });
+  });
+
+  test('stays out of the scan dedup window after a restart', async () => {
+    const { service } = createHarness();
+    await service.printFields({ ...pdfInput, content: RAW });
+    service.restore();
+    expect((await service.submit(request())).status).toBe('printed');
+  });
+});
+
+describe('fieldsRuleFor', () => {
+  test('names the rule after where the fields came from', () => {
+    expect(fieldsRuleFor({})).toBe(API_RULE);
+    expect(fieldsRuleFor({ batch: { id: '20261002-143501-a1b2', row: 1, copy: 1 } })).toBe(BATCH_RULE);
+    expect(fieldsRuleFor({ pdf: { file: 'a.pdf', page: 1, piece: 1, bitmap: 'k' } })).toBe(PDF_RULE);
   });
 });

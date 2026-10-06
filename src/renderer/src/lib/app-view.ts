@@ -68,21 +68,29 @@ export function isFillPage(page: ConfigPage): boolean {
   return FILL_PAGES.has(page);
 }
 
-/** 整个窗口有三种视图：工作台、配置中心的某一页、批量打印页（和配置中心同级）。 */
-export type AppView = { kind: 'workbench' } | { kind: 'config'; page: ConfigPage } | { kind: 'batch' };
+/** 整个窗口的视图：工作台、配置中心的某一页、批量打印页、打印 PDF 页（后两个和配置中心同级）。 */
+export type AppView =
+  | { kind: 'workbench' }
+  | { kind: 'config'; page: ConfigPage }
+  | { kind: 'batch' }
+  | { kind: 'pdf' };
 
 export const WORKBENCH: AppView = { kind: 'workbench' };
 export const BATCH_VIEW: AppView = { kind: 'batch' };
+export const PDF_VIEW: AppView = { kind: 'pdf' };
 
-export type BackStep = 'close-editor' | 'close-config' | 'close-batch' | 'none';
+export type BackStep = 'close-editor' | 'close-config' | 'close-batch' | 'close-pdf' | 'none';
 
-/** Esc 和「返回」：编辑器开着就先回到列表，否则关掉配置中心（或批量打印页）回工作台。 */
+/** Esc 和「返回」：编辑器开着就先回到列表，否则关掉配置中心（或批量打印页、打印 PDF 页）回工作台。 */
 export function backStep(view: AppView, isEditing: boolean): BackStep {
   if (view.kind === 'workbench') {
     return 'none';
   }
   if (view.kind === 'batch') {
     return 'close-batch';
+  }
+  if (view.kind === 'pdf') {
+    return 'close-pdf';
   }
   return isEditing ? 'close-editor' : 'close-config';
 }

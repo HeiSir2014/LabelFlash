@@ -29,6 +29,7 @@ function rowCount(db: DatabaseSync): unknown {
 
 const BATCH = '20261002-143501-a1b2';
 const OTHER_BATCH = '20261002-150000-0000';
+const PDF_PIECE = { file: '面单.pdf', page: 2, piece: 1, bitmap: '0f8fad5b-d9cb-469f-a165-70867728950e' };
 
 describe('SqliteJobStore', () => {
   let db: DatabaseSync;
@@ -239,6 +240,20 @@ describe('SqliteJobStore', () => {
     store.append(job(5, { ...failedAs, failureReason: 'PRINT_TIMEOUT', batch: label(3, 1) }));
     expect(ids(store.listBatchFailures(BATCH, null))).toEqual(['job-2', 'job-5']);
     expect(ids(store.listBatchFailures(BATCH, 3))).toEqual(['job-5']);
+  });
+
+  test('keeps the PDF piece of a job', () => {
+    const store = new SqliteJobStore(db, 100);
+    store.append(job(1, { source: 'pdf', pdf: PDF_PIECE }));
+    store.append(job(2));
+    expect(store.listPage({ limit: 10 }).jobs.map((record) => record.pdf)).toEqual([undefined, PDF_PIECE]);
+    expect(store.get('job-1')?.pdf).toEqual(PDF_PIECE);
+  });
+
+  test('leaves PDF prints out of the recent prints', () => {
+    const store = new SqliteJobStore(db, 100);
+    store.append(job(1, { source: 'pdf', pdf: PDF_PIECE }));
+    expect(store.listLastPrinted(0)).toEqual([]);
   });
 });
 

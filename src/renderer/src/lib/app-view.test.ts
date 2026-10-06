@@ -7,6 +7,7 @@ import {
   configShortcutLabel,
   isConfigShortcut,
   isFillPage,
+  PDF_VIEW,
   pageLabel,
   platformForChrome,
   type ShortcutKey,
@@ -54,6 +55,7 @@ describe('backStep', () => {
     expect(backStep({ kind: 'config', page: 'rules' }, false)).toBe('close-config');
     expect(backStep(WORKBENCH, false)).toBe('none');
     expect(backStep(BATCH_VIEW, false)).toBe('close-batch');
+    expect(backStep(PDF_VIEW, false)).toBe('close-pdf');
   });
 });
 

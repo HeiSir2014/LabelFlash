@@ -327,6 +327,17 @@ export function describeScan(scan: ScanSnapshot | null, context: ScanContext): S
   };
 }
 
+/** 记录里批量打印、PDF 打印的位置：「（第 3 行第 2 份）」「（第 2 页第 1 张）」；其他来源没有。 */
+function positionOf(job: JobRecord): string {
+  if (job.batch !== undefined) {
+    return `（第 ${job.batch.row} 行${job.batch.copy > 1 ? `第 ${job.batch.copy} 份` : ''}）`;
+  }
+  if (job.pdf !== undefined) {
+    return `（第 ${job.pdf.page} 页第 ${job.pdf.piece} 张）`;
+  }
+  return '';
+}
+
 /**
  * 打印记录一行的说明：时间 · 来源 · 打印机 · 纸张。旧记录没有纸张时写「—」，识别不了的记录没有打印机。
  * caller 是本机接口的调用方（密钥名称或网站，见 local-api-text 的 describeCaller），写在来源后面的括号里。
@@ -336,8 +347,7 @@ export function describeJobMeta(job: JobRecord, caller: string | null = null): s
   const paper = job.paper === undefined ? null : parsePaperKey(job.paper);
   const source = describeSource(job.source);
   const submitter = job.source === 'history' ? `原提交：${caller}` : caller;
-  const position =
-    job.batch === undefined ? '' : `（第 ${job.batch.row} 行${job.batch.copy > 1 ? `第 ${job.batch.copy} 份` : ''}）`;
+  const position = positionOf(job);
   return [
     formatDateTime(job.createdAt),
     caller === null ? `${source}${position}` : `${source}（${submitter}）`,

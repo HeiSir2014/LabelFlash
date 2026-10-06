@@ -15,6 +15,7 @@ import type {
   Clock,
   JobRecord,
   LabelJob,
+  PdfRef,
   PreviewResult,
   PrinterAdapter,
   PrintRequest,
@@ -91,6 +92,20 @@ export const API_RULE = { id: 'api', name: '本机接口' } as const;
 /** 批量打印的「规则」：备注变量 {规则} 和打印结果通知里显示为「批量打印」。 */
 export const BATCH_RULE = { id: 'batch', name: '批量打印' } as const;
 
+/** PDF 打印的「规则」：备注变量 {规则} 和打印结果通知里显示为「PDF 打印」。 */
+export const PDF_RULE = { id: 'pdf', name: 'PDF 打印' } as const;
+
+/** 不经过识别规则的一张算在哪条「规则」名下：批量、PDF 各有名字，其余（本机接口和它的重打）是本机接口。 */
+export function fieldsRuleFor(origin: { batch?: unknown; pdf?: unknown }): FieldsRule {
+  if (origin.batch !== undefined) {
+    return BATCH_RULE;
+  }
+  if (origin.pdf !== undefined) {
+    return PDF_RULE;
+  }
+  return API_RULE;
+}
+
 /** 不经过识别规则的一张算在哪条「规则」名下。 */
 export interface FieldsRule {
   id: string;
@@ -113,6 +128,8 @@ export interface FieldsPrint {
   printerName: string | null;
   /** 批量打印的一张（含从打印记录重打批量打的）：写进打印记录；规则名记为「批量打印」。 */
   batch?: BatchRef;
+  /** PDF 打印的一块（含从打印记录重打的）：写进打印记录；规则名记为「PDF 打印」。 */
+  pdf?: PdfRef;
 }
 
 type Recognition = { ok: true; scan: ScanResult } | { ok: false; result: Extract<PrintResult, { status: 'invalid' }> };
@@ -163,13 +180,16 @@ export class PrintService {
 
   /** 按给定的模板和字段打印一张：不识别、不加工、不用扫码的防重复窗口。 */
   async printFields(input: FieldsPrint): Promise<PrintResult> {
-    const scan = fieldsScan(input.content, input.fields, input.batch === undefined ? API_RULE : BATCH_RULE);
+    const scan = fieldsScan(input.content, input.fields, fieldsRuleFor(input));
     const request: PrintRequest = { raw: input.content, source: input.source };
     if (input.caller !== null) {
       request.caller = input.caller;
     }
     if (input.batch !== undefined) {
       request.batch = input.batch;
+    }
+    if (input.pdf !== undefined) {
+      request.pdf = input.pdf;
     }
     return this.printLabel(this.deps.createId(), request, scan, () => input.template, {
       dedup: false,
@@ -448,6 +468,9 @@ export class PrintService {
     }
     if (request.batch !== undefined) {
       job.batch = request.batch;
+    }
+    if (request.pdf !== undefined) {
+      job.pdf = request.pdf;
     }
     try {
       this.deps.store.append(job);

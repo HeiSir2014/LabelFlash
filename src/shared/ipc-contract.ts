@@ -1,6 +1,7 @@
 import type { BatchPlan } from '../core/batch/batch-model';
 import type { LookupTableData, LookupTableInfo } from '../core/lookup/lookup-model';
 import type { Delivery } from '../core/notify/delivery';
+import type { PdfLayout, PdfPrintRequest } from '../core/pdf/pdf-model';
 import type { PrinterAction, PrinterCommandConfig } from '../core/printer-commands/command-model';
 import type { RuleKind, ScanRule } from '../core/scan/rule-model';
 import type { RuleSetting } from '../core/scan/rule-settings';
@@ -15,6 +16,14 @@ import type { JobPage, JobQuery } from './job-history';
 import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from './local-api';
 import type { MobileStatus } from './mobile-status';
 import type { PaperSize } from './paper-sizes';
+import type {
+  PdfCloseResult,
+  PdfLayoutResult,
+  PdfOpenResult,
+  PdfPiecePreviewResult,
+  PdfPrintStartResult,
+  PdfStatus,
+} from './pdf';
 import type { PrinterCommandResult, PrinterCommandsView } from './printer-commands';
 import type { PrinterReadiness } from './printer-readiness';
 import type { RenderWarnings } from './render-warnings';
@@ -121,6 +130,17 @@ export const IpcChannel = {
   BatchRetryFailed: 'batch:retry-failed',
   BatchStatus: 'batch:status',
   BatchStatusChanged: 'batch:status-changed',
+  PdfOpenFile: 'pdf:open-file',
+  PdfReadDropped: 'pdf:read-dropped',
+  PdfLayout: 'pdf:layout',
+  PdfPreviewPiece: 'pdf:preview-piece',
+  PdfPrint: 'pdf:print',
+  PdfPause: 'pdf:pause',
+  PdfResume: 'pdf:resume',
+  PdfCancel: 'pdf:cancel',
+  PdfClose: 'pdf:close',
+  PdfStatus: 'pdf:status',
+  PdfStatusChanged: 'pdf:status-changed',
   GetDriverStatus: 'drivers:status',
   DetectDrivers: 'drivers:detect',
   InstallDriver: 'drivers:install',
@@ -336,6 +356,25 @@ export interface LabelFlashApi {
   getBatchStatus(): Promise<BatchStatus | null>;
   /** 批量打印的进度（合并推送，状态变化立即推）。 */
   onBatchStatus(listener: (status: BatchStatus | null) => void): () => void;
+  /** 主进程弹出打开对话框选 PDF，在隐藏的渲染页里打开并识别第一页。 */
+  openPdfFile(): Promise<PdfOpenResult>;
+  /** 拖进窗口的 PDF：界面读成字节交来（不传路径）。 */
+  readDroppedPdf(name: string, bytes: Uint8Array): Promise<PdfOpenResult>;
+  /** 按设置出块；处理期间又调用了一次时，这一次返回 superseded。 */
+  layoutPdf(layout: PdfLayout): Promise<PdfLayoutResult>;
+  /** 一块打出来的样子（和打印同一份 HTML）。 */
+  previewPdfPiece(runId: string, pieceId: string): Promise<PdfPiecePreviewResult>;
+  printPdf(request: PdfPrintRequest): Promise<PdfPrintStartResult>;
+  /** 打完正在打的这一张后暂停。 */
+  pausePdf(): Promise<void>;
+  resumePdf(): Promise<void>;
+  /** 不再交新的；正在打的这一张照常打完。 */
+  cancelPdf(): Promise<void>;
+  /** 关掉文件，放掉渲染页和没打过的块；正在打印时拒绝，带着原因。 */
+  closePdf(): Promise<PdfCloseResult>;
+  getPdfStatus(): Promise<PdfStatus>;
+  /** 处理进度和打印进度（合并推送）。 */
+  onPdfStatus(listener: (status: PdfStatus) => void): () => void;
   getDriverStatus(): Promise<DriverStatus>;
   /** 读驱动清单（force：重新下载）并检测缺驱动的 USB 设备。 */
   detectDrivers(force: boolean): Promise<DriverStatus>;

@@ -74,7 +74,7 @@ CI（GitHub Actions）会在 PR 和 `master` 上跑：windows-latest 上 check�
 ```
 src/core      业务层：纯 TypeScript，不依赖 Electron / Node / SQLite
 src/shared    主进程和界面共用：IPC 契约、设置的校验、品牌、常量
-src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）、批量打印（batch/）、标签机指令（printing/printer-commands-station.ts）
+src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）、批量打印（batch/）、PDF 打印（pdf/）、标签机指令（printing/printer-commands-station.ts）
 src/preload   contextBridge，只暴露类型化 API
 src/renderer  界面：React 19，MVVM（lib → view-models → components）
 scripts       构建脚本（bundle 检查、图标、安装包、中转服务的构建与发布）
@@ -109,7 +109,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 
 | 位置 | 内容 |
 |---|---|
-| Windows：`%LOCALAPPDATA%\CDL-LabelFlash\`<br>macOS：`~/Library/Application Support/CDL-LabelFlash/` | 数据库 `labelflash.db`、日志 `logs/`、语音缓存 `voice-cache/` |
+| Windows：`%LOCALAPPDATA%\CDL-LabelFlash\`<br>macOS：`~/Library/Application Support/CDL-LabelFlash/` | 数据库 `labelflash.db`、日志 `logs/`、语音缓存 `voice-cache/`、PDF 位图缓存 `pdf-cache/` |
 | Windows：`%LOCALAPPDATA%\Programs\CDL-LabelFlash\`<br>macOS：`/Applications/CDL-云签速印.app` | 安装目录（Windows 按当前用户安装，安装本身不需要管理员；装完加防火墙规则时问一次管理员，可以拒绝。macOS 的 pkg 装进「应用程序」，要输入管理员密码） |
 | Windows：`%LOCALAPPDATA%\cdl-labelflash-updater\` | 自动更新缓存：本机安装包的副本（差分下载的底）和待安装的更新 |
 
@@ -127,6 +127,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 改动时不能破坏以下几条：
 
 - 界面只经 `app://bundle/` 加载。开启 sandbox 和 contextIsolation，拒绝页面导航和新窗口，保留 CSP，所有权限请求一律拒绝。
+- PDF 只在隐藏的渲染窗口里解析（`src/main/pdf/pdf-render-window.ts`）：独立的内存会话、CSP `default-src 'none'`、拦下 `app://bundle/` 以外的请求、只有两个函数的 preload；主进程按自己算出的尺寸核对回来的位图。不要把 pdf.js 挪进主进程或主窗口。
 - IPC 只接受主窗口主 frame 发来的消息，参数全部经过 `src/main/ipc-validators.ts` 校验。
 - 密钥用 Electron `safeStorage` 加密保存，不写进日志，不随规则导出，也不回传给界面。
 - 用户写的正则只在隔离上下文里执行，有超时。HTTP 查询和打印结果通知用 `net.fetch`。

@@ -31,6 +31,7 @@
 | `batch/` | 批量打印的纯逻辑：`batch-model.ts`（类型、`BATCH_LIMITS`、序号字段名、批次号）、`column-mapping.ts`（按列名自动对列）、`serial.ts`、`batch-labels.ts`（行 → 标签：字段、份数、问题行；单行预览）、`parse-batch-plan.ts`（界面交来的设置严格校验）、`batch-runner.ts`（`BatchRun`：按顺序逐张经 `printFields` 打，暂停 / 继续 / 取消，打印机不能用时自动暂停、那一张继续时重打） |
 | `notify/` | 打印结果通知的事件、投递状态和重试时间表 |
 | `api/` | 本机接口的任务：`PrintJobService`（整批核对、`requestId` 防重复、排队上限、按提交顺序逐个打印、重启后把没打完的标成 `INTERRUPTED`）、模板名换算、模板用到的字段。存储接口 `ApiJobStore` 的内存版和 SQLite 版共用 `testing/api-job-store-contract.ts` 这套测试 |
+| `pdf/` | PDF 打印的纯逻辑：限制和类型（`pdf-model.ts`）、黑白位图的缓存格式（`mono-pack.ts`）、内容外框（`content-box.ts`）、一页多张的切分和裁切方式识别（`page-split.ts`，先按缝切，整页没有缝才认等分位置上的分割线）、放到纸上（`piece-fit.ts`：转 90°、等比居中、转黑白、缩略图）、一块 → 临时自由设计模板（`piece-template.ts`）、界面交来的设置的校验（`parse-pdf-request.ts`）；测试用合成页面 `testing/synthetic-page.ts` |
 | `diagnosis/` | 打印机诊断的纯逻辑：`diagnosis-model.ts`（两个平台统一的「事实」、动作结果、上限）、`submitted-jobs.ts`（本程序交给打印队列的时间段，认「本程序的任务」）、`queue-summary.ts`（卡住的任务）、`paper-choice.ts`（挑驱动纸张选项 / PWG 纸张名）、`fixes.ts`（每个平台每个修复要不要管理员、按钮和结果文字）、`verdicts.ts`（事实 → 结论、下一步、按钮） |
 
 ## 扩展时

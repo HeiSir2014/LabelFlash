@@ -1,6 +1,8 @@
+import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import { OPTIONAL_NATIVE_MODULES } from './scripts/bundle-policy';
+import { pdfjsAssets } from './scripts/pdfjs-assets';
 
 /**
  * 主进程和 preload 都打成自包含的单文件 bundle：除了 electron 和 Node 内置模块，依赖全部内联。
@@ -42,10 +44,26 @@ export default defineConfig({
   preload: {
     build: {
       externalizeDeps: false,
-      rollupOptions: { output: { format: 'cjs', entryFileNames: '[name].js' } },
+      rollupOptions: {
+        // 第二个 preload 给隐藏的 PDF 渲染页（只有收请求、回结果两个函数），同样打成自包含的 CommonJS。
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          'pdf-render': resolve(__dirname, 'src/preload/pdf-render.ts'),
+        },
+        output: { format: 'cjs', entryFileNames: '[name].js' },
+      },
     },
   },
   renderer: {
-    plugins: [react()],
+    plugins: [react(), pdfjsAssets()],
+    build: {
+      rollupOptions: {
+        // 第二个页面是隐藏的 PDF 渲染页（只有 pdf.js，没有界面）。
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          'pdf-render': resolve(__dirname, 'src/renderer/pdf-render.html'),
+        },
+      },
+    },
   },
 });

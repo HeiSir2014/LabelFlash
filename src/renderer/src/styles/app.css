@@ -131,16 +131,42 @@ textarea {
 
 /*
  * 窄窗口（1024 起）放不下店铺胶囊和「新版本已就绪」胶囊：有待安装的更新时先让出店铺胶囊（「关于」页里也有店铺链接），
- * 重启更新后它就回来。平时两者不会同时出现，店铺胶囊照常显示。
+ * 重启更新后它就回来。平时两者不会同时出现，店铺胶囊照常显示。打印 PDF 加入标题栏后 1280 宽也挤不下这两个胶囊
+ * 同时出现的情形，断点改到 1280（含）。
+ * macOS（.title-bar--traffic-lights）左边让出 --traffic-light-inset（80px）给系统红绿灯，标题栏能用的
+ * 宽度本来就少这么多：同样的挤法在 Windows 不会出现的宽度上就会出现，断点要往右移同样的 80px（1360px）。
+ * 这一条还没在真 Mac 上核对过断点是否正好合适，见 docs/roadmap.md。
  */
-@media (max-width: 1279px) {
-  .title-bar:has(.update-pill) .title-bar__shop {
+@media (max-width: 1280px) {
+  .title-bar:not(.title-bar--traffic-lights):has(.update-pill) .title-bar__shop {
     display: none;
   }
 
-  /* 「批量打印」按钮一直都在（不是只在批量打印页才有），标题栏更挤：1024 宽时先让出店铺名，
-   * 保留店铺图标和其余按钮。不用 :has(.batch-button) 判断——这个按钮不是有条件渲染的，判断是多余的。 */
-  .title-bar__shop-name {
+  /* 「批量打印」「打印 PDF」两个按钮一直都在（不是只在各自页面才有），标题栏更挤：1280 宽起收紧这两个
+   * 按钮的内边距、让出店铺名，保留店铺图标和其余按钮。不用 :has(.batch-button) 判断——这些按钮
+   * 不是有条件渲染的，判断是多余的。 */
+  .title-bar:not(.title-bar--traffic-lights) .batch-button,
+  .title-bar:not(.title-bar--traffic-lights) .pdf-button {
+    padding-inline: var(--space-1);
+  }
+
+  .title-bar:not(.title-bar--traffic-lights) .title-bar__shop-name {
+    display: none;
+  }
+}
+
+/* macOS 版：同一组收紧，断点按 --traffic-light-inset 的值往右移 80px（见上面的说明）。 */
+@media (max-width: 1360px) {
+  .title-bar--traffic-lights:has(.update-pill) .title-bar__shop {
+    display: none;
+  }
+
+  .title-bar--traffic-lights .batch-button,
+  .title-bar--traffic-lights .pdf-button {
+    padding-inline: var(--space-1);
+  }
+
+  .title-bar--traffic-lights .title-bar__shop-name {
     display: none;
   }
 }
@@ -1523,6 +1549,14 @@ textarea {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 不能重打的原因（例如 PDF 的图过期了）：和元信息同一字号、同一颜色，放在元信息下面 */
+.job-row__hint {
+  grid-column: 1;
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
 }
 
 .job-row__actions {
@@ -4913,8 +4947,9 @@ button.designer-checks__item:hover {
   align-self: flex-start;
 }
 
-/* ── 批量打印页：和配置中心同级，铺满标题栏以下；页头、内容、底部操作条，复用配置中心的这几块 ── */
-.batch-page {
+/* ── 批量打印页、打印 PDF 页：和配置中心同级，铺满标题栏以下；页头、内容、底部操作条，复用配置中心的这几块 ── */
+.batch-page,
+.pdf-page {
   position: absolute;
   z-index: var(--layer-config);
   inset: var(--title-bar-height) 0 0 0;
@@ -4930,7 +4965,8 @@ button.designer-checks__item:hover {
 }
 
 /* 提示条抬到底部操作条上方：不盖住「打印」「暂停」 */
-.batch-page ~ .notice-bar {
+.batch-page ~ .notice-bar,
+.pdf-page ~ .notice-bar {
   bottom: calc(var(--config-actions-height) + var(--space-5));
 }
 
@@ -5148,5 +5184,244 @@ button.designer-checks__item:hover {
 
   .batch-preview__label {
     height: var(--batch-preview-height);
+  }
+}
+
+/* ── 打印 PDF 页：外框和批量打印页共用（见 .batch-page） ── */
+.pdf-page__inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.pdf-file__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.pdf-file__status {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-data);
+  font-size: 13px;
+}
+
+.pdf-setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.pdf-setup__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.pdf-setup__label {
+  min-width: 64px;
+  color: var(--color-ink-soft);
+  font-size: 13px;
+}
+
+.pdf-setup__choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pdf-setup__choice,
+.pdf-setup__threshold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 13px;
+}
+
+.pdf-setup__hint {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+.pdf-setup__value {
+  min-width: 3ch;
+  font-family: var(--font-data);
+}
+
+/* 框选：左边第一页（按页面的宽高比），右边框的列表 */
+.pdf-box-editor {
+  display: grid;
+  grid-template-columns: minmax(0, var(--pdf-first-page-width)) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-4);
+}
+
+.pdf-box-editor__stage {
+  position: relative;
+  border: 1px solid var(--color-rule);
+  background: var(--color-paper);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.pdf-box-editor__page {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.pdf-box {
+  position: absolute;
+  border: 2px solid var(--color-selection);
+  background: color-mix(in srgb, var(--color-selection) 12%, transparent);
+  pointer-events: none;
+}
+
+.pdf-box--draft {
+  border-style: dashed;
+}
+
+.pdf-box__number {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  color: var(--color-selection);
+  font-family: var(--font-data);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pdf-box-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  font-size: 13px;
+}
+
+ol.pdf-box-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* 预览：左边缩略图网格（自己滚动），右边这一张的真实预览 */
+.pdf-preview__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: 13px;
+}
+
+.pdf-preview__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--batch-label-pane-width);
+  gap: var(--space-4);
+  height: var(--batch-preview-height);
+}
+
+.pdf-pieces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--pdf-thumb-width), 1fr));
+  align-content: start;
+  gap: var(--space-3);
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-2);
+  overflow: auto;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-field);
+  list-style: none;
+}
+
+.pdf-piece {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 12px;
+}
+
+.pdf-piece__image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: var(--pdf-thumb-height);
+  padding: var(--space-1);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+  cursor: pointer;
+}
+
+.pdf-piece__image[aria-pressed="true"] {
+  border-color: var(--color-selection);
+  outline: 2px solid var(--color-selection);
+}
+
+/* 缩略图按原始点数显示（不超过格子），不插值：看到的就是黑白点 */
+.pdf-piece__image img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.pdf-piece__name {
+  font-family: var(--font-data);
+  white-space: nowrap;
+}
+
+.pdf-piece__actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.pdf-preview__label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pdf-actions__copies {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 13px;
+}
+
+/* 和编辑视图同一个断点（App.tsx 的 NARROW_QUERY）：窄窗口里网格和预览、第一页和框列表上下排列 */
+@media (max-width: 1099px) {
+  .pdf-preview__body {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  .pdf-pieces {
+    max-height: var(--batch-preview-height);
+  }
+
+  .pdf-preview__label {
+    height: var(--batch-preview-height);
+  }
+
+  .pdf-box-editor {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

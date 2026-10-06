@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
 import { hostname, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
@@ -20,15 +21,17 @@ import { batchIdFor } from '../core/batch/batch-model';
 import { DedupGuard } from '../core/dedup-guard';
 import { SubmittedJobs } from '../core/diagnosis/submitted-jobs';
 import type { DriverPlatform } from '../core/drivers/install-plan';
+import { PDF_PIECE_RETENTION_MS } from '../core/pdf/pdf-model';
 import { PrintQueue } from '../core/print-queue';
-import { BATCH_RULE, fieldsScan, PrintService } from '../core/print-service';
+import { BATCH_RULE, fieldsScan, PDF_RULE, PrintService } from '../core/print-service';
 import { effectiveCommandSet } from '../core/printer-commands/command-set';
 import { type PrinterChoice, resolvePrinter, responsiblePaper } from '../core/printing/resolve-printer';
 import { type EnrichDeps, enrich } from '../core/scan/enrich';
 import { recognize } from '../core/scan/recognize';
 import { RuleCatalog } from '../core/scan/rule-catalog';
+import { GENERIC_TEMPLATE } from '../core/templates/builtin-templates';
 import { TemplateCatalog } from '../core/templates/template-catalog';
-import type { LabelTemplate } from '../core/templates/template-model';
+import { type LabelTemplate, withPaper } from '../core/templates/template-model';
 import { type PrinterInfo, systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
 import { DRIVER_CATALOG_PUBLIC_KEYS } from '../shared/driver-catalog-keys';
@@ -45,7 +48,7 @@ import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
-import { batchQuitDialogText, canceledJobRecords, shouldConfirmBatchQuit, waitForBatchIdle } from './batch/batch-quit';
+import { canceledJobRecords, shouldConfirmBatchQuit, waitForBatchIdle } from './batch/batch-quit';
 import { BatchStation } from './batch/batch-station';
 import batchReaderPath from './batch/reader-worker?modulePath';
 import { TableReaderHost } from './batch/table-reader-host';
@@ -81,6 +84,11 @@ import { ImageTextReader, type ImageTextSource } from './ocr/image-text-reader';
 import { createOcrEngine } from './ocr/ocr-engine';
 import { missingOcrFiles, ocrFiles } from './ocr/ocr-files';
 import { OCR_SAMPLES_DIR_NAME, OCR_SAMPLES_KEPT, OcrSamples } from './ocr/ocr-samples';
+import { canceledPdfJobRecords, quitDialogText } from './pdf/pdf-quit';
+import { PdfRenderHost } from './pdf/pdf-render-host';
+import { openRenderWindow } from './pdf/pdf-render-window';
+import { PdfStation } from './pdf/pdf-station';
+import { PieceCache } from './pdf/piece-cache';
 import { activeRules, resolvePrintTemplate } from './print-template';
 import { AlertThrottle } from './printing/alert-throttle';
 import { openPrinterPreferences, queryDriverPaper } from './printing/driver-paper';
@@ -142,6 +150,12 @@ const TABLE_READER_SERVICE_NAME = `${BRAND.productNameAscii} table reader`;
 /** 退出确认之后，取消批次时最多等正在打的那一张结束多久：打印机正常的话一张几秒钟就打完，
  *  等这么久还没结束多半是驱动卡住了，不能让退出程序跟着一起卡住。 */
 const BATCH_CANCEL_SETTLE_TIMEOUT_MS = 5_000;
+/** PDF 每一块的黑白位图缓存（数据目录下）：打印记录的预览、重打用，保留 7 天。 */
+const PDF_CACHE_DIR_NAME = 'pdf-cache';
+/** 打开一个 PDF（读出页数和每页大小、建渲染页）最多等 20 秒：200 页的 PDF 在普通电脑上几秒内打开，更久多半是坏文件。 */
+const PDF_OPEN_TIMEOUT_MS = 20_000;
+/** 渲染一页最多等 30 秒：最复杂的矢量页在 1600 万像素上也只要几秒。 */
+const PDF_PAGE_TIMEOUT_MS = 30_000;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: AppTray | null = null;
@@ -598,6 +612,55 @@ async function bootstrap(): Promise<void> {
     onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
     now: () => Date.now(),
   });
+  // PDF 打印：PDF 只在隐藏的 sandbox 渲染页里解析（见 pdf/pdf-render-window.ts），这里只收核对过的灰度位图。
+  const pdfCache = new PieceCache({
+    dir: join(dataPath, PDF_CACHE_DIR_NAME),
+    createKey: randomUUID,
+    now: () => Date.now(),
+  });
+  // 程序自己的缓存，和日志一样按天数保留：启动时删掉 7 天没用过的，不打扰用户。
+  pdfCache
+    .prune(PDF_PIECE_RETENTION_MS)
+    .then((removed) => {
+      if (removed > 0) {
+        console.log(`[pdf] pruned ${removed} cached pieces older than the retention`);
+      }
+    })
+    .catch((error: unknown) => console.error('[pdf] failed to prune the piece cache', error));
+  const pdfRenderer = new PdfRenderHost({
+    openPort: () => openRenderWindow(join(__dirname, '../renderer')),
+    openTimeoutMs: PDF_OPEN_TIMEOUT_MS,
+    pageTimeoutMs: PDF_PAGE_TIMEOUT_MS,
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => clearTimeout(timer);
+    },
+    log: (line) => console.warn(line),
+  });
+  const pdf = new PdfStation({
+    renderer: pdfRenderer,
+    pieces: pdfCache,
+    readFile: async (path) => new Uint8Array(await readFile(path)),
+    fileSize: async (path) => (await stat(path)).size,
+    // 按纸张决定打印机（和打印时同一个规则），用那台的分辨率出块；只为选打印机，借通用模板换上这种纸。
+    dpiFor: async (paper) => {
+      const { printerName } = await choosePrinter(withPaper(GENERIC_TEMPLATE, paper));
+      return printerName !== null && (await isInstalled(printerName))
+        ? profiles.dpiOf(printerName)
+        : DEFAULT_PRINTER_DPI;
+    },
+    printFields: (input) => service.printFields(input),
+    renderHtml: (template, content, fields, dpi) =>
+      renderLabelHtml({ scan: fieldsScan(content, fields, PDF_RULE), template, printedAt: Date.now() }, dpi).html,
+    createRunId: randomUUID,
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => clearTimeout(timer);
+    },
+    onStatus: (status) => sendToMainWindow(IpcChannel.PdfStatusChanged, status),
+    onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
+    log: (line) => console.warn(line),
+  });
   const voice = new VoiceClips(join(dataPath, VOICE_CACHE_DIR_NAME), synthesizeWithEdge);
   // 后台预热全部播报语：之后扫码时直接播缓存，不等在线合成。
   const warmVoice = () => {
@@ -765,13 +828,15 @@ async function bootstrap(): Promise<void> {
     }
   };
 
-  /** 批量打印还有没打的：问要不要退出；退出就取消这一批、把没打的记成「退出时未打」。返回 true 表示可以接着退出。 */
-  const confirmBatchQuit = async (): Promise<boolean> => {
-    const pending = batch.pendingQuit();
-    if (pending === null) {
-      return true;
-    }
-    const { message, detail } = batchQuitDialogText(pending.labels.length);
+  /**
+   * 批量打印、PDF 还有没打的：一起问（同一个确认框，和批量打印单独一个弹框分开，因为按钮文字一样、
+   * 都是「取消」没副作用 / 「仍要退出」会取消）。退出就把两边都取消，等它们真的停下来再把没打的
+   * 记成「退出时未打」。返回 true 表示可以接着退出。
+   */
+  const confirmBatchAndPdfQuit = async (): Promise<boolean> => {
+    const pendingBatch = batch.pendingQuit();
+    const pendingPdf = pdf.pendingQuit();
+    const { message, detail } = quitDialogText(pendingBatch?.labels.length ?? 0, pendingPdf?.labels.length ?? 0);
     const { response } = await showQuitDialog({
       type: 'warning',
       buttons: ['取消', '仍要退出'],
@@ -783,21 +848,38 @@ async function bootstrap(): Promise<void> {
     if (response !== 1) {
       return false;
     }
-    // 弹确认框的这段时间批次可能还在打：重新查一遍，只记下这一刻真的还没轮到的——
-    // 不能用弹框之前的旧名单，那时候「没打」的几张可能这期间已经打完或者失败了。
-    const stillPending = batch.pendingQuit();
-    if (stillPending !== null) {
-      // 先取消、等正在打的那一张真的结束（它自己的打印结果已经有记录了），再记 CANCELED、
-      // 最后才退出：不然要么这一张会在被标成「没打」之后又打出来，要么退出时它还没打完。
+    // 弹确认框的这段时间批次、PDF 可能还在打：重新查一遍，只记下这一刻真的还没轮到的——
+    // 不能用弹框之前的旧名单，那时候「没打」的几张可能这期间已经打完或者失败了。confirmQuit
+    // （不是 pendingQuit）钉住 PDF 这几块的位图：从这一刻起要把它们记成「退出时未打」。
+    const stillPendingBatch = batch.pendingQuit();
+    const stillPendingPdf = pdf.confirmQuit();
+    // 两边先都取消，再一起等它们真的停下来：各自最多等 BATCH_CANCEL_SETTLE_TIMEOUT_MS，
+    // 一前一后做的话最坏要等两份超时，一起等最坏只等一份。
+    if (stillPendingBatch !== null) {
       batch.cancel();
-      await waitForBatchIdle(() => batch.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS);
+    }
+    if (stillPendingPdf !== null) {
+      pdf.cancel();
+    }
+    await Promise.all([
+      stillPendingBatch !== null ? waitForBatchIdle(() => batch.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS) : null,
+      stillPendingPdf !== null ? waitForBatchIdle(() => pdf.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS) : null,
+    ]);
+    // 正在打的那一张结束之后（它自己的打印结果已经有记录了）才记 CANCELED、最后才退出：
+    // 不然要么这一张会在被标成「没打」之后又打出来，要么退出时它还没打完。
+    if (stillPendingBatch !== null) {
       for (const record of canceledJobRecords(
-        stillPending.batchId,
-        stillPending.template,
-        stillPending.labels,
+        stillPendingBatch.batchId,
+        stillPendingBatch.template,
+        stillPendingBatch.labels,
         randomUUID,
         Date.now,
       )) {
+        jobs.append(record);
+      }
+    }
+    if (stillPendingPdf !== null) {
+      for (const record of canceledPdfJobRecords(stillPendingPdf.labels, randomUUID, Date.now)) {
         jobs.append(record);
       }
     }
@@ -810,13 +892,27 @@ async function bootstrap(): Promise<void> {
       mobile.quit();
       return;
     }
-    const pending = batch.pendingQuit();
-    const needsBatch = pending !== null && shouldConfirmBatchQuit(pending.labels.length, isSystemShutdown);
+    const pendingBatch = batch.pendingQuit();
+    const pendingPdf = pdf.pendingQuit();
+    const needsBatchOrPdf = shouldConfirmBatchQuit(
+      (pendingBatch?.labels.length ?? 0) + (pendingPdf?.labels.length ?? 0),
+      isSystemShutdown,
+    );
     const needsTemplate = templateQuit.shouldConfirm(isSystemShutdown);
-    if (!needsBatch && !needsTemplate) {
-      readyToQuit = true;
-      isQuitting = true;
-      mobile.quit();
+    if (!needsBatchOrPdf && !needsTemplate) {
+      // 没有要确认的，但还要删掉这次出块里没打过的缓存位图（见 discardUnprintedCache）：这是异步的，
+      // 不能让退出真的发生之后才做——进程可能在文件删掉之前就已经退出了。先拦住这一次，删完再调用
+      // app.quit() 重新触发：这时 readyToQuit 已经是 true，下一次进这个处理器会直接放行，不会再拦一次。
+      event.preventDefault();
+      pdf
+        .discardUnprintedCache()
+        .catch((error: unknown) => console.error('[pdf] failed to discard the unprinted cache on quit', error))
+        .finally(() => {
+          readyToQuit = true;
+          isQuitting = true;
+          mobile.quit();
+          app.quit();
+        });
       return;
     }
     event.preventDefault();
@@ -825,16 +921,21 @@ async function bootstrap(): Promise<void> {
     }
     isConfirmingQuit = true;
     showMainWindow();
-    // 先问模板（选「取消」没有任何副作用），再问批量打印（选「仍要退出」会取消这一批）：
-    // 反过来的话，批次已经取消了，模板那一步再选「取消」也回不去了。
+    // 先问模板（选「取消」没有任何副作用），再问批量打印和 PDF（选「仍要退出」会取消它们）：
+    // 反过来的话，已经取消的批次、PDF 块再也回不去，模板那一步再选「取消」也没意义了。
     void (async () => {
       try {
         if (needsTemplate && !(await confirmTemplateQuit())) {
           return;
         }
-        if (needsBatch && !(await confirmBatchQuit())) {
+        if (needsBatchOrPdf && !(await confirmBatchAndPdfQuit())) {
           return;
         }
+        // 这次出块里没打过的缓存位图（打过的、confirmQuit 钉住的除外）现在删掉，不然要等 7 天
+        // 的保留期才会被清理（1000 张约 260MB）。
+        await pdf
+          .discardUnprintedCache()
+          .catch((error: unknown) => console.error('[pdf] failed to discard the unprinted cache on quit', error));
         readyToQuit = true;
         isQuitting = true;
         mobile.quit();
@@ -897,6 +998,7 @@ async function bootstrap(): Promise<void> {
     service,
     adapter,
     batch,
+    pdf,
     jobs,
     settings,
     templates,
@@ -996,6 +1098,11 @@ async function bootstrap(): Promise<void> {
     onHidden: () => tray?.notifyHiddenOnce(),
     startup,
   });
+  // 主窗口真的被关掉（不是藏进托盘）时放掉隐藏的 PDF 渲染窗口：它是另一个 BrowserWindow，不跟着主窗口
+  // 一起关的话，Electron 不会判定「所有窗口都关了」，没有托盘时关闭主窗口就退不出程序，一直在后台挂着。
+  mainWindow.on('closed', () => {
+    pdfRenderer.close();
+  });
   // 窗口关在托盘里的起始时间：关到托盘后的静默更新要等一会儿（background-update.ts）。
   let hiddenSince: number | null = startup === 'tray' ? Date.now() : null;
   mainWindow.on('hide', () => {
@@ -1033,9 +1140,14 @@ async function bootstrap(): Promise<void> {
       isUpdateReady: updater.current.state === 'ready',
       // 托盘建不起来时关窗就是退出，不会有「关在托盘里」。
       hiddenSince: tray === null ? null : hiddenSince,
-      // 批量打印还有没打的（暂停中的也算）时不静默更新：重启会丢掉这一批剩下的。
+      // 批量打印、PDF 还有没打的（暂停中的也算）时不静默更新：重启会丢掉剩下的。
       // 正在装驱动也算有事没做完：静默更新会结束本程序，装到一半的提权安装就没人等了。
-      pendingPrints: printQueue.pending + localApi.pendingJobs + batch.pendingLabels + (drivers.isInstalling ? 1 : 0),
+      pendingPrints:
+        printQueue.pending +
+        localApi.pendingJobs +
+        batch.pendingLabels +
+        pdf.pendingLabels +
+        (drivers.isInstalling ? 1 : 0),
       isMobileOn: mobile.status().state !== 'off',
       hasUnsavedTemplate: templateQuit.unsaved !== null,
       now: Date.now(),
@@ -1046,6 +1158,10 @@ async function bootstrap(): Promise<void> {
     }
   }, BACKGROUND_UPDATE_CHECK_MS);
   warmVoice();
+  // 纯同步：will-quit 是退出前最后一个事件，这里 preventDefault 之后再异步收尾、重新调用
+  // app.quit() 不会正确重启退出流程（它不是 before-quit，Electron 不会重新走一遍这个事件链，
+  // 进程会一直挂着）。会写文件的收尾（PDF 缓存清理）放在 before-quit 里用那边已经在用的
+  // 「preventDefault → 异步 → 置位 → app.quit()」来做，这里只做不需要等待、不能阻塞关机的收尾。
   app.on('will-quit', () => {
     clearInterval(mobileTicker);
     clearInterval(backgroundUpdateTimer);
@@ -1055,6 +1171,7 @@ async function bootstrap(): Promise<void> {
     drivers.cancelInstall();
     probeHost?.dispose();
     diagnosisProbeHost?.dispose();
+    pdfRenderer.close();
     tray?.destroy();
     closeDatabase();
   });

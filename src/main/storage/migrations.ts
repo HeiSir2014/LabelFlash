@@ -260,4 +260,12 @@ export const MIGRATIONS: readonly string[] = [
     INSERT INTO jobs_search (jobs_search, rowid, raw) VALUES ('delete', old.seq, old.raw);
   END;
   `,
+  // 7：PDF 打印的一块：文件名、页码、第几张、缓存的黑白位图编号。来源 pdf 在第 6 条已经加进 CHECK，这里只加列、不重建表。
+  // 四列要么都有、要么都没有：ADD COLUMN 加不了跨列的 CHECK，由 sqlite-job-store 的 toJobRecord 读出时核对。
+  `
+  ALTER TABLE jobs ADD COLUMN pdf_file TEXT;
+  ALTER TABLE jobs ADD COLUMN pdf_page INTEGER CHECK (pdf_page IS NULL OR pdf_page >= 1);
+  ALTER TABLE jobs ADD COLUMN pdf_piece INTEGER CHECK (pdf_piece IS NULL OR pdf_piece >= 1);
+  ALTER TABLE jobs ADD COLUMN pdf_bitmap TEXT;
+  `,
 ];

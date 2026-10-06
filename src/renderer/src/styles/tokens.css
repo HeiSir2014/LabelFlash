@@ -57,6 +57,10 @@
   --batch-row-height: 28px;
   --batch-preview-height: 480px;
   --batch-label-pane-width: 360px;
+  /* 打印 PDF：缩略图格子 120×160px（100×150 的面单缩略图约 99×148 点，放得下不放大）；框选的第一页最宽 420px。 */
+  --pdf-thumb-width: 120px;
+  --pdf-thumb-height: 160px;
+  --pdf-first-page-width: 420px;
   /* 配置中心表单和设置行的标签列：最长的标签（例如「防重复打印」「多行扫码等待」）一行放得下 */
   --config-label-width: 120px;
   /* 模板页左侧列表：放得下最长的内置模板名和「使用中」徽标 */

@@ -38,6 +38,11 @@ export interface MoveGesture extends Pressed {
   start: Box;
   box: Box;
   guides: readonly Guide[];
+  /**
+   * 按在已经选中的元素上时先不改选中（这样能拖动整组，或拖动 Alt+点击选出的下层元素）；
+   * 没拖动就松手时才改选成点中的最上层元素。null 表示松手时不改选中。
+   */
+  selectOnClick: string | null;
 }
 
 export interface ResizeGesture extends Pressed {

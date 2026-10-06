@@ -3305,20 +3305,19 @@ textarea {
   pointer-events: none;
 }
 
-.canvas-overlay__box {
-  position: absolute;
-  outline: 1px solid transparent;
+/* 指针下面有能点中的元素（lib/canvas-hit 算的）：显示「移动」 */
+.canvas-overlay--over-element {
   cursor: move;
 }
 
-/* 往外多 3px 的点击范围：0.25mm 的细线在屏幕上只有一两个像素，不扩大点不中 */
-.canvas-overlay__box::after {
+/* 元素框不接指针：按在哪个元素上按位置算（只有边框的矩形不挡住下面的元素），只有控制点接指针 */
+.canvas-overlay__box {
   position: absolute;
-  inset: -3px;
-  content: "";
+  outline: 1px solid transparent;
+  pointer-events: none;
 }
 
-.canvas-overlay__box:hover {
+.canvas-overlay__box.canvas-overlay__box--hover {
   outline-color: color-mix(in srgb, var(--color-selection) 50%, transparent);
 }
 
@@ -3343,6 +3342,7 @@ textarea {
   margin: calc(var(--designer-handle-size) / -2) 0 0 calc(var(--designer-handle-size) / -2);
   border: 1px solid var(--color-selection);
   background: var(--color-field);
+  pointer-events: auto;
 }
 
 .canvas-overlay__handle[data-handle="nw"] {

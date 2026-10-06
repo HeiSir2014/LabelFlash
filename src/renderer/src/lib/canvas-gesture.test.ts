@@ -78,6 +78,7 @@ describe('viewOf', () => {
       start: { x: 10, y: 10, width: 20, height: 5 },
       box: { x: 10, y: 10, width: 20, height: 5 },
       guides: [],
+      selectOnClick: null,
     };
     expect(viewOf(gesture, template(elements))).toEqual(NO_GESTURE_VIEW);
   });
@@ -91,6 +92,7 @@ describe('viewOf', () => {
       start: { x: 10, y: 10, width: 20, height: 5 },
       box: { x: 13, y: 16, width: 20, height: 5 },
       guides: [{ axis: 'x', at: 13 }],
+      selectOnClick: null,
     };
     const view = viewOf(gesture, template(elements));
     expect(view.boxes.get('e1')).toEqual({ x: 13, y: 16, width: 20, height: 5 });

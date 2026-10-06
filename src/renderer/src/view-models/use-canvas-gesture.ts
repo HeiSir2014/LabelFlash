@@ -21,6 +21,7 @@ import {
   resizeGestureBox,
   viewOf,
 } from '../lib/canvas-gesture';
+import { hitStack, hitTest, nextInStack } from '../lib/canvas-hit';
 import { snapTargets, snapThresholdMm } from '../lib/canvas-snap';
 import { pxToMm } from '../lib/canvas-view';
 
@@ -40,6 +41,8 @@ export interface GestureHandlers {
    * 拖动会卡在「还在拖」的状态，所以一律当作取消，不提交。挂在覆盖层的 onLostPointerCapture 上。
    */
   onLostPointerCapture: () => void;
+  /** 指针离开画布：清掉悬停。 */
+  onPointerLeave: () => void;
 }
 
 interface GestureOptions {
@@ -50,10 +53,15 @@ interface GestureOptions {
   overlayRef: RefObject<HTMLDivElement | null>;
   onSelect: (ids: readonly string[]) => void;
   onCommit: (next: CanvasTemplate) => void;
+  /** 设计器里隐藏的元素（只在设计器里隐藏，照常打印）：点不中。 */
+  hidden?: ReadonlySet<string>;
 }
 
+const NO_HIDDEN: ReadonlySet<string> = new Set();
+
 /**
- * 画布上的鼠标操作：点选、Shift 加选、拖动（选中的一起动）、拖控制点缩放、在空白处框选。
+ * 画布上的鼠标操作：点选、Shift 加选、Alt+点击轮流选叠着的元素、拖动（选中的一起动）、拖控制点缩放、
+ * 在空白处（或按住 Ctrl / ⌘）框选。按在哪个元素上由 lib/canvas-hit 的点中测试决定。
  * 拖动中只更新覆盖层上的框和参考线；松手时把结果交给 onCommit，一次拖动是一步撤销。
  * 指针捕获在覆盖层上：拖出画布也不会丢。
  *
@@ -67,10 +75,15 @@ export function useCanvasGesture(options: GestureOptions): {
   view: GestureView;
   handlers: GestureHandlers;
   isActive: boolean;
+  /** 指针下面（没按着时）的元素：覆盖层给它画浅色框。 */
+  hoverId: string | null;
   cancel: () => void;
 } {
-  const { template, selection, zoom, snap, overlayRef, onSelect, onCommit } = options;
+  const { template, selection, zoom, snap, overlayRef, onSelect, onCommit, hidden = NO_HIDDEN } = options;
   const [gesture, setGesture] = useState<Gesture | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  // 设计器里隐藏的元素看不见，也就不该点得中。
+  const hittable = template.elements.filter((element) => !hidden.has(element.id));
   // 手势的「现成事实」：指针事件之间同步读写这份 ref，不依赖 state 在下一次渲染才更新。
   // 很快的一次「按下-挪动-松开」有可能在 React 重新渲染之前就把三个事件都派发完，
   // 这时 onPointerUp 如果只看 state 闭包里的 gesture，读到的还是按下那一刻的值（hasMoved: false），
@@ -104,13 +117,8 @@ export function useCanvasGesture(options: GestureOptions): {
       template.elements.filter((element) => !ids.includes(element.id)),
     );
 
-  const startMove = (id: string, isAdditive: boolean, client: Point): Gesture | null => {
-    const ids = isAdditive ? toggleId(selection, id) : selection.includes(id) ? selection : [id];
-    onSelect(ids);
-    // Shift 点了已选中的：只是取消选中它，不拖动。
-    if (!ids.includes(id)) {
-      return null;
-    }
+  /** 拖动 ids 里没锁定的元素；一个能动的都没有时返回 null（只选中，不拖）。 */
+  const moveOf = (ids: readonly string[], client: Point, selectOnClick: string | null): Gesture | null => {
     const moving = template.elements.filter((element) => ids.includes(element.id) && !element.locked);
     const start = boundsOf(moving);
     return start === null
@@ -123,7 +131,39 @@ export function useCanvasGesture(options: GestureOptions): {
           start,
           box: start,
           guides: [],
+          selectOnClick,
         };
+  };
+
+  const marqueeOf = (client: Point, isAdditive: boolean): Gesture => {
+    // 不按 Shift 先清空选中（单击空白就是取消选中），再开始框选。
+    const base = isAdditive ? selection : [];
+    onSelect(base);
+    const origin = toPaper(client);
+    return { kind: 'marquee', client, hasMoved: false, origin, current: origin, base };
+  };
+
+  /** 按在元素上：选中谁、拖动谁。stack 是按下位置的一叠元素（上层在前，见 lib/canvas-hit）。 */
+  const pressOn = (stack: readonly string[], event: ReactPointerEvent<HTMLDivElement>, client: Point) => {
+    if (event.altKey) {
+      // Alt+点击：叠在一起的元素轮流选（选中的换成它下面的一个）。
+      const id = nextInStack(stack, selection) ?? '';
+      onSelect([id]);
+      return moveOf([id], client, null);
+    }
+    const top = stack[0] ?? '';
+    if (event.shiftKey) {
+      const ids = toggleId(selection, top);
+      onSelect(ids);
+      // Shift 点了已选中的：只是取消选中它，不拖动。
+      return ids.includes(top) ? moveOf(ids, client, null) : null;
+    }
+    if (stack.some((id) => selection.includes(id))) {
+      // 按在已选中的元素上（哪怕它被别的盖着）：拖动整组；没拖动就松手时才改选最上层的那个。
+      return moveOf(selection, client, top);
+    }
+    onSelect([top]);
+    return moveOf([top], client, null);
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -133,31 +173,28 @@ export function useCanvasGesture(options: GestureOptions): {
     }
     const target = event.target instanceof Element ? event.target : null;
     const handle = target?.closest<HTMLElement>('[data-handle]')?.dataset['handle'];
-    const id = target?.closest<HTMLElement>('[data-element-id]')?.dataset['elementId'];
-    const element = template.elements.find((candidate) => candidate.id === id);
+    const handleOwner = target?.closest<HTMLElement>('[data-element-id]')?.dataset['elementId'];
+    const resized = template.elements.find((candidate) => candidate.id === handleOwner);
     const client: Point = { x: event.clientX, y: event.clientY };
     let next: Gesture | null;
-    if (element === undefined) {
-      // 点在空白处：不按 Shift 先清空选中（单击空白就是取消选中），再开始框选。
-      const base = event.shiftKey ? selection : [];
-      onSelect(base);
-      const origin = toPaper(client);
-      next = { kind: 'marquee', client, hasMoved: false, origin, current: origin, base };
-    } else if (isResizeHandle(handle)) {
-      next = element.locked
-        ? null
-        : {
-            kind: 'resize',
-            client,
-            hasMoved: false,
-            id: element.id,
-            handle,
-            start: boxOf(element),
-            box: boxOf(element),
-            guides: [],
-          };
+    if (isResizeHandle(handle) && resized !== undefined && !resized.locked) {
+      next = {
+        kind: 'resize',
+        client,
+        hasMoved: false,
+        id: resized.id,
+        handle,
+        start: boxOf(resized),
+        box: boxOf(resized),
+        guides: [],
+      };
+    } else if (event.ctrlKey || event.metaKey) {
+      // Ctrl（⌘）+ 拖动一定是框选：从一个大元素上面开始框选里面的小元素。
+      next = marqueeOf(client, event.shiftKey);
     } else {
-      next = startMove(element.id, event.shiftKey, client);
+      // 按点中测试认元素，不按覆盖层上框的 DOM 顺序：只有边框的矩形、锁定的元素不挡住下面的。
+      const stack = hitStack(hittable, toPaper(client), zoom);
+      next = stack.length === 0 ? marqueeOf(client, event.shiftKey) : pressOn(stack, event, client);
     }
     if (next !== null) {
       overlayRef.current?.setPointerCapture(event.pointerId);
@@ -168,6 +205,11 @@ export function useCanvasGesture(options: GestureOptions): {
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const current = gestureRef.current;
     if (current === null) {
+      // 没按着：只更新悬停的元素（覆盖层画浅色框、指针变成「移动」）。
+      const hovered = hitTest(hittable, toPaper({ x: event.clientX, y: event.clientY }), zoom);
+      if (hovered !== hoverId) {
+        setHoverId(hovered);
+      }
       return;
     }
     // 按钮已经松开却没收到 pointerup（指针捕获被别的什么抢走、系统手势吞掉了松开事件……）：
@@ -184,7 +226,9 @@ export function useCanvasGesture(options: GestureOptions): {
     if (current.kind === 'marquee') {
       const point = toPaper({ x: event.clientX, y: event.clientY });
       setBoth({ ...current, hasMoved: true, current: point });
-      const touched = elementsInRect(template, rectFromPoints(current.origin, point));
+      // 框选和点选一样不碰锁定、隐藏的元素：它们只能在图层列表里选。
+      const selectable = { ...template, elements: hittable.filter((element) => !element.locked) };
+      const touched = elementsInRect(selectable, rectFromPoints(current.origin, point));
       onSelect([...new Set([...current.base, ...touched])]);
       return;
     }
@@ -215,6 +259,9 @@ export function useCanvasGesture(options: GestureOptions): {
     }
     setBoth(null);
     if (!current.hasMoved) {
+      if (current.kind === 'move' && current.selectOnClick !== null) {
+        onSelect([current.selectOnClick]);
+      }
       return;
     }
     if (current.kind === 'move') {
@@ -226,8 +273,17 @@ export function useCanvasGesture(options: GestureOptions): {
 
   return {
     view: viewOf(gesture, template),
-    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: cancel, onLostPointerCapture: cancel },
+    handlers: {
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      onPointerCancel: cancel,
+      onLostPointerCapture: cancel,
+      onPointerLeave: () => setHoverId(null),
+    },
     isActive: gesture !== null,
+    // 拖动中不显示悬停：拖着的元素已经有选框了。
+    hoverId: gesture === null ? hoverId : null,
     cancel,
   };
 }

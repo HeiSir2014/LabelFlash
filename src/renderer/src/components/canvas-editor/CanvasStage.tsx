@@ -20,6 +20,8 @@ interface CanvasStageProps {
   /** 覆盖层 aria-label 里撤销快捷键的文字（Windows「Ctrl+Z」，macOS「⌘Z」），由调用方按平台算好传入。 */
   undoShortcut: string;
   selection: readonly string[];
+  /** 指针下面的元素（点中测试的结果）：画浅色框，指针变成「移动」。 */
+  hoverId: string | null;
   gesture: GestureView;
   handlers: GestureHandlers;
   /** 外层滚动区：量「适合窗口」的大小、挂 Ctrl+滚轮。 */
@@ -46,8 +48,8 @@ function isElementKind(value: string): value is CanvasElementKind {
 
 /**
  * 画布：软尺、标签（和打印同一份 HTML，放在 sandbox 的 iframe 里）、上面一层透明的覆盖层。
- * 覆盖层画网格、安全区、选框、控制点、吸附参考线和框选；鼠标和键盘都在它上面操作，元素框本身不挂事件
- * （覆盖层按 data-element-id、data-handle 认出按在哪里）。
+ * 覆盖层画网格、安全区、选框、控制点、吸附参考线和框选；鼠标和键盘都在它上面操作，元素框本身不接指针
+ * （按在哪个元素上由 lib/canvas-hit 按位置算，只有控制点接指针，按 data-handle 认出）。
  */
 export function CanvasStage({
   template,
@@ -57,6 +59,7 @@ export function CanvasStage({
   showGrid,
   undoShortcut,
   selection,
+  hoverId,
   gesture,
   handlers,
   stageRef,
@@ -106,7 +109,13 @@ export function CanvasStage({
           </div>
           <div
             ref={overlayRef}
-            className={showGrid ? 'canvas-overlay canvas-overlay--grid' : 'canvas-overlay'}
+            className={[
+              'canvas-overlay',
+              showGrid ? 'canvas-overlay--grid' : null,
+              hoverId !== null ? 'canvas-overlay--over-element' : null,
+            ]
+              .filter(Boolean)
+              .join(' ')}
             role="application"
             aria-label={`画布：方向键移动选中的元素（Shift 加方向键一次 1 毫米），Delete 删除，${undoShortcut} 撤销`}
             // biome-ignore lint/a11y/noNoninteractiveTabindex: 画布是自定义的鼠标和键盘控件（role=application），键盘操作写在 aria-label 里
@@ -117,6 +126,7 @@ export function CanvasStage({
             onPointerUp={handlers.onPointerUp}
             onPointerCancel={handlers.onPointerCancel}
             onLostPointerCapture={handlers.onLostPointerCapture}
+            onPointerLeave={handlers.onPointerLeave}
             onDoubleClick={() => {
               // 指针被覆盖层捕获，双击事件落在覆盖层上：按刚才点选的元素判断是不是文字。
               if (single?.kind === 'text') {
@@ -135,6 +145,7 @@ export function CanvasStage({
               const classes = [
                 'canvas-overlay__box',
                 selection.includes(element.id) ? 'canvas-overlay__box--selected' : null,
+                hoverId === element.id ? 'canvas-overlay__box--hover' : null,
                 element.locked ? 'canvas-overlay__box--locked' : null,
               ]
                 .filter(Boolean)

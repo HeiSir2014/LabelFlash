@@ -128,6 +128,7 @@ export function CanvasDesigner({
         showGrid={designer.showGrid}
         undoShortcut={undoShortcutLabel(platform)}
         selection={designer.selection}
+        hoverId={gesture.hoverId}
         gesture={gesture.view}
         handlers={gesture.handlers}
         stageRef={stageRef}

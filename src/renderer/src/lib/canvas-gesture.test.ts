@@ -1,16 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import type { CanvasTemplate } from '../../../core/templates/canvas-model';
 import {
-  accumulateWheelZoom,
+  createGestureStore,
   DRAG_START_PX,
   type Gesture,
+  gestureBadge,
+  gesturePhase,
   hasPassedDragThreshold,
   isResizeHandle,
+  isToggleClick,
+  keepsRatio,
   moveGestureBox,
   NO_GESTURE_VIEW,
   resizeGestureBox,
+  rotationFromPointer,
+  sameIds,
   viewOf,
-  WHEEL_ZOOM_ACCUMULATION_THRESHOLD,
 } from './canvas-gesture';
 import type { SnapTargets } from './canvas-snap';
 
@@ -60,6 +65,98 @@ describe('hasPassedDragThreshold', () => {
     expect(hasPassedDragThreshold(DRAG_START_PX, 0)).toBe(true);
     expect(hasPassedDragThreshold(DRAG_START_PX + 10, 0)).toBe(true);
   });
+
+  test('measures the straight-line distance, so a small diagonal wobble stays a click', () => {
+    expect(hasPassedDragThreshold(2, 2)).toBe(false);
+    expect(hasPassedDragThreshold(-2, 2)).toBe(false);
+    expect(hasPassedDragThreshold(3, 3)).toBe(true);
+  });
+
+  // 数位板的笔落下时笔尖会在按下的位置附近抖几下：每次都从按下的位置量，不累加走过的路，
+  // 抖得再多也不会变成拖动，点一下只选中、不挪动元素。
+  test('measures from the press point, so a pen tip wobbling around it never starts a drag', () => {
+    const wobble = [
+      [1, 0],
+      [2, 1],
+      [1, -1],
+      [-1, -2],
+      [0, 2],
+      [2, -2],
+    ] as const;
+    expect(wobble.some(([dx, dy]) => hasPassedDragThreshold(dx, dy))).toBe(false);
+  });
+});
+
+describe('keepsRatio', () => {
+  test('keeps the ratio of images and QR codes unless Shift is held', () => {
+    expect(keepsRatio('image', false)).toBe(true);
+    expect(keepsRatio('qr', false)).toBe(true);
+    expect(keepsRatio('image', true)).toBe(false);
+  });
+
+  test('keeps the ratio of other elements only while Shift is held', () => {
+    expect(keepsRatio('text', false)).toBe(false);
+    expect(keepsRatio('barcode', true)).toBe(true);
+  });
+});
+
+describe('rotationFromPointer', () => {
+  const center = { x: 20, y: 20 };
+
+  test('keeps the rotation while the pointer is still below the element, where the handle starts', () => {
+    expect(rotationFromPointer(center, { x: 20, y: 40 }, 0)).toBe(0);
+    expect(rotationFromPointer(center, { x: 23, y: 40 }, 90)).toBe(90);
+  });
+
+  test('turns clockwise in right angles as the handle is dragged around the centre', () => {
+    expect(rotationFromPointer(center, { x: 0, y: 20 }, 0)).toBe(90);
+    expect(rotationFromPointer(center, { x: 20, y: 0 }, 0)).toBe(180);
+    expect(rotationFromPointer(center, { x: 40, y: 20 }, 0)).toBe(270);
+    expect(rotationFromPointer(center, { x: 0, y: 20 }, 270)).toBe(0);
+  });
+});
+
+describe('gestureBadge', () => {
+  const box = { x: 12.04, y: 4.5, width: 32, height: 8 };
+  const pressed = { client: { x: 0, y: 0 }, hasMoved: true, pointer: { x: 30, y: 9 } };
+
+  test('shows the position while moving and the size while resizing, next to the pointer', () => {
+    expect(
+      gestureBadge({ ...pressed, kind: 'move', ids: ['e1'], start: box, box, guides: [], selectOnClick: null }),
+    ).toEqual({ at: { x: 30, y: 9 }, text: 'X 12.0  Y 4.5 mm' });
+    expect(gestureBadge({ ...pressed, kind: 'resize', id: 'e1', handle: 'se', start: box, box, guides: [] })).toEqual({
+      at: { x: 30, y: 9 },
+      text: '32.0 × 8.0 mm',
+    });
+  });
+
+  test('shows the angle while rotating and nothing for a marquee or before moving', () => {
+    expect(
+      gestureBadge({
+        ...pressed,
+        kind: 'rotate',
+        id: 'e1',
+        center: { x: 0, y: 0 },
+        startRotation: 0,
+        rotation: 90,
+      })?.text,
+    ).toBe('90°');
+    expect(
+      gestureBadge({ ...pressed, kind: 'marquee', origin: { x: 0, y: 0 }, current: { x: 1, y: 1 }, base: [] }),
+    ).toBeNull();
+    expect(
+      gestureBadge({
+        ...pressed,
+        hasMoved: false,
+        kind: 'resize',
+        id: 'e1',
+        handle: 'se',
+        start: box,
+        box,
+        guides: [],
+      }),
+    ).toBeNull();
+  });
 });
 
 describe('viewOf', () => {
@@ -78,6 +175,7 @@ describe('viewOf', () => {
       start: { x: 10, y: 10, width: 20, height: 5 },
       box: { x: 10, y: 10, width: 20, height: 5 },
       guides: [],
+      selectOnClick: null,
     };
     expect(viewOf(gesture, template(elements))).toEqual(NO_GESTURE_VIEW);
   });
@@ -91,6 +189,7 @@ describe('viewOf', () => {
       start: { x: 10, y: 10, width: 20, height: 5 },
       box: { x: 13, y: 16, width: 20, height: 5 },
       guides: [{ axis: 'x', at: 13 }],
+      selectOnClick: null,
     };
     const view = viewOf(gesture, template(elements));
     expect(view.boxes.get('e1')).toEqual({ x: 13, y: 16, width: 20, height: 5 });
@@ -166,32 +265,82 @@ describe('resizeGestureBox', () => {
   });
 });
 
-describe('accumulateWheelZoom', () => {
-  test('does not step while the accumulated delta is under the threshold', () => {
-    const step = accumulateWheelZoom(0, 5);
-    expect(step.direction).toBeNull();
-    expect(step.nextAccumulated).toBe(5);
+describe('gesturePhase', () => {
+  const pressed: Gesture = {
+    kind: 'marquee',
+    client: { x: 0, y: 0 },
+    hasMoved: false,
+    origin: { x: 0, y: 0 },
+    current: { x: 0, y: 0 },
+    base: [],
+  };
+
+  // 按下还没拖（笔尖落下的抖动、一次点选）时浮动工具条不藏：藏了又出来会闪一下。
+  test('tells idle, pressed and dragging apart', () => {
+    expect(gesturePhase(null)).toBe('idle');
+    expect(gesturePhase(pressed)).toBe('pressed');
+    expect(gesturePhase({ ...pressed, hasMoved: true })).toBe('dragging');
+  });
+});
+
+describe('createGestureStore', () => {
+  test('notifies subscribers of every change until they unsubscribe', () => {
+    const store = createGestureStore();
+    let calls = 0;
+    const unsubscribe = store.subscribe(() => {
+      calls += 1;
+    });
+    store.setHover('e1');
+    expect(store.get().hoverId).toBe('e1');
+    unsubscribe();
+    store.setHover('e2');
+    expect(calls).toBe(1);
   });
 
-  test('keeps accumulating across several small trackpad-pinch events before stepping', () => {
-    let accumulated = 0;
-    for (let i = 0; i < 4; i += 1) {
-      const step = accumulateWheelZoom(accumulated, 5);
-      accumulated = step.nextAccumulated;
-      expect(step.direction).toBeNull();
-    }
-    expect(accumulated).toBe(20);
+  // 指针在同一个元素上挪动时不重新渲染覆盖层。
+  test('does not notify when nothing changed', () => {
+    const store = createGestureStore();
+    store.setHover('e1');
+    let calls = 0;
+    store.subscribe(() => {
+      calls += 1;
+    });
+    store.setHover('e1');
+    store.setGesture(null);
+    expect(calls).toBe(0);
   });
 
-  test('steps once the magnitude passes the threshold and resets the accumulator', () => {
-    const step = accumulateWheelZoom(WHEEL_ZOOM_ACCUMULATION_THRESHOLD - 1, 5);
-    expect(step.direction).toBe(-1);
-    expect(step.nextAccumulated).toBe(0);
+  test('keeps the gesture and the hover side by side', () => {
+    const store = createGestureStore();
+    const gesture: Gesture = {
+      kind: 'marquee',
+      client: { x: 0, y: 0 },
+      hasMoved: false,
+      origin: { x: 0, y: 0 },
+      current: { x: 0, y: 0 },
+      base: [],
+    };
+    store.setHover('e1');
+    store.setGesture(gesture);
+    expect(store.get()).toEqual({ gesture, hoverId: 'e1' });
   });
+});
 
-  test('a single large mouse-wheel notch steps immediately, same as before', () => {
-    const step = accumulateWheelZoom(0, -120);
-    expect(step.direction).toBe(1);
-    expect(step.nextAccumulated).toBe(0);
+describe('isToggleClick', () => {
+  // macOS 上 Ctrl+点击是右键（弹菜单），加选减选用 ⌘；Windows 上用 Ctrl。
+  test('uses Ctrl on Windows and ⌘ on macOS', () => {
+    expect(isToggleClick({ ctrlKey: true, metaKey: false }, 'other')).toBe(true);
+    expect(isToggleClick({ ctrlKey: false, metaKey: true }, 'other')).toBe(false);
+    expect(isToggleClick({ ctrlKey: false, metaKey: true }, 'mac')).toBe(true);
+    expect(isToggleClick({ ctrlKey: true, metaKey: false }, 'mac')).toBe(false);
+  });
+});
+
+describe('sameIds', () => {
+  // 框选每挪一下都算一次框到了谁：没变就不改选中，整个设计器不跟着重新渲染。
+  test('compares selections regardless of order', () => {
+    expect(sameIds(['a', 'b'], ['b', 'a'])).toBe(true);
+    expect(sameIds(['a'], ['a', 'b'])).toBe(false);
+    expect(sameIds([], [])).toBe(true);
   });
 });

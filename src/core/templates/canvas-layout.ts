@@ -56,6 +56,8 @@ export type LaidCanvasContent =
     };
 
 export interface LaidCanvasElement {
+  /** 模板里元素的 id：画 HTML 时发现的问题要指回这个元素。 */
+  id: string;
   /** 元素在纸上占的框（转过之后），取整到打印点。 */
   rect: Rect;
   /** 没转之前的内容框：转 90° / 270° 时宽高对调。 */
@@ -65,10 +67,25 @@ export interface LaidCanvasElement {
   content: LaidCanvasContent;
 }
 
+/**
+ * 一个元素的问题：设计器据此在画布上标出这个元素（不印的标浅红底、框里写短原因），点检查项选中它。
+ * omitted = 这一张不印这个元素；warning = 照常印，但有问题（截断、靠近纸边、宽度快不够）。
+ */
+export interface CanvasElementIssue {
+  elementId: string;
+  level: 'omitted' | 'warning';
+  /** 和 issues 里对应的那一条一字不差。 */
+  text: string;
+  /** 画布上框里写的短原因（「条码不印：框不够宽」）；只有 omitted 有。 */
+  short: string | null;
+}
+
 export interface CanvasLayout {
   elements: LaidCanvasElement[];
   /** 打印前检查：给人看的中文，每条指出是哪个元素。 */
   issues: string[];
+  /** 和 issues 一一对应，带上元素 id 和级别。 */
+  elementIssues: CanvasElementIssue[];
   /** 文字或表格被截断的元素数。 */
   overflowCount: number;
 }
@@ -78,36 +95,58 @@ const TABLE_CELL_PADDING_MM = CELL_PADDING_MM;
 
 export function layoutCanvas(template: CanvasTemplate, context: CanvasLayoutContext): CanvasLayout {
   const issues: string[] = [];
+  const elementIssues: CanvasElementIssue[] = [];
   const elements: LaidCanvasElement[] = [];
   let overflowCount = 0;
   // PDF 的一页是原样放到纸上的，不是按安全边距排出来的：图片框本来就铺满整张纸，PDF 里自己留了多少边就印多少边。
   // 对它做安全边距检查只会每张都报「靠近纸边」，操作员也没法改，所以整个跳过。
   const checksSafeMargin = template.id !== PDF_PIECE_TEMPLATE_ID;
+  const report = (issue: CanvasElementIssue) => {
+    issues.push(issue.text);
+    elementIssues.push(issue);
+  };
   for (const element of template.elements) {
     const rect = snapRect(element, context.dotMm);
     const turned = element.rotation === 90 || element.rotation === 270;
     const frame = turned ? { width: rect.height, height: rect.width } : { width: rect.width, height: rect.height };
     const laid = layoutContent(element, frame, context);
+    const elementId = element.id;
     if (laid.overflow) {
       overflowCount += 1;
-      issues.push(
-        element.kind === 'table'
-          ? `表格「${element.name}」有格子放不下，已截断：加大行高、列宽或调小字号`
-          : `文字「${element.name}」放不下，已截断：加大文字框或调小字号`,
-      );
+      report({
+        elementId,
+        level: 'warning',
+        text:
+          element.kind === 'table'
+            ? `表格「${element.name}」有格子放不下，已截断：加大行高、列宽或调小字号`
+            : `文字「${element.name}」放不下，已截断：加大文字框或调小字号`,
+        short: null,
+      });
     }
-    if (laid.issue !== null) {
-      issues.push(laid.issue);
+    if (laid.omitted !== null) {
+      report({ elementId, level: 'omitted', text: laid.omitted.text, short: laid.omitted.short });
     }
     if (laid.content === null) {
       continue;
     }
     if (checksSafeMargin && isNearEdge(rect, template.paper.widthMm, template.paper.heightMm, context.dotMm)) {
-      issues.push(`「${element.name}」靠近纸边（离纸边不到 ${CANVAS_LIMITS.safeMarginMm}mm），可能打不全`);
+      report({
+        elementId,
+        level: 'warning',
+        text: `「${element.name}」靠近纸边（离纸边不到 ${CANVAS_LIMITS.safeMarginMm}mm），可能打不全`,
+        short: null,
+      });
     }
-    elements.push({ rect, frame, rotation: element.rotation, name: element.name, content: laid.content });
+    elements.push({
+      id: elementId,
+      rect,
+      frame,
+      rotation: element.rotation,
+      name: element.name,
+      content: laid.content,
+    });
   }
-  return { elements, issues, overflowCount };
+  return { elements, issues, elementIssues, overflowCount };
 }
 
 /** 四条边各自取整到最近的点，宽高是取整后的差（至少 1 个点）：相邻元素的边对得上。 */
@@ -135,7 +174,8 @@ interface LaidResult {
   /** null = 这一张不印（内容是空的）。 */
   content: LaidCanvasContent | null;
   overflow: boolean;
-  issue: string | null;
+  /** 这一张不印、要告诉操作员的原因（整句和画布上的短句）；空文字照常不印、不报，是 null。 */
+  omitted: { text: string; short: string } | null;
 }
 
 function layoutContent(
@@ -153,7 +193,11 @@ function layoutContent(
       const expanded = expandVariables(element.value, context.scan, context.printedAt, (text) => text, 'empty');
       if (expanded.trim() === '') {
         const label = element.kind === 'barcode' ? '条码' : '二维码';
-        return { content: null, overflow: false, issue: `${label}「${element.name}」这一张没有内容，不印` };
+        return {
+          content: null,
+          overflow: false,
+          omitted: { text: `${label}「${element.name}」这一张没有内容，不印`, short: `${label}不印：这一张没有内容` },
+        };
       }
       return {
         content:
@@ -161,18 +205,18 @@ function layoutContent(
             ? { kind: 'barcode', element, value: expanded }
             : { kind: 'qr', element, value: expanded },
         overflow: false,
-        issue: null,
+        omitted: null,
       };
     }
     case 'image':
-      return { content: { kind: 'image', element }, overflow: false, issue: null };
+      return { content: { kind: 'image', element }, overflow: false, omitted: null };
     case 'line':
-      return { content: { kind: 'line', dashed: element.dashed }, overflow: false, issue: null };
+      return { content: { kind: 'line', dashed: element.dashed }, overflow: false, omitted: null };
     case 'rect':
       return {
         content: { kind: 'rect', borderMm: element.borderMm, filled: element.filled, radiusMm: element.radiusMm },
         overflow: false,
-        issue: null,
+        omitted: null,
       };
     case 'table':
       return layoutTable(element, frame, context);
@@ -193,7 +237,7 @@ function layoutText(
     .map((line) => expandParagraph(line, context))
     .filter((line): line is string => line !== null);
   if (lines.length === 0 || lines.every((line) => line.trim() === '')) {
-    return { content: null, overflow: false, issue: null };
+    return { content: null, overflow: false, omitted: null };
   }
   const paragraphs = lines.map((line) => ({
     text: line,
@@ -211,7 +255,7 @@ function layoutText(
       inverse: element.inverse,
     },
     overflow: fitted.overflow,
-    issue: null,
+    omitted: null,
   };
 }
 
@@ -254,7 +298,7 @@ function layoutTable(
   return {
     content: { kind: 'table', rows, columns, borderMm, paddingMm: { x: paddingX, y: paddingY }, cells },
     overflow,
-    issue: null,
+    omitted: null,
   };
 }
 

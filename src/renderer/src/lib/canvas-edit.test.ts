@@ -9,15 +9,19 @@ import {
   type Alignment,
   addElement,
   alignElements,
+  bringForward,
   bringToFront,
   clampAll,
   clampBox,
   copyElements,
   deleteElements,
   distributeElements,
+  duplicateElements,
   elementsInRect,
+  layerIndexForDrop,
   maxExtentMm,
   moveBy,
+  moveLayer,
   newElementId,
   pasteElements,
   rectFromPoints,
@@ -26,6 +30,7 @@ import {
   rotateElement,
   roundMm,
   roundTo,
+  sendBackward,
   sendToBack,
   setBox,
   toggleId,
@@ -120,6 +125,24 @@ describe('resizeBox', () => {
     expect(resizeBox(start, 'n', 0, -50, PAPER)).toEqual({ x: 10, y: 0, width: 20, height: 20 });
   });
 
+  test('keeps the aspect ratio from a corner, following the larger change, with the opposite corner fixed', () => {
+    expect(resizeBox(start, 'se', 10, 0, PAPER, true)).toEqual({ x: 10, y: 10, width: 30, height: 15 });
+    expect(resizeBox(start, 'nw', 0, -4, PAPER, true)).toEqual({ x: 2, y: 6, width: 28, height: 14 });
+  });
+
+  test('keeps the aspect ratio from an edge, growing the other side around the centre', () => {
+    expect(resizeBox(start, 'e', 10, 0, PAPER, true)).toEqual({ x: 10, y: 7.5, width: 30, height: 15 });
+    expect(resizeBox(start, 's', 0, 10, PAPER, true)).toEqual({ x: 0, y: 10, width: 40, height: 20 });
+  });
+
+  test('stops a kept-ratio resize at the paper edge and at the minimum size', () => {
+    // 往右下拖很远：右边先碰到纸边（60），按比例停在宽 50、高 25。
+    expect(resizeBox(start, 'se', 100, 100, PAPER, true)).toEqual({ x: 10, y: 10, width: 50, height: 25 });
+    const shrunk = resizeBox(start, 'se', -100, -100, PAPER, true);
+    expect(shrunk.height).toBeCloseTo(0.25);
+    expect(shrunk.width).toBeCloseTo(0.5);
+  });
+
   test('resizes from the ne, sw and s handles, and stops dragging n past the bottom', () => {
     expect(resizeBox(start, 'ne', -5, -3, PAPER)).toEqual({ x: 10, y: 7, width: 15, height: 13 });
     expect(resizeBox(start, 'sw', 5, -5, PAPER)).toEqual({ x: 15, y: 10, width: 15, height: 5 });
@@ -201,6 +224,29 @@ describe('adding elements', () => {
     const first = addElement(canvas(), 'text');
     const second = first && addElement(first.template, 'text');
     expect(second?.template.elements.map((element) => element.name)).toEqual(['文字', '文字 2']);
+  });
+
+  test('offsets a new element that would land exactly on an existing one, like paste', () => {
+    const first = addElement(canvas(), 'text');
+    const second = first && addElement(first.template, 'text');
+    const third = second && addElement(second.template, 'text');
+    expect(third?.template.elements.map((element) => [element.x, element.y])).toEqual([
+      [15, 17],
+      [17, 19],
+      [19, 21],
+    ]);
+  });
+
+  test('keeps an offset new element inside the paper', () => {
+    // 宽 30 的文字只能在 x 0–30 之间：错开到纸外时收回纸内，这时就不再错开了（不会死循环）。
+    let template = canvas();
+    for (let count = 0; count < 12; count += 1) {
+      template = addElement(template, 'text', { x: 45, y: 37 })?.template ?? template;
+    }
+    for (const element of template.elements) {
+      expect(element.x + element.width).toBeLessThanOrEqual(PAPER.widthMm);
+      expect(element.y + element.height).toBeLessThanOrEqual(PAPER.heightMm);
+    }
   });
 
   test('refuses to add past the element limit', () => {
@@ -291,6 +337,68 @@ describe('layer order', () => {
 
   test('sends the selection to the back keeping its own order', () => {
     expect(order(sendToBack(template, ['d', 'c']))).toEqual(['c', 'd', 'a', 'b']);
+  });
+
+  test('brings the selection forward by one layer', () => {
+    expect(order(bringForward(template, ['b']))).toEqual(['a', 'c', 'b', 'd']);
+    expect(order(bringForward(template, ['a', 'b']))).toEqual(['c', 'a', 'b', 'd']);
+  });
+
+  test('sends the selection backward by one layer', () => {
+    expect(order(sendBackward(template, ['c']))).toEqual(['a', 'c', 'b', 'd']);
+    expect(order(sendBackward(template, ['c', 'd']))).toEqual(['a', 'c', 'd', 'b']);
+  });
+
+  test('leaves the order alone when the selection is already at that end', () => {
+    expect(bringForward(template, ['d'])).toBe(template);
+    expect(sendBackward(template, ['a'])).toBe(template);
+  });
+
+  test('moves one layer to an index in the element array (0 is the back)', () => {
+    // 把 a（最下层）放到下标 3，就是放到最上层。
+    expect(order(moveLayer(template, 'a', 3))).toEqual(['b', 'c', 'd', 'a']);
+    expect(order(moveLayer(template, 'd', 0))).toEqual(['d', 'a', 'b', 'c']);
+    expect(moveLayer(template, 'b', 1)).toBe(template);
+    expect(moveLayer(template, 'missing', 0)).toBe(template);
+  });
+});
+
+describe('layerIndexForDrop', () => {
+  // 图层列表上层在前：d c b a。
+  const elements = canvas(
+    rect('a', 0, 0, 1, 1),
+    rect('b', 0, 0, 1, 1),
+    rect('c', 0, 0, 1, 1),
+    rect('d', 0, 0, 1, 1),
+  ).elements;
+  const dropped = (id: string, target: string, position: 'above' | 'below') => {
+    const template = canvas(...elements);
+    return moveLayer(template, id, layerIndexForDrop(elements, id, target, position)).elements.map(
+      (element) => element.id,
+    );
+  };
+
+  test('drops above a row: the dragged layer ends up just in front of it', () => {
+    expect(dropped('a', 'c', 'above')).toEqual(['b', 'c', 'a', 'd']);
+    expect(dropped('a', 'd', 'above')).toEqual(['b', 'c', 'd', 'a']);
+  });
+
+  test('drops below a row: the dragged layer ends up just behind it', () => {
+    expect(dropped('d', 'b', 'below')).toEqual(['a', 'd', 'b', 'c']);
+    expect(dropped('d', 'a', 'below')).toEqual(['d', 'a', 'b', 'c']);
+  });
+
+  test('dropping a layer on itself keeps the order', () => {
+    expect(dropped('b', 'b', 'above')).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+describe('duplicateElements', () => {
+  test('copies the selection in one step, offset and selected', () => {
+    const template = canvas(rect('a', 10, 10, 10, 5));
+    const duplicated = duplicateElements(template, ['a']);
+    expect(duplicated.ids).toEqual(['e1']);
+    expect(duplicated.template.elements[1]).toMatchObject({ x: 12, y: 12, name: '矩形 2' });
   });
 });
 

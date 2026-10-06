@@ -69,6 +69,29 @@ export async function stubBatchQuitConfirm(app: ElectronApplication, answer: 'co
   );
 }
 
+/**
+ * 换掉退出时的确认框（模板没保存、批量打印没打完，都走 dialog.showMessageBox）：按顺序给出 responses 里的答案，
+ * 用完以后一律答 1（模板那个框是「不保存退出」，批量那个框是「仍要退出」），夹具收尾时程序能关掉。
+ * 弹过的确认框的标题记在 globalThis.e2eQuitDialogs，用 quitDialogs() 读。
+ */
+export async function stubQuitDialogs(app: ElectronApplication, responses: readonly number[]): Promise<void> {
+  await app.evaluate(({ dialog }, queue) => {
+    const answers = [...queue];
+    const store = globalThis as { e2eQuitDialogs?: string[] };
+    store.e2eQuitDialogs = [];
+    dialog.showMessageBox = (async (...args: unknown[]) => {
+      const options = (args.length > 1 ? args[1] : args[0]) as { message?: string };
+      store.e2eQuitDialogs?.push(options.message ?? '');
+      return { response: answers.shift() ?? 1, checkboxChecked: false };
+    }) as typeof dialog.showMessageBox;
+  }, responses);
+}
+
+/** stubQuitDialogs 之后弹过的确认框的标题。 */
+export function quitDialogs(app: ElectronApplication): Promise<string[]> {
+  return app.evaluate(() => (globalThis as { e2eQuitDialogs?: string[] }).e2eQuitDialogs ?? []);
+}
+
 /** 用指定的数据目录（不传则新建一个）启动构建好的程序，等到扫码框出现。 */
 export async function launchApp(userData?: string, options: LaunchOptions = {}): Promise<LaunchedApp> {
   const dataDir = userData ?? (await createUserDataDir());

@@ -119,6 +119,45 @@ export function setColumnMm(table: CanvasTable, index: number, mm: number): Canv
   return { ...table, columnsMm: table.columnsMm.map((size, column) => (column === index ? mm : size)) };
 }
 
+/** 表格里的一格：第几行、第几列，和它在纸上的框（mm）。 */
+export interface TableCellHit {
+  row: number;
+  column: number;
+  box: { x: number; y: number; width: number; height: number };
+}
+
+/**
+ * 纸上的一个点落在表格的哪一格（双击就地改这一格）。行高列宽和排版一样用 resolveSizes 摊开。
+ * 转过的表格不就地改（格子的方向和屏幕对不上），返回 null，调用方改用检查器；点在表格外也是 null。
+ */
+export function tableCellAt(table: CanvasTable, point: { x: number; y: number }): TableCellHit | null {
+  if (table.rotation !== 0) {
+    return null;
+  }
+  const rows = resolveSizes(table.rowsMm, table.height);
+  const columns = resolveSizes(table.columnsMm, table.width);
+  const find = (sizes: readonly number[], offset: number) => {
+    let start = 0;
+    for (const [index, size] of sizes.entries()) {
+      if (offset >= start && offset <= start + size) {
+        return { index, start, size };
+      }
+      start += size;
+    }
+    return null;
+  };
+  const row = find(rows, point.y - table.y);
+  const column = find(columns, point.x - table.x);
+  if (row === null || column === null) {
+    return null;
+  }
+  return {
+    row: row.index,
+    column: column.index,
+    box: { x: table.x + column.start, y: table.y + row.start, width: column.size, height: row.size },
+  };
+}
+
 /** 改一格（文字、字号、加粗、对齐），其余格子不变。 */
 export function updateTableCell(
   table: CanvasTable,

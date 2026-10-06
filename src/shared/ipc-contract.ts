@@ -61,6 +61,12 @@ export const IpcChannel = {
   CreateTemplateFromLibrary: 'templates:create-from-library',
   SaveTemplate: 'templates:save',
   DeleteTemplate: 'templates:delete',
+  /** 界面 → 主进程：模板页有没保存的修改（模板名，没有时 null），退出时据此确认。 */
+  TemplateUnsavedChanged: 'templates:unsaved-changed',
+  /** 主进程 → 界面：退出时选了「保存并退出」，请界面按平常的流程保存正在改的模板。 */
+  TemplateSaveForQuit: 'templates:save-for-quit',
+  /** 界面 → 主进程：上面那次保存成不成功。 */
+  TemplateSavedForQuit: 'templates:saved-for-quit',
   ListRules: 'rules:list',
   CreateRule: 'rules:create',
   DuplicateRule: 'rules:duplicate',
@@ -246,6 +252,11 @@ export interface LabelFlashApi {
   /** 把模板库里的一个模板复制成自定义模板，返回它；只收模板库的编号（library:xxx）。 */
   createTemplateFromLibrary(libraryId: string): Promise<CanvasTemplate>;
   saveTemplate(template: LabelTemplate): Promise<LabelTemplate>;
+  /** 报告模板页有没保存的修改（模板名；没有时 null）：托盘退出、系统退出时主进程据此问要不要保存。 */
+  reportUnsavedTemplate(name: string | null): void;
+  /** 退出时选了「保存并退出」：主进程请界面保存；界面保存完用 replySaveForQuit 回答。 */
+  onSaveTemplateForQuit(listener: () => void): () => void;
+  replySaveForQuit(saved: boolean): void;
   /** 删除后若它正在使用，自动切回标准模板；返回最新设置。 */
   deleteTemplate(id: string): Promise<AppSettings>;
   listRules(): Promise<RuleListing>;

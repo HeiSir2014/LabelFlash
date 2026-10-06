@@ -35,6 +35,48 @@ describe('insertFieldOptions', () => {
     expect(options.map((option) => option.label)).toEqual(['插入字段…', '日期', '完整内容', '规则', '时间']);
   });
 
+  describe('with the current sample content', () => {
+    const sample = {
+      raw: 'CL5640-TK-图片色-XL',
+      ruleId: 'builtin:dash-three',
+      ruleName: '横杠三段',
+      fields: [
+        { name: '编码', value: 'CL5640-TK' },
+        { name: '尺码', value: 'XL' },
+        { name: '颜色', value: '' },
+      ],
+    };
+
+    test('shows what each field holds in this sample', () => {
+      const options = insertFieldOptions(['编码', '尺码'], sample);
+      expect(options.slice(1, 3)).toEqual([
+        { value: '{编码}', label: '编码 — CL5640-TK' },
+        { value: '{尺码}', label: '尺码 — XL' },
+      ]);
+    });
+
+    test('says when a field is not in this sample, including an empty one', () => {
+      const labels = insertFieldOptions(['货架号', '颜色'], sample).map((option) => option.label);
+      expect(labels).toContain('货架号（这段内容里没有）');
+      expect(labels).toContain('颜色（这段内容里没有）');
+    });
+
+    test('also lists fields that only this sample recognised, and the values of the full content and the rule', () => {
+      const labels = insertFieldOptions([], sample).map((option) => option.label);
+      expect(labels.slice(1, 3)).toEqual(['编码 — CL5640-TK', '尺码 — XL']);
+      expect(labels).toContain('完整内容 — CL5640-TK-图片色-XL');
+      expect(labels).toContain('规则 — 横杠三段');
+      expect(labels).toContain('日期');
+    });
+
+    test('cuts a long value and shows line breaks as ⏎', () => {
+      const long = { ...sample, fields: [{ name: '备注', value: '第一行\n第二行很长很长很长很长很长很长' }] };
+      const label = insertFieldOptions(['备注'], long)[1]?.label ?? '';
+      expect(label.startsWith('备注 — 第一行⏎第二行')).toBe(true);
+      expect(label.endsWith('…')).toBe(true);
+    });
+  });
+
   test('has only the placeholder and the fixed variables when there are no field names', () => {
     expect(insertFieldOptions([]).map((option) => option.label)).toEqual([
       '插入字段…',

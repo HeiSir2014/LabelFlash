@@ -19,12 +19,15 @@ export const FIT_OPTIONS: ReadonlyArray<{ value: TextFit; label: string }> = [
   { value: 'wrap', label: '折行' },
 ];
 
-/** 二维码容错：字母后面是能恢复的比例，选的时候知道代价。 */
-export const QR_LEVEL_OPTIONS: ReadonlyArray<{ value: QrErrorLevel; label: string }> = [
-  { value: 'L', label: 'L 7%' },
-  { value: 'M', label: 'M 15%' },
-  { value: 'Q', label: 'Q 25%' },
-  { value: 'H', label: 'H 30%' },
+/**
+ * 二维码容错：选项上只写一两个字，检查器窄的时候（1024 宽、260px）也不折行；能恢复多少、码会变多密在悬停提示里，
+ * 选的时候知道代价。
+ */
+export const QR_LEVEL_OPTIONS: ReadonlyArray<{ value: QrErrorLevel; label: string; hint: string }> = [
+  { value: 'L', label: '低', hint: '容错低（L）：污损约 7% 还能扫，码最疏' },
+  { value: 'M', label: '中', hint: '容错中（M）：污损约 15% 还能扫' },
+  { value: 'Q', label: '较高', hint: '容错较高（Q）：污损约 25% 还能扫' },
+  { value: 'H', label: '高', hint: '容错高（H）：污损约 30% 还能扫，码最密' },
 ];
 
 export const IMAGE_MODE_OPTIONS: ReadonlyArray<{ value: ImageMode; label: string }> = [

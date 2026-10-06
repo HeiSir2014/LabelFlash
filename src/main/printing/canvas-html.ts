@@ -10,7 +10,7 @@ import { decodeGray, fitContain, monoBmp, resizeGray, toMono } from '../../core/
 import { LINE_HEIGHT } from '../../core/templates/text-fit';
 import { LINE_WIDTH_SLACK, textWidthMm } from '../../core/templates/waybill-layout';
 import type { LabelJob } from '../../core/types';
-import type { RenderWarnings } from '../../shared/render-warnings';
+import { BARCODE_TIGHT_RATIO, type ElementWarning, type RenderWarnings } from '../../shared/render-warnings';
 import {
   CANVAS_MAX_MODULE_MM,
   encodeBarcode,
@@ -18,6 +18,7 @@ import {
   MIN_BAR_HEIGHT_MM,
   matrixPath,
   matrixQuietZone,
+  minModuleDots,
   moduleDotsFor,
   QUIET_ZONE_MODULES,
 } from './barcode';
@@ -37,9 +38,59 @@ interface Findings {
   barcodeOmitted: boolean;
   qrOmitted: boolean;
   issues: string[];
+  /** 每个元素的问题：issues 的每一条都在这里，另有只在设计器里提醒的（条码宽度快不够）。 */
+  elements: ElementWarning[];
   diagnostics: string[];
   /** 排版之后、画 HTML 时才发现的截断（例如条码号码比框宽）：和 layoutCanvas 的 overflowCount 加在一起。 */
   overflowCount: number;
+}
+
+/** 「至少要多宽」往上取到 0.1mm：数字框按 0.1mm 调，操作员照着填也印得出。 */
+const MINIMUM_SIZE_STEP_MM = 0.1;
+/** 取整前去掉浮点误差：40.5 算成 40.500000001 时不该进到 40.6。 */
+const ROUNDING_EPSILON = 1e-9;
+/** 打印前检查里引用条码内容最多这么多个字：太长的内容一行放不下，后面用「…」。 */
+const QUOTED_CONTENT_LENGTH = 20;
+
+/** 给元素的问题：要不要也算打印问题（进 issues、写打印日志）由 isPrintIssue 决定。 */
+function report(findings: Findings, warning: ElementWarning, isPrintIssue = true): void {
+  findings.elements.push(warning);
+  if (isPrintIssue) {
+    findings.issues.push(warning.text);
+  }
+}
+
+/**
+ * 至少 neededDots 个点时，元素框要填多宽（mm）：元素框的两条边各自四舍五入到点，最坏会少半个点，
+ * 所以多留半个点再往上取到 0.1mm——这样元素落在哪个小数位置上都印得出。
+ */
+function minimumSizeMm(neededDots: number, dot: number): number {
+  const exact = (neededDots + 1 / 2) * dot;
+  return Math.ceil(exact / MINIMUM_SIZE_STEP_MM - ROUNDING_EPSILON) / (1 / MINIMUM_SIZE_STEP_MM);
+}
+
+/** 毫米写成短数字（38、40.5）：不带多余的 0。 */
+function formatMm(value: number): string {
+  return String(Number(value.toFixed(2)));
+}
+
+function quoteContent(value: string): string {
+  const characters = [...value];
+  return characters.length <= QUOTED_CONTENT_LENGTH
+    ? value
+    : `${characters.slice(0, QUOTED_CONTENT_LENGTH - 1).join('')}…`;
+}
+
+/** 内容框（没转之前）方向上的最小尺寸 → 元素框（转过之后）方向：转 90° / 270° 时宽高对调。 */
+function boxMinimum(
+  rotation: LaidCanvasElement['rotation'],
+  frameWidthMm: number | null,
+  frameHeightMm: number | null,
+): Pick<ElementWarning, 'minWidthMm' | 'minHeightMm'> {
+  const turned = rotation === 90 || rotation === 270;
+  return turned
+    ? { minWidthMm: frameHeightMm, minHeightMm: frameWidthMm }
+    : { minWidthMm: frameWidthMm, minHeightMm: frameHeightMm };
 }
 
 /**
@@ -57,6 +108,7 @@ export function renderCanvasHtml(
     barcodeOmitted: false,
     qrOmitted: false,
     issues: [...layout.issues],
+    elements: layout.elementIssues.map((issue) => ({ ...issue, minWidthMm: null, minHeightMm: null })),
     diagnostics: [],
     overflowCount: 0,
   };
@@ -92,6 +144,7 @@ export function renderCanvasHtml(
     barcodeOmitted: findings.barcodeOmitted,
     overflowCells: layout.overflowCount + findings.overflowCount,
     issues: findings.issues,
+    elements: findings.elements,
     diagnostics: findings.diagnostics,
   };
 }
@@ -102,7 +155,8 @@ function elementHtml(element: LaidCanvasElement, dot: number, dpi: number, findi
     return '';
   }
   const { rect, frame } = element;
-  return `<div class="el" style="left:${mm(rect.x)};top:${mm(rect.y)};width:${mm(rect.width)};height:${mm(rect.height)}"><div class="frame" style="width:${mm(frame.width)};height:${mm(frame.height)}${rotationCss(element)}">${inner}</div></div>`;
+  // data-element-id：设计器的「隐藏（只在设计器里隐藏）」按它给画布上的预览加样式，打印不受影响。
+  return `<div class="el" data-element-id="${escapeHtml(element.id)}" style="left:${mm(rect.x)};top:${mm(rect.y)};width:${mm(rect.width)};height:${mm(rect.height)}"><div class="frame" style="width:${mm(frame.width)};height:${mm(frame.height)}${rotationCss(element)}">${inner}</div></div>`;
 }
 
 /**
@@ -123,16 +177,16 @@ function rotationCss({ rotation, rect }: LaidCanvasElement): string {
 }
 
 function contentHtml(element: LaidCanvasElement, dot: number, dpi: number, findings: Findings): string {
-  const { content, frame, name } = element;
+  const { content, frame } = element;
   switch (content.kind) {
     case 'text':
       return textHtml(content);
     case 'barcode':
-      return barcodeHtml(content.element, content.value, frame, dot, name, findings);
+      return barcodeHtml(element, content.element, content.value, dot, findings);
     case 'qr':
-      return qrHtml(content.element, content.value, frame, dot, dpi, findings);
+      return qrHtml(element.id, content.element, content.value, frame, dot, dpi, findings);
     case 'image':
-      return imageHtml(content.element, frame, dot, findings);
+      return imageHtml(element.id, content.element, frame, dot, findings);
     case 'line':
       return lineHtml(content.dashed, frame);
     case 'rect':
@@ -157,16 +211,33 @@ function textHtml(content: Extract<LaidCanvasContent, { kind: 'text' }>): string
 }
 
 function barcodeHtml(
+  laid: LaidCanvasElement,
   element: CanvasBarcode,
   value: string,
-  frame: { width: number; height: number },
   dot: number,
-  name: string,
   findings: Findings,
 ): string {
-  const omit = (reason: string) => {
+  const { frame, name, rotation } = laid;
+  const turned = rotation === 90 || rotation === 270;
+  // 「现在多宽 / 多高」按元素框说（属性栏里填的数），不是取整到点之后的。
+  const frameWidthNow = turned ? element.height : element.width;
+  const frameHeightNow = turned ? element.width : element.height;
+  const omit = (
+    reason: string,
+    short: string,
+    minimum: { frameWidthMm: number | null; frameHeightMm: number | null } = {
+      frameWidthMm: null,
+      frameHeightMm: null,
+    },
+  ) => {
     findings.barcodeOmitted = true;
-    findings.issues.push(`条码「${name}」不印：${reason}`);
+    report(findings, {
+      elementId: laid.id,
+      level: 'omitted',
+      text: `条码「${name}」不印：${reason}`,
+      short: `条码不印：${short}`,
+      ...boxMinimum(rotation, minimum.frameWidthMm, minimum.frameHeightMm),
+    });
     return '';
   };
   const result = encodeBarcode(element.symbology, value);
@@ -175,17 +246,28 @@ function barcodeHtml(
     if (result.detail !== undefined) {
       findings.diagnostics.push(`${element.symbology}: ${result.detail}`);
     }
-    return omit(result.reason);
+    // 画布上的短原因去掉码制名（「Code 128：」）：框里地方小，码制在属性栏里看得到。
+    return omit(result.reason, result.reason.replace(/^[^：]*：/, ''));
   }
   const widthDots = Math.round(frame.width / dot);
   const heightDots = Math.round(frame.height / dot);
+  const minDots = minModuleDots(dot);
   if (result.code.dimensions === 2) {
     const { cells, columns, rows, rowScale } = result.code;
     const quiet = matrixQuietZone(element.symbology);
     const across = moduleDotsFor(widthDots, columns + 2 * quiet, dot, CANVAS_MAX_MODULE_MM);
     const down = moduleDotsFor(heightDots, rows * rowScale + 2 * quiet, dot, CANVAS_MAX_MODULE_MM);
     if (across === null || down === null) {
-      return omit('框太小');
+      const frameWidthMm = minimumSizeMm(minDots * (columns + 2 * quiet), dot);
+      const frameHeightMm = minimumSizeMm(minDots * (rows * rowScale + 2 * quiet), dot);
+      const [needW, needH, nowW, nowH] = turned
+        ? [frameHeightMm, frameWidthMm, frameHeightNow, frameWidthNow]
+        : [frameWidthMm, frameHeightMm, frameWidthNow, frameHeightNow];
+      return omit(
+        `框太小：内容 ${quoteContent(value)} 至少要 ${formatMm(needW)}×${formatMm(needH)}mm（现在 ${formatMm(nowW)}×${formatMm(nowH)}mm）`,
+        '框太小',
+        { frameWidthMm, frameHeightMm },
+      );
     }
     const moduleDots = Math.min(across, down);
     const width = columns * moduleDots;
@@ -195,14 +277,41 @@ function barcodeHtml(
   }
   const { widths, heights, offsets } = result.code;
   const modules = widths.reduce((sum, width) => sum + width, 0);
-  const moduleDots = moduleDotsFor(widthDots, modules + 2 * QUIET_ZONE_MODULES, dot, CANVAS_MAX_MODULE_MM);
+  const totalModules = modules + 2 * QUIET_ZONE_MODULES;
+  const neededWidthDots = minDots * totalModules;
+  const frameWidthMm = minimumSizeMm(neededWidthDots, dot);
+  // 「宽」按元素框说：转过 90° 的条码，条码的长边是元素框的高。
+  const sideName = turned ? '高' : '宽';
+  const moduleDots = moduleDotsFor(widthDots, totalModules, dot, CANVAS_MAX_MODULE_MM);
   if (moduleDots === null) {
-    return omit('框不够宽');
+    return omit(
+      `内容 ${quoteContent(value)} 至少要 ${formatMm(frameWidthMm)}mm ${sideName}（现在 ${formatMm(frameWidthNow)}mm）`,
+      `框不够${sideName}`,
+      { frameWidthMm, frameHeightMm: null },
+    );
   }
   const textBlockMm = element.showText ? element.textSizeMm * LINE_HEIGHT + BARCODE_TEXT_GAP_MM : 0;
   const barHeightMm = frame.height - textBlockMm;
   if (barHeightMm < MIN_BAR_HEIGHT_MM) {
-    return omit(`太矮（条高不到 ${MIN_BAR_HEIGHT_MM}mm）`);
+    const neededHeightDots = Math.ceil((MIN_BAR_HEIGHT_MM + textBlockMm) / dot - ROUNDING_EPSILON);
+    return omit(`太矮（条高不到 ${MIN_BAR_HEIGHT_MM}mm）`, '太矮', {
+      frameWidthMm: null,
+      frameHeightMm: minimumSizeMm(neededHeightDots, dot),
+    });
+  }
+  if (widthDots < neededWidthDots * BARCODE_TIGHT_RATIO) {
+    // 印得出，但内容再长几位就印不出：只在设计器里提醒，不算打印问题（不进 issues、不写打印日志）。
+    report(
+      findings,
+      {
+        elementId: laid.id,
+        level: 'warning',
+        text: `条码「${name}」只比最小宽度宽一点：内容再长一些就印不出（至少要 ${formatMm(frameWidthMm)}mm ${sideName}）`,
+        short: null,
+        ...boxMinimum(rotation, frameWidthMm, null),
+      },
+      false,
+    );
   }
   const barsDots = modules * moduleDots;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${modules} 1" preserveAspectRatio="none" shape-rendering="crispEdges" style="width:${mm(barsDots * dot)};height:${mm(barHeightMm)}"><path d="${linearBarsPath(widths, false, heights, offsets)}"/></svg>`;
@@ -215,7 +324,14 @@ function barcodeHtml(
     // （.code__text 的 font-weight: 700），加粗的字更宽，这 2% 的余量和面单折行用的是同一条规则。
     if (textWidthMm(value, element.textSizeMm) > frame.width * (1 - LINE_WIDTH_SLACK)) {
       findings.overflowCount += 1;
-      findings.issues.push(`条码「${name}」下面的号码放不下，已截断`);
+      report(findings, {
+        elementId: laid.id,
+        level: 'warning',
+        text: `条码「${name}」下面的号码放不下，已截断`,
+        short: null,
+        minWidthMm: null,
+        minHeightMm: null,
+      });
     }
   }
   // 起点落在整数个点上（见面单 barcodeSvg 的说明）；.code 是 flex 列、居中对齐，号码比条码宽时两边对称溢出。
@@ -223,6 +339,7 @@ function barcodeHtml(
 }
 
 function qrHtml(
+  elementId: string,
   element: CanvasQr,
   value: string,
   frame: { width: number; height: number },
@@ -239,7 +356,14 @@ function qrHtml(
   );
   if (plan === null) {
     findings.qrOmitted = true;
-    findings.issues.push(`二维码「${element.name}」不印：内容太长、框太小`);
+    report(findings, {
+      elementId,
+      level: 'omitted',
+      text: `二维码「${element.name}」不印：内容太长、框太小`,
+      short: '二维码不印：内容太长、框太小',
+      minWidthMm: null,
+      minHeightMm: null,
+    });
     return '';
   }
   const sizeDots = plan.moduleCount * plan.moduleDots;
@@ -249,6 +373,7 @@ function qrHtml(
 }
 
 function imageHtml(
+  elementId: string,
   element: CanvasImage,
   frame: { width: number; height: number },
   dot: number,
@@ -256,7 +381,14 @@ function imageHtml(
 ): string {
   const gray = decodeGray(element.pixels, element.pixelWidth, element.pixelHeight);
   if (gray === null) {
-    findings.issues.push(`图片「${element.name}」不印：数据坏了`);
+    report(findings, {
+      elementId,
+      level: 'omitted',
+      text: `图片「${element.name}」不印：数据坏了`,
+      short: '图片不印：数据坏了',
+      minWidthMm: null,
+      minHeightMm: null,
+    });
     return '';
   }
   const box = fitContain(gray.width, gray.height, Math.round(frame.width / dot), Math.round(frame.height / dot));

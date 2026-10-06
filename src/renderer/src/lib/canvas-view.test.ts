@@ -2,11 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import {
   type DesignerKey,
   designerCommand,
+  hideElementsInHtml,
   NUDGE_LARGE_MM,
   NUDGE_MM,
   PX_PER_MM,
   pxToMm,
+  scrollToKeep,
+  shouldReturnFocusToCanvas,
   undoShortcutLabel,
+  wheelZoom,
   ZOOM_LEVELS,
   zoomIn,
   zoomOut,
@@ -46,6 +50,52 @@ describe('zoom', () => {
   });
 });
 
+describe('wheelZoom', () => {
+  test('zooms in when the wheel or the pinch goes up, and out when it goes down', () => {
+    expect(wheelZoom(2, -100)).toBeGreaterThan(2);
+    expect(wheelZoom(2, 100)).toBeLessThan(2);
+  });
+
+  test('changes smoothly for the small steps of a trackpad pinch', () => {
+    const pinched = wheelZoom(2, -4);
+    expect(pinched).toBeGreaterThan(2);
+    expect(pinched).toBeLessThan(2.05);
+  });
+
+  test('stays within the zoom levels', () => {
+    expect(wheelZoom(ZOOM_LEVELS.at(-1) ?? 0, -1000)).toBe(ZOOM_LEVELS.at(-1) ?? 0);
+    expect(wheelZoom(ZOOM_LEVELS[0] ?? 0, 1000)).toBe(ZOOM_LEVELS[0] ?? 0);
+  });
+});
+
+describe('scrollToKeep', () => {
+  test('scrolls by how far the point under the pointer moved when the zoom changed', () => {
+    // 纸上 (10mm, 5mm) 原来在指针下；放大后覆盖层左上角在 (100, 50)，这一点到了 100 + 10mm×2 倍，要往右滚这么多。
+    const anchor = { x: 10, y: 5 };
+    const pointer = { x: 150, y: 80 };
+    const adjustment = scrollToKeep(anchor, pointer, { x: 100, y: 50 }, 2);
+    expect(adjustment.x).toBeCloseTo(100 + 10 * PX_PER_MM * 2 - 150);
+    expect(adjustment.y).toBeCloseTo(50 + 5 * PX_PER_MM * 2 - 80);
+  });
+});
+
+describe('hideElementsInHtml', () => {
+  const html = '<html><head><style>.el{}</style></head><body><div class="el" data-element-id="e1"></div></body></html>';
+
+  test('adds a style that hides the given elements of the label HTML', () => {
+    const hidden = hideElementsInHtml(html, new Set(['e1', 'e-2']));
+    expect(hidden).toContain('[data-element-id="e1"],[data-element-id="e-2"]{visibility:hidden}</style></head>');
+  });
+
+  test('leaves the HTML untouched when nothing is hidden', () => {
+    expect(hideElementsInHtml(html, new Set())).toBe(html);
+  });
+
+  test('ignores ids that are not plain element ids, so nothing can break out of the selector', () => {
+    expect(hideElementsInHtml(html, new Set(['x"]{} body{display:none']))).toBe(html);
+  });
+});
+
 describe('undoShortcutLabel', () => {
   test('is ⌘Z on macOS and Ctrl+Z elsewhere, matching the config shortcut convention', () => {
     expect(undoShortcutLabel('mac')).toBe('⌘Z');
@@ -65,7 +115,53 @@ describe('designerCommand', () => {
     expect(designerCommand(key('y', { ctrlKey: true }))).toEqual({ kind: 'redo' });
     expect(designerCommand(key('c', { metaKey: true }))).toEqual({ kind: 'copy' });
     expect(designerCommand(key('v', { ctrlKey: true }))).toEqual({ kind: 'paste' });
-    expect(designerCommand(key('a', { ctrlKey: true }))).toBeNull();
+    expect(designerCommand(key('b', { ctrlKey: true }))).toBeNull();
+  });
+
+  test('selects all with Ctrl+A or Command+A', () => {
+    expect(designerCommand(key('a', { ctrlKey: true }))).toEqual({ kind: 'selectAll' });
+    expect(designerCommand(key('a', { metaKey: true }))).toEqual({ kind: 'selectAll' });
+    expect(designerCommand(key('ф', { code: 'KeyA', ctrlKey: true }))).toEqual({ kind: 'selectAll' });
+  });
+
+  test('duplicates with Ctrl+D', () => {
+    expect(designerCommand(key('d', { ctrlKey: true }))).toEqual({ kind: 'duplicate' });
+  });
+
+  test('moves layers with Ctrl+] and Ctrl+[, and to the front or back with Shift', () => {
+    expect(designerCommand(key(']', { code: 'BracketRight', ctrlKey: true }))).toEqual({
+      kind: 'layer',
+      move: 'forward',
+    });
+    expect(designerCommand(key('[', { code: 'BracketLeft', ctrlKey: true }))).toEqual({
+      kind: 'layer',
+      move: 'backward',
+    });
+    // Shift 按着时 key 变成「}」「{」：按物理键位认。
+    expect(designerCommand(key('}', { code: 'BracketRight', ctrlKey: true, shiftKey: true }))).toEqual({
+      kind: 'layer',
+      move: 'front',
+    });
+    expect(designerCommand(key('{', { code: 'BracketLeft', ctrlKey: true, shiftKey: true }))).toEqual({
+      kind: 'layer',
+      move: 'back',
+    });
+  });
+
+  test('fits the window with Ctrl+0 and shows actual size with Ctrl+1', () => {
+    expect(designerCommand(key('0', { code: 'Digit0', ctrlKey: true }))).toEqual({ kind: 'zoom', to: 'fit' });
+    expect(designerCommand(key('1', { code: 'Digit1', metaKey: true }))).toEqual({ kind: 'zoom', to: 'actual' });
+    expect(designerCommand(key('0', { code: 'Numpad0', ctrlKey: true }))).toEqual({ kind: 'zoom', to: 'fit' });
+  });
+
+  test('opens the shortcut sheet with F1, which a scanner never types', () => {
+    expect(designerCommand(key('F1'))).toEqual({ kind: 'help' });
+  });
+
+  test('opens the context menu with the menu key or Shift+F10', () => {
+    expect(designerCommand(key('ContextMenu'))).toEqual({ kind: 'menu' });
+    expect(designerCommand(key('F10', { shiftKey: true }))).toEqual({ kind: 'menu' });
+    expect(designerCommand(key('F10'))).toBeNull();
   });
 
   test('deletes with Delete or Backspace and clears the selection with Escape', () => {
@@ -102,5 +198,27 @@ describe('designerCommand', () => {
     expect(designerCommand(key('z', { code: 'KeyY', ctrlKey: true }))).toEqual({ kind: 'undo' });
     // 法语 AZERTY：Ctrl+W 物理键位是 KeyZ，但 key 是「w」，不是快捷键，不该被 code 误判成撤销。
     expect(designerCommand(key('w', { code: 'KeyZ', ctrlKey: true }))).toBeNull();
+  });
+});
+
+describe('shouldReturnFocusToCanvas', () => {
+  // 鼠标点了工具条、检查器的按钮之后，Ctrl+Z 和方向键要接着对画布起作用。
+  test('returns focus after a mouse click left it on the button', () => {
+    expect(shouldReturnFocusToCanvas({ isPointerClick: true, focus: 'clicked' })).toBe(true);
+  });
+
+  // 按钮随这次操作没了（删除），焦点掉到 body 上：不管是不是鼠标点的都还给画布。
+  test('returns focus when it fell to the page body', () => {
+    expect(shouldReturnFocusToCanvas({ isPointerClick: false, focus: 'body' })).toBe(true);
+  });
+
+  // 用 Tab 走到工具条、按空格的：焦点留在按钮上，接着用键盘走工具条。
+  test('leaves focus on the button after a keyboard press', () => {
+    expect(shouldReturnFocusToCanvas({ isPointerClick: false, focus: 'clicked' })).toBe(false);
+  });
+
+  // 按钮自己把焦点交给了别处（就地改字的输入框、菜单）：不抢。
+  test('leaves focus where the action moved it', () => {
+    expect(shouldReturnFocusToCanvas({ isPointerClick: true, focus: 'elsewhere' })).toBe(false);
   });
 });

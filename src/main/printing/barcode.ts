@@ -196,6 +196,18 @@ export function matrixQuietZone(symbology: string): number {
 }
 
 /**
+ * 一个模块至少几个点：不窄于 MIN_MODULE_MM。画条码（moduleDotsFor）和设计器算「至少要多宽」共用这一条，两边不会对不上。
+ * 用 ceil 而不是 round：MIN_MODULE_MM / dot 只要比某个整数大一点（哪怕只大 0.01），round 也会降到那个整数，
+ * 而那点和整数的点数一样宽（没有多那一点），实际宽度就比 MIN_MODULE_MM 窄了（例如 204dpi 上比值约 2.0079，
+ * round 得 2，但 2 个点只有 0.249mm）；换成 ceil 才能保证点数折算出来的宽度总是不小于 MIN_MODULE_MM。
+ * 减去的 FLOAT_EPSILON 只是去掉浮点除法在「比值数学上正好是整数」时的噪声（例如 203.2dpi），
+ * 不是为了纠正上面这种本来就该进位的情况。
+ */
+export function minModuleDots(dot: number): number {
+  return Math.max(1, Math.ceil(MIN_MODULE_MM / dot - FLOAT_EPSILON));
+}
+
+/**
  * 每个模块几个点：在 lengthDots 个点里放 totalModules 个模块（含静区），不超过 maxModuleMm；
  * 小于 MIN_MODULE_MM 时返回 null（放不下，不印）。
  */
@@ -205,12 +217,7 @@ export function moduleDotsFor(
   dot: number,
   maxModuleMm: number,
 ): number | null {
-  // 用 ceil 而不是 round：MIN_MODULE_MM / dot 只要比某个整数大一点（哪怕只大 0.01），round 也会降到那个整数，
-  // 而那点和整数的点数一样宽（没有多那一点），实际宽度就比 MIN_MODULE_MM 窄了（例如 204dpi 上比值约 2.0079，
-  // round 得 2，但 2 个点只有 0.249mm）；换成 ceil 才能保证点数折算出来的宽度总是不小于 MIN_MODULE_MM。
-  // 减去的 FLOAT_EPSILON 只是去掉浮点除法在「比值数学上正好是整数」时的噪声（例如 203.2dpi），
-  // 不是为了纠正上面这种本来就该进位的情况。
-  const minDots = Math.max(1, Math.ceil(MIN_MODULE_MM / dot - FLOAT_EPSILON));
+  const minDots = minModuleDots(dot);
   const maxDots = Math.max(minDots, Math.round(maxModuleMm / dot));
   const dots = Math.min(maxDots, Math.floor(lengthDots / totalModules));
   return dots < minDots ? null : dots;

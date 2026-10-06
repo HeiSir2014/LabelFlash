@@ -56,6 +56,82 @@ export function snapTargets(paper: PaperSize, others: readonly Box[]): SnapTarge
   };
 }
 
+/**
+ * 拖动时和邻居之间的间距：在 axis 方向上从 start 到 end（mm），cross 是画这段间距的另一轴位置（两者重叠部分的中线）。
+ * isEqual：两边的间距一样（元素正好在两个邻居中间），标上等距记号。
+ */
+export interface Gap {
+  axis: 'x' | 'y';
+  start: number;
+  end: number;
+  cross: number;
+  isEqual: boolean;
+}
+
+/** 两段间距差不到 0.05mm 就算一样：比打印点（约 0.125mm）的一半还细，数字框上看着也一样。 */
+const EQUAL_GAP_TOLERANCE_MM = 0.05;
+
+/** 两个框在另一轴上的重叠部分；不重叠返回 null（它们不在一行 / 一列上，不算邻居）。 */
+function overlapOf(aStart: number, aSize: number, bStart: number, bSize: number): [number, number] | null {
+  const start = Math.max(aStart, bStart);
+  const end = Math.min(aStart + aSize, bStart + bSize);
+  return end > start ? [start, end] : null;
+}
+
+/**
+ * 拖动中的框和四周最近的邻居（在同一行、同一列上、没有重叠）之间的间距：参考产品拖动时会在参考线旁写出
+ * 「2.5」这样的距离，两边间距一样时标出等距。顺序：左、右、上、下，没有邻居的那一边不给。
+ */
+export function neighbourGaps(box: Box, others: readonly Box[]): Gap[] {
+  const nearest = (axis: 'x' | 'y', side: 'before' | 'after'): Gap | null => {
+    const isX = axis === 'x';
+    const boxStart = isX ? box.x : box.y;
+    const boxEnd = boxStart + (isX ? box.width : box.height);
+    let best: Gap | null = null;
+    for (const other of others) {
+      const overlap = isX
+        ? overlapOf(box.y, box.height, other.y, other.height)
+        : overlapOf(box.x, box.width, other.x, other.width);
+      if (overlap === null) {
+        continue;
+      }
+      const otherStart = isX ? other.x : other.y;
+      const otherEnd = otherStart + (isX ? other.width : other.height);
+      const gap =
+        side === 'before'
+          ? otherEnd <= boxStart
+            ? { start: otherEnd, end: boxStart }
+            : null
+          : otherStart >= boxEnd
+            ? { start: boxEnd, end: otherStart }
+            : null;
+      // 贴着的邻居（间距差不多是 0）不写：一个「0」只是噪音，参考线已经说明对齐了。
+      if (gap === null || gap.end - gap.start < EQUAL_GAP_TOLERANCE_MM) {
+        continue;
+      }
+      if (best === null || gap.end - gap.start < best.end - best.start) {
+        best = { axis, ...gap, cross: (overlap[0] + overlap[1]) / 2, isEqual: false };
+      }
+    }
+    return best;
+  };
+  const gaps: Gap[] = [];
+  for (const axis of ['x', 'y'] as const) {
+    const before = nearest(axis, 'before');
+    const after = nearest(axis, 'after');
+    const isEqual =
+      before !== null &&
+      after !== null &&
+      Math.abs(before.end - before.start - (after.end - after.start)) < EQUAL_GAP_TOLERANCE_MM;
+    for (const gap of [before, after]) {
+      if (gap !== null) {
+        gaps.push({ ...gap, isEqual });
+      }
+    }
+  }
+  return gaps;
+}
+
 interface Match {
   delta: number;
   at: number;

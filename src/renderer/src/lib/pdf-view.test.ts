@@ -12,6 +12,7 @@ import {
   movePiece,
   paperOptions,
   parseCopies,
+  pieceCaption,
   printCount,
   visibleOrder,
 } from './pdf-view';
@@ -45,6 +46,12 @@ describe('papers', () => {
     expect(defaultPaperKey(assigned)).toBe('100x150');
     expect(defaultPaperKey({ '60x40': '标签机A' })).toBe('60x40');
     expect(defaultPaperKey({})).toBe('100x150');
+  });
+});
+
+describe('pieceCaption', () => {
+  test('names the page and the piece as two parts', () => {
+    expect(pieceCaption({ page: 1, piece: 2 })).toBe('第 1 页 · 第 2 张');
   });
 });
 

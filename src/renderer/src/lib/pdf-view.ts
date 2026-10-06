@@ -107,6 +107,11 @@ export function printCount(order: readonly string[], removed: ReadonlySet<string
   return visibleOrder(order, removed).length * copies;
 }
 
+/** 缩略图下的说明：页和张分成两段，一眼分得开。 */
+export function pieceCaption({ page, piece }: { page: number; piece: number }): string {
+  return `第 ${page} 页 · 第 ${piece} 张`;
+}
+
 export function describePieces({ total, removed, copies }: { total: number; removed: number; copies: number }): string {
   const parts = [`共 ${total} 张`];
   if (removed > 0) {

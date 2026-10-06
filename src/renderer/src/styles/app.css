@@ -5415,8 +5415,9 @@ ol.pdf-box-list li {
   image-rendering: pixelated;
 }
 
+/* 说明是给人看的中文，用界面字体（等宽的数据字体排中文又宽又散）。 */
 .pdf-piece__name {
-  font-family: var(--font-data);
+  font-size: 12px;
   white-space: nowrap;
 }
 

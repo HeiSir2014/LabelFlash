@@ -59,28 +59,38 @@ export interface ElementPropertiesProps {
   onImportImage: (file: File) => void;
   /** 这个图片元素是不是正在读取（由调用方按 element.id 查 `designer.isImportingImage` 得出）。 */
   isImportingImage: boolean;
-  /** 这次排版里这个元素的问题（打印前检查里的那几条）。 */
-  warnings: readonly ElementWarning[];
-  /** 「放大到能印」：按这条问题带的最小尺寸放大。 */
-  onGrowToPrint: (warning: ElementWarning) => void;
 }
 
-/** 选中一个元素时右栏的属性：通用的位置、大小、旋转、锁定，再加这一类自己的设置。 */
-export function ElementProperties(props: ElementPropertiesProps) {
-  const { element, paper, onChange, onRotate, onEndMerge, warnings, onGrowToPrint } = props;
+/** 检查器第一个标签页：这一类元素自己的设置（文字的内容和字号、条码的码制和内容……），最上面是名称。 */
+export function ElementContent(props: ElementPropertiesProps) {
+  const { element, onChange, onEndMerge } = props;
+  return (
+    <section className="inspector-section" aria-label={CANVAS_ELEMENT_LABELS[element.kind]}>
+      <TextInput
+        label="名称"
+        value={element.name}
+        maxLength={CANVAS_LIMITS.nameLength}
+        onChange={(name) => onChange({ ...element, name }, 'name')}
+        onBlur={onEndMerge}
+      />
+      <KindProperties {...props} />
+    </section>
+  );
+}
+
+/** 检查器「排列」页的位置、大小、旋转、锁定（数字是毫米，带步进）。对齐和叠放按钮由调用方接在后面。 */
+export function ElementGeometry({
+  element,
+  paper,
+  onChange,
+  onRotate,
+  onEndMerge,
+}: Pick<ElementPropertiesProps, 'element' | 'paper' | 'onChange' | 'onRotate' | 'onEndMerge'>) {
   const min = CANVAS_LIMITS.minSizeMm;
   return (
     <>
-      {warnings.length > 0 && <ElementWarnings warnings={warnings} paper={paper} onGrowToPrint={onGrowToPrint} />}
-      <section className="form-section">
-        <h2 className="form-section__title">{CANVAS_ELEMENT_LABELS[element.kind]}</h2>
-        <TextInput
-          label="名称"
-          value={element.name}
-          maxLength={CANVAS_LIMITS.nameLength}
-          onChange={(name) => onChange({ ...element, name }, 'name')}
-          onBlur={onEndMerge}
-        />
+      <h3 className="inspector-heading">位置和大小</h3>
+      <div className="inspector-pair">
         <NumberField
           label="X"
           value={element.x}
@@ -117,19 +127,17 @@ export function ElementProperties(props: ElementPropertiesProps) {
           onChange={(height) => onChange({ ...element, height }, 'height')}
           onBlur={onEndMerge}
         />
-        <Segmented
-          label="旋转"
-          value={String(element.rotation)}
-          options={ROTATION_OPTIONS}
-          onChange={(value) => onRotate(ROTATIONS.find((rotation) => String(rotation) === value) ?? 0)}
-        />
-        <Toggle label="锁定" checked={element.locked} onChange={(locked) => onChange({ ...element, locked }, null)} />
-        {element.locked && <p className="form-hint">锁定后在画布上不能拖动、缩放和删除；这里的数字照样能改。</p>}
-      </section>
-      <section className="form-section">
-        <h2 className="form-section__title">设置</h2>
-        <KindProperties {...props} />
-      </section>
+      </div>
+      <Segmented
+        label="旋转"
+        value={String(element.rotation)}
+        options={ROTATION_OPTIONS}
+        onChange={(value) => onRotate(ROTATIONS.find((rotation) => String(rotation) === value) ?? 0)}
+      />
+      <Toggle label="锁定" checked={element.locked} onChange={(locked) => onChange({ ...element, locked }, null)} />
+      {element.locked && (
+        <p className="form-hint">锁定后在画布上点不中、拖不动、删不掉（在图层里选它）；这里的数字照样能改。</p>
+      )}
     </>
   );
 }
@@ -138,7 +146,7 @@ export function ElementProperties(props: ElementPropertiesProps) {
  * 选中元素的问题，写在属性最上面：不印的（红）带「放大到能印」（条码有最小尺寸时）；
  * 最小尺寸比纸还大时按钮不可用，并说明要换短一点的内容或换码制。
  */
-function ElementWarnings({
+export function ElementWarnings({
   warnings,
   paper,
   onGrowToPrint,

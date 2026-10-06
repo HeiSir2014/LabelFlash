@@ -3130,7 +3130,7 @@ textarea {
   }
 }
 
-/* ── 模板页 · 自由设计的设计器：上面工具条；左元素、中画布、右属性和图层；下面打印前检查 ── */
+/* ── 模板页 · 自由设计的设计器：画布优先。上面一条窄栏；左元素图标、中画布、右检查器；下面一条打印前检查 ── */
 .template-editing.template-editing--canvas {
   grid-template-areas:
     "designer"
@@ -3143,60 +3143,104 @@ textarea {
   display: grid;
   grid-area: designer;
   grid-template-areas:
-    "toolbar toolbar toolbar"
-    "palette stage panel"
+    "header header header"
+    "rail stage inspector"
     "checks checks checks";
-  grid-template-columns: var(--designer-palette-width) minmax(0, 1fr) var(--designer-panel-width);
+  grid-template-columns: var(--designer-rail-width) minmax(0, 1fr) var(--designer-panel-width);
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
+  background: var(--color-housing);
 }
 
-/* 工具条：按组排开，放不下时整组换行，组内的按钮不拆开 */
-.designer-toolbar {
+/* 上面一条窄栏：预览内容占满剩下的宽度，右边网格、吸附、快捷键 */
+.designer-header {
   display: flex;
-  grid-area: toolbar;
-  flex-wrap: wrap;
+  grid-area: header;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
-  padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--color-rule);
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   background: var(--color-paper);
+  box-shadow: 0 1px 0 var(--color-rule);
 }
 
-.designer-toolbar__group {
+.designer-header .sample-input {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.designer-header__tools {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--space-1);
+}
+
+/* 设计器的图标按钮：方形圆角、无边框，悬停才有底色；按下的开关用软尺黄 */
+.icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 32px;
+  height: 32px;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: 8px;
+  color: var(--color-ink);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color var(--ui-duration) ease-out;
+}
+
+.icon-button--text {
+  padding: 0 var(--space-2);
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--color-housing);
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid var(--color-selection);
+  outline-offset: 1px;
+}
+
+.icon-button:disabled {
+  color: var(--color-ink-soft);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.icon-button[aria-pressed="true"] {
+  background: var(--color-tape-wash);
+  box-shadow: inset 0 0 0 1px var(--color-tape);
+}
+
+.designer-icon {
+  display: block;
+  flex: none;
+}
+
+/* 一组图标按钮（对齐、等距、叠放）：一行排开，放不下换行。fieldset 只用来给一组按钮起名字，去掉默认的边框和边距 */
+.icon-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
   min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
 }
 
-.designer-toolbar__label {
-  margin-right: var(--space-1);
-  color: var(--color-ink-soft);
-  font-size: 12px;
-}
-
-/* 开着的开关（网格、吸附、适合窗口）：软尺黄，和导航当前项一致 */
-.designer-toolbar .button[aria-pressed="true"] {
-  border-color: var(--color-tape);
-  background: var(--color-tape-wash);
-}
-
-.designer-toolbar__zoom {
-  min-width: 4em;
-  color: var(--color-ink-soft);
-  font: 12px var(--font-data);
-  text-align: center;
-}
-
-/* 预览内容占工具条剩下的宽度，至少放得下一个编码 */
-.designer-toolbar .sample-input {
-  flex: 1 1 240px;
-  min-width: 200px;
+fieldset.designer-float,
+fieldset.designer-zoom__menu {
+  min-width: 0;
+  margin: 0;
+  border: 0;
 }
 
 .sample-input--compact {
@@ -3219,54 +3263,139 @@ textarea {
   white-space: nowrap;
 }
 
-/* 左：元素栏 */
-.element-palette {
+/* 左：竖排的元素图标栏，图标下面两三个字 */
+.element-rail {
   display: flex;
-  grid-area: palette;
+  grid-area: rail;
   flex-direction: column;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-1);
   min-height: 0;
-  padding: var(--space-3) var(--space-2);
+  padding: var(--space-2) 0;
   overflow-y: auto;
-  border-right: 1px solid var(--color-rule);
   background: var(--color-paper);
+  box-shadow: 1px 0 0 var(--color-rule);
 }
 
-.element-palette__item {
-  height: 36px;
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius);
-  color: inherit;
-  background: var(--color-field);
-  font: inherit;
-  font-size: 13px;
-  cursor: grab;
-}
-
-.element-palette__item:hover {
-  border-color: var(--color-ink);
-}
-
-.element-palette__item:focus-visible {
-  outline: 2px solid var(--color-ink);
-  outline-offset: 1px;
-}
-
-.element-palette__hint {
-  margin: 0;
-  color: var(--color-ink-soft);
-  font-size: 11px;
-}
-
-/* 中：画布。放大后超出时可以滚动；margin: auto 居中，超出时仍能滚到左上角 */
-.canvas-stage {
+.element-rail__item {
   display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: var(--radius-float);
+  color: var(--color-ink);
+  background: transparent;
+  font: inherit;
+  cursor: grab;
+  transition: background-color var(--ui-duration) ease-out;
+}
+
+.element-rail__item:hover {
+  background: var(--color-housing);
+}
+
+.element-rail__item:focus-visible {
+  outline: 2px solid var(--color-selection);
+  outline-offset: -2px;
+}
+
+.element-rail__label {
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+/* 中：画布区。滚动区占满，撤销重做和缩放浮在它的角上 */
+.designer-stage-area {
+  position: relative;
   grid-area: stage;
   min-width: 0;
   min-height: 0;
-  padding: var(--space-4);
+}
+
+/* 画布：平静的中性底色，放大后超出时可以滚动；margin: auto 居中，超出时仍能滚到左上角。
+   上下多留的地方给浮在角上的撤销重做、缩放让位，标签不会被它们盖住 */
+.canvas-stage {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  padding: 56px var(--space-5);
   overflow: auto;
   background: var(--color-housing);
+}
+
+/* 浮在画布上的界面：圆角、柔和阴影 */
+.designer-float {
+  display: flex;
+  position: absolute;
+  z-index: 2;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-float);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-float);
+}
+
+.designer-history {
+  top: var(--space-3);
+  left: var(--space-3);
+}
+
+.designer-zoom {
+  right: var(--space-3);
+  bottom: var(--space-3);
+}
+
+.designer-zoom__value {
+  min-width: 52px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--color-ink);
+  background: transparent;
+  font: 12px var(--font-data);
+  cursor: pointer;
+}
+
+.designer-zoom__value:hover {
+  background: var(--color-housing);
+}
+
+.designer-zoom__menu {
+  display: flex;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--space-2));
+  flex-direction: column;
+  min-width: 160px;
+  padding: var(--space-1);
+  border-radius: var(--radius-float);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-float);
+}
+
+.designer-zoom__choice {
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: 6px;
+  color: var(--color-ink);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.designer-zoom__choice:hover,
+.designer-zoom__choice:focus-visible {
+  background: var(--color-housing);
+  outline: none;
 }
 
 /* --mm、--ruler-depth 和标签预览（.label-preview）同一种算法：软尺、标签和覆盖层按同一个缩放 */
@@ -3446,29 +3575,108 @@ textarea {
   pointer-events: none;
 }
 
-/* 右：属性和图层 */
-.designer-panel {
+/* 右：检查器。轻：不画重边框，顶上一排分段标签，下面按组排、留白 */
+.inspector {
   display: flex;
-  grid-area: panel;
+  grid-area: inspector;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-paper);
+  box-shadow: -1px 0 0 var(--color-rule);
+}
+
+.inspector__tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  margin: var(--space-3) var(--space-3) 0;
+  padding: 3px;
+  border-radius: var(--radius-float);
+  background: var(--color-housing);
+}
+
+.inspector__tab {
+  flex: 1;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--color-ink-soft);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background-color var(--ui-duration) ease-out,
+    color var(--ui-duration) ease-out;
+}
+
+.inspector__tab[aria-selected="true"] {
+  color: var(--color-ink);
+  background: var(--color-paper);
+  box-shadow: 0 1px 3px rgb(24 33 30 / 0.16);
+  font-weight: 700;
+}
+
+.inspector__tab:focus-visible {
+  outline: 2px solid var(--color-selection);
+  outline-offset: 1px;
+}
+
+.inspector__panel {
+  display: flex;
+  flex: 1;
   flex-direction: column;
   gap: var(--space-3);
   min-height: 0;
   padding: var(--space-3);
   overflow-y: auto;
-  border-left: 1px solid var(--color-rule);
-  background: var(--color-paper);
 }
 
-.designer-panel .form-section {
-  padding: var(--space-3);
+.inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
-.designer-panel .form-row {
+/* 分组标题：小号、浅色，像平板排版软件「格式」面板里的小标签 */
+.inspector-heading {
+  margin: var(--space-2) 0 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.inspector .form-row {
   grid-template-columns: var(--designer-label-width) minmax(0, 1fr);
+  min-height: 32px;
 }
 
-.designer-panel .form-row--stacked {
+.inspector .form-row--stacked {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* 位置和大小：X、Y 一行，宽、高一行 */
+.inspector-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-3);
+}
+
+.inspector .inspector-pair .form-row {
+  grid-template-columns: 1.5em minmax(0, 1fr);
+  gap: var(--space-1);
+}
+
+.inspector-pair .text-field--number {
+  width: 100%;
+  min-width: 0;
+}
+
+.inspector .form-section {
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .designer-subtitle {
@@ -3582,36 +3790,110 @@ textarea {
   font-size: 12px;
 }
 
-/* 下：打印前检查，最多三四行高，多了在里面滚动 */
+/* 下：打印前检查收成一条；点开时清单往上展开，最多五六行高，多了在里面滚动 */
 .designer-checks {
+  display: flex;
   grid-area: checks;
-  max-height: 96px;
-  padding: var(--space-2) var(--space-4);
-  overflow-y: auto;
-  border-top: 1px solid var(--color-rule);
+  flex-direction: column-reverse;
+  min-width: 0;
   background: var(--color-paper);
+  box-shadow: 0 -1px 0 var(--color-rule);
+  font-size: 13px;
 }
 
-.designer-checks__title {
-  margin: 0 0 var(--space-1);
-  font-size: 13px;
+.designer-checks__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 36px;
+  margin: 0;
+  padding: 0 var(--space-4);
+}
+
+.designer-checks__summary--ok {
+  color: var(--color-success);
+}
+
+.designer-checks__summary--quiet {
+  color: var(--color-ink-soft);
+}
+
+.designer-checks__toggle {
+  width: 100%;
+  border: 0;
+  color: var(--color-ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.designer-checks__toggle:hover {
+  background: var(--color-housing);
+}
+
+.designer-checks__toggle:focus-visible {
+  outline: 2px solid var(--color-selection);
+  outline-offset: -2px;
+}
+
+.designer-checks__count {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  background: var(--color-warning-wash);
+  color: var(--color-warning-text);
   font-weight: 700;
 }
 
-.designer-checks__ok {
-  margin: 0;
-  color: var(--color-success);
-  font-size: 13px;
+.designer-checks__count--omitted {
+  background: var(--color-error-wash);
+  color: var(--color-error);
+}
+
+.designer-checks__first {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .designer-checks__list {
+  max-height: 168px;
   margin: 0;
-  padding-left: var(--space-5);
-  font-size: 13px;
+  padding: var(--space-2) var(--space-3) 0;
+  overflow-y: auto;
+  list-style: none;
 }
 
-.designer-checks__list li::marker {
-  color: var(--color-warning);
+.designer-checks__item {
+  display: block;
+  width: 100%;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  border: 0;
+  border-left: 3px solid var(--color-warning);
+  border-radius: 4px;
+  color: var(--color-ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+}
+
+button.designer-checks__item {
+  cursor: pointer;
+}
+
+button.designer-checks__item:hover {
+  background: var(--color-housing);
+}
+
+.designer-checks__item--omitted {
+  border-left-color: var(--color-error);
 }
 
 /* ── 应用内确认框（原生模态 dialog，浏览器负责居中和置顶） ── */

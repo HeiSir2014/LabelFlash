@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useRef, useState } from 'react';
-import type { CanvasTemplate } from '../../../../core/templates/canvas-model';
+import { CANVAS_ELEMENT_LABELS, type CanvasTemplate } from '../../../../core/templates/canvas-model';
 import { type ElementWarning, NO_RENDER_WARNINGS, renderWarningTexts } from '../../../../shared/render-warnings';
 import type { Platform } from '../../lib/app-view';
 import { clampAll, replaceElement, rotateElement } from '../../lib/canvas-edit';
@@ -13,10 +13,13 @@ import type { TemplatePreview } from '../../view-models/use-template-preview';
 import { RULER_DEPTH_MM } from '../Ruler';
 import type { SampleContent } from '../SampleInput';
 import { type PrinterChoices, TemplateBasics } from '../TemplateBasics';
+import { AlignButtons, DistributeButtons, LayerOrderButtons } from './ArrangeButtons';
 import { CanvasStage } from './CanvasStage';
-import { DesignerToolbar } from './DesignerToolbar';
+import { type CheckItem, DesignerChecks } from './DesignerChecks';
+import { DesignerHeader, HistoryButtons, ZoomPill } from './DesignerToolbar';
 import { ElementPalette } from './ElementPalette';
-import { ElementProperties } from './ElementProperties';
+import { ElementContent, ElementGeometry, ElementWarnings } from './ElementProperties';
+import { Inspector, type InspectorTab } from './Inspector';
 import { LayerList } from './LayerList';
 
 /** 「适合窗口」最多放大到 4 倍：小标签放得太大反而看不出实际大小，要更大用「放大」。 */
@@ -29,10 +32,13 @@ export interface CanvasDesignerProps extends PrinterChoices {
   sample: SampleContent;
   /** 「插入字段」的候选。 */
   fieldNames: readonly string[];
-  /** 画布覆盖层 aria-label 里撤销快捷键的文字按平台显示（Windows「Ctrl+Z」，macOS「⌘Z」）。 */
+  /** 快捷键的文字按平台显示（Windows「Ctrl+Z」，macOS「⌘Z」）。 */
   platform: Platform;
   onChange: (draft: CanvasTemplate) => void;
 }
+
+/** 检查器的三种标签页：第一页（元素自己的设置；没选中时是模板、多选时是排列）、排列、图层。 */
+type InspectorTabId = 'main' | 'arrange' | 'layers';
 
 /** 画布上没有标签时说的话：只说程序确知的事。 */
 function placeholderOf(preview: TemplatePreview | null): string {
@@ -40,7 +46,27 @@ function placeholderOf(preview: TemplatePreview | null): string {
 }
 
 /**
- * 自由设计模板的设计器（经典三栏）：上面工具条，左边元素，中间画布，右边属性和图层，下面打印前检查。
+ * 打印前检查的清单：自由设计模板的每条问题都带着元素（RenderWarnings.elements）；万一有没对上元素的，
+ * 按 renderWarningTexts 的文字补在后面，不丢。
+ */
+function checkItemsOf(warnings: typeof NO_RENDER_WARNINGS): CheckItem[] {
+  const items: CheckItem[] = warnings.elements.map((warning) => ({
+    text: warning.text,
+    level: warning.level,
+    elementId: warning.elementId,
+  }));
+  for (const text of renderWarningTexts(warnings)) {
+    if (!items.some((item) => item.text === text)) {
+      items.push({ text, level: 'warning', elementId: null });
+    }
+  }
+  // 不印的排在前面：收起时那一条里先看到最要紧的。sort 是稳定的，同一级别保持原来的顺序。
+  return items.sort((a, b) => Number(b.level === 'omitted') - Number(a.level === 'omitted'));
+}
+
+/**
+ * 自由设计模板的设计器：画布优先。上面一条窄栏（预览内容、网格、吸附、快捷键），左边竖排的元素图标，
+ * 中间画布（左上角撤销重做、右下角缩放），右边检查器（分段标签），下面一条打印前检查。
  * 状态在 use-canvas-designer、use-canvas-gesture；这里只把它们接到各个部分上。
  */
 export function CanvasDesigner({
@@ -83,7 +109,12 @@ export function CanvasDesigner({
   // 按 templateId 核对，不是这份草稿的结果就当还没有，不然会闪一下上一个模板的标签和检查结果。
   const currentPreview = preview?.templateId === draft.id ? preview : null;
   const warnings = currentPreview?.warnings ?? NO_RENDER_WARNINGS;
-  const checks = renderWarningTexts(warnings);
+
+  // 检查器的标签页：选中的东西变了就回到第一页（看「图层」时除外：在图层里点选不该被弹回去）。
+  const selectionKey = designer.selection.join(',');
+  const [tabState, setTabState] = useState<{ key: string; tab: InspectorTabId }>({ key: '', tab: 'main' });
+  const requestedTab = tabState.key === selectionKey || tabState.tab === 'layers' ? tabState.tab : 'main';
+  const selectTab = (tab: InspectorTabId) => setTabState({ key: selectionKey, tab });
 
   const growToPrintOf = (warning: ElementWarning) => {
     const grown = growToPrint(draft, warning);
@@ -126,50 +157,89 @@ export function CanvasDesigner({
     }
   };
 
-  return (
-    <section className="canvas-designer" aria-label="设计器">
-      <DesignerToolbar designer={designer} zoom={zoom} sample={sample} />
-      <ElementPalette onAdd={(kind) => designer.add(kind)} />
-      <CanvasStage
-        template={draft}
-        html={currentPreview?.html ?? null}
-        placeholder={placeholderOf(currentPreview)}
-        zoom={zoom}
-        showGrid={designer.showGrid}
-        undoShortcut={undoShortcutLabel(platform)}
-        selection={designer.selection}
-        hoverId={gesture.hoverId}
-        warnings={warnings.elements}
-        gesture={gesture.view}
-        handlers={gesture.handlers}
-        stageRef={stageRef}
-        overlayRef={overlayRef}
-        onKeyDown={onKeyDown}
-        onDropElement={(kind, center) => designer.add(kind, center)}
-        onEditText={setEditTextId}
-      />
-      <aside className="designer-panel" aria-label="属性">
-        {selected !== null ? (
-          <ElementProperties
+  const layers = <LayerList elements={draft.elements} selection={designer.selection} onSelect={designer.select} />;
+  const layerTab: InspectorTab<InspectorTabId> = { id: 'layers', label: '图层', content: layers };
+  const arrangeButtons = (isSingle: boolean) => (
+    <>
+      <h3 className="inspector-heading">{isSingle ? '对齐到安全区' : '对齐'}</h3>
+      <AlignButtons isSingle={isSingle} onAlign={designer.align} />
+      {!isSingle && (
+        <>
+          <h3 className="inspector-heading">等距</h3>
+          <DistributeButtons disabled={!designer.canDistribute} onDistribute={designer.distribute} />
+        </>
+      )}
+      <h3 className="inspector-heading">叠放</h3>
+      <LayerOrderButtons platform={platform} onMove={designer.moveLayers} />
+    </>
+  );
+
+  let tabs: InspectorTab<InspectorTabId>[];
+  if (selected !== null) {
+    const onElementChange = (next: typeof selected, field: string | null) =>
+      designer.commit(replaceElement(draft, next), historyMergeKey(next.id, field));
+    const onRotate = (rotation: typeof selected.rotation) =>
+      designer.commit(rotateElement(draft, selected.id, rotation));
+    tabs = [
+      {
+        id: 'main',
+        label: CANVAS_ELEMENT_LABELS[selected.kind],
+        content: (
+          <ElementContent
             key={selected.id}
             element={selected}
             paper={draft.paper}
             fieldNames={fieldNames}
             editTextId={editTextId}
             onTextEditStarted={() => setEditTextId(null)}
-            onChange={(next, field) => designer.commit(replaceElement(draft, next), historyMergeKey(next.id, field))}
-            onRotate={(rotation) => designer.commit(rotateElement(draft, selected.id, rotation))}
+            onChange={onElementChange}
+            onRotate={onRotate}
             onEndMerge={designer.endMerge}
             onImportImage={(file) => designer.importImage(selected.id, file)}
             isImportingImage={designer.isImportingImage(selected.id)}
-            warnings={warnings.elements.filter((warning) => warning.elementId === selected.id)}
-            onGrowToPrint={growToPrintOf}
           />
-        ) : designer.selection.length > 1 ? (
-          <p className="form-hint">{`已选 ${designer.selection.length} 个元素：用上面的按钮对齐、等距、置顶置底，方向键一起移动。`}</p>
-        ) : (
-          <section className="form-section">
-            <h2 className="form-section__title">模板</h2>
+        ),
+      },
+      {
+        id: 'arrange',
+        label: '排列',
+        content: (
+          <section className="inspector-section" aria-label="排列">
+            <ElementGeometry
+              key={selected.id}
+              element={selected}
+              paper={draft.paper}
+              onChange={onElementChange}
+              onRotate={onRotate}
+              onEndMerge={designer.endMerge}
+            />
+            {arrangeButtons(true)}
+          </section>
+        ),
+      },
+      layerTab,
+    ];
+  } else if (designer.selection.length > 1) {
+    tabs = [
+      {
+        id: 'main',
+        label: '排列',
+        content: (
+          <section className="inspector-section" aria-label="排列">
+            <p className="form-hint">{`已选 ${designer.selection.length} 个元素：方向键一起移动，拖动其中一个整组跟着动。`}</p>
+            {arrangeButtons(false)}
+          </section>
+        ),
+      },
+      layerTab,
+    ];
+  } else {
+    tabs = [
+      {
+        id: 'main',
+        label: '模板',
+        content: (
+          <section className="inspector-section" aria-label="模板">
             <TemplateBasics
               draft={draft}
               onChange={onBasicsChange}
@@ -178,23 +248,59 @@ export function CanvasDesigner({
               paperPrinters={paperPrinters}
             />
           </section>
-        )}
-        <LayerList elements={draft.elements} selection={designer.selection} onSelect={designer.select} />
-      </aside>
-      <section className="designer-checks" aria-label="打印前检查">
-        <h2 className="designer-checks__title">打印前检查</h2>
-        {currentPreview === null ? (
-          <p className="designer-checks__ok">正在检查…</p>
-        ) : checks.length === 0 ? (
-          <p className="designer-checks__ok">按这段预览内容没有发现问题</p>
-        ) : (
-          <ul className="designer-checks__list">
-            {checks.map((text) => (
-              <li key={text}>{text}</li>
-            ))}
-          </ul>
-        )}
-      </section>
+        ),
+      },
+      layerTab,
+    ];
+  }
+  const activeTab = tabs.some((tab) => tab.id === requestedTab) ? requestedTab : 'main';
+  const selectedWarnings =
+    selected === null ? [] : warnings.elements.filter((warning) => warning.elementId === selected.id);
+
+  return (
+    <section className="canvas-designer" aria-label="设计器">
+      <DesignerHeader designer={designer} sample={sample} platform={platform} />
+      <ElementPalette onAdd={(kind) => designer.add(kind)} />
+      <div className="designer-stage-area">
+        <CanvasStage
+          template={draft}
+          html={currentPreview?.html ?? null}
+          placeholder={placeholderOf(currentPreview)}
+          zoom={zoom}
+          showGrid={designer.showGrid}
+          undoShortcut={undoShortcutLabel(platform)}
+          selection={designer.selection}
+          hoverId={gesture.hoverId}
+          warnings={warnings.elements}
+          gesture={gesture.view}
+          handlers={gesture.handlers}
+          stageRef={stageRef}
+          overlayRef={overlayRef}
+          onKeyDown={onKeyDown}
+          onDropElement={(kind, center) => designer.add(kind, center)}
+          onEditText={(id) => {
+            setEditTextId(id);
+            selectTab('main');
+          }}
+        />
+        <HistoryButtons designer={designer} platform={platform} />
+        <ZoomPill designer={designer} zoom={zoom} platform={platform} />
+      </div>
+      <Inspector
+        tabs={tabs}
+        active={activeTab}
+        onSelect={selectTab}
+        header={
+          selectedWarnings.length > 0 && (
+            <ElementWarnings warnings={selectedWarnings} paper={draft.paper} onGrowToPrint={growToPrintOf} />
+          )
+        }
+      />
+      <DesignerChecks
+        isPending={currentPreview === null}
+        items={checkItemsOf(warnings)}
+        onSelectElement={(id) => designer.select([id])}
+      />
     </section>
   );
 }

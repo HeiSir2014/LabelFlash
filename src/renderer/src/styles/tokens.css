@@ -61,13 +61,19 @@
   --template-library-nav-width: 184px;
   /* 识别规则页右侧「试一试」的宽度 */
   --tester-width: 360px;
-  /* 设计器：左边元素栏放得下「二维码」三个字的按钮；右边属性栏放得下标签列和一个数字框 */
-  --designer-palette-width: 88px;
+  /* 设计器：左边竖排的元素图标栏（图标下面两三个字，「二维码」放得下）；右边检查器放得下标签列和一个数字框 */
+  --designer-rail-width: 64px;
   --designer-panel-width: 300px;
-  /* 设计器属性栏的标签列：放得下四个字的标签（「放不下时」「号码字号」） */
+  /* 设计器检查器的标签列：放得下四个字的标签（「放不下时」「号码字号」） */
   --designer-label-width: 64px;
-  /* 选中元素的控制点：鼠标好抓，又不至于盖住小元素 */
-  --designer-handle-size: 8px;
+  /* 选中元素的控制点：看到的 10px（鼠标、数位板的笔好抓），可点范围 24px */
+  --designer-handle-size: 10px;
+  --designer-handle-hit: 24px;
+  /* 浮在画布上的界面（撤销重做、缩放胶囊、浮动工具条、菜单）：圆角、柔和阴影，和纸、面板分得开 */
+  --radius-float: 10px;
+  --shadow-float: 0 6px 20px rgb(24 33 30 / 0.14), 0 1px 3px rgb(24 33 30 / 0.12);
+  /* 面板、工具条出现和收起的过渡：短到不拖手，又看得出是从哪里来的 */
+  --ui-duration: 150ms;
   /* 确认框：两个按钮和两行说明不换行的宽度 */
   --dialog-width: 400px;
   /* 叠放层级：配置中心盖住工作台，提示条在配置中心之上；确认框是原生模态，浏览器放在最上层 */
@@ -96,5 +102,6 @@
   :root {
     --feed-duration: 0ms;
     --config-duration: 0ms;
+    --ui-duration: 0ms;
   }
 }

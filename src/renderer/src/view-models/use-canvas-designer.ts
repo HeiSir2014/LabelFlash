@@ -270,6 +270,9 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
       case 'align':
         commit(alignElements(draft, liveSelection, action.alignment));
         return;
+      case 'distribute':
+        commit(distributeElements(draft, liveSelection, action.axis));
+        return;
     }
   };
   /** 图层的「隐藏」：只在设计器里看不见、点不中（照常打印），不进模板、不进撤销历史。 */

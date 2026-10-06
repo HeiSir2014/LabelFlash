@@ -314,6 +314,7 @@ export function CanvasDesigner({
           allLocked:
             menu.ids.length > 0 &&
             draft.elements.filter((element) => menu.ids.includes(element.id)).every((element) => element.locked),
+          canDistribute: designer.canDistribute,
           platform,
         });
 
@@ -560,16 +561,12 @@ export function CanvasDesigner({
                 overlayRef={overlayRef}
                 warnings={selectedWarnings}
                 fieldOptions={fieldOptions}
-                canDistribute={designer.canDistribute}
                 onChange={(next) => designer.commit(replaceElement(draft, next))}
                 onEditText={() => startInlineEdit(null)}
                 onGrowToPrint={growToPrintOf}
                 onDuplicate={designer.duplicate}
                 onDelete={designer.remove}
-                onSetLocked={designer.setLocked}
-                onLayer={designer.moveLayers}
                 onAlign={designer.align}
-                onDistribute={designer.distribute}
                 onMore={(at) => setMenu({ at, ids: designer.selection })}
               />
             ) : undefined

@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { contextMenuItems, type MenuItem, nextEnabledIndex } from './canvas-menu';
 
-const NONE = { selectionCount: 0, canPaste: false, allLocked: false, platform: 'other' as const };
+const NONE = {
+  selectionCount: 0,
+  canPaste: false,
+  allLocked: false,
+  canDistribute: false,
+  platform: 'other' as const,
+};
 
 function labels(items: readonly MenuItem[]): string[] {
   return items.map((item) => item.label);
@@ -25,6 +31,15 @@ describe('contextMenuItems', () => {
     const align = items.find((item) => item.label === '对齐');
     expect(labels(align?.submenu ?? [])).toEqual(['左对齐', '水平居中', '右对齐', '顶对齐', '垂直居中', '底对齐']);
     expect(labels(contextMenuItems({ ...NONE, selectionCount: 1 }))).not.toContain('对齐');
+  });
+
+  // 浮动工具条的多选只放对齐：等距收在「⋯」里，三个以上才能用。
+  test('adds a distribute submenu when two or more elements are selected, usable from three', () => {
+    const two = contextMenuItems({ ...NONE, selectionCount: 2 }).find((item) => item.label === '等距');
+    expect(labels(two?.submenu ?? [])).toEqual(['水平等距', '垂直等距']);
+    expect(two?.disabled).toBe(true);
+    const three = contextMenuItems({ ...NONE, selectionCount: 3, canDistribute: true });
+    expect(three.find((item) => item.label === '等距')?.disabled).toBe(false);
   });
 
   test('offers to unlock when everything selected is locked, and does not offer to delete it', () => {

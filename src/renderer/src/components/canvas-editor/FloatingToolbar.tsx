@@ -1,14 +1,19 @@
-import { type RefObject, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, type RefObject, useLayoutEffect, useRef, useState } from 'react';
 import { CANVAS_LIMITS, type CanvasElement } from '../../../../core/templates/canvas-model';
 import type { ElementWarning } from '../../../../shared/render-warnings';
 import type { Platform } from '../../lib/app-view';
-import type { Alignment, Box, DistributeAxis } from '../../lib/canvas-edit';
-import { type FloatingPosition, floatingToolbarPosition } from '../../lib/canvas-float';
-import type { LayerMove } from '../../lib/canvas-view';
+import type { Alignment, Box } from '../../lib/canvas-edit';
+import {
+  type FloatingPosition,
+  type FloatingTool,
+  floatingToolbarPosition,
+  floatingTools,
+  nextTextAlign,
+} from '../../lib/canvas-float';
 import { PX_PER_MM } from '../../lib/canvas-view';
 import { withShortcut } from '../../lib/designer-shortcuts';
 import type { SelectOption } from '../../lib/insert-field-options';
-import { AlignButtons, DistributeButtons } from './ArrangeButtons';
+import { AlignButtons } from './ArrangeButtons';
 import { IconButton } from './IconButton';
 import { FONT_STEP_MM } from './options';
 
@@ -18,8 +23,12 @@ const GAP_ABOVE_PX = 18;
 const GAP_BELOW_PX = 46;
 /** 工具条离画布滚动区的边至少留这么多（px）。 */
 const EDGE_MARGIN_PX = 8;
-/** 为了让开撤销重做按钮最多收窄到这么窄（px）：再窄一行只剩两三个按钮，不如盖着一点。 */
-const MIN_NARROW_WIDTH_PX = 200;
+/** 对齐按钮的图标和名字跟着现在的对齐走（点一下换下一种）。 */
+const TEXT_ALIGN_TOOL = {
+  left: { icon: 'textLeft', label: '靠左' },
+  center: { icon: 'textCenter', label: '居中' },
+  right: { icon: 'textRight', label: '靠右' },
+} as const;
 
 interface FloatingToolbarProps {
   /** 选中的元素（一个或几个）。 */
@@ -35,25 +44,21 @@ interface FloatingToolbarProps {
   warnings: readonly ElementWarning[];
   /** 「绑定字段」下拉框的选项（条码、二维码用）。 */
   fieldOptions: readonly SelectOption[];
-  canDistribute: boolean;
   onChange: (next: CanvasElement) => void;
   onEditText: () => void;
   onGrowToPrint: (warning: ElementWarning) => void;
   onDuplicate: () => void;
   onDelete: () => void;
-  onSetLocked: (locked: boolean) => void;
-  onLayer: (move: LayerMove) => void;
   onAlign: (alignment: Alignment) => void;
-  onDistribute: (axis: DistributeAxis) => void;
-  /** 「⋯」：在按钮下面打开完整的菜单。 */
+  /** 「⋯」：在按钮下面打开完整的菜单（锁定、叠放、等距都在那里）。 */
   onMore: (at: { x: number; y: number }) => void;
 }
 
 /**
- * 跟着选中走的浮动工具条（参考平板上的排版软件）：选框上方（放不下在下方）一条圆角小工具条，放这一类最常用的操作。
- * 文字：字号 −/+、加粗、对齐、改字；条码 / 二维码：绑定字段、需要时「放大到能印」；任何元素：复制一份、删除、锁定、
- * 置顶置底，「⋯」打开完整菜单；多选：对齐、等距。拖动时由调用方藏起来，松手再出现。
- * 它在画布覆盖层后面的 DOM 里：画布有焦点时按 Tab 就走到这里。
+ * 跟着选中走的浮动工具条（参考平板上的排版软件）：选框上方（放不下在下方）一条圆角小工具条，一行、六到八个按钮，
+ * 放这一类最常用的操作（见 lib/canvas-float 的 floatingTools）。文字：字号 −/+、加粗、对齐、改字；
+ * 条码 / 二维码：绑定字段、需要时「放大到能印」；多选：对齐；都有复制一份、删除和「⋯」（完整菜单：锁定、叠放、等距）。
+ * 拖起来时由调用方藏起来，松手再出现。它在画布覆盖层后面的 DOM 里：画布有焦点时按 Tab 就走到这里。
  */
 export function FloatingToolbar(props: FloatingToolbarProps) {
   const { elements, box, zoom, stageRef, overlayRef } = props;
@@ -99,15 +104,13 @@ export function FloatingToolbar(props: FloatingToolbarProps) {
       right: stageRect.right - overlayRect.left - EDGE_MARGIN_PX,
       bottom: stageRect.bottom - overlayRect.top - EDGE_MARGIN_PX,
     };
-    // 画布区比工具条窄（1024 宽、条码多了「放大到能印」）时折成两行，不伸出画布区、不撑出横向滚动条。
-    // 宽度上限要在量尺寸之前就定好，量出来的才是折行后的大小。
-    toolbar.style.maxWidth = `${Math.max(0, bounds.right - bounds.left)}px`;
     // 画布区角上的撤销重做、缩放胶囊（和滚动区同在 .designer-stage-area 里）：工具条不盖住它们。
     const avoid = [...(stage.parentElement?.querySelectorAll<HTMLElement>('.designer-float') ?? [])].map((control) => {
       const rect = control.getBoundingClientRect();
       return { x: rect.left - overlayRect.left, y: rect.top - overlayRect.top, width: rect.width, height: rect.height };
     });
-    const place = () =>
+    // 工具条一行不折（按钮少，1024 宽也放得下）：按量出来的大小摆。
+    setPosition(
       floatingToolbarPosition({
         selection: { x: box.x * pxPerMm, y: box.y * pxPerMm, width: box.width * pxPerMm, height: box.height * pxPerMm },
         toolbar: { width: toolbar.offsetWidth, height: toolbar.offsetHeight },
@@ -115,14 +118,8 @@ export function FloatingToolbar(props: FloatingToolbarProps) {
         gap: GAP_ABOVE_PX,
         gapBelow: GAP_BELOW_PX,
         avoid,
-      });
-    let placed = place();
-    // 太宽、让不开撤销重做按钮：收窄（多折一行）放到它右边，不盖住任何一个按钮。
-    if (placed.narrowTo !== null && placed.narrowTo >= MIN_NARROW_WIDTH_PX) {
-      toolbar.style.maxWidth = `${placed.narrowTo}px`;
-      placed = place();
-    }
-    setPosition(placed);
+      }),
+    );
   }, [box.x, box.y, box.width, box.height, zoom, scrollTick, elements]);
 
   return (
@@ -135,94 +132,133 @@ export function FloatingToolbar(props: FloatingToolbarProps) {
         position === null ? { visibility: 'hidden' } : { left: position.left, top: position.top, visibility: 'visible' }
       }
     >
-      {elements.length === 1 && elements[0] !== undefined ? (
-        <SingleTools {...props} element={elements[0]} />
-      ) : (
-        <>
-          <AlignButtons isSingle={false} onAlign={props.onAlign} />
-          <span className="floating-toolbar__divider" aria-hidden="true" />
-          <DistributeButtons disabled={!props.canDistribute} onDistribute={props.onDistribute} />
-        </>
+      {floatingTools({ kinds: elements.map((element) => element.kind), canGrow: growableOf(props) !== undefined }).map(
+        (tool, index) => (
+          <Fragment key={tool}>
+            {/* 这一类自己的操作和通用的（复制一份、删除、⋯）之间一条竖线。 */}
+            {tool === 'duplicate' && index > 0 && <span className="floating-toolbar__divider" aria-hidden="true" />}
+            <Tool tool={tool} {...props} />
+          </Fragment>
+        ),
       )}
-      <span className="floating-toolbar__divider" aria-hidden="true" />
-      <CommonTools {...props} />
     </div>
   );
 }
 
-function SingleTools(props: FloatingToolbarProps & { element: CanvasElement }) {
-  const { element, onChange, warnings, onGrowToPrint } = props;
-  switch (element.kind) {
-    case 'text': {
-      const { min, max } = CANVAS_LIMITS.fontSizeMm;
-      const setSize = (fontSizeMm: number) =>
-        onChange({ ...element, fontSizeMm: Math.min(max, Math.max(min, Math.round(fontSizeMm * 10) / 10)) });
-      return (
-        <>
-          <IconButton
-            icon="minus"
-            name="字号减小"
-            disabled={element.fontSizeMm <= min}
-            onClick={() => setSize(element.fontSizeMm - FONT_STEP_MM)}
-          />
-          <span className="floating-toolbar__value" title="字号（mm）">{`${element.fontSizeMm}`}</span>
-          <IconButton
-            icon="plus"
-            name="字号增大"
-            disabled={element.fontSizeMm >= max}
-            onClick={() => setSize(element.fontSizeMm + FONT_STEP_MM)}
-          />
-          <IconButton
-            icon="bold"
-            name="加粗"
-            pressed={element.bold}
-            onClick={() => onChange({ ...element, bold: !element.bold })}
-          />
-          <IconButton
-            icon="textLeft"
-            name="文字靠左"
-            pressed={element.align === 'left'}
-            onClick={() => onChange({ ...element, align: 'left' })}
-          />
-          <IconButton
-            icon="textCenter"
-            name="文字居中"
-            pressed={element.align === 'center'}
-            onClick={() => onChange({ ...element, align: 'center' })}
-          />
-          <IconButton
-            icon="textRight"
-            name="文字靠右"
-            pressed={element.align === 'right'}
-            onClick={() => onChange({ ...element, align: 'right' })}
-          />
-          <IconButton icon="edit" name="改文字" tooltip="改文字（也可以双击）" onClick={props.onEditText} />
-        </>
-      );
-    }
-    case 'barcode':
-    case 'qr': {
-      const growable = warnings.find(
+/** 选中的那一个条码（二维码）印不出、放大就能印时，那条问题。 */
+function growableOf({ elements, warnings }: FloatingToolbarProps): ElementWarning | undefined {
+  return elements.length === 1
+    ? warnings.find(
         (warning) => warning.level === 'omitted' && (warning.minWidthMm !== null || warning.minHeightMm !== null),
-      );
+      )
+    : undefined;
+}
+
+function Tool(props: FloatingToolbarProps & { tool: FloatingTool }) {
+  const { tool, elements, platform, onChange } = props;
+  const [single] = elements;
+  switch (tool) {
+    case 'fontSize':
+      return single?.kind === 'text' ? <FontSize element={single} onChange={onChange} /> : null;
+    case 'bold':
+      return single?.kind === 'text' ? (
+        <IconButton
+          icon="bold"
+          name="加粗"
+          pressed={single.bold}
+          onClick={() => onChange({ ...single, bold: !single.bold })}
+        />
+      ) : null;
+    case 'textAlign': {
+      if (single?.kind !== 'text') {
+        return null;
+      }
+      const current = TEXT_ALIGN_TOOL[single.align];
+      const next = TEXT_ALIGN_TOOL[nextTextAlign(single.align)];
       return (
-        <>
-          <FieldSelect element={element} options={props.fieldOptions} onChange={onChange} />
-          {growable !== undefined && (
-            <IconButton
-              icon="grow"
-              name="放大到能印"
-              text="放大到能印"
-              className="floating-toolbar__fix"
-              onClick={() => onGrowToPrint(growable)}
-            />
-          )}
-        </>
+        <IconButton
+          icon={current.icon}
+          name={`文字${current.label}`}
+          tooltip={`文字${current.label}（点一下换成${next.label}）`}
+          onClick={() => onChange({ ...single, align: nextTextAlign(single.align) })}
+        />
       );
     }
-    default:
-      return null;
+    case 'editText':
+      return <IconButton icon="edit" name="改文字" tooltip="改文字（也可以双击）" onClick={props.onEditText} />;
+    case 'field':
+      return single?.kind === 'barcode' || single?.kind === 'qr' ? (
+        <FieldSelect element={single} options={props.fieldOptions} onChange={onChange} />
+      ) : null;
+    case 'grow': {
+      const growable = growableOf(props);
+      return growable === undefined ? null : (
+        <IconButton
+          icon="grow"
+          name="放大到能印"
+          text="放大到能印"
+          className="floating-toolbar__fix"
+          onClick={() => props.onGrowToPrint(growable)}
+        />
+      );
+    }
+    case 'alignElements':
+      return <AlignButtons isSingle={false} onAlign={props.onAlign} />;
+    case 'duplicate':
+      return (
+        <IconButton
+          icon="duplicate"
+          name="复制一份"
+          tooltip={withShortcut('复制一份', 'duplicate', platform)}
+          onClick={props.onDuplicate}
+        />
+      );
+    case 'delete':
+      return (
+        <IconButton
+          icon="trash"
+          name="删除"
+          tooltip={withShortcut('删除', 'delete', platform)}
+          disabled={elements.every((element) => element.locked)}
+          onClick={props.onDelete}
+        />
+      );
+    case 'more':
+      return <MoreButton onMore={props.onMore} />;
   }
+}
+
+/** 字号 − 数字 +：数字后面小字写单位（字号按毫米算，和检查器、打印一致）。 */
+function FontSize({
+  element,
+  onChange,
+}: {
+  element: Extract<CanvasElement, { kind: 'text' }>;
+  onChange: (next: CanvasElement) => void;
+}) {
+  const { min, max } = CANVAS_LIMITS.fontSizeMm;
+  const setSize = (fontSizeMm: number) =>
+    onChange({ ...element, fontSizeMm: Math.min(max, Math.max(min, Math.round(fontSizeMm * 10) / 10)) });
+  return (
+    <>
+      <IconButton
+        icon="minus"
+        name="字号减小"
+        disabled={element.fontSizeMm <= min}
+        onClick={() => setSize(element.fontSizeMm - FONT_STEP_MM)}
+      />
+      <span className="floating-toolbar__value" title={`字号 ${element.fontSizeMm}mm`}>
+        {element.fontSizeMm}
+        <span className="floating-toolbar__unit">mm</span>
+      </span>
+      <IconButton
+        icon="plus"
+        name="字号增大"
+        disabled={element.fontSizeMm >= max}
+        onClick={() => setSize(element.fontSizeMm + FONT_STEP_MM)}
+      />
+    </>
+  );
 }
 
 /** 条码、二维码的「绑定字段」：选一个字段就把内容换成 {字段名}（要拼几个字段在检查器里改）。 */
@@ -264,55 +300,6 @@ function FieldSelect({
   );
 }
 
-function CommonTools({
-  elements,
-  platform,
-  onDuplicate,
-  onDelete,
-  onSetLocked,
-  onLayer,
-  onMore,
-}: FloatingToolbarProps) {
-  const allLocked = elements.every((element) => element.locked);
-  return (
-    <>
-      <IconButton
-        icon="duplicate"
-        name="复制一份"
-        tooltip={withShortcut('复制一份', 'duplicate', platform)}
-        onClick={onDuplicate}
-      />
-      <IconButton
-        icon="trash"
-        name="删除"
-        tooltip={withShortcut('删除', 'delete', platform)}
-        disabled={allLocked}
-        onClick={onDelete}
-      />
-      <IconButton
-        icon={allLocked ? 'lock' : 'unlock'}
-        name={allLocked ? '解锁' : '锁定'}
-        tooltip={allLocked ? '解锁' : '锁定：画布上点不中、拖不动、删不掉'}
-        pressed={allLocked}
-        onClick={() => onSetLocked(!allLocked)}
-      />
-      <IconButton
-        icon="bringToFront"
-        name="置顶"
-        tooltip={withShortcut('置顶', 'front', platform)}
-        onClick={() => onLayer('front')}
-      />
-      <IconButton
-        icon="sendToBack"
-        name="置底"
-        tooltip={withShortcut('置底', 'back', platform)}
-        onClick={() => onLayer('back')}
-      />
-      <MoreButton onMore={onMore} />
-    </>
-  );
-}
-
 function MoreButton({ onMore }: { onMore: (at: { x: number; y: number }) => void }) {
   const ref = useRef<HTMLSpanElement>(null);
   return (
@@ -320,7 +307,7 @@ function MoreButton({ onMore }: { onMore: (at: { x: number; y: number }) => void
       <IconButton
         icon="more"
         name="更多"
-        tooltip="更多（也可以在画布上点右键）"
+        tooltip="更多：锁定、叠放、对齐……（也可以在画布上点右键）"
         onClick={() => {
           const rect = ref.current?.getBoundingClientRect();
           onMore({ x: rect?.left ?? 0, y: rect?.bottom ?? 0 });

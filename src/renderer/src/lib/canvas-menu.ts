@@ -2,7 +2,7 @@
  * 画布的右键菜单（浮动工具条的「⋯」打开同一个）：有哪些项、哪些能用、快捷键怎么写。纯函数，组件只管画和键盘。
  */
 import type { Platform } from './app-view';
-import type { Alignment } from './canvas-edit';
+import type { Alignment, DistributeAxis } from './canvas-edit';
 import type { LayerMove } from './canvas-view';
 import { shortcutLabel } from './designer-shortcuts';
 
@@ -15,7 +15,8 @@ export type MenuAction =
   | { kind: 'selectAll' }
   | { kind: 'layer'; move: LayerMove }
   | { kind: 'lock'; locked: boolean }
-  | { kind: 'align'; alignment: Alignment };
+  | { kind: 'align'; alignment: Alignment }
+  | { kind: 'distribute'; axis: DistributeAxis };
 
 export interface MenuItem {
   id: string;
@@ -35,6 +36,8 @@ export interface MenuState {
   canPaste: boolean;
   /** 选中的全都锁定了：锁定那一项变成「解锁」，删除不可用（锁定的删不掉）。 */
   allLocked: boolean;
+  /** 能不能等距（选中的没锁定的至少三个）。 */
+  canDistribute: boolean;
   platform: Platform;
 }
 
@@ -45,6 +48,11 @@ const ALIGN_ITEMS: ReadonlyArray<{ alignment: Alignment; label: string }> = [
   { alignment: 'top', label: '顶对齐' },
   { alignment: 'middle', label: '垂直居中' },
   { alignment: 'bottom', label: '底对齐' },
+];
+
+const DISTRIBUTE_ITEMS: ReadonlyArray<{ axis: DistributeAxis; label: string }> = [
+  { axis: 'horizontal', label: '水平等距' },
+  { axis: 'vertical', label: '垂直等距' },
 ];
 
 const LAYER_ITEMS: ReadonlyArray<{ move: LayerMove; label: string }> = [
@@ -129,6 +137,13 @@ export function contextMenuItems(state: MenuState): MenuItem[] {
     items.push(
       item('align', '对齐', null, {
         submenu: ALIGN_ITEMS.map((align) => item(`align-${align.alignment}`, align.label, { kind: 'align', ...align })),
+      }),
+      // 浮动工具条上多选只放对齐，等距在这里；少于三个时灰着（两个之间没有「中间」可分）。
+      item('distribute', '等距', null, {
+        disabled: !state.canDistribute,
+        submenu: DISTRIBUTE_ITEMS.map((distribute) =>
+          item(`distribute-${distribute.axis}`, distribute.label, { kind: 'distribute', axis: distribute.axis }),
+        ),
       }),
     );
   }

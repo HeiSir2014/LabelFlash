@@ -3812,11 +3812,11 @@ fieldset.designer-zoom__menu {
   pointer-events: none;
 }
 
-/* 跟着选中走的浮动工具条：圆角、柔和阴影，淡入（prefers-reduced-motion 时 --ui-duration 是 0） */
+/* 跟着选中走的浮动工具条：一行不折（按钮少，次要的收在「⋯」里），圆角、柔和阴影，淡入（prefers-reduced-motion 时 --ui-duration 是 0） */
 .floating-toolbar {
   display: flex;
   position: absolute;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 2px;
   padding: 4px;
@@ -3849,10 +3849,17 @@ fieldset.designer-zoom__menu {
 }
 
 .floating-toolbar__value {
-  min-width: 2.5em;
+  min-width: 3.5em;
   color: var(--color-ink);
   font: 12px var(--font-data);
   text-align: center;
+}
+
+/* 字号的单位：小一号、淡一点，不和数字抢 */
+.floating-toolbar__unit {
+  margin-left: 1px;
+  color: var(--color-ink-soft);
+  font-size: 10px;
 }
 
 .floating-toolbar__field {

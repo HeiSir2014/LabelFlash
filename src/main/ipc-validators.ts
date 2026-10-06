@@ -10,7 +10,7 @@ import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-model';
 import { LIBRARY_TEMPLATE_ID_PATTERN } from '../core/templates/library/library-model';
-import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
+import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
 import { type DiagnosisCheckId, isDiagnosisCheckId, isDiagnosisFixId } from '../shared/diagnosis';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
@@ -273,6 +273,14 @@ export function requireDiagnosisCheck(value: unknown): DiagnosisCheckId {
     throw new TypeError('Invalid diagnosis check');
   }
   return value;
+}
+
+/**
+ * 有没保存的修改的模板名：null 表示没有。名字只拿来写进退出确认框，按模板名的长度上限收，
+ * 空名字也收下（新建的模板还没起名），换成「未命名」由调用方决定。
+ */
+export function requireUnsavedTemplateName(value: unknown): string | null {
+  return value === null ? null : requireString(value, 'templateName', TEMPLATE_LIMITS.nameLength);
 }
 
 /** 打印机名可以为 null（只查、只修后台打印服务时）。 */

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { BatchPlan } from '../core/batch/batch-model';
+import { TEMPLATE_LIMITS } from '../core/templates/template-model';
 import {
   driverInstallBlocksUpdate,
   MAX_IPC_STRING_LENGTH,
@@ -31,10 +32,25 @@ import {
   requireSettingsPatch,
   requireString,
   requireTemplateId,
+  requireUnsavedTemplateName,
   requireVoiceCue,
   requireWebhookId,
   requireWebOrigin,
 } from './ipc-validators';
+
+describe('requireUnsavedTemplateName', () => {
+  test('accepts null (nothing unsaved) or a template name within the name limit', () => {
+    expect(requireUnsavedTemplateName(null)).toBeNull();
+    expect(requireUnsavedTemplateName('吊牌')).toBe('吊牌');
+    expect(requireUnsavedTemplateName('')).toBe('');
+  });
+
+  test('rejects anything else, including an over-long name', () => {
+    expect(() => requireUnsavedTemplateName(undefined)).toThrow();
+    expect(() => requireUnsavedTemplateName(3)).toThrow();
+    expect(() => requireUnsavedTemplateName('长'.repeat(TEMPLATE_LIMITS.nameLength + 1))).toThrow();
+  });
+});
 
 describe('ipc validators', () => {
   test('requireString rejects non-strings and oversized input', () => {

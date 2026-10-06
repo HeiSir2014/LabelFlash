@@ -69,6 +69,7 @@ import {
   requireSettingsPatch,
   requireString,
   requireTemplateId,
+  requireUnsavedTemplateName,
   requireVoiceCue,
   requireWebhookId,
   requireWebOrigin,
@@ -90,6 +91,7 @@ import type { RuleService } from './scan/rule-service';
 import type { SqliteJobStore } from './storage/sqlite-job-store';
 import { SecretError, type SqliteSecretStore } from './storage/sqlite-secret-store';
 import type { SqliteSettingsStore } from './storage/sqlite-settings-store';
+import type { TemplateQuitGuard } from './template-quit';
 import type { AppUpdater } from './updater';
 import type { VoiceClips } from './voice/voice-clips';
 
@@ -143,6 +145,8 @@ export interface IpcDeps {
   onTemplatesChanged: () => void;
   /** 这个模板用哪台打印机（和打印时同一个规则）：模板页预览草稿时用。 */
   choosePrinter: (template: LabelTemplate) => Promise<PrinterChoice>;
+  /** 退出时没保存的模板：界面报告的状态、保存的往返。 */
+  templateQuit: TemplateQuitGuard;
 }
 
 /**
@@ -164,12 +168,17 @@ export function registerIpc(deps: IpcDeps): void {
       return logged(...args);
     });
   };
-  const on = (channel: string, listener: () => void) => {
-    ipcMain.on(channel, (event) => {
-      if (isTrusted(event)) {
-        listener();
-      } else {
+  const on = (channel: string, listener: (...args: unknown[]) => void) => {
+    ipcMain.on(channel, (event, ...args: unknown[]) => {
+      if (!isTrusted(event)) {
         console.warn(`[ipc] ignored ${channel} from an untrusted sender: ${event.senderFrame?.url ?? 'unknown frame'}`);
+        return;
+      }
+      // 单向消息没有返回值可以把错误带回界面：参数校验不过就写日志，不抛到 ipcMain 里。
+      try {
+        listener(...args);
+      } catch (error) {
+        console.error(`[ipc] ${channel} failed`, error);
       }
     });
   };
@@ -522,6 +531,9 @@ export function registerIpc(deps: IpcDeps): void {
     }
   });
   on(IpcChannel.WindowClose, () => deps.getWindow()?.close());
+  // 退出时没保存的模板（template-quit.ts）：界面报告有没有、回答保存结果。
+  on(IpcChannel.TemplateUnsavedChanged, (name) => deps.templateQuit.setUnsaved(requireUnsavedTemplateName(name)));
+  on(IpcChannel.TemplateSavedForQuit, (saved) => deps.templateQuit.saved(requireBoolean(saved, 'saved')));
 }
 
 /** 预览和实际打印用同一份 HTML：二维码按这张要打到的打印机的分辨率对齐。 */

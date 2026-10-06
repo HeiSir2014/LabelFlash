@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { FIREWALL_RULE_NAME, firewallInstallerScript, firewallScript, powerShellLiteral } from './firewall-rule';
+import {
+  FIREWALL_RULE_NAME,
+  firewallInstallerScript,
+  firewallScript,
+  MDNS_UDP_PORT,
+  powerShellLiteral,
+} from './firewall-rule';
 
 const execFileAsync = promisify(execFile);
 
@@ -53,9 +59,31 @@ describe('firewall rule scripts', () => {
     expect(script).toContain('-Profile Any');
   });
 
+  // 局域网共享的自动发现要收 UDP 5353：只在打开了共享时加，而且只放行同一网段来的；安装包不加。
+  test('allows mDNS on UDP 5353 from the local subnet only when sharing asks for it', () => {
+    const udp = `-Protocol UDP -LocalPort ${MDNS_UDP_PORT} -RemoteAddress LocalSubnet`;
+    const withDiscovery = firewallScript('add', 'C:\\a.exe', { discovery: true });
+    expect(withDiscovery).toContain('$Discovery = $true');
+    expect(withDiscovery).toContain(udp);
+    expect(withDiscovery).toContain('-Protocol TCP');
+    expect(firewallScript('add', 'C:\\a.exe')).toContain('$Discovery = $false');
+    expect(firewallInstallerScript()).toContain('$Discovery = $false');
+  });
+
+  // 原来的查询只看 TCP 那条：只有旧规则的电脑上本机接口照旧算放行。
+  test('checks the mDNS rule separately', () => {
+    expect(firewallScript('check', 'C:\\a.exe')).not.toContain('UDP');
+    const script = firewallScript('check-discovery', 'C:\\a.exe');
+    expect(script).toContain('Get-NetFirewallPortFilter');
+    expect(script).toContain(`'${MDNS_UDP_PORT}'`);
+    for (const word of ["'allowed'", "'missing'", "'unknown'"]) {
+      expect(script).toContain(word);
+    }
+  });
+
   // 以管理员身份运行时从系统目录加载模块，不用用户目录里可能被替换的同名模块。
   test('loads the firewall module from the Windows directory', () => {
-    for (const action of ['add', 'remove', 'check'] as const) {
+    for (const action of ['add', 'remove', 'check', 'check-discovery'] as const) {
       expect(firewallScript(action, 'C:\\a.exe')).toContain("Import-Module (Join-Path $env:SystemRoot 'System32");
     }
   });

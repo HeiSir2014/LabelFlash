@@ -39,6 +39,10 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 - **不能打印的界面**：配置中心和批量打印页里扫码永远不打印（F2 也不行）；「打印机」页的「测试页」是操作员明确点的按钮，照常打印。模板页设计器的「打印一张试试」同样是明确点的按钮，照常打印（不写打印记录）。诊断面板的「走一张纸」「打测试页」也是操作员明确点的按钮。
 - **一件事只在一处说**：界面精简的取舍见 `docs/superpowers/specs/2026-09-29-config-center-layout-design.md` 最后一节。加元素前先看有没有已经表达同一件事的地方。
 
+## 询问条
+
+- 网站想用本机接口、局域网里的新电脑第一次打印，都在程序顶部的 `.request-bar` 里询问（`components/RequestList.tsx`，两组各是一个带名字的区域：「等待确认的网站」「等待确认的电脑」）。按钮不进 Tab 顺序，扫码枪的 Tab、回车落不到「允许」上；不弹模态框。
+
 ## 手机扫码
 
 - **状态来自主进程**：`view-models/use-mobile-station.ts` 在 App 里创建，跟随 `mobile:status-changed` 推送；标题栏按钮、浮层、配置页都从它取数据。文字都在 `lib/mobile-text.ts`（有测试）。
@@ -83,7 +87,7 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 ## 测试与验收
 
 - **单元测试**：写在 `lib/*.test.ts`，只测行为，不测实现细节。
-- **E2E**：在 `e2e/*.e2e.ts`（工作台和配置中心在 `app.e2e.ts`，自由设计的设计器在 `designer.e2e.ts`，手机扫码在 `mobile.e2e.ts`，批量打印在 `batch.e2e.ts`，标签机指令在 `printer-commands.e2e.ts`，打印机诊断在 `diagnosis.e2e.ts`，驱动安装在 `drivers.e2e.ts`）。
+- **E2E**：在 `e2e/*.e2e.ts`（工作台和配置中心在 `app.e2e.ts`，自由设计的设计器在 `designer.e2e.ts`，手机扫码在 `mobile.e2e.ts`，批量打印在 `batch.e2e.ts`，标签机指令在 `printer-commands.e2e.ts`，打印机诊断在 `diagnosis.e2e.ts`，驱动安装在 `drivers.e2e.ts`，局域网共享在 `ipp.e2e.ts`）。
   - 用 `e2e/support/fixtures.ts` 的 `test`（`electronApp` 夹具：用例结束时关掉程序、删掉数据目录），共用的操作在 `e2e/support/app-helpers.ts`，本机中转服务和测试手机在 `e2e/support/relay-server.ts`。
   - 用角色和标签定位元素（`getByRole`、`getByLabel`），不依赖类名以外的实现细节。
 - **视觉验收**：界面改完后截图核对对齐、裁切、焦点框和键盘操作。Windows 看 100% 和 150% 缩放，macOS 看红绿灯区域和全屏状态。验收项见配置中心设计文档第 8 节。

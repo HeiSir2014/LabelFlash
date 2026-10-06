@@ -268,4 +268,24 @@ export const MIGRATIONS: readonly string[] = [
   ALTER TABLE jobs ADD COLUMN pdf_piece INTEGER CHECK (pdf_piece IS NULL OR pdf_piece >= 1);
   ALTER TABLE jobs ADD COLUMN pdf_bitmap TEXT;
   `,
+  // 8：局域网共享（IPP）。来源 ipp 在第 6 条已经加进 CHECK，这里不重建 jobs 表：
+  // - jobs 加对方电脑的地址和用户名（两列要么都有、要么都没有，由 sqlite-job-store 的 toJobRecord 读出时核对）；
+  // - ipp_clients：操作员对每台电脑的决定（允许 / 拒绝），按 IPv4 地址记；
+  // - ipp_share_password：共享密码的 scrypt 摘要和盐（只一行），不存原文。
+  `
+  ALTER TABLE jobs ADD COLUMN ipp_client TEXT;
+  ALTER TABLE jobs ADD COLUMN ipp_user TEXT;
+  CREATE TABLE ipp_clients (
+    address TEXT PRIMARY KEY,
+    decision TEXT NOT NULL CHECK (decision IN ('allow', 'deny')),
+    last_user TEXT NOT NULL,
+    decided_at INTEGER NOT NULL
+  );
+  CREATE TABLE ipp_share_password (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    salt BLOB NOT NULL,
+    hash BLOB NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];

@@ -4,8 +4,12 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
+import { nameAttr } from '../../src/core/ipp/ipp-attributes';
+import { OPERATIONS } from '../../src/core/ipp/ipp-constants';
+import { ippRequest, MINIMAL_PDF } from '../../src/core/ipp/testing/ipp-requests';
 import { type HttpStep, STEP_LIMITS } from '../../src/core/scan/enrich-model';
 import { TEMPLATE_LIBRARY } from '../../src/core/templates/library/template-library';
+import { basicAuth, sendIpp } from '../../src/main/ipp/testing/ipp-client';
 import type { FakeDiagnosisSpec, FakePrinterSpec } from '../../src/main/printing/fake-printers';
 import { RECENT_DELIVERY_COUNT } from '../../src/shared/ipc-contract';
 import { HISTORY_LIMIT_RANGE } from '../../src/shared/settings';
@@ -51,7 +55,8 @@ import { type Issue, pageChecks } from './checks';
 
 /**
  * 视觉验收（设计文档 §8.2 的验收项，V01 起；自由设计的设计器是 V44–V49、V56–V59、V64–V66，模板库是 V50–V55，
- * 批量打印是 V60–V63，打印 PDF 是 V70–V72，标签机指令是 V80–V83，诊断是 V84–V86，驱动安装是 V87–V89）：
+ * 批量打印是 V60–V63，打印 PDF 是 V70–V72，标签机指令是 V80–V83，诊断是 V84–V86，驱动安装是 V87–V89，
+ * 局域网共享是 V90–V93）：
  * 每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
@@ -355,6 +360,50 @@ let takenPort: number | null = null;
 
 /** V28 每次扫一个新码：旧的查询还没返回也不影响，界面只认最新的一次扫码。 */
 let slowScanCount = 0;
+
+/** V90–V93：两种纸各一台假打印机。 */
+const SHARING_PRINTERS: FakePrinterSpec[] = [
+  { name: '标签机A', paper: { widthMm: 60, heightMm: 40, dpi: 203 }, readiness: { ready: true } },
+  { name: '面单机B', paper: { widthMm: 100, heightMm: 150, dpi: 203 }, readiness: { ready: true } },
+];
+/** 打开共享到开始监听：几百毫秒；给足 10 秒。 */
+const SHARING_LISTEN_TIMEOUT_MS = 10_000;
+
+/** 分配两种纸、打开共享，等它开始监听；返回端口。 */
+async function startSharing(page: Page, patch: Record<string, unknown> = {}): Promise<number> {
+  await callApi(page, 'updateSettings', {
+    paperPrinters: { '60x40': '标签机A', '100x150': '面单机B' },
+    ippSharingEnabled: true,
+    ...patch,
+  });
+  await expect
+    .poll(async () => (await callApi(page, 'getIppSharingStatus')).server.state, {
+      timeout: SHARING_LISTEN_TIMEOUT_MS,
+    })
+    .toBe('listening');
+  const { server } = await callApi(page, 'getIppSharingStatus');
+  return server.state === 'listening' ? server.port : 0;
+}
+
+/** 从本机（127.0.0.1）给共享的 60×40 打印机交一个任务，带用户名「仓库」。 */
+async function sendSharedJob(port: number, headers: Record<string, string> = {}): Promise<void> {
+  const url = `http://127.0.0.1:${port}/printers/60x40`;
+  await sendIpp(
+    url,
+    ippRequest(OPERATIONS.printJob, {
+      printerUri: url.replace('http:', 'ipp:'),
+      operation: [nameAttr('requesting-user-name', '仓库')],
+    }),
+    MINIMAL_PDF,
+    headers,
+  );
+}
+
+async function openSharingPage(page: Page): Promise<void> {
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await openConfig(page, '局域网共享');
+}
 
 const ITEMS: Item[] = [
   {
@@ -1965,6 +2014,61 @@ const ITEMS: Item[] = [
       const card = ctx.page.getByRole('region', { name: '驱动' });
       await expect(card).toContainText('过期');
       await card.getByText('驱动清单地址', { exact: true }).first().click();
+    },
+  },
+  {
+    id: 'V90',
+    title: '配置中心 · 局域网共享 · 没有开',
+    points:
+      '导航「集成」组里「本机接口」下面是「局域网共享」；页头一段说明；状态卡：开关「关闭」、状态「没有开」和说明、端口输入框（占位 8631）和灰掉的「恢复默认」，没有防火墙和自动发现两行；没有「共享的打印机」卡；共享密码卡写「没有设置」、密码框和灰掉的「保存密码」；电脑卡是空的说明；最后一段打印记录的说明',
+    launch: { fakePrinters: SHARING_PRINTERS },
+    setup: async ({ page }) => {
+      await openSharingPage(page);
+    },
+  },
+  {
+    id: 'V91',
+    title: '配置中心 · 局域网共享 · 正在共享',
+    points:
+      '状态「正在共享」和明文 HTTP 的提醒；自动发现一行（开发版是「没有广播」）；共享的打印机两张小卡：「60×40 标签」打到标签机A、「100×150 二联面单」打到面单机B，各两组等宽地址（http:// 和 ipp://）可以选中、不溢出卡片；下面 Windows、macOS 怎么添加两段说明；共享密码「已设置」和「不用密码」；电脑卡里一台「已拒绝，自称用户 仓库」带「撤销」；1024 宽时地址折行不出横向滚动条',
+    launch: { fakePrinters: SHARING_PRINTERS },
+    setup: async ({ page }) => {
+      const port = await startSharing(page);
+      await callApi(page, 'setSharePassword', '前台1234');
+      // 从本机发一个任务，在询问条上点「拒绝」：电脑卡里就有一台「已拒绝」。
+      await sendSharedJob(port, basicAuth('x', '前台1234'));
+      await page.getByRole('region', { name: '等待确认的电脑' }).getByRole('button', { name: '拒绝' }).click();
+      await openSharingPage(page);
+      await expect(page.getByRole('region', { name: '电脑' })).toContainText('已拒绝');
+    },
+  },
+  {
+    id: 'V92',
+    title: '配置中心 · 局域网共享 · 端口被占用、已自动换端口',
+    points:
+      '状态「正在共享（已自动换端口）」、橙色；说明里写出被占用的端口、占用它的程序（查得到时）和新端口，并提醒按旧地址添加过的电脑要重新添加；端口输入框里是被占用的那个端口，「恢复默认」可点；地址里的端口是新端口',
+    launch: { fakePrinters: SHARING_PRINTERS },
+    setup: async (ctx) => {
+      const blocked = await occupyPort(ctx);
+      await startSharing(ctx.page, { ippPort: blocked });
+      await openSharingPage(ctx.page);
+      await expect(ctx.page.getByRole('status').filter({ hasText: '已自动换端口' })).toBeVisible();
+    },
+  },
+  {
+    id: 'V93',
+    title: '工作台 · 局域网里的新电脑第一次打印',
+    points:
+      '程序顶部居中一条询问：第一行等宽「局域网里的电脑 127.0.0.1」，下面「自称用户 仓库 要打印到「60×40 标签」。不认识这台电脑就点「拒绝」。」，右边「拒绝」「允许」；左边橙色竖条；不遮住标题栏；按 Tab 焦点不落到两个按钮上（扫码框保持焦点）；1024 宽时文字折行、按钮不被挤出',
+    launch: { fakePrinters: SHARING_PRINTERS },
+    setup: async ({ page }) => {
+      const port = await startSharing(page);
+      await page.reload();
+      await expect(page.locator('.scan-bar__input')).toBeFocused();
+      await sendSharedJob(port);
+      await expect(page.getByRole('region', { name: '等待确认的电脑' })).toBeVisible();
+      await page.keyboard.press('Tab');
+      await expect(page.locator('.scan-bar__input')).toBeFocused();
     },
   },
 ];

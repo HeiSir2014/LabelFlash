@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { AppSettings } from '../../../../shared/settings';
 import type { VoiceCue } from '../../../../shared/voice';
 import type { ConfigPage } from '../../lib/app-view';
+import type { IppSharingModel } from '../../view-models/use-ipp-sharing';
 import type { LocalApiModel } from '../../view-models/use-local-api';
 import { AboutPage, type AboutPageProps } from './pages/AboutPage';
 import { GeneralPage } from './pages/GeneralPage';
@@ -10,6 +11,7 @@ import { LookupTablesPage, type LookupTablesPageProps } from './pages/LookupTabl
 import { NotePresetsPage } from './pages/NotePresetsPage';
 import { RulesPage, type RulesPageProps } from './pages/RulesPage';
 import { SecretsPage, type SecretsPageProps } from './pages/SecretsPage';
+import { SharingPage } from './pages/SharingPage';
 import { TemplatesPage, type TemplatesPageProps } from './pages/TemplatesPage';
 import { VoicePage } from './pages/VoicePage';
 import { WebhooksPage, type WebhooksPageProps } from './pages/WebhooksPage';
@@ -36,6 +38,8 @@ interface ConfigPagesProps {
   /** 打印机页下面的「驱动」卡片（components/DriverSection）。 */
   drivers: ReactNode;
   localApi: LocalApiModel;
+  /** 局域网共享页。 */
+  sharing: IppSharingModel;
   general: GeneralPageExtras;
   about: AboutPageProps;
   onChange: (patch: Partial<AppSettings>) => Promise<AppSettings | null>;
@@ -56,6 +60,7 @@ export function ConfigPages({
   printers,
   drivers,
   localApi,
+  sharing,
   general,
   about,
   onChange,
@@ -107,6 +112,16 @@ export function ConfigPages({
           lanEnabled={settings.apiLanEnabled}
           onChangePort={async (apiPort) => (await onChange({ apiPort })) !== null}
           onChangeLanEnabled={(apiLanEnabled) => void onChange({ apiLanEnabled })}
+        />
+      );
+    case 'sharing':
+      return (
+        <SharingPage
+          sharing={sharing}
+          enabled={settings.ippSharingEnabled}
+          port={settings.ippPort}
+          onChangeEnabled={(ippSharingEnabled) => void onChange({ ippSharingEnabled })}
+          onChangePort={async (ippPort) => (await onChange({ ippPort })) !== null}
         />
       );
     case 'voice':

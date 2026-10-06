@@ -4,6 +4,8 @@
  * 这个文件主进程和渲染页都用：不碰 DOM、Node、Electron。
  */
 
+import { RASTER_LIMITS, type RasterJobLimits } from '../core/ipp/raster';
+
 export const PDF_RENDER_CHANNELS = { request: 'pdf-render:request', reply: 'pdf-render:reply' } as const;
 
 /** PDF 的长度单位是点：1/72 英寸。 */
@@ -26,10 +28,31 @@ export interface PageSize {
   height: number;
 }
 
+/** 渲染页还能解码的图片（局域网共享收到的 JPEG / PNG 也只在这个 sandbox 页里解码）。 */
+export const RENDER_IMAGE_TYPES = ['image/jpeg', 'image/png'] as const;
+export type RenderImageType = (typeof RENDER_IMAGE_TYPES)[number];
+
+/** 渲染页还能解码的光栅（局域网共享收到的；行程编码解出来的像素数不可控，不在主进程里解）。 */
+export const RENDER_RASTER_TYPES = ['image/pwg-raster', 'image/urf'] as const;
+export type RenderRasterType = (typeof RENDER_RASTER_TYPES)[number];
+
+/** 光栅的一页：像素大小和它自带的分辨率。 */
+export interface RasterPageInfo {
+  width: number;
+  height: number;
+  dpi: number;
+}
+
 export type RenderRequest =
   | { id: number; kind: 'open'; data: Uint8Array }
+  /** 一张图片当作只有一页的文档：页面大小 = 图片的像素，按 72dpi 渲染就是原图大小。 */
+  | { id: number; kind: 'open-image'; data: Uint8Array; type: RenderImageType }
   /** page 从 1 数；scale = 每点多少像素。 */
-  | { id: number; kind: 'render'; page: number; scale: number };
+  | { id: number; kind: 'render'; page: number; scale: number }
+  /** 光栅：渲染页按这些限制解一遍，回每页的大小（limits 由主进程按纸和打印机算）。 */
+  | { id: number; kind: 'open-raster'; data: Uint8Array; type: RenderRasterType; limits: RasterJobLimits }
+  /** 光栅的第几页（从 1 数），原样大小的灰度。 */
+  | { id: number; kind: 'render-raster'; page: number };
 
 /** password = 要密码；invalid = 不是 PDF 或文件坏了；failed = 其他错误。 */
 export const RENDER_ERRORS = ['password', 'invalid', 'failed'] as const;
@@ -40,6 +63,7 @@ export type RenderReply =
   | { id: number; kind: 'opened'; pageCount: number; pages: PageSize[] }
   /** 8 位灰度，逐行，0 黑 – 255 白。 */
   | { id: number; kind: 'rendered'; width: number; height: number; gray: Uint8Array }
+  | { id: number; kind: 'raster-opened'; pages: RasterPageInfo[] }
   | { id: number; kind: 'error'; error: RenderError; detail: string };
 
 /** 渲染页能用的全部能力：preload 用 contextBridge 暴露成 window.pdfHost。 */
@@ -51,6 +75,7 @@ export interface PdfHostApi {
 /** 主进程在等的回复：编号、种类，以及它自己算好的位图宽高。 */
 export type ExpectedReply =
   | { id: number; kind: 'opened'; maxPages: number }
+  | { id: number; kind: 'raster-opened'; maxPages: number }
   | { id: number; kind: 'rendered'; width: number; height: number };
 
 /** 按 dpi 渲染这一页用的缩放（每点多少像素）；像素数或边长超过上限时等比降低（海报这类特大的页）。 */
@@ -101,7 +126,59 @@ export function readRenderReply(message: unknown, expected: ExpectedReply): Rend
   if (reply['kind'] === 'error') {
     return readError(expected.id, reply);
   }
-  return expected.kind === 'opened' ? readOpened(reply, expected) : readRendered(reply, expected);
+  switch (expected.kind) {
+    case 'opened':
+      return readOpened(reply, expected);
+    case 'raster-opened':
+      return readRasterOpened(reply, expected);
+    case 'rendered':
+      return readRendered(reply, expected);
+  }
+}
+
+function isWholeIn(value: unknown, min: number, max: number): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
+}
+
+/** 光栅每页：边长 1–8192 点、像素数不超过一页的上限、分辨率在光栅解码认的范围里。 */
+function readRasterPage(value: unknown): RasterPageInfo | null {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+  const { width, height, dpi } = value as Record<string, unknown>;
+  if (
+    !isWholeIn(width, 1, RASTER_LIMITS.side) ||
+    !isWholeIn(height, 1, RASTER_LIMITS.side) ||
+    !isWholeIn(dpi, RASTER_LIMITS.minDpi, RASTER_LIMITS.maxDpi) ||
+    width * height > RASTER_LIMITS.pagePixels
+  ) {
+    return null;
+  }
+  return { width, height, dpi };
+}
+
+function readRasterOpened(
+  reply: Record<string, unknown>,
+  expected: Extract<ExpectedReply, { kind: 'raster-opened' }>,
+): RenderReply | null {
+  const pages = reply['pages'];
+  if (
+    reply['kind'] !== 'raster-opened' ||
+    !Array.isArray(pages) ||
+    pages.length < 1 ||
+    pages.length > expected.maxPages
+  ) {
+    return null;
+  }
+  const infos: RasterPageInfo[] = [];
+  for (const page of pages) {
+    const info = readRasterPage(page);
+    if (info === null) {
+      return null;
+    }
+    infos.push(info);
+  }
+  return { id: expected.id, kind: 'raster-opened', pages: infos };
 }
 
 function readError(id: number, reply: Record<string, unknown>): RenderReply | null {

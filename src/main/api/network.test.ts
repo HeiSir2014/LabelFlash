@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { isLoopbackAddress, isLoopbackHost, lanIPv4Addresses } from './network';
+import {
+  isLoopbackAddress,
+  isLoopbackHost,
+  isOnLanSubnet,
+  isSameSubnet,
+  lanIPv4Addresses,
+  lanIPv4Interfaces,
+  plainAddress,
+} from './network';
 
 describe('isLoopbackAddress', () => {
   test('tells loopback addresses from LAN addresses', () => {
@@ -31,7 +39,7 @@ describe('isLoopbackHost', () => {
 
 describe('lanIPv4Addresses', () => {
   const nic = (address: string, mac: string, family: 'IPv4' | 'IPv6' = 'IPv4', internal = false) => [
-    { address, family, internal, mac },
+    { address, family, internal, mac, netmask: '255.255.255.0' },
   ];
 
   // 一台装了代理、VMware、WSL 的 Windows 电脑的真实网卡：只有 WLAN 是局域网里别的电脑连得到的。
@@ -71,5 +79,50 @@ describe('lanIPv4Addresses', () => {
         link: nic('169.254.1.1', '00:15:5d:01:02:04'),
       }),
     ).toEqual(['192.168.1.50']);
+  });
+});
+
+describe('isOnLanSubnet', () => {
+  const cards = [{ name: 'Wi-Fi', address: '192.168.1.10', netmask: '255.255.255.0' }];
+
+  // 「局域网」指这台电脑所在的网段，不是任何私有地址：同一公司别的网段、VPN 分到的私有地址都不算。
+  test('accepts only peers on the subnet of a selected card', () => {
+    expect(isOnLanSubnet('192.168.1.23', cards, false)).toBe(true);
+    expect(isOnLanSubnet('::ffff:192.168.1.23', cards, false)).toBe(true);
+    expect(isOnLanSubnet('192.168.2.23', cards, false)).toBe(false);
+    expect(isOnLanSubnet('10.0.0.5', cards, false)).toBe(false);
+    expect(isOnLanSubnet('fe80::1', cards, false)).toBe(false);
+    expect(isOnLanSubnet(undefined, cards, false)).toBe(false);
+  });
+
+  test('accepts loopback only with the development switch', () => {
+    expect(isOnLanSubnet('127.0.0.1', cards, false)).toBe(false);
+    expect(isOnLanSubnet('127.0.0.1', [], true)).toBe(true);
+  });
+});
+
+describe('lanIPv4Interfaces and isSameSubnet', () => {
+  test('keep the netmask of each physical LAN card', () => {
+    const card = (address: string, mac: string, netmask: string) => [
+      { address, family: 'IPv4', internal: false, mac, netmask },
+    ];
+    const interfaces = {
+      'Wi-Fi': card('192.168.1.10', 'a4:5e:60:00:00:01', '255.255.255.0'),
+      'vEthernet (WSL)': card('172.20.0.1', '00:15:5d:00:00:01', '255.255.240.0'),
+    };
+    expect(lanIPv4Interfaces(interfaces)).toEqual([
+      { name: 'Wi-Fi', address: '192.168.1.10', netmask: '255.255.255.0' },
+    ]);
+  });
+
+  test('compare addresses under a netmask', () => {
+    expect(isSameSubnet('192.168.1.10', '192.168.1.200', '255.255.255.0')).toBe(true);
+    expect(isSameSubnet('192.168.1.10', '192.168.2.10', '255.255.255.0')).toBe(false);
+    expect(isSameSubnet('10.1.2.3', '10.200.0.1', '255.0.0.0')).toBe(true);
+  });
+
+  test('strip the IPv4-mapped prefix', () => {
+    expect(plainAddress('::ffff:192.168.1.23')).toBe('192.168.1.23');
+    expect(plainAddress('192.168.1.23')).toBe('192.168.1.23');
   });
 });

@@ -122,6 +122,22 @@
 - **渲染页**：`src/renderer/pdf-render.html` + `src/renderer/src/pdf-render/main.ts`（第二个页面入口）、`src/preload/pdf-render.ts`（第二个 preload）。会话是内存里的独立分区，`app://` 协议另挂一份（`handleAppScheme` 的 `target`），权限一律拒绝，`render-session-policy.ts` 决定放行哪些请求。pdf.js 的运行时文件由 `scripts/pdfjs-assets.ts` 在构建时放进 `out/renderer/pdfjs/`。
 - **打印记录**：PDF 打的记录带 `pdf`（文件、页码、第几张、位图编号，迁移 7）；`jobs:preview`、`jobs:reprint` 按位图编号读回、包成临时模板；预览不显示「靠近纸边」（一块本来就铺满纸）。
 
+## 局域网共享（`ipp/`）
+
+设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 8.1 节，操作说明和真机验证清单在 `docs/lan-sharing.md`。
+
+- **分层**：都不 import electron，用 `bun test` 测试；HTTP 服务和组装用 `testing/ipp-client.ts` 真的发 IPP 请求测（只绑 127.0.0.1）。
+  - `ipp-sharing.ts`：组装、跟随设置启停（默认关）、共享打印机 = 已分配且装着的纸、防火墙没放行时先不监听、关掉时中止没打完的任务、改名后重新广播；
+  - `ipp-http-server.ts`：只监听 IPv4（复用 `net/http-listener.ts` 的端口回退和自检），connection 事件里按地址过滤，先认证再读正文（没认证最多 64KB），100-continue 先看认证，同时在收的正文总量有上限，密码错多了按地址锁一会儿；
+  - `ipp-job-processor.ts`：新电脑先等确认（不占队列），再一次一个任务；PDF、图片和光栅都交给 IPP 专用的 `PdfRenderHost`（光栅也在 sandbox 渲染页里用 core 解，按纸张和打印机分辨率限制页大小、按 `MAX_RASTER_JOB_PIXELS` 限制整个任务；主进程不解行程编码），复用 PDF 打印的裁切、位图缓存和临时模板，经 `printFields`（来源 `ipp`）；
+  - `client-approvals.ts`：新电脑等确认（2 分钟、最多 3 台），决定存 `ipp_clients`；`share-password.ts`：scrypt 摘要；
+  - `mdns-advertiser.ts`：UDP 5353（`reuseAddr`），每块局域网网卡加入组播组、用自己的地址回答，只理局域网地址来的包；测试换成本机回环上的收包口，不发组播；
+  - `ipp-quit.ts`：退出确认的文字、拒绝「重启更新」的说明、停共享最多等多久。
+- **退出**：`index.ts` 的同一个 before-quit 里处理（模板 → 共享 → 批量和 PDF → 删缓存、停共享），不在 will-quit 里等；will-quit 只再 `void stop()` 一次兜底（「重启更新」、关机不经过 before-quit 的收尾）。
+- **网段**：连接（和 mDNS 的包）只接受和 `lanIPv4Interfaces()` 某块网卡同一子网的（`isOnLanSubnet`），本机回环只在开发开关下；仍监听 0.0.0.0，不逐块网卡绑（地址会变）。
+- **防火墙**：本机接口那条规则按程序放行 TCP（覆盖 IPP 端口，不限网段），UDP 5353 一条只在共享打开时加、只限 LocalSubnet（`firewallScript` 的 `discovery`；两个按钮加规则时都按共享开没开传，免得删掉它）；`check` 只看 TCP（旧安装不回退），`check-discovery` 看 UDP。任一边加了规则，两边都重新检查。
+- **net/**：`http-listener.ts` 是本机接口和局域网共享共用的监听（端口回退、回环自检、重启时收尾）。
+
 ## 本地文字识别（`ocr/`）
 
 设计见 `docs/superpowers/specs/2026-09-30-ocr-engine-design.md`（引擎）和 `2026-09-30-shelf-number-design.md`（货架号）。

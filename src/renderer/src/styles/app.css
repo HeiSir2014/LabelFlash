@@ -4798,8 +4798,8 @@ button.designer-checks__item:hover {
   font-weight: 600;
 }
 
-/* ── 网站授权请求：程序顶部，只能用鼠标点 ── */
-.origin-requests {
+/* ── 等待确认的请求（网站、局域网里的电脑）：程序顶部，只能用鼠标点 ── */
+.request-bar {
   position: fixed;
   z-index: var(--layer-notice);
   top: calc(var(--title-bar-height) + var(--space-2));
@@ -4811,7 +4811,13 @@ button.designer-checks__item:hover {
   transform: translateX(-50%);
 }
 
-.origin-request {
+.request-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.request {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -4823,23 +4829,39 @@ button.designer-checks__item:hover {
   font-size: 13px;
 }
 
-.origin-request__text {
+.request__text {
   flex: 1;
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
 }
 
-/* 网站名单独一行、用等宽字体：一眼看清是哪个网站，不被「127.0.0.1.某某.com」这种名字骗到 */
-.origin-request__site {
+/* 网站、电脑地址单独一行、用等宽字体：一眼看清是哪个，不被「127.0.0.1.某某.com」这种名字骗到 */
+.request__subject {
   display: block;
   font-family: var(--font-data);
 }
 
-.origin-request__actions {
+.request__actions {
   display: flex;
   flex-shrink: 0;
   gap: var(--space-2);
+}
+
+/* 局域网共享页：每种纸一张小卡，名字、打到哪台、两组地址自上而下 */
+.sharing-printer {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.sharing-printer__name {
+  font-weight: 600;
+}
+
+.sharing-printer__target,
+.sharing-printer__label {
+  color: var(--color-ink-soft);
+  font-size: 12px;
 }
 
 /* ── 面单编辑器：格子大纲（按层级缩进，点一项编辑它） ── */

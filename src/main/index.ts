@@ -43,7 +43,7 @@ import type { SocketLike } from '../shared/relay-socket';
 import { secondsToMs } from '../shared/settings';
 import { apiPrinters } from './api/api-printers';
 import { apiCandidatePorts, LocalApi } from './api/local-api';
-import { lanIPv4Addresses } from './api/network';
+import { lanIPv4Addresses, lanIPv4Interfaces } from './api/network';
 import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
@@ -67,9 +67,12 @@ import { systemDriverPorts } from './drivers/driver-ports';
 import { DriverStation } from './drivers/driver-station';
 import { FakeDrivers, parseFakeDrivers, testCatalogKey } from './drivers/fake-drivers';
 import { cleanupOldDownloads, createInstallerDownloader } from './drivers/installer-downloader';
-import { addFirewallRule, firewallStatus } from './firewall';
+import { addFirewallRule, discoveryFirewallStatus, firewallStatus } from './firewall';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
+import type { PendingClient } from './ipp/client-approvals';
+import { IPP_STOP_ON_QUIT_TIMEOUT_MS, ippQuitDialogText, settleWithin } from './ipp/ipp-quit';
+import { IppSharing, ippBindHost, ippCandidatePorts, isDiscoveryEnabled } from './ipp/ipp-sharing';
 import { LOGS_DIR_NAME } from './log-files';
 import { setupLogging } from './logging';
 import { LookupTables } from './lookup/lookup-tables';
@@ -111,6 +114,7 @@ import { createSandboxedRegexReplacer, createSandboxedRegexRunner } from './scan
 import { safeStorageCipher } from './secrets/safe-storage-cipher';
 import { denyAllPermissions, hardenAllWebContents } from './security';
 import { openDatabase } from './storage/database';
+import { SqliteIppStore } from './storage/sqlite-ipp-store';
 import { SqliteJobStore } from './storage/sqlite-job-store';
 import { SqliteLookupStore } from './storage/sqlite-lookup-store';
 import { SqliteScanRuleRepository } from './storage/sqlite-scan-rule-repository';
@@ -156,6 +160,8 @@ const PDF_CACHE_DIR_NAME = 'pdf-cache';
 const PDF_OPEN_TIMEOUT_MS = 20_000;
 /** 渲染一页最多等 30 秒：最复杂的矢量页在 1600 万像素上也只要几秒。 */
 const PDF_PAGE_TIMEOUT_MS = 30_000;
+/** 共享打印机的型号（printer-make-and-model、DNS-SD 的 ty）：对方的「打印机」列表里显示它。 */
+const IPP_MAKE_AND_MODEL = `${BRAND.productName} 共享热敏标签机`;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: AppTray | null = null;
@@ -218,6 +224,24 @@ function notifyOriginRequest(origin: string): void {
   const notification = new Notification({
     title: '网站想使用打印服务',
     body: `${origin}。请在程序顶部点「允许」或「拒绝」。`,
+  });
+  notification.on('click', showMainWindow);
+  notification.show();
+}
+
+/**
+ * 局域网里一台新电脑要打印：发系统通知，点通知回到主窗口。「允许 / 拒绝」在程序顶部用鼠标点，
+ * 不弹模态框（理由同 notifyOriginRequest）。
+ */
+function notifyIppClientRequest(client: PendingClient): void {
+  if (!Notification.isSupported()) {
+    return;
+  }
+  // 用户名是对方自己报的（谁都能冒充）：标明「自称」，让操作员按地址认电脑。
+  const user = client.user === '' ? '' : `（自称用户 ${client.user}）`;
+  const notification = new Notification({
+    title: '局域网里的电脑想用共享打印机',
+    body: `${client.address}${user} 要打印到「${client.printerName}」。请在程序顶部点「允许」或「拒绝」。`,
   });
   notification.on('click', showMainWindow);
   notification.show();
@@ -628,7 +652,7 @@ async function bootstrap(): Promise<void> {
     })
     .catch((error: unknown) => console.error('[pdf] failed to prune the piece cache', error));
   const pdfRenderer = new PdfRenderHost({
-    openPort: () => openRenderWindow(join(__dirname, '../renderer')),
+    openPort: () => openRenderWindow(join(__dirname, '../renderer'), 'pdf'),
     openTimeoutMs: PDF_OPEN_TIMEOUT_MS,
     pageTimeoutMs: PDF_PAGE_TIMEOUT_MS,
     schedule: (run, delayMs) => {
@@ -739,7 +763,14 @@ async function bootstrap(): Promise<void> {
     notifyOriginRequest,
     firewall: {
       check: () => firewallStatus(app.getPath('exe')),
-      add: () => addFirewallRule(app.getPath('exe')),
+      add: async () => {
+        // 脚本会先删掉本程序同名的旧规则：共享开着时要连 mDNS 那条一起重新加上。
+        const result = await addFirewallRule(app.getPath('exe'), { discovery: settings.current.ippSharingEnabled });
+        // 同一条脚本也放行了局域网共享的 TCP（和开着时的 UDP 5353）：共享重新看要不要监听、广播。
+        // ippSharing 在下面才建：这个回调要等操作员点按钮才会跑，那时已经有了。
+        void ippSharing.firewallChanged();
+        return result;
+      },
     },
     holdLanUntilFirewallAllows: app.isPackaged,
     findTemplate: (id) => templates.get(id),
@@ -760,6 +791,65 @@ async function bootstrap(): Promise<void> {
     onStatus: (apiStatus) => sendToMainWindow(IpcChannel.LocalApiStatusChanged, apiStatus),
     onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
   });
+  // 局域网共享：IPP 专用一个渲染窗口和会话（和「打印 PDF」页互不干扰、不同进程），收到的文档只在它里面解析。
+  const ippRenderer = new PdfRenderHost({
+    openPort: () => openRenderWindow(join(__dirname, '../renderer'), 'ipp'),
+    openTimeoutMs: PDF_OPEN_TIMEOUT_MS,
+    pageTimeoutMs: PDF_PAGE_TIMEOUT_MS,
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => clearTimeout(timer);
+    },
+    log: (line) => console.warn(line),
+  });
+  const ippSharing = new IppSharing({
+    clock: systemClock,
+    settings: () => settings.current,
+    // 只改共享自己记的几项（上次的端口、实例编号）：不影响别的设置，不需要走 onSettingsChanged。
+    updateSettings: (patch) => settings.update(patch),
+    store: new SqliteIppStore(database),
+    // macOS 的 hostname 带 .local：去掉，实例名里只要电脑名。
+    computerName: () => hostname().replace(/\.local$/i, ''),
+    productNameAscii: BRAND.productNameAscii,
+    makeAndModel: IPP_MAKE_AND_MODEL,
+    installedPrinters: () => adapter.knownPrinterNames(),
+    readinessOf: (name) => status.get(name),
+    dpiOf: (name) => profiles.dpiOf(name),
+    firewall: {
+      check: () => firewallStatus(app.getPath('exe')),
+      checkDiscovery: () => discoveryFirewallStatus(app.getPath('exe')),
+      add: async () => {
+        const result = await addFirewallRule(app.getPath('exe'), { discovery: true });
+        // 本机接口用的是同一条规则：它也重新检查。
+        await localApi.checkFirewall();
+        return result;
+      },
+    },
+    holdUntilFirewallAllows: app.isPackaged,
+    candidatePorts: ippCandidatePorts(process.env, app.isPackaged),
+    ipv4Host: ippBindHost(process.env, app.isPackaged),
+    // 只在开发 / E2E 把共享限制在本机回环时才接受回环来的连接。
+    allowLoopback: ippBindHost(process.env, app.isPackaged) !== undefined,
+    discoveryEnabled: isDiscoveryEnabled(process.env, app.isPackaged),
+    lanInterfaces: () => lanIPv4Interfaces(networkInterfaces()),
+    render: { renderer: ippRenderer, pieces: pdfCache, printFields: (input) => service.printFields(input) },
+    findPortOwner,
+    notifyClientRequest: notifyIppClientRequest,
+    onStatus: (sharingStatus) => sendToMainWindow(IpcChannel.IppStatusChanged, sharingStatus),
+    onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
+    schedule: (run, delayMs) => {
+      const timer = setTimeout(run, delayMs);
+      return () => clearTimeout(timer);
+    },
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    log: (line) => console.info(line),
+  });
+  /** 退出前停共享（告别广播、对方的请求收尾、没打完的任务中止）；最多等一会儿，不让退出卡住。 */
+  const stopSharingForQuit = async (): Promise<void> => {
+    if (!(await settleWithin(ippSharing.stop(), IPP_STOP_ON_QUIT_TIMEOUT_MS))) {
+      console.warn('[ipp] LAN sharing did not stop in time, quitting anyway');
+    }
+  };
   // macOS/Linux 关机、注销时 before-quit 也会触发（Windows 不会，走的是下面的 session-end）：
   // 这种情况下不弹确认，不能挡着系统关机。powerMonitor 没有「关机被取消」的事件，收到这个信号
   // 之后就不再复位——真被取消的情况很少见，顶多是这之后一次正常退出也跳过了确认，不是大问题。
@@ -777,6 +867,8 @@ async function bootstrap(): Promise<void> {
   let readyToQuit = false;
   // 确认框开着时又来一次 before-quit（托盘连点两次「退出」）：不再弹第二个，等第一个的结果。
   let isConfirmingQuit = false;
+  // 退出前的异步收尾（删缓存、停共享）正在做：这期间再来的 before-quit 只拦住、不重复做。
+  let isFinishingQuit = false;
   // 用异步版本：确认框开着的这段时间，打印和 IPC 照常响应（同步版本会冻住整个主进程）。
   const showQuitDialog = (options: Electron.MessageBoxOptions) =>
     mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options);
@@ -886,6 +978,32 @@ async function bootstrap(): Promise<void> {
     return true;
   };
 
+  /**
+   * 局域网共享还有别的电脑交来、没打完的任务：问一下。选「取消」没有副作用；选「仍要退出」也先不动它们，
+   * 等后面几步都确认了，最后停共享时一起中止（不然后面再选「取消」，对方的任务已经白白中止了）。
+   */
+  const confirmIppQuit = async (): Promise<boolean> => {
+    const { message, detail } = ippQuitDialogText(Math.max(1, ippSharing.pendingJobs));
+    const { response } = await showQuitDialog({
+      type: 'warning',
+      buttons: ['取消', '仍要退出'],
+      defaultId: 0,
+      cancelId: 0,
+      message,
+      detail,
+    });
+    return response === 1;
+  };
+
+  /** 退出前的异步收尾：删掉没打过的缓存位图、停局域网共享。两件一起做。 */
+  const finishBeforeQuit = (): Promise<unknown> =>
+    Promise.all([
+      pdf
+        .discardUnprintedCache()
+        .catch((error: unknown) => console.error('[pdf] failed to discard the unprinted cache on quit', error)),
+      stopSharingForQuit(),
+    ]);
+
   app.on('before-quit', (event) => {
     if (readyToQuit) {
       isQuitting = true;
@@ -899,43 +1017,48 @@ async function bootstrap(): Promise<void> {
       isSystemShutdown,
     );
     const needsTemplate = templateQuit.shouldConfirm(isSystemShutdown);
-    if (!needsBatchOrPdf && !needsTemplate) {
-      // 没有要确认的，但还要删掉这次出块里没打过的缓存位图（见 discardUnprintedCache）：这是异步的，
-      // 不能让退出真的发生之后才做——进程可能在文件删掉之前就已经退出了。先拦住这一次，删完再调用
+    const needsIpp = shouldConfirmBatchQuit(ippSharing.pendingJobs, isSystemShutdown);
+    if (!needsBatchOrPdf && !needsTemplate && !needsIpp) {
+      // 没有要确认的，但还要删掉这次出块里没打过的缓存位图（见 discardUnprintedCache）、停局域网共享（告别广播）：
+      // 这是异步的，不能让退出真的发生之后才做——进程可能在做完之前就已经退出了。先拦住这一次，做完再调用
       // app.quit() 重新触发：这时 readyToQuit 已经是 true，下一次进这个处理器会直接放行，不会再拦一次。
       event.preventDefault();
-      pdf
-        .discardUnprintedCache()
-        .catch((error: unknown) => console.error('[pdf] failed to discard the unprinted cache on quit', error))
-        .finally(() => {
-          readyToQuit = true;
-          isQuitting = true;
-          mobile.quit();
-          app.quit();
-        });
+      // 收尾还没做完又来一次 before-quit（托盘连点两次「退出」）：等这一次做完，不再收尾第二遍。
+      if (isFinishingQuit) {
+        return;
+      }
+      isFinishingQuit = true;
+      void finishBeforeQuit().finally(() => {
+        readyToQuit = true;
+        isQuitting = true;
+        mobile.quit();
+        app.quit();
+      });
       return;
     }
     event.preventDefault();
-    if (isConfirmingQuit) {
+    if (isConfirmingQuit || isFinishingQuit) {
       return;
     }
     isConfirmingQuit = true;
     showMainWindow();
-    // 先问模板（选「取消」没有任何副作用），再问批量打印和 PDF（选「仍要退出」会取消它们）：
-    // 反过来的话，已经取消的批次、PDF 块再也回不去，模板那一步再选「取消」也没意义了。
+    // 先问模板（选「取消」没有任何副作用），再问局域网共享（选「仍要退出」也只是记下，最后才停），
+    // 最后问批量打印和 PDF（选「仍要退出」会取消它们）：反过来的话，已经取消的批次、PDF 块再也回不去，
+    // 前面那一步再选「取消」也没意义了。
     void (async () => {
       try {
         if (needsTemplate && !(await confirmTemplateQuit())) {
+          return;
+        }
+        if (needsIpp && !(await confirmIppQuit())) {
           return;
         }
         if (needsBatchOrPdf && !(await confirmBatchAndPdfQuit())) {
           return;
         }
         // 这次出块里没打过的缓存位图（打过的、confirmQuit 钉住的除外）现在删掉，不然要等 7 天
-        // 的保留期才会被清理（1000 张约 260MB）。
-        await pdf
-          .discardUnprintedCache()
-          .catch((error: unknown) => console.error('[pdf] failed to discard the unprinted cache on quit', error));
+        // 的保留期才会被清理（1000 张约 260MB）；局域网共享这时才停，没打完的任务中止。
+        await finishBeforeQuit();
         readyToQuit = true;
         isQuitting = true;
         mobile.quit();
@@ -1034,6 +1157,7 @@ async function bootstrap(): Promise<void> {
     voice,
     mobile,
     localApi,
+    ippSharing,
     drivers,
     driverNameOf,
     profiles,
@@ -1077,6 +1201,7 @@ async function bootstrap(): Promise<void> {
       }
       mobile.settingsChanged(next, previous);
       await localApi.settingsChanged(next, previous);
+      await ippSharing.settingsChanged(next, previous);
     },
   });
   outbox.start();
@@ -1102,6 +1227,7 @@ async function bootstrap(): Promise<void> {
   // 一起关的话，Electron 不会判定「所有窗口都关了」，没有托盘时关闭主窗口就退不出程序，一直在后台挂着。
   mainWindow.on('closed', () => {
     pdfRenderer.close();
+    ippRenderer.close();
   });
   // 窗口关在托盘里的起始时间：关到托盘后的静默更新要等一会儿（background-update.ts）。
   let hiddenSince: number | null = startup === 'tray' ? Date.now() : null;
@@ -1120,6 +1246,8 @@ async function bootstrap(): Promise<void> {
   void warmProfiles();
   // 打印机列表要用主窗口：窗口建好之后才开始接收接口请求。
   localApi.start().catch((error: unknown) => console.error('[api] local api failed to start', error));
+  // 局域网共享同样要等主窗口建好（读打印机列表要用它）；默认关着，start 只按设置决定要不要监听。
+  ippSharing.start().catch((error: unknown) => console.error('[ipp] LAN sharing failed to start', error));
   // Windows 关机、注销时不会触发 before-quit：放行窗口关闭并关闭数据库，不能阻塞关机。
   mainWindow.on('query-session-end', () => {
     isQuitting = true;
@@ -1142,9 +1270,11 @@ async function bootstrap(): Promise<void> {
       hiddenSince: tray === null ? null : hiddenSince,
       // 批量打印、PDF 还有没打的（暂停中的也算）时不静默更新：重启会丢掉剩下的。
       // 正在装驱动也算有事没做完：静默更新会结束本程序，装到一半的提权安装就没人等了。
+      // 局域网共享还有别的电脑交来、没打完（含等确认）的任务时也不静默更新。
       pendingPrints:
         printQueue.pending +
         localApi.pendingJobs +
+        ippSharing.pendingJobs +
         batch.pendingLabels +
         pdf.pendingLabels +
         (drivers.isInstalling ? 1 : 0),
@@ -1166,12 +1296,15 @@ async function bootstrap(): Promise<void> {
     clearInterval(mobileTicker);
     clearInterval(backgroundUpdateTimer);
     void localApi.stop();
+    // 正常退出时 before-quit 已经停过共享；「重启更新」、Windows 关机不经过那里，这里再停一次（不等）。
+    void ippSharing.stop();
     outbox.stop();
     status.stop();
     drivers.cancelInstall();
     probeHost?.dispose();
     diagnosisProbeHost?.dispose();
     pdfRenderer.close();
+    ippRenderer.close();
     tray?.destroy();
     closeDatabase();
   });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isAllowedRenderRequest, PDF_RENDER_CSP } from './render-session-policy';
+import { isAllowedRenderRequest, PDF_RENDER_CSP, RENDER_PARTITIONS } from './render-session-policy';
 
 describe('PDF_RENDER_CSP', () => {
   // 页面的 meta 管页面，响应头管 worker：两份不一致时会有一边比另一边松。
@@ -36,5 +36,15 @@ describe('isAllowedRenderRequest', () => {
     expect(isAllowedRenderRequest('ws://localhost:5173/', 'http://localhost:5173')).toBe(true);
     expect(isAllowedRenderRequest('http://localhost:5174/x', 'http://localhost:5173')).toBe(false);
     expect(isAllowedRenderRequest('http://localhost:5173/pdf-render.html', null)).toBe(false);
+  });
+});
+
+describe('RENDER_PARTITIONS', () => {
+  // 局域网别的电脑交来的文档和操作员自己选的 PDF 不在同一个会话（也就不在同一个渲染进程）里打开。
+  test('gives LAN sharing its own in-memory session apart from PDF printing', () => {
+    expect(RENDER_PARTITIONS.ipp).not.toBe(RENDER_PARTITIONS.pdf);
+    for (const partition of Object.values(RENDER_PARTITIONS)) {
+      expect(partition.startsWith('persist:')).toBe(false);
+    }
   });
 });

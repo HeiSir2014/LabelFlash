@@ -86,6 +86,29 @@ describe('PdfRenderHost', () => {
     expect(await opening).toEqual({ pageCount: 1, pages: [A4] });
   });
 
+  test('opens a JPEG or PNG as a one-page document in the render page', async () => {
+    const { host, ports } = createHost();
+    const opening = host.openImage(Uint8Array.of(0xff, 0xd8, 0xff), 'image/jpeg');
+    await settle();
+    const request = ports[0]?.sent[0];
+    expect(request).toMatchObject({ kind: 'open-image', type: 'image/jpeg', data: Uint8Array.of(0xff, 0xd8, 0xff) });
+    ports[0]?.reply({ id: request?.id, kind: 'opened', pageCount: 1, pages: [{ width: 640, height: 480 }] });
+    expect(await opening).toEqual({ pageCount: 1, pages: [{ width: 640, height: 480 }] });
+  });
+
+  test('renders an opened image at its own size', async () => {
+    const { host, ports } = createHost();
+    const opening = host.openImage(Uint8Array.of(0x89), 'image/png');
+    await settle();
+    const port = ports[0];
+    port?.reply({ id: port.sent[0]?.id, kind: 'opened', pageCount: 1, pages: [{ width: 4, height: 2 }] });
+    await opening;
+    const rendering = host.render(1, { width: 4, height: 2 }, 72);
+    expect(port?.sent[1]).toMatchObject({ kind: 'render', page: 1, scale: 1 });
+    port?.reply({ id: port.sent[1]?.id, kind: 'rendered', width: 4, height: 2, gray: new Uint8Array(8) });
+    expect((await rendering).image).toMatchObject({ width: 4, height: 2 });
+  });
+
   test('renders a page at the requested resolution', async () => {
     const { host, port } = await opened();
     const rendering = host.render(1, A4, 72);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { PDF_LIMITS } from '../core/pdf/pdf-model';
-import { readRenderReply, renderedSize, renderScale, rgbaToGray } from './pdf-render-protocol';
+import { RENDER_IMAGE_TYPES, readRenderReply, renderedSize, renderScale, rgbaToGray } from './pdf-render-protocol';
 
 const A4 = { width: 595, height: 842 };
 
@@ -90,5 +90,11 @@ describe('readRenderReply', () => {
     const reply = { id: 3, kind: 'rendered', width: 2, height: 1, gray: new Uint8Array(2) };
     expect(readRenderReply(reply, rendered)).toBeNull();
     expect(readRenderReply('x', rendered)).toBeNull();
+  });
+});
+
+describe('RENDER_IMAGE_TYPES', () => {
+  test('lists only the image types the render page decodes', () => {
+    expect([...RENDER_IMAGE_TYPES]).toEqual(['image/jpeg', 'image/png']);
   });
 });

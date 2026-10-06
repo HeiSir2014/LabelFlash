@@ -26,8 +26,14 @@ export interface PageSize {
   height: number;
 }
 
+/** 渲染页还能解码的图片（局域网共享收到的 JPEG / PNG 也只在这个 sandbox 页里解码）。 */
+export const RENDER_IMAGE_TYPES = ['image/jpeg', 'image/png'] as const;
+export type RenderImageType = (typeof RENDER_IMAGE_TYPES)[number];
+
 export type RenderRequest =
   | { id: number; kind: 'open'; data: Uint8Array }
+  /** 一张图片当作只有一页的文档：页面大小 = 图片的像素，按 72dpi 渲染就是原图大小。 */
+  | { id: number; kind: 'open-image'; data: Uint8Array; type: RenderImageType }
   /** page 从 1 数；scale = 每点多少像素。 */
   | { id: number; kind: 'render'; page: number; scale: number };
 

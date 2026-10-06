@@ -4,6 +4,7 @@ import {
   type ExpectedReply,
   type PageSize,
   POINTS_PER_INCH,
+  type RenderImageType,
   type RenderReply,
   type RenderRequest,
   readRenderReply,
@@ -79,7 +80,16 @@ export class PdfRenderHost {
   constructor(private readonly deps: PdfRenderHostDeps) {}
 
   /** 打开一个 PDF（关掉上一个）。打不开时抛 PdfRenderError。 */
-  async open(data: Uint8Array): Promise<OpenedPdf> {
+  open(data: Uint8Array): Promise<OpenedPdf> {
+    return this.openWith((id) => ({ id, kind: 'open', data }));
+  }
+
+  /** 打开一张 JPEG / PNG（关掉上一个文档）：解码只在渲染页里做。打不开时抛 PdfRenderError。 */
+  openImage(data: Uint8Array, type: RenderImageType): Promise<OpenedPdf> {
+    return this.openWith((id) => ({ id, kind: 'open-image', data, type }));
+  }
+
+  private async openWith(build: (id: number) => RenderRequest): Promise<OpenedPdf> {
     this.close();
     const port = await this.deps.openPort();
     this.port = port;
@@ -91,7 +101,7 @@ export class PdfRenderHost {
       }
     });
     const reply = await this.request(
-      (id) => ({ id, kind: 'open', data }),
+      build,
       (id) => ({ id, kind: 'opened', maxPages: PDF_LIMITS.pages }),
       this.deps.openTimeoutMs,
     );

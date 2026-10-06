@@ -154,7 +154,8 @@ describe('IppSharing', () => {
     ]);
     await waitUntil(() => sharing.status().pendingClients.length === 1);
     expect(notified).toMatchObject([{ address: '127.0.0.1', user: 'zhang', printerName: '60×40 标签' }]);
-    expect(sharing.pendingJobs).toBe(1);
+    // 等确认的任务不挡退出和更新。
+    expect(sharing.pendingJobs).toBe(0);
     sharing.decideClient('127.0.0.1', true);
     await waitUntil(() => printed.length === 1);
     expect(printed[0]).toMatchObject({ source: 'ipp', ipp: { client: '127.0.0.1', user: 'zhang' } });

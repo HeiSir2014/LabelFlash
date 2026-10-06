@@ -1,13 +1,21 @@
+import { PDF_LIMITS } from '../pdf/pdf-model';
 import type { Clock } from '../types';
 import { enumAttr, integerAttr, keywordAttr, nameAttr, outOfBandAttr, textAttr, uriAttr } from './ipp-attributes';
 import type { IppAttribute } from './ipp-codec';
 import { JOB_STATE, VALUE_TAGS } from './ipp-constants';
 
 export const IPP_JOB_LIMITS = {
-  /** 收下还没结束的任务（含等确认的）最多 4 个：每个文档最多 50MB 在内存里，4 个是 200MB；几台电脑同时打标签够用。 */
+  /** 收下还没结束、已经允许的任务最多 4 个：每个文档最多 50MB 在内存里，4 个是 200MB；几台电脑同时打标签够用。 */
   active: 4,
   /** 每台电脑最多 2 个：一台电脑出错反复提交时，别的电脑照样能打。 */
   activePerClient: 2,
+  /**
+   * 等操作员允许的任务另算：一共最多 2 个、每台电脑 1 个，文档加起来最多 50MB（一个最大的文档）。
+   * 没被允许的电脑占不满正式的名额，也撑不大内存。
+   */
+  held: 2,
+  heldPerClient: 1,
+  heldBytes: PDF_LIMITS.fileBytes,
   /** 结束的任务留 100 个、最多 1 小时给对方查结果：打印队列看到结束就不再查了。 */
   finished: 100,
   finishedMs: 60 * 60_000,
@@ -80,12 +88,9 @@ export class IppJobBook {
   /** 收下一个任务；同时开着的太多时返回 busy（全部）或 client-busy（这台电脑）。 */
   create(input: NewIppJob): CreateResult {
     this.prune();
-    const active = [...this.jobs.values()].filter(isActive);
-    if (active.length >= IPP_JOB_LIMITS.active) {
-      return { status: 'busy' };
-    }
-    if (active.filter((job) => job.client === input.client).length >= IPP_JOB_LIMITS.activePerClient) {
-      return { status: 'client-busy' };
+    const limit = this.limitFor(input);
+    if (limit !== null) {
+      return { status: limit };
     }
     // held 只是建任务时的参数，不留在任务上。
     const { held, ...fields } = input;
@@ -104,6 +109,25 @@ export class IppJobBook {
     this.nextId = this.nextId >= MAX_JOB_ID ? 1 : this.nextId + 1;
     this.jobs.set(job.id, job);
     return { status: 'created', job: copy(job) };
+  }
+
+  /** 收下这个任务会不会超过名额：等确认的和已允许的分开算。 */
+  private limitFor(input: NewIppJob): 'busy' | 'client-busy' | null {
+    if (input.held) {
+      const held = [...this.jobs.values()].filter(isHeld);
+      const heldBytes = held.reduce((sum, job) => sum + job.sizeBytes, 0);
+      if (held.length >= IPP_JOB_LIMITS.held || heldBytes + input.sizeBytes > IPP_JOB_LIMITS.heldBytes) {
+        return 'busy';
+      }
+      return held.some((job) => job.client === input.client) ? 'client-busy' : null;
+    }
+    const active = [...this.jobs.values()].filter(isWorking);
+    if (active.length >= IPP_JOB_LIMITS.active) {
+      return 'busy';
+    }
+    return active.filter((job) => job.client === input.client).length >= IPP_JOB_LIMITS.activePerClient
+      ? 'client-busy'
+      : null;
   }
 
   get(id: number): IppJob | null {
@@ -198,9 +222,17 @@ export class IppJobBook {
     return this.jobs.get(id)?.cancelRequested ?? false;
   }
 
-  /** 收下还没结束的任务数（含等确认的）。 */
+  /**
+   * 已经允许、还没结束的任务数（排着的和正在打的）：不含等确认的。退出前要不要问、能不能更新按它：
+   * 没被允许的电脑交来的任务挡不住操作员退出、更新。
+   */
   activeCount(): number {
-    return [...this.jobs.values()].filter(isActive).length;
+    return [...this.jobs.values()].filter(isWorking).length;
+  }
+
+  /** 等操作员允许的任务数。 */
+  heldCount(): number {
+    return [...this.jobs.values()].filter(isHeld).length;
   }
 
   /** 某台共享打印机上还没结束的任务数。 */
@@ -223,6 +255,15 @@ export class IppJobBook {
 
 function isActive(job: IppJob): boolean {
   return !FINISHED_STATES.has(job.state);
+}
+
+function isHeld(job: IppJob): boolean {
+  return job.state === 'pending-held';
+}
+
+/** 已经允许、还没结束的。 */
+function isWorking(job: IppJob): boolean {
+  return isActive(job) && !isHeld(job);
 }
 
 function copy(job: IppJob): IppJob {

@@ -64,6 +64,8 @@ interface Waiting {
  */
 export class ClientApprovals {
   private readonly waiting = new Map<string, Waiting>();
+  /** 每台电脑上次发系统通知的时刻：过了询问窗口的在下次发通知时清掉。 */
+  private readonly notifiedAt = new Map<string, number>();
 
   constructor(private readonly deps: ClientApprovalsDeps) {}
 
@@ -99,7 +101,18 @@ export class ClientApprovals {
       const client: PendingClient = { address, user, printerName, jobs: 1, since: this.deps.clock.now() };
       const cancelTimer = this.deps.schedule(() => this.settle(address, 'timeout'), IPP_APPROVAL.timeoutMs);
       this.waiting.set(address, { client, resolvers: [resolve], cancelTimer });
-      this.deps.notify({ ...client });
+      // 同一台电脑超时后马上又来：询问条照常出现，系统通知在一个询问窗口里只发一次，不刷屏。
+      const now = this.deps.clock.now();
+      const last = this.notifiedAt.get(address);
+      if (last === undefined || now - last >= IPP_APPROVAL.timeoutMs) {
+        for (const [known, at] of this.notifiedAt) {
+          if (now - at >= IPP_APPROVAL.timeoutMs) {
+            this.notifiedAt.delete(known);
+          }
+        }
+        this.notifiedAt.set(address, now);
+        this.deps.notify({ ...client });
+      }
       this.deps.onChange();
     });
   }

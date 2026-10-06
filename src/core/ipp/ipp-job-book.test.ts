@@ -43,6 +43,27 @@ describe('IppJobBook', () => {
     expect(book.activeCount()).toBe(IPP_JOB_LIMITS.active);
   });
 
+  // 没被允许的电脑占不满任务名额：等确认的单独算，每台 1 个、一共 2 个，文档加起来也有上限。
+  test('keeps held jobs apart from the active limit and caps them separately', () => {
+    const book = new IppJobBook(new FakeClock());
+    created(book, { held: true, client: '192.168.1.31' });
+    expect(book.create({ ...NEW_JOB, held: true, client: '192.168.1.31' }).status).toBe('client-busy');
+    created(book, { held: true, client: '192.168.1.32' });
+    expect(book.create({ ...NEW_JOB, held: true, client: '192.168.1.33' }).status).toBe('busy');
+    for (const client of ['192.168.1.1', '192.168.1.2', '192.168.1.3', '192.168.1.4']) {
+      created(book, { client });
+    }
+    expect(book.activeCount()).toBe(IPP_JOB_LIMITS.active);
+    expect(book.heldCount()).toBe(IPP_JOB_LIMITS.held);
+  });
+
+  test('caps the bytes of held documents in total', () => {
+    const book = new IppJobBook(new FakeClock());
+    created(book, { held: true, client: '192.168.1.31', sizeBytes: IPP_JOB_LIMITS.heldBytes - 10 });
+    expect(book.create({ ...NEW_JOB, held: true, client: '192.168.1.32', sizeBytes: 11 }).status).toBe('busy');
+    expect(book.create({ ...NEW_JOB, held: true, client: '192.168.1.32', sizeBytes: 10 }).status).toBe('created');
+  });
+
   test('moves a job from held to completed', () => {
     const clock = new FakeClock();
     const book = new IppJobBook(clock);

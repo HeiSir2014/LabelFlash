@@ -33,9 +33,10 @@ function createApprovals() {
   const timers: Array<{ run: () => void; delayMs: number }> = [];
   const notified: PendingClient[] = [];
   let changes = 0;
+  const clock = new FakeClock();
   const approvals = new ClientApprovals({
     store,
-    clock: new FakeClock(),
+    clock,
     schedule: (run, delayMs) => {
       const timer = { run, delayMs };
       timers.push(timer);
@@ -48,7 +49,7 @@ function createApprovals() {
       changes += 1;
     },
   });
-  return { approvals, store, timers, notified, changes: () => changes };
+  return { approvals, store, timers, notified, clock, changes: () => changes };
 }
 
 describe('ClientApprovals', () => {
@@ -83,6 +84,22 @@ describe('ClientApprovals', () => {
     expect(await waiting).toBe('timeout');
     expect(approvals.pending()).toEqual([]);
     expect(approvals.decisionFor('192.168.1.23')).toBe('ask');
+  });
+
+  // 同一台电脑反复来（超时后又交一个）：一个询问窗口里只发一次系统通知，不刷屏。
+  test('does not notify twice about the same computer within the approval window', async () => {
+    const { approvals, timers, notified, clock } = createApprovals();
+    const first = approvals.waitFor('192.168.1.23', '', 'P');
+    timers[0]?.run();
+    expect(await first).toBe('timeout');
+    clock.advance(IPP_APPROVAL.timeoutMs - 1);
+    void approvals.waitFor('192.168.1.23', '', 'P');
+    expect(notified).toHaveLength(1);
+    expect(approvals.pending()).toHaveLength(1);
+    approvals.dispose();
+    clock.advance(1);
+    void approvals.waitFor('192.168.1.23', '', 'P');
+    expect(notified).toHaveLength(2);
   });
 
   test('lets at most three computers wait at once', async () => {

@@ -348,7 +348,14 @@ export function CanvasStage({
             ))}
             {gesture.badge !== null && (
               <span
-                className="canvas-overlay__badge"
+                // 指针在纸的右半边、下半边时标签放到指针的左边、上边：不伸出纸外撑出滚动条，也不被裁掉。
+                className={[
+                  'canvas-overlay__badge',
+                  gesture.badge.at.x > paper.widthMm / 2 ? 'canvas-overlay__badge--left' : null,
+                  gesture.badge.at.y > paper.heightMm / 2 ? 'canvas-overlay__badge--up' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
                 aria-hidden="true"
                 style={{
                   left: `calc(${gesture.badge.at.x} * var(--mm))`,

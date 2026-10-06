@@ -91,18 +91,28 @@ export function FloatingToolbar(props: FloatingToolbarProps) {
     const pxPerMm = PX_PER_MM * zoom;
     const stageRect = stage.getBoundingClientRect();
     const overlayRect = overlay.getBoundingClientRect();
+    const bounds = {
+      left: stageRect.left - overlayRect.left + EDGE_MARGIN_PX,
+      top: stageRect.top - overlayRect.top + EDGE_MARGIN_PX,
+      right: stageRect.right - overlayRect.left - EDGE_MARGIN_PX,
+      bottom: stageRect.bottom - overlayRect.top - EDGE_MARGIN_PX,
+    };
+    // 画布区比工具条窄（1024 宽、条码多了「放大到能印」）时折成两行，不伸出画布区、不撑出横向滚动条。
+    // 宽度上限要在量尺寸之前就定好，量出来的才是折行后的大小。
+    toolbar.style.maxWidth = `${Math.max(0, bounds.right - bounds.left)}px`;
+    // 画布区角上的撤销重做、缩放胶囊（和滚动区同在 .designer-stage-area 里）：工具条不盖住它们。
+    const avoid = [...(stage.parentElement?.querySelectorAll<HTMLElement>('.designer-float') ?? [])].map((control) => {
+      const rect = control.getBoundingClientRect();
+      return { x: rect.left - overlayRect.left, y: rect.top - overlayRect.top, width: rect.width, height: rect.height };
+    });
     setPosition(
       floatingToolbarPosition({
         selection: { x: box.x * pxPerMm, y: box.y * pxPerMm, width: box.width * pxPerMm, height: box.height * pxPerMm },
         toolbar: { width: toolbar.offsetWidth, height: toolbar.offsetHeight },
-        bounds: {
-          left: stageRect.left - overlayRect.left + EDGE_MARGIN_PX,
-          top: stageRect.top - overlayRect.top + EDGE_MARGIN_PX,
-          right: stageRect.right - overlayRect.left - EDGE_MARGIN_PX,
-          bottom: stageRect.bottom - overlayRect.top - EDGE_MARGIN_PX,
-        },
+        bounds,
         gap: GAP_ABOVE_PX,
         gapBelow: GAP_BELOW_PX,
+        avoid,
       }),
     );
   }, [box.x, box.y, box.width, box.height, zoom, scrollTick, elements]);

@@ -17,6 +17,8 @@
   --color-warning-wash: #fbe6d7;
   --color-error: #c8372d;
   --color-error-wash: #f8dedb;
+  /* 比 --color-error 深：放在浅红底上当文字颜色（设计器里「条码不印」的短原因、检查条的「N 项」）才够 4.5:1，做法同 --color-warning-text。 */
+  --color-error-text: #9e2219;
   /* 设计器的选框、控制点和吸附参考线：标签只有黑白，选框用蓝、参考线用洋红才分得清（热敏纸上不会出现这两种颜色） */
   --color-selection: #2563eb;
   --color-guide: #d6336c;

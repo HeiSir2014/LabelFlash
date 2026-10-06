@@ -19,6 +19,34 @@ interface FloatingInput {
   gap: number;
   /** 放在下方时和选框隔多远：下方还有旋转手柄，要隔得更远；不给就和 gap 一样。 */
   gapBelow?: number;
+  /** 别盖住的浮动控件（画布角上的撤销重做、缩放胶囊）：碰上了就往右让开（右边放不下就算了）。 */
+  avoid?: readonly Box[];
+}
+
+/** 让开浮动控件时留的空隙（px）。 */
+const AVOID_GAP_PX = 8;
+
+function overlaps(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+/** 碰上了要让开的控件就挪到它右边；挪过去会出范围时保持原位。 */
+function clearOf(
+  position: FloatingPosition,
+  size: { width: number; height: number },
+  avoid: readonly Box[],
+  right: number,
+) {
+  let { left } = position;
+  for (const box of avoid) {
+    if (overlaps({ x: left, y: position.top, ...size }, box)) {
+      const shifted = box.x + box.width + AVOID_GAP_PX;
+      if (shifted + size.width <= right) {
+        left = shifted;
+      }
+    }
+  }
+  return { ...position, left };
 }
 
 export function floatingToolbarPosition({
@@ -27,16 +55,17 @@ export function floatingToolbarPosition({
   bounds,
   gap,
   gapBelow = gap,
+  avoid = [],
 }: FloatingInput): FloatingPosition {
   const centred = selection.x + selection.width / 2 - toolbar.width / 2;
   const left = Math.max(bounds.left, Math.min(bounds.right - toolbar.width, centred));
   const above = selection.y - gap - toolbar.height;
-  if (above >= bounds.top) {
-    return { left, top: above, placement: 'above' };
-  }
   const below = selection.y + selection.height + gapBelow;
-  if (below + toolbar.height <= bounds.bottom) {
-    return { left, top: below, placement: 'below' };
-  }
-  return { left, top: bounds.top, placement: 'inside' };
+  const placed: FloatingPosition =
+    above >= bounds.top
+      ? { left, top: above, placement: 'above' }
+      : below + toolbar.height <= bounds.bottom
+        ? { left, top: below, placement: 'below' }
+        : { left, top: bounds.top, placement: 'inside' };
+  return clearOf(placed, toolbar, avoid, bounds.right);
 }

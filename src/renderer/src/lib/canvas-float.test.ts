@@ -37,6 +37,18 @@ describe('floatingToolbarPosition', () => {
     expect(position.top).toBe(20 + 40);
   });
 
+  test('slides right past a floating control it would cover, such as the undo and redo buttons', () => {
+    const history = { x: -30, y: -50, width: 100, height: 40 };
+    const position = floatingToolbarPosition({
+      selection: { x: 0, y: 30, width: 100, height: 20 },
+      toolbar: TOOLBAR,
+      bounds: BOUNDS,
+      gap: GAP,
+      avoid: [history],
+    });
+    expect(position.left).toBe(history.x + history.width + 8);
+  });
+
   test('stays inside the area horizontally', () => {
     const atRight = floatingToolbarPosition({
       selection: { x: 600, y: 200, width: 30, height: 30 },

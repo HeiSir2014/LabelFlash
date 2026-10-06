@@ -109,21 +109,6 @@ export function plainAddress(address: string): string {
 }
 
 /**
- * 局域网里来的连接（局域网共享只接受这些）：私有网段（RFC 1918）、链路本地（169.254/16，两台电脑直连时用）、本机回环。
- * 共享只监听 IPv4，IPv6 一律不算；代理的 198.18/15、运营商级 NAT 和 Tailscale 的 100.64/10 都不算局域网。
- */
-export function isLanClientAddress(address: string | undefined): boolean {
-  if (address === undefined) {
-    return false;
-  }
-  const plain = plainAddress(address);
-  return (
-    isIP(plain) === 4 &&
-    (isPrivateIPv4(plain) || plain.startsWith(LINK_LOCAL_PREFIX) || plain.startsWith(IPV4_LOOPBACK_PREFIX))
-  );
-}
-
-/**
  * 对方是不是这台电脑所在网段里的（局域网共享、mDNS 只理这些）：和选中的某块局域网网卡同一个子网。
  * 本机回环只在开发 / E2E 的开关打开时算（安装版里本机不需要连自己的共享打印机）。
  */

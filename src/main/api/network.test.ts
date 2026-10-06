@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  isLanClientAddress,
   isLoopbackAddress,
   isLoopbackHost,
   isOnLanSubnet,
@@ -80,28 +79,6 @@ describe('lanIPv4Addresses', () => {
         link: nic('169.254.1.1', '00:15:5d:01:02:04'),
       }),
     ).toEqual(['192.168.1.50']);
-  });
-});
-
-describe('isLanClientAddress', () => {
-  test('accepts private, link-local and loopback IPv4 addresses, mapped or not', () => {
-    for (const address of [
-      '192.168.1.23',
-      '10.0.0.5',
-      '172.16.3.4',
-      '172.31.255.1',
-      '169.254.10.2',
-      '127.0.0.1',
-      '::ffff:192.168.1.23',
-    ]) {
-      expect(isLanClientAddress(address)).toBe(true);
-    }
-  });
-
-  test('refuses public addresses, carrier NAT, IPv6 and nothing', () => {
-    for (const address of ['8.8.8.8', '172.32.0.1', '100.64.0.1', '198.18.0.1', '::1', 'fe80::1', '', undefined]) {
-      expect(isLanClientAddress(address)).toBe(false);
-    }
   });
 });
 

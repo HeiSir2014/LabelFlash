@@ -3444,11 +3444,11 @@ fieldset.designer-zoom__menu {
   user-select: none;
 }
 
-/* 1mm 网格：淡灰细线，只在屏幕上，不进打印 */
+/* 1mm 网格（默认关，窄栏「网格」打开）：很淡的细线，只在屏幕上，不进打印；不能比标签上的字抢眼 */
 .canvas-overlay--grid {
   background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--color-rule) 45%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--color-rule) 45%, transparent) 1px, transparent 1px);
+    linear-gradient(to right, color-mix(in srgb, var(--color-rule) 28%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-rule) 28%, transparent) 1px, transparent 1px);
   background-size: var(--mm) var(--mm);
 }
 
@@ -3457,9 +3457,10 @@ fieldset.designer-zoom__menu {
   outline-offset: 2px;
 }
 
+/* 安全区：淡淡一圈虚线，提醒「字别贴边」，不像出错的橙色那样扎眼 */
 .canvas-overlay__safe {
   position: absolute;
-  border: 1px dashed var(--color-warning);
+  border: 1px dashed color-mix(in srgb, var(--color-ink-soft) 30%, transparent);
   pointer-events: none;
 }
 
@@ -3478,10 +3479,11 @@ fieldset.designer-zoom__menu {
 }
 
 /* 元素框不接指针：按在哪个元素上按位置算（只有边框的矩形不挡住下面的元素），只有控制点接指针。
-   每个元素一圈浅色虚线（只在屏幕上，不打印）：空的文字框、没内容的条码也看得见在哪 */
+   平时不画框，画布上只看到标签本身；指针移到元素上时显示它的框，不印的、条码快不够宽的一直显示。
+   看不见的元素（空的文字框、没内容的条码）在图层列表里选，或指针扫过时现出框来 */
 .canvas-overlay__box {
   position: absolute;
-  outline: 1px dashed color-mix(in srgb, var(--color-ink-soft) 35%, transparent);
+  outline: 1px dashed transparent;
   pointer-events: none;
 }
 
@@ -3554,7 +3556,8 @@ fieldset.designer-zoom__menu {
   content: "";
 }
 
-/* 旋转手柄：选框正下方，和选框用一根细线连着；拖动只转直角 */
+/* 旋转手柄：选框正下方，和选框用一根细线连着；拖动只转直角。
+   平时淡淡的（常常压在下面一行字上，不能挡着看）；指针移到选中的元素或手柄上时才完全显出来 */
 .canvas-overlay__rotate {
   position: absolute;
   top: calc(100% + 20px);
@@ -3566,7 +3569,14 @@ fieldset.designer-zoom__menu {
   border-radius: 50%;
   background: var(--color-selection);
   cursor: grab;
+  opacity: 0.3;
   pointer-events: auto;
+  transition: opacity var(--ui-duration) ease-out;
+}
+
+.canvas-overlay__box--hover .canvas-overlay__rotate,
+.canvas-overlay__rotate:hover {
+  opacity: 1;
 }
 
 .canvas-overlay__rotate::after {
@@ -3767,7 +3777,31 @@ fieldset.designer-zoom__menu {
 
 .ruler-marks__extent {
   position: absolute;
-  background: color-mix(in srgb, var(--color-selection) 22%, transparent);
+  background: color-mix(in srgb, var(--color-selection) 16%, transparent);
+}
+
+/* 设计器里的标尺：安静的纸色底、淡墨刻度，不用模板页预览那条醒目的黄色软尺（画布上要突出的是标签） */
+.canvas-stage .ruler,
+.canvas-stage .tape__corner {
+  color: var(--color-ink-soft);
+  background: var(--color-paper);
+}
+
+.canvas-stage .ruler--horizontal {
+  box-shadow: inset 0 -1px var(--color-rule);
+}
+
+.canvas-stage .ruler--vertical {
+  box-shadow: inset -1px 0 var(--color-rule);
+}
+
+.canvas-stage .ruler line {
+  stroke: var(--color-ink-soft);
+}
+
+.canvas-stage .ruler text {
+  fill: var(--color-ink-soft);
+  font-weight: 400;
 }
 
 .ruler-marks--x .ruler-marks__extent {

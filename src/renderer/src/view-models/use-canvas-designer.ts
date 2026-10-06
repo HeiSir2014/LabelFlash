@@ -73,7 +73,8 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
   const [history, setHistory] = useState<History<CanvasTemplate>>(emptyHistory);
   const [clipboard, setClipboard] = useState<readonly CanvasElement[]>([]);
   const [zoom, setZoom] = useState<ZoomSetting>('fit');
-  const [showGrid, setShowGrid] = useState(true);
+  // 网格默认关：画布上先只看到标签本身（对齐靠吸附和参考线）；要数格子时在窄栏打开。
+  const [showGrid, setShowGrid] = useState(false);
   const [snap, setSnap] = useState(true);
   const [importingImageIds, setImportingImageIds] = useState<ReadonlySet<string>>(new Set());
   // 只在设计器里隐藏的元素（照常打印）：不存进模板，换模板（设计器重新挂载）就清空。

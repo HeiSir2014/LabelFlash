@@ -54,7 +54,7 @@ import { createDiagnosisSystem } from './diagnosis/create-diagnosis-system';
 import { DiagnosisStation } from './diagnosis/diagnosis-station';
 import { diagnosisPlatformOf } from './diagnosis/diagnosis-system';
 import { FakeDiagnosis, FakeLabelCommands } from './diagnosis/fake-diagnosis';
-import type { DriverReinstallSeam, LabelCommandsSeam } from './diagnosis/seams';
+import type { LabelCommandsSeam } from './diagnosis/seams';
 import { BUILD_DEFAULT_DRIVER_CATALOG_URL } from './drivers/build-defaults';
 import { CatalogClient } from './drivers/catalog-client';
 import { trustedKeys } from './drivers/catalog-signature';

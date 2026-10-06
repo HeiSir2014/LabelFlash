@@ -30,7 +30,9 @@ describe('elevatedInstallScript', () => {
     // U+2019（’）：Word 粘贴来的文字常见，PowerShell 的分词器把它当单引号用，会提前结束字符串字面量。
     const path = 'C:\\Users\\Jane’s PC\\AppData\\Local\\Temp\\cdl-labelflash-driver-2\\driver-installer.exe';
     const script = elevatedInstallScript(path, pkg);
-    expect(script).toContain("$Source = 'C:\\Users\\Jane’’s PC\\AppData\\Local\\Temp\\cdl-labelflash-driver-2\\driver-installer.exe'");
+    expect(script).toContain(
+      "$Source = 'C:\\Users\\Jane’’s PC\\AppData\\Local\\Temp\\cdl-labelflash-driver-2\\driver-installer.exe'",
+    );
   });
 
   test('runs an msi through msiexec quietly', () => {

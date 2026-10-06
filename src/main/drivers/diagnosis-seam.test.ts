@@ -36,7 +36,10 @@ describe('mapInstallStateToActionResult', () => {
 describe('createDriverReinstallSeam', () => {
   function fakeDriverStation(hint: { canInstall: boolean } | null, outcome: InstallState): DriverStation {
     return {
-      hints: () => ({ modelForDriverName: () => (hint ? { ...hint, modelId: 'x', brand: '示例', model: 'X1', commandSet: null } : null) }),
+      hints: () => ({
+        modelForDriverName: () =>
+          hint ? { ...hint, modelId: 'x', brand: '示例', model: 'X1', commandSet: null } : null,
+      }),
       reinstall: async () => outcome,
     } as unknown as DriverStation;
   }

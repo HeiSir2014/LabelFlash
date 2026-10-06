@@ -5,6 +5,7 @@ import type { BatchStatus } from '../../../shared/batch';
 import {
   BATCH_ROW_HEIGHT_PX,
   buildPlan,
+  describeBatchFilter,
   describeSummary,
   describeTable,
   failuresByRow,
@@ -161,6 +162,18 @@ describe('texts', () => {
     expect(historyLimitWarning(1_200, 1_000)).toBe(
       '这一批 1,200 张比打印记录保留的 1,000 条多：多出的部分会被自动顶掉，重启后整批重打失败的可能会漏掉这些行',
     );
+  });
+});
+
+describe('describeBatchFilter', () => {
+  // 打印记录只看一批时，标题用人认得出的说法，不直接显示批次号。
+  test('names a batch by when it started and, if known, the file it came from', () => {
+    expect(describeBatchFilter('20261002-143501-a1b2', null)).toBe('10月2日 14:35 开始的一批');
+    expect(describeBatchFilter('20261002-143501-a1b2', 'rows.csv')).toBe('rows.csv · 10月2日 14:35 开始的一批');
+  });
+
+  test('falls back to the batch id when it cannot be read', () => {
+    expect(describeBatchFilter('something-else', null)).toBe('批次 something-else');
   });
 });
 

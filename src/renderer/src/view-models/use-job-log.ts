@@ -92,6 +92,8 @@ export function useJobLog() {
   return {
     jobs: page.jobs,
     total: page.total,
+    /** 只看一批时这一批还有几张失败的；没在看一批时为 0。 */
+    batchFailed: page.batchFailed ?? 0,
     hasMore: page.nextCursor !== null,
     isLoadingMore,
     hasNewJobs,

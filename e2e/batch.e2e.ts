@@ -71,7 +71,9 @@ test('prints the rows of a csv file in order with serials and finds them by batc
   await expect(records).toHaveCount(3);
   await expect(records.first()).toContainText('批量（第 3 行）');
   await records.first().getByRole('button', { name: '这一批' }).click();
-  await expect(page.getByText(/^批次 \d{8}-\d{6}-[0-9a-f]{4}$/)).toBeVisible();
+  // 批次按文件名和开始时间说，不直接显示批次号；全部打出来了，没有「重打失败的」。
+  await expect(page.locator('.job-log__batch-name')).toHaveText(/^rows\.csv · \d+月\d+日 \d{2}:\d{2} 开始的一批$/);
+  await expect(page.getByRole('button', { name: /重打失败的/ })).toHaveCount(0);
   await expect(records).toHaveCount(3);
 });
 

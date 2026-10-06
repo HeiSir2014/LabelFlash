@@ -240,6 +240,10 @@ describe('SqliteJobStore', () => {
     store.append(job(5, { ...failedAs, failureReason: 'PRINT_TIMEOUT', batch: label(3, 1) }));
     expect(ids(store.listBatchFailures(BATCH, null))).toEqual(['job-2', 'job-5']);
     expect(ids(store.listBatchFailures(BATCH, 3))).toEqual(['job-5']);
+    // 只看这一批时顺带说还有几张失败的：没有就不显示「重打失败的」。
+    expect(store.listPage({ limit: 1, batchId: BATCH }).batchFailed).toBe(2);
+    expect(store.listPage({ limit: 1, batchId: OTHER_BATCH }).batchFailed).toBe(0);
+    expect(store.listPage({ limit: 1 }).batchFailed).toBeUndefined();
   });
 
   test('keeps the PDF piece of a job', () => {

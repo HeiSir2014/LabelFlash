@@ -24,6 +24,7 @@ import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
+import { describeBatchFilter } from './lib/batch-view';
 import { describeCaller } from './lib/local-api-text';
 import { describeMobileButton, describeMobileOverlay } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
@@ -405,6 +406,20 @@ export function App() {
               onReview={(job) => station.review(historyTarget(job))}
               onReprint={(job) => station.reprint(historyTarget(job))}
               batchFilter={jobLog.batchId}
+              batchLabel={
+                jobLog.batchId === null
+                  ? null
+                  : describeBatchFilter(
+                      jobLog.batchId,
+                      // 表格只在内存里留最近一张：正好是这一批用的那张时才知道文件名。
+                      batch.status?.batchId === jobLog.batchId &&
+                        batch.status.tableId !== null &&
+                        batch.table?.id === batch.status.tableId
+                        ? batch.table.name
+                        : null,
+                    )
+              }
+              batchFailed={jobLog.batchFailed}
               onFilterBatch={jobLog.setBatchId}
               onRetryBatch={(batchId) => {
                 // 打开批量打印页：进度、失败的原因（例如模板删了不能重打）都在那里看。重打放进回调里：

@@ -31,6 +31,10 @@ interface JobLogProps {
   onReprint: (job: JobRecord) => void;
   /** 只看这一批（批次号）；null = 全部。 */
   batchFilter: string | null;
+  /** 这一批给人看的名字（lib/batch-view.ts 的 describeBatchFilter）。 */
+  batchLabel: string | null;
+  /** 这一批还有几张失败的：没有时不显示「重打失败的」。 */
+  batchFailed: number;
   onFilterBatch: (batchId: string | null) => void;
   /** 重打这一批失败的标签（打开批量打印页看进度）。 */
   onRetryBatch: (batchId: string) => void;
@@ -52,6 +56,8 @@ export function JobLog({
   onReview,
   onReprint,
   batchFilter,
+  batchLabel,
+  batchFailed,
   onFilterBatch,
   onRetryBatch,
 }: JobLogProps) {
@@ -64,7 +70,8 @@ export function JobLog({
           type="search"
           className="text-field"
           aria-label="搜索打印记录"
-          placeholder="按扫码内容搜索"
+          // 搜的是打印内容：扫码、本机接口、批量打的内容，PDF 的记录内容里带着文件名。
+          placeholder="搜索打印内容、PDF 文件名"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
         />
@@ -74,10 +81,14 @@ export function JobLog({
       </div>
       {batchFilter !== null && (
         <div className="job-log__batch">
-          <span className="job-log__batch-name">批次 {batchFilter}</span>
-          <button type="button" className="button button--small" onClick={() => onRetryBatch(batchFilter)}>
-            重打失败的
-          </button>
+          <span className="job-log__batch-name" title={`批次号 ${batchFilter}`}>
+            {batchLabel ?? `批次 ${batchFilter}`}
+          </span>
+          {batchFailed > 0 && (
+            <button type="button" className="button button--small" onClick={() => onRetryBatch(batchFilter)}>
+              重打失败的（{batchFailed}）
+            </button>
+          )}
           <button type="button" className="button button--small button--quiet" onClick={() => onFilterBatch(null)}>
             显示全部
           </button>

@@ -185,6 +185,23 @@ export function describeSummary({ rowCount, selectedCount, labelCount, problemRo
     .join(' · ');
 }
 
+/** 批次号里的开始时间：年月日-时分秒（core 的 batchIdFor）。 */
+const BATCH_ID_TIME = /^\d{4}(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}-[0-9a-f]{4}$/;
+
+/**
+ * 打印记录「只看这一批」时的标题：按开始时间说（批次号就是它编出来的），知道是哪个文件的再加上文件名
+ * （表格只在这次运行的内存里，重启之后就只剩时间）。读不出时间的照原样显示批次号。
+ */
+export function describeBatchFilter(batchId: string, fileName: string | null): string {
+  const match = BATCH_ID_TIME.exec(batchId);
+  if (match === null) {
+    return `批次 ${batchId}`;
+  }
+  const [, month, day, hour, minute] = match;
+  const when = `${Number(month)}月${Number(day)}日 ${hour}:${minute} 开始的一批`;
+  return fileName === null ? when : `${fileName} · ${when}`;
+}
+
 export function serialExample(settings: SerialSettings): string {
   return Array.from({ length: SERIAL_EXAMPLE_COUNT }, (_, position) => serialText(settings, position)).join('、');
 }

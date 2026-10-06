@@ -25,7 +25,7 @@ import {
   viewOf,
 } from '../lib/canvas-gesture';
 import { hitStack, hitTest, nextInStack } from '../lib/canvas-hit';
-import { snapTargets, snapThresholdMm } from '../lib/canvas-snap';
+import { neighbourGaps, snapTargets, snapThresholdMm } from '../lib/canvas-snap';
 import { pxToMm } from '../lib/canvas-view';
 
 /** 拖动的位移取整到 0.1mm（和方向键一步一样），数字框里不会出现 12.37；吸附上的位置以参考线为准。 */
@@ -268,20 +268,20 @@ export function useCanvasGesture(options: GestureOptions): {
       onSelect([...new Set([...current.base, ...touched])]);
       return;
     }
+    const pointer = toPaper({ x: event.clientX, y: event.clientY });
     if (current.kind === 'rotate') {
-      const rotation = rotationFromPointer(
-        current.center,
-        toPaper({ x: event.clientX, y: event.clientY }),
-        current.startRotation,
-      );
-      setBoth({ ...current, hasMoved: true, rotation });
+      const rotation = rotationFromPointer(current.center, pointer, current.startRotation);
+      setBoth({ ...current, hasMoved: true, rotation, pointer });
       return;
     }
     const dx = roundTo(pxToMm(dxPx, zoom), DRAG_STEP_MM);
     const dy = roundTo(pxToMm(dyPx, zoom), DRAG_STEP_MM);
     if (current.kind === 'move') {
       const snapped = moveGestureBox(current.start, dx, dy, paper, targetsWithout(current.ids), threshold, snap);
-      setBoth({ ...current, hasMoved: true, box: snapped.box, guides: snapped.guides });
+      // 吸附开着时写出和四周邻居的间距、标出等距（看得见的、没在动的元素才算邻居）。
+      const neighbours = hittable.filter((element) => !current.ids.includes(element.id));
+      const gaps = snap ? neighbourGaps(snapped.box, neighbours) : [];
+      setBoth({ ...current, hasMoved: true, box: snapped.box, guides: snapped.guides, gaps, pointer });
       return;
     }
     const snapped = resizeGestureBox(
@@ -295,7 +295,7 @@ export function useCanvasGesture(options: GestureOptions): {
       snap,
       keepsRatio(template.elements.find((element) => element.id === current.id)?.kind ?? 'text', event.shiftKey),
     );
-    setBoth({ ...current, hasMoved: true, box: snapped.box, guides: snapped.guides });
+    setBoth({ ...current, hasMoved: true, box: snapped.box, guides: snapped.guides, pointer });
   };
 
   const onPointerUp = () => {

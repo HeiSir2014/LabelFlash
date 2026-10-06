@@ -1,4 +1,11 @@
-import type { CSSProperties, DragEvent, KeyboardEvent, ReactNode, RefObject } from 'react';
+import {
+  type CSSProperties,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  useState,
+} from 'react';
 import {
   CANVAS_ELEMENT_KINDS,
   CANVAS_LIMITS,
@@ -8,6 +15,7 @@ import {
 import type { ElementWarning } from '../../../../shared/render-warnings';
 import { type Box, boundsOf, RESIZE_HANDLES } from '../../lib/canvas-edit';
 import { ROTATE_HANDLE } from '../../lib/canvas-gesture';
+import type { Gap } from '../../lib/canvas-snap';
 import { ELEMENT_DRAG_TYPE, pxToMm } from '../../lib/canvas-view';
 import type { GestureHandlers, GestureView } from '../../view-models/use-canvas-gesture';
 import { Ruler } from '../Ruler';
@@ -57,6 +65,65 @@ function boxStyle(box: Box): CSSProperties {
   };
 }
 
+/** 间距的数字：一位小数，整数不带「.0」（「2.5」「3」）。 */
+function gapLabel(gap: Gap): string {
+  return String(Number((gap.end - gap.start).toFixed(1)));
+}
+
+/** 拖动时和邻居之间的一段间距：细线、两头短竖线，中间写毫米数；两边相等时数字前加「=」。 */
+function GapMark({ gap }: { gap: Gap }) {
+  const style: CSSProperties =
+    gap.axis === 'x'
+      ? {
+          left: `calc(${gap.start} * var(--mm))`,
+          top: `calc(${gap.cross} * var(--mm))`,
+          width: `calc(${gap.end - gap.start} * var(--mm))`,
+        }
+      : {
+          left: `calc(${gap.cross} * var(--mm))`,
+          top: `calc(${gap.start} * var(--mm))`,
+          height: `calc(${gap.end - gap.start} * var(--mm))`,
+        };
+  return (
+    <span
+      className={`canvas-overlay__gap canvas-overlay__gap--${gap.axis}${gap.isEqual ? ' canvas-overlay__gap--equal' : ''}`}
+      aria-hidden="true"
+      style={style}
+    >
+      <span className="canvas-overlay__gap-label">{gap.isEqual ? `= ${gapLabel(gap)}` : gapLabel(gap)}</span>
+    </span>
+  );
+}
+
+/**
+ * 标尺上的标记：指针所在位置的一条细线，选中的东西占的范围（浅色一段）。放在软尺同一个格子里，盖在刻度上，不接指针。
+ */
+function RulerMarks({
+  axis,
+  pointer,
+  extent,
+}: {
+  axis: 'x' | 'y';
+  pointer: number | null;
+  extent: { start: number; size: number } | null;
+}) {
+  const along = axis === 'x' ? 'left' : 'top';
+  const size = axis === 'x' ? 'width' : 'height';
+  return (
+    <div className={`ruler-marks ruler-marks--${axis}`} aria-hidden="true">
+      {extent !== null && (
+        <span
+          className="ruler-marks__extent"
+          style={{ [along]: `calc(${extent.start} * var(--mm))`, [size]: `calc(${extent.size} * var(--mm))` }}
+        />
+      )}
+      {pointer !== null && (
+        <span className="ruler-marks__pointer" style={{ [along]: `calc(${pointer} * var(--mm))` }} />
+      )}
+    </div>
+  );
+}
+
 function isElementKind(value: string): value is CanvasElementKind {
   return (CANVAS_ELEMENT_KINDS as readonly string[]).includes(value);
 }
@@ -93,15 +160,15 @@ export function CanvasStage({
   const { paper } = template;
   const single =
     selection.length === 1 ? (template.elements.find((element) => element.id === selection[0]) ?? null) : null;
-  // 选中好几个时画一个合起来的外框（拖动中跟着临时框走），按在框里就能整组拖动。
-  const groupBox =
-    selection.length > 1
-      ? boundsOf(
-          template.elements
-            .filter((element) => selection.includes(element.id) && !hidden.has(element.id))
-            .map((element) => gesture.boxes.get(element.id) ?? element),
-        )
-      : null;
+  // 选中的东西现在占的框（拖动中跟着临时框走）：标尺上标出范围；选中好几个时画一个合起来的外框，按在框里就能整组拖动。
+  const extent = boundsOf(
+    template.elements
+      .filter((element) => selection.includes(element.id) && !hidden.has(element.id))
+      .map((element) => gesture.boxes.get(element.id) ?? element),
+  );
+  const groupBox = selection.length > 1 ? extent : null;
+  // 指针在纸上的位置（mm）：标尺上画一条细线。离开画布时为 null。
+  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
 
   const onDragOver = (event: DragEvent<HTMLDivElement>) => {
     if (event.dataTransfer.types.includes(ELEMENT_DRAG_TYPE)) {
@@ -131,6 +198,16 @@ export function CanvasStage({
           </div>
           <Ruler orientation="horizontal" lengthMm={paper.widthMm} />
           <Ruler orientation="vertical" lengthMm={paper.heightMm} />
+          <RulerMarks
+            axis="x"
+            pointer={pointer?.x ?? null}
+            extent={extent === null ? null : { start: extent.x, size: extent.width }}
+          />
+          <RulerMarks
+            axis="y"
+            pointer={pointer?.y ?? null}
+            extent={extent === null ? null : { start: extent.y, size: extent.height }}
+          />
           <div className="label-slot">
             {html ? (
               <iframe className="label-frame" title="标签预览" sandbox="" srcDoc={html} tabIndex={-1} />
@@ -162,11 +239,21 @@ export function CanvasStage({
               }
             }}
             onPointerDown={handlers.onPointerDown}
-            onPointerMove={handlers.onPointerMove}
+            onPointerMove={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              setPointer({
+                x: pxToMm(event.clientX - rect.left, zoom),
+                y: pxToMm(event.clientY - rect.top, zoom),
+              });
+              handlers.onPointerMove(event);
+            }}
             onPointerUp={handlers.onPointerUp}
             onPointerCancel={handlers.onPointerCancel}
             onLostPointerCapture={handlers.onLostPointerCapture}
-            onPointerLeave={handlers.onPointerLeave}
+            onPointerLeave={() => {
+              setPointer(null);
+              handlers.onPointerLeave();
+            }}
             onDoubleClick={(event) => {
               // 指针被覆盖层捕获，双击事件落在覆盖层上：调用方按刚才点选的元素和位置决定改哪段字（表格要知道哪一格）。
               const rect = event.currentTarget.getBoundingClientRect();
@@ -256,6 +343,21 @@ export function CanvasStage({
                 }
               />
             ))}
+            {gesture.gaps.map((gap) => (
+              <GapMark key={`${gap.axis}${gap.start}`} gap={gap} />
+            ))}
+            {gesture.badge !== null && (
+              <span
+                className="canvas-overlay__badge"
+                aria-hidden="true"
+                style={{
+                  left: `calc(${gesture.badge.at.x} * var(--mm))`,
+                  top: `calc(${gesture.badge.at.y} * var(--mm))`,
+                }}
+              >
+                {gesture.badge.text}
+              </span>
+            )}
             {gesture.marquee && (
               <div className="canvas-overlay__marquee" aria-hidden="true" style={boxStyle(gesture.marquee)} />
             )}

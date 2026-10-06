@@ -3,6 +3,7 @@ import type { CanvasTemplate } from '../../../core/templates/canvas-model';
 import {
   DRAG_START_PX,
   type Gesture,
+  gestureBadge,
   hasPassedDragThreshold,
   isResizeHandle,
   keepsRatio,
@@ -108,6 +109,49 @@ describe('rotationFromPointer', () => {
     expect(rotationFromPointer(center, { x: 20, y: 0 }, 0)).toBe(180);
     expect(rotationFromPointer(center, { x: 40, y: 20 }, 0)).toBe(270);
     expect(rotationFromPointer(center, { x: 0, y: 20 }, 270)).toBe(0);
+  });
+});
+
+describe('gestureBadge', () => {
+  const box = { x: 12.04, y: 4.5, width: 32, height: 8 };
+  const pressed = { client: { x: 0, y: 0 }, hasMoved: true, pointer: { x: 30, y: 9 } };
+
+  test('shows the position while moving and the size while resizing, next to the pointer', () => {
+    expect(
+      gestureBadge({ ...pressed, kind: 'move', ids: ['e1'], start: box, box, guides: [], selectOnClick: null }),
+    ).toEqual({ at: { x: 30, y: 9 }, text: 'X 12.0  Y 4.5 mm' });
+    expect(gestureBadge({ ...pressed, kind: 'resize', id: 'e1', handle: 'se', start: box, box, guides: [] })).toEqual({
+      at: { x: 30, y: 9 },
+      text: '32.0 × 8.0 mm',
+    });
+  });
+
+  test('shows the angle while rotating and nothing for a marquee or before moving', () => {
+    expect(
+      gestureBadge({
+        ...pressed,
+        kind: 'rotate',
+        id: 'e1',
+        center: { x: 0, y: 0 },
+        startRotation: 0,
+        rotation: 90,
+      })?.text,
+    ).toBe('90°');
+    expect(
+      gestureBadge({ ...pressed, kind: 'marquee', origin: { x: 0, y: 0 }, current: { x: 1, y: 1 }, base: [] }),
+    ).toBeNull();
+    expect(
+      gestureBadge({
+        ...pressed,
+        hasMoved: false,
+        kind: 'resize',
+        id: 'e1',
+        handle: 'se',
+        start: box,
+        box,
+        guides: [],
+      }),
+    ).toBeNull();
   });
 });
 

@@ -3624,6 +3624,136 @@ fieldset.designer-zoom__menu {
   height: 1px;
 }
 
+/* 拖动时和邻居的间距：参考线同色的细线，两头短竖线，中间一个小号的数字；两边相等时加「=」 */
+.canvas-overlay__gap {
+  position: absolute;
+  pointer-events: none;
+}
+
+.canvas-overlay__gap--x {
+  height: 0;
+  border-top: 1px solid var(--color-guide);
+}
+
+.canvas-overlay__gap--y {
+  width: 0;
+  border-left: 1px solid var(--color-guide);
+}
+
+.canvas-overlay__gap--x::before,
+.canvas-overlay__gap--x::after {
+  position: absolute;
+  top: -4px;
+  width: 1px;
+  height: 7px;
+  background: var(--color-guide);
+  content: "";
+}
+
+.canvas-overlay__gap--x::before {
+  left: 0;
+}
+
+.canvas-overlay__gap--x::after {
+  right: 0;
+}
+
+.canvas-overlay__gap--y::before,
+.canvas-overlay__gap--y::after {
+  position: absolute;
+  left: -4px;
+  width: 7px;
+  height: 1px;
+  background: var(--color-guide);
+  content: "";
+}
+
+.canvas-overlay__gap--y::before {
+  top: 0;
+}
+
+.canvas-overlay__gap--y::after {
+  bottom: 0;
+}
+
+.canvas-overlay__gap-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--color-guide);
+  color: var(--color-field);
+  font: 11px var(--font-data);
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+
+.canvas-overlay__gap--equal .canvas-overlay__gap-label {
+  font-weight: 700;
+}
+
+/* 拖动、缩放、旋转时指针右下方的小标签：位置、尺寸或角度 */
+.canvas-overlay__badge {
+  position: absolute;
+  z-index: 2;
+  margin: 14px 0 0 14px;
+  padding: 2px var(--space-2);
+  border-radius: 6px;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font: 12px var(--font-data);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 标尺上的标记：选中范围一段浅色、指针位置一条细线；和软尺在同一个格子里，不接指针 */
+.ruler-marks {
+  position: relative;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ruler-marks--x {
+  grid-area: top;
+}
+
+.ruler-marks--y {
+  grid-area: side;
+}
+
+.ruler-marks__extent {
+  position: absolute;
+  background: color-mix(in srgb, var(--color-selection) 22%, transparent);
+}
+
+.ruler-marks--x .ruler-marks__extent {
+  top: 0;
+  bottom: 0;
+}
+
+.ruler-marks--y .ruler-marks__extent {
+  right: 0;
+  left: 0;
+}
+
+.ruler-marks__pointer {
+  position: absolute;
+  background: var(--color-guide);
+}
+
+.ruler-marks--x .ruler-marks__pointer {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.ruler-marks--y .ruler-marks__pointer {
+  right: 0;
+  left: 0;
+  height: 1px;
+}
+
 .canvas-overlay__marquee {
   position: absolute;
   border: 1px dashed var(--color-selection);

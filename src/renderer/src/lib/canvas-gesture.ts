@@ -20,7 +20,7 @@ import {
   resizeBox,
   rotateElement,
 } from './canvas-edit';
-import { type Guide, type Snapped, type SnapTargets, snapMove, snapResize } from './canvas-snap';
+import { type Gap, type Guide, type Snapped, type SnapTargets, snapMove, snapResize } from './canvas-snap';
 
 /**
  * 按下后挪动不到 3 个屏幕像素算点击，不算拖动：手抖、数位板的笔尖落下时的抖动不该把元素挪走半毫米。
@@ -37,6 +37,8 @@ interface Pressed {
   /** 按下时指针的屏幕位置：算拖了多远、是不是真的拖了。 */
   client: Point;
   hasMoved: boolean;
+  /** 指针现在在纸上的位置（mm）：尺寸、位置的小标签画在它旁边。还没挪过时没有。 */
+  pointer?: Point;
 }
 
 export interface MoveGesture extends Pressed {
@@ -47,6 +49,8 @@ export interface MoveGesture extends Pressed {
   start: Box;
   box: Box;
   guides: readonly Guide[];
+  /** 和四周邻居的间距（吸附开着时才算）。 */
+  gaps?: readonly Gap[];
   /**
    * 按在已经选中的元素上时先不改选中（这样能拖动整组，或拖动 Alt+点击选出的下层元素）；
    * 没拖动就松手时才改选成点中的最上层元素。null 表示松手时不改选中。
@@ -108,14 +112,45 @@ export function rotationFromPointer(center: Point, pointer: Point, startRotation
   return ROTATIONS.find((rotation) => rotation === next) ?? startRotation;
 }
 
-/** 覆盖层上要画的：拖动中的临时框、吸附参考线、框选的范围。模板在松手时才改。 */
+/** 拖动、缩放、旋转时指针旁的小标签：位置、尺寸或角度。 */
+export interface GestureBadge {
+  /** 纸上的位置（mm）：指针所在处。 */
+  at: Point;
+  text: string;
+}
+
+/** 覆盖层上要画的：拖动中的临时框、吸附参考线、间距、框选的范围、指针旁的小标签。模板在松手时才改。 */
 export interface GestureView {
   boxes: ReadonlyMap<string, Box>;
   guides: readonly Guide[];
+  gaps: readonly Gap[];
   marquee: Box | null;
+  badge: GestureBadge | null;
 }
 
-export const NO_GESTURE_VIEW: GestureView = { boxes: new Map(), guides: [], marquee: null };
+export const NO_GESTURE_VIEW: GestureView = { boxes: new Map(), guides: [], gaps: [], marquee: null, badge: null };
+
+/** 标签上的毫米数写一位小数：0.1mm 是拖动和方向键的步长。 */
+function mm1(value: number): string {
+  return value.toFixed(1);
+}
+
+/** 指针旁的小标签：拖动写位置（「X 12.0  Y 4.5 mm」），缩放写尺寸（「32.0 × 8.0 mm」），旋转写角度。 */
+export function gestureBadge(gesture: Gesture): GestureBadge | null {
+  if (gesture.pointer === undefined || !gesture.hasMoved) {
+    return null;
+  }
+  switch (gesture.kind) {
+    case 'move':
+      return { at: gesture.pointer, text: `X ${mm1(gesture.box.x)}  Y ${mm1(gesture.box.y)} mm` };
+    case 'resize':
+      return { at: gesture.pointer, text: `${mm1(gesture.box.width)} × ${mm1(gesture.box.height)} mm` };
+    case 'rotate':
+      return { at: gesture.pointer, text: `${gesture.rotation}°` };
+    case 'marquee':
+      return null;
+  }
+}
 
 /** 旋转手柄的 data-handle：选中一个元素时画在它正下方。 */
 export const ROTATE_HANDLE = 'rotate';
@@ -134,6 +169,7 @@ export function viewOf(gesture: Gesture | null, template: CanvasTemplate): Gestu
   if (gesture === null || !gesture.hasMoved) {
     return NO_GESTURE_VIEW;
   }
+  const badge = gestureBadge(gesture);
   switch (gesture.kind) {
     case 'move': {
       const dx = gesture.box.x - gesture.start.x;
@@ -144,21 +180,21 @@ export function viewOf(gesture: Gesture | null, template: CanvasTemplate): Gestu
           boxes.set(element.id, { ...boxOf(element), x: element.x + dx, y: element.y + dy });
         }
       }
-      return { boxes, guides: gesture.guides, marquee: null };
+      return { ...NO_GESTURE_VIEW, boxes, guides: gesture.guides, gaps: gesture.gaps ?? [], badge };
     }
     case 'resize':
-      return { boxes: new Map([[gesture.id, gesture.box]]), guides: gesture.guides, marquee: null };
+      return { ...NO_GESTURE_VIEW, boxes: new Map([[gesture.id, gesture.box]]), guides: gesture.guides, badge };
     case 'marquee':
-      return { boxes: new Map(), guides: [], marquee: rectFromPoints(gesture.origin, gesture.current) };
+      return { ...NO_GESTURE_VIEW, marquee: rectFromPoints(gesture.origin, gesture.current) };
     case 'rotate': {
       // 转直角时框按中心交换宽高（和松手后的结果一模一样，用的就是同一个函数）。
       const rotated = rotateElement(template, gesture.id, gesture.rotation).elements.find(
         (element) => element.id === gesture.id,
       );
       return {
+        ...NO_GESTURE_VIEW,
         boxes: rotated === undefined ? new Map() : new Map([[gesture.id, boxOf(rotated)]]),
-        guides: [],
-        marquee: null,
+        badge,
       };
     }
   }

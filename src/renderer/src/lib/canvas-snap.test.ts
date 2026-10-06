@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { CANVAS_LIMITS } from '../../../core/templates/canvas-model';
-import { SNAP_DISTANCE_PX, type SnapTargets, snapMove, snapResize, snapTargets, snapThresholdMm } from './canvas-snap';
+import {
+  neighbourGaps,
+  SNAP_DISTANCE_PX,
+  type SnapTargets,
+  snapMove,
+  snapResize,
+  snapTargets,
+  snapThresholdMm,
+} from './canvas-snap';
 import { PX_PER_MM } from './canvas-view';
 
 const PAPER = { widthMm: 60, heightMm: 40 };
@@ -18,6 +26,36 @@ describe('snapTargets', () => {
 
   test('turns the snap distance on screen into millimetres', () => {
     expect(snapThresholdMm(2)).toBeCloseTo(SNAP_DISTANCE_PX / (PX_PER_MM * 2), 9);
+  });
+});
+
+describe('neighbourGaps', () => {
+  const moving = { x: 20, y: 10, width: 10, height: 5 };
+
+  test('measures the gap to the nearest neighbour on each side that it lines up with', () => {
+    const left = { x: 5, y: 8, width: 10, height: 4 };
+    const below = { x: 22, y: 20, width: 5, height: 5 };
+    const farLeft = { x: 0, y: 10, width: 2, height: 2 };
+    expect(neighbourGaps(moving, [left, below, farLeft])).toEqual([
+      { axis: 'x', start: 15, end: 20, cross: 11, isEqual: false },
+      { axis: 'y', start: 15, end: 20, cross: 24.5, isEqual: false },
+    ]);
+  });
+
+  test('ignores elements that do not line up across, and overlapping ones', () => {
+    const offRow = { x: 0, y: 30, width: 10, height: 5 };
+    const overlapping = { x: 25, y: 12, width: 10, height: 5 };
+    expect(neighbourGaps(moving, [offRow, overlapping])).toEqual([]);
+  });
+
+  test('marks both gaps when the element sits exactly midway between two neighbours', () => {
+    const left = { x: 10, y: 10, width: 5, height: 5 };
+    const right = { x: 35, y: 10, width: 5, height: 5 };
+    const gaps = neighbourGaps(moving, [left, right]);
+    expect(gaps.map((gap) => [gap.start, gap.end, gap.isEqual])).toEqual([
+      [15, 20, true],
+      [30, 35, true],
+    ]);
   });
 });
 

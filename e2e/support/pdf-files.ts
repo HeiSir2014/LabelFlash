@@ -38,6 +38,30 @@ export async function gridPdfBytes(app: ElectronApplication): Promise<Buffer> {
   return Buffer.from(base64, 'base64');
 }
 
+/** 一张 60×40mm 的标签 PDF（中间一行粗体字），用被测程序自己的 printToPDF 生成。 */
+export async function labelPdfBytes(app: ElectronApplication, text: string): Promise<Buffer> {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+@page { size: 60mm 40mm; margin: 0; }
+body { margin: 0; }
+.label { width: 60mm; height: 40mm; display: flex; align-items: center; justify-content: center; font: bold 12mm sans-serif; }
+</style></head><body><div class="label">${text}</div></body></html>`;
+  const base64 = await app.evaluate(async ({ BrowserWindow }, page) => {
+    const window = new BrowserWindow({ show: false, webPreferences: { javascript: false, sandbox: true } });
+    try {
+      await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`);
+      const pdf = await window.webContents.printToPDF({
+        printBackground: true,
+        preferCSSPageSize: true,
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+      });
+      return pdf.toString('base64');
+    } finally {
+      window.destroy();
+    }
+  }, html);
+  return Buffer.from(base64, 'base64');
+}
+
 export async function writeGridPdf(app: ElectronApplication, path: string): Promise<void> {
   await writeFile(path, await gridPdfBytes(app));
 }

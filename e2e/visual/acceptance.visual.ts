@@ -1204,7 +1204,7 @@ const ITEMS: Item[] = [
           const form = page.locator('.template-form');
           await form
             .getByLabel('纸张尺寸')
-            .selectOption({ label: '100×180 二联面单（申通、极兔、中通、圆通、韵达、顺丰、EMS）' });
+            .selectOption({ label: '100×180 二联面单 · 申通、极兔、中通、圆通、韵达、顺丰、EMS' });
           await expect(form.getByLabel('打印机').locator('option:checked')).toHaveText(
             '旧电脑上的打印机（这台电脑上没有）',
           );

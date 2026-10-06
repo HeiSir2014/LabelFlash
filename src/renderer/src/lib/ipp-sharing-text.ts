@@ -105,9 +105,12 @@ export function describeDiscovery(status: IppSharingStatus): string | null {
   }
 }
 
-/** 询问条上的说明（电脑地址另起一行用等宽字体显示）。 */
+/**
+ * 询问条上的说明（电脑地址另起一行用等宽字体显示）。用户名是对方自己填的、谁都能冒充，
+ * 所以写「自称用户」：操作员该按电脑地址认人。
+ */
 export function describeClientRequest(client: PendingClientView): string {
-  const who = client.user === '' ? '' : `用户 ${client.user} `;
+  const who = client.user === '' ? '' : `自称用户 ${client.user} `;
   const waiting = client.jobs > 1 ? `（${client.jobs} 个任务在等）` : '';
   return `${who}要打印到「${client.printerName}」${waiting}。不认识这台电脑就点「拒绝」。`;
 }
@@ -115,6 +118,6 @@ export function describeClientRequest(client: PendingClientView): string {
 /** 共享页里记住的一台电脑。 */
 export function describeRememberedClient(client: RememberedClientView): string {
   const decision = client.decision === 'allow' ? '已允许' : '已拒绝';
-  const user = client.lastUser === '' ? '' : `，用户 ${client.lastUser}`;
+  const user = client.lastUser === '' ? '' : `，自称用户 ${client.lastUser}`;
   return `${decision}${user}，${formatDateTime(client.decidedAt)}`;
 }

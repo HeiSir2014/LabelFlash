@@ -95,8 +95,11 @@ const ACCEPTED_JOB_ATTRIBUTES: ReadonlySet<string> = new Set([
 const DEFAULT_JOB_LIST_ATTRIBUTES = ['job-id', 'job-uri'];
 /** Print-Job 回复里的任务属性（RFC 8011 §4.2.1.2）。 */
 const PRINT_JOB_REPLY_ATTRIBUTES = ['job-id', 'job-uri', 'job-state', 'job-state-reasons', 'job-state-message'];
-// biome-ignore lint/suspicious/noControlCharactersInRegex: 名字里去掉一切控制字符
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g;
+/**
+ * 名字里去掉的字符：控制字符（Cc，含 C1）和格式字符（Cf：双向文字控制 U+202A–202E、U+2066–2069，
+ * 零宽字符、软连字符等）。名字是对方自己填的，格式字符能让它在界面上显示成另一个样子。
+ */
+const INVISIBLE_CHARACTERS = /[\p{Cc}\p{Cf}]/gu;
 
 /** 给对方电脑看的原因（status-message 最长 255 字节：每句不超过 80 个字）。 */
 export const IPP_MESSAGES = {
@@ -271,9 +274,9 @@ function getPrinterAttributes(call: Call): IppMessage {
   ]);
 }
 
-/** 名字：去掉控制字符和首尾空白，按字符数截短。 */
+/** 名字：去掉控制、格式字符和首尾空白，按字符数截短。 */
 function cleanName(value: string | null, maxChars: number): string {
-  return [...(value ?? '').replace(CONTROL_CHARACTERS, '').trim()].slice(0, maxChars).join('');
+  return [...(value ?? '').replace(INVISIBLE_CHARACTERS, '').trim()].slice(0, maxChars).join('');
 }
 
 /** Print-Job、Validate-Job 共用的核对（RFC 8011 §4.2.1.1、§4.2.3）。 */

@@ -84,7 +84,7 @@ test('asks before a new computer prints, then prints to the paper printer and re
 
   const requests = page.getByRole('region', { name: '等待确认的电脑' });
   await expect(requests).toContainText('局域网里的电脑 127.0.0.1');
-  await expect(requests).toContainText('用户 e2e 要打印到「60×40 标签」');
+  await expect(requests).toContainText('自称用户 e2e 要打印到「60×40 标签」');
   await requests.getByRole('button', { name: '允许' }).click();
   await expect(requests).toHaveCount(0);
   await waitForJobState(url, printerUri, firstId, JOB_STATE.completed);

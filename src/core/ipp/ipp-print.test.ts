@@ -23,10 +23,10 @@ describe('ippFields', () => {
       { name: '页码', value: '2' },
       { name: '第几张', value: '1' },
       { name: '电脑', value: '192.168.1.23' },
-      { name: '用户', value: 'zhang' },
+      { name: '自称用户', value: 'zhang' },
     ]);
     expect(ippFields('面单', 1, 1, { client: '192.168.1.23', user: '' }).map((field) => field.name)).not.toContain(
-      '用户',
+      '自称用户',
     );
   });
 });

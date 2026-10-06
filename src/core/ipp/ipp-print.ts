@@ -24,8 +24,11 @@ export function chooseIppCrop(page: PaperSize | null, paper: PaperSize): Extract
   return straight || turned ? 'page' : 'trim';
 }
 
-/** 打印记录和打印结果通知里的字段：PDF 那三项（文件、页码、第几张），加上电脑和用户。 */
+/**
+ * 打印记录和打印结果通知里的字段：PDF 那三项（文件、页码、第几张），加上电脑和用户。
+ * 用户名是对方自己报的、不经核对，叫「自称用户」；能核对的只有电脑地址。
+ */
 export function ippFields(jobName: string, page: number, piece: number, share: IppRef): ScanField[] {
   const fields = [...pieceFields(jobName, page, piece), { name: '电脑', value: share.client }];
-  return share.user === '' ? fields : [...fields, { name: '用户', value: share.user }];
+  return share.user === '' ? fields : [...fields, { name: '自称用户', value: share.user }];
 }

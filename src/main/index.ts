@@ -237,7 +237,8 @@ function notifyIppClientRequest(client: PendingClient): void {
   if (!Notification.isSupported()) {
     return;
   }
-  const user = client.user === '' ? '' : `（${client.user}）`;
+  // 用户名是对方自己报的（谁都能冒充）：标明「自称」，让操作员按地址认电脑。
+  const user = client.user === '' ? '' : `（自称用户 ${client.user}）`;
   const notification = new Notification({
     title: '局域网里的电脑想用共享打印机',
     body: `${client.address}${user} 要打印到「${client.printerName}」。请在程序顶部点「允许」或「拒绝」。`,

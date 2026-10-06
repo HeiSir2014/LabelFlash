@@ -91,13 +91,13 @@ describe('needsSharingFirewall', () => {
 describe('client texts', () => {
   test('describe a waiting computer and a remembered one', () => {
     expect(describeClientRequest({ address: '192.168.1.23', user: 'zhang', printerName: '60×40 标签', jobs: 2 })).toBe(
-      '用户 zhang 要打印到「60×40 标签」（2 个任务在等）。不认识这台电脑就点「拒绝」。',
+      '自称用户 zhang 要打印到「60×40 标签」（2 个任务在等）。不认识这台电脑就点「拒绝」。',
     );
     expect(describeClientRequest({ address: '192.168.1.23', user: '', printerName: '60×40 标签', jobs: 1 })).toBe(
       '要打印到「60×40 标签」。不认识这台电脑就点「拒绝」。',
     );
     expect(
       describeRememberedClient({ address: '192.168.1.23', decision: 'deny', lastUser: 'zhang', decidedAt: 0 }),
-    ).toContain('已拒绝');
+    ).toContain('已拒绝，自称用户 zhang');
   });
 });

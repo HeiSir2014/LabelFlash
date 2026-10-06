@@ -195,6 +195,19 @@ describe('Print-Job', () => {
     expect(outcome.accepted?.job.user).toBe('');
   });
 
+  // 双向文字控制符能把「张三」显示成别的样子（把后半截倒过来、藏起一段）：操作员看名字决定允不允许，必须去掉。
+  test('strips bidi and other invisible format characters from names', () => {
+    const jobName = 'in‮voice⁦x⁩​.pdf';
+    const userName = '‪张‬三­\u0085﻿';
+    const outcome = handleIppRequest(
+      printJob({ operation: [nameAttr('job-name', jobName), nameAttr('requesting-user-name', userName)] }),
+      MINIMAL_PDF,
+      createContext(),
+    );
+    expect(outcome.accepted?.job.name).toBe('invoicex.pdf');
+    expect(outcome.accepted?.job.user).toBe('张三');
+  });
+
   test('substitutes unsupported settings unless fidelity is asked for', () => {
     const lenient = handleIppRequest(
       printJob({

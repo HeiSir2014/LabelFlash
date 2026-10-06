@@ -147,6 +147,8 @@ export interface IpcDeps {
   choosePrinter: (template: LabelTemplate) => Promise<PrinterChoice>;
   /** 退出时没保存的模板：界面报告的状态、保存的往返。 */
   templateQuit: TemplateQuitGuard;
+  /** 「重启更新」之前：有没保存的模板就先问；返回 false 表示操作员选了取消，不装。 */
+  confirmBeforeInstall: () => Promise<boolean>;
 }
 
 /**
@@ -422,7 +424,7 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.OpenShop, () => shell.openExternal(BRAND.shop.url));
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
-  handle(IpcChannel.InstallUpdate, () => {
+  handle(IpcChannel.InstallUpdate, async () => {
     // quitAndInstall 会在任何确认之前就把安装程序拉起来：不像正常退出能先弹确认框，批量打印还在打或
     // 暂停中、或者正在装驱动时只能直接拒绝，让操作员自己先打完 / 取消这一批，或者等驱动装完。
     const driverIssue = driverInstallBlocksUpdate(deps.drivers.isInstalling);
@@ -431,6 +433,10 @@ export function registerIpc(deps: IpcDeps): void {
     }
     if (deps.batch.pendingQuit() !== null) {
       return { status: 'refused', issue: BATCH_BLOCKS_UPDATE_ISSUE } as const;
+    }
+    // 没保存的模板：同样因为安装程序先于退出确认，得在装之前问；选了取消就什么也不做，程序照常用。
+    if (!(await deps.confirmBeforeInstall())) {
+      return { status: 'canceled' } as const;
     }
     deps.updater.install('front');
     return { status: 'ok' } as const;

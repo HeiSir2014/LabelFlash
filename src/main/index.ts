@@ -608,6 +608,8 @@ async function bootstrap(): Promise<void> {
   const updater = new AppUpdater({
     onStatus: (status) => sendToMainWindow(IpcChannel.UpdateStatusChanged, status),
     onBeforeInstall: (window) => {
+      // 要问的（没保存的模板、批量打印）都在装之前问过或挡下了：安装引起的退出不再问第二遍。
+      readyToQuit = true;
       isQuitting = true;
       relaunch.write(window);
     },
@@ -745,6 +747,23 @@ async function bootstrap(): Promise<void> {
     return isSaved;
   };
 
+  /**
+   * 「重启更新」之前：有没保存的模板就先问。和退出确认共用 isConfirmingQuit，免得两个确认框叠在一起。
+   * 选了取消就不装，也不动 isQuitting（它只在 onBeforeInstall 里、真的要装时才设）。
+   */
+  const confirmBeforeInstall = async (): Promise<boolean> => {
+    if (isConfirmingQuit) {
+      return false;
+    }
+    isConfirmingQuit = true;
+    showMainWindow();
+    try {
+      return await templateQuit.confirmBeforeInstall(confirmTemplateQuit);
+    } finally {
+      isConfirmingQuit = false;
+    }
+  };
+
   /** 批量打印还有没打的：问要不要退出；退出就取消这一批、把没打的记成「退出时未打」。返回 true 表示可以接着退出。 */
   const confirmBatchQuit = async (): Promise<boolean> => {
     const pending = batch.pendingQuit();
@@ -873,6 +892,7 @@ async function bootstrap(): Promise<void> {
 
   registerIpc({
     templateQuit,
+    confirmBeforeInstall,
     service,
     adapter,
     batch,
@@ -1014,6 +1034,7 @@ async function bootstrap(): Promise<void> {
       // 正在装驱动也算有事没做完：静默更新会结束本程序，装到一半的提权安装就没人等了。
       pendingPrints: printQueue.pending + localApi.pendingJobs + batch.pendingLabels + (drivers.isInstalling ? 1 : 0),
       isMobileOn: mobile.status().state !== 'off',
+      hasUnsavedTemplate: templateQuit.unsaved !== null,
       now: Date.now(),
     };
     if (canUpdateInBackground(state)) {

@@ -40,6 +40,26 @@ describe('TemplateQuitGuard', () => {
   });
 });
 
+describe('TemplateQuitGuard.confirmBeforeInstall', () => {
+  test('installs right away when no template has unsaved changes', async () => {
+    const guard = new TemplateQuitGuard();
+    let asked = 0;
+    const isAllowed = await guard.confirmBeforeInstall(async () => {
+      asked += 1;
+      return false;
+    });
+    expect(isAllowed).toBe(true);
+    expect(asked).toBe(0);
+  });
+
+  test('asks first while a template has unsaved changes and installs only if the operator agrees', async () => {
+    const guard = new TemplateQuitGuard();
+    guard.setUnsaved('吊牌');
+    expect(await guard.confirmBeforeInstall(async () => true)).toBe(true);
+    expect(await guard.confirmBeforeInstall(async () => false)).toBe(false);
+  });
+});
+
 describe('template quit dialog', () => {
   test('names the template and offers save, discard and cancel', () => {
     const { message, detail } = templateQuitDialogText('吊牌');

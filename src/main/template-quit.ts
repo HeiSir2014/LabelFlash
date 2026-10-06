@@ -62,6 +62,14 @@ export class TemplateQuitGuard {
     return this.unsavedName !== null && !isSystemShutdown;
   }
 
+  /**
+   * 「重启更新」之前：有没保存的模板就先问（confirm 弹「保存并退出 / 不保存退出 / 取消」），选了取消就不装。
+   * 必须在装之前问：安装程序一拉起来就会结束本程序，退出时的确认来不及弹。点按钮是操作员自己点的，不看是否在关机。
+   */
+  confirmBeforeInstall(confirm: () => Promise<boolean>): Promise<boolean> {
+    return this.unsavedName === null ? Promise.resolve(true) : confirm();
+  }
+
   /** 请界面保存（ask 发出请求），等它回答；timeoutMs 内没回答当作没存上。 */
   requestSave(ask: () => void, timeoutMs: number): Promise<boolean> {
     this.pending?.(false);

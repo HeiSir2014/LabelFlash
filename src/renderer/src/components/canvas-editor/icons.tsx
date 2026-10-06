@@ -209,6 +209,11 @@ export const ICONS = {
       <path d="M12 6v12M6 12h12" />
     </Svg>
   ),
+  close: (
+    <Svg>
+      <path d="M7 7l10 10M17 7L7 17" />
+    </Svg>
+  ),
   bold: (
     <Svg>
       <path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z" />

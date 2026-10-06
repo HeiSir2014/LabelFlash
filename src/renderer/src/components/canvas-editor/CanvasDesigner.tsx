@@ -49,6 +49,7 @@ import { FloatingToolbar } from './FloatingToolbar';
 import { InlineTextEditor } from './InlineTextEditor';
 import { Inspector, type InspectorTab } from './Inspector';
 import { LayerList } from './LayerList';
+import { ShortcutSheet } from './ShortcutSheet';
 
 /** 「适合窗口」最多放大到 4 倍：小标签放得太大反而看不出实际大小，要更大用「放大」。 */
 const MAX_FIT_ZOOM = 4;
@@ -511,6 +512,15 @@ export function CanvasDesigner({
           <ContextMenu items={menuItems} at={menu.at} onAction={designer.runMenuAction} onClose={closeMenu} />
         )}
         <HistoryButtons designer={designer} platform={platform} />
+        {designer.isShortcutSheetOpen && (
+          <ShortcutSheet
+            platform={platform}
+            onClose={() => {
+              designer.setIsShortcutSheetOpen(false);
+              overlayRef.current?.focus();
+            }}
+          />
+        )}
         <ZoomPill designer={designer} zoom={zoom} platform={platform} />
       </div>
       <Inspector

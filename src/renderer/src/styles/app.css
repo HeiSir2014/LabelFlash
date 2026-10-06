@@ -3860,6 +3860,75 @@ fieldset.designer-zoom__menu {
   pointer-events: auto;
 }
 
+/* 快捷键表：浮在画布区中间，不是模态框（扫码照常进「预览内容」） */
+.shortcut-sheet {
+  display: flex;
+  position: absolute;
+  z-index: 4;
+  top: var(--space-5);
+  left: 50%;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(640px, calc(100% - 2 * var(--space-5)));
+  max-height: calc(100% - 2 * var(--space-5));
+  padding: var(--space-4) var(--space-5);
+  overflow-y: auto;
+  border-radius: var(--radius-float);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-float);
+  transform: translateX(-50%);
+  animation: floating-in var(--ui-duration) ease-out;
+}
+
+.shortcut-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shortcut-sheet__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.shortcut-sheet__groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-2) var(--space-5);
+}
+
+.shortcut-sheet__list {
+  margin: 0;
+}
+
+.shortcut-sheet__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 3px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-rule) 50%, transparent);
+  font-size: 13px;
+}
+
+.shortcut-sheet__row dt {
+  min-width: 0;
+}
+
+.shortcut-sheet__row dd {
+  flex: none;
+  margin: 0;
+}
+
+.shortcut-sheet__row kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--color-rule);
+  border-radius: 4px;
+  background: var(--color-field);
+  font: 12px var(--font-data);
+}
+
 /* 右键菜单：挂在 body 上，固定定位 */
 .context-menu {
   position: fixed;

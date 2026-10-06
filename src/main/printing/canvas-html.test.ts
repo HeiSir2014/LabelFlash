@@ -163,12 +163,95 @@ describe('renderCanvasHtml', () => {
     expect(html).not.toContain('<path');
   });
 
-  test('leaves out a barcode whose module would be narrower than the minimum and says the frame is too narrow', () => {
-    const { issues, barcodeOmitted } = render([
+  test('leaves out a barcode whose module would be narrower than the minimum and says how wide it must be', () => {
+    const { issues, barcodeOmitted, elements } = render([
       element('barcode', { name: '窄', symbology: 'code128', value: '{商品码}', width: 3, height: 10 }),
     ]);
     expect(barcodeOmitted).toBe(true);
-    expect(issues).toContain('条码「窄」不印：框不够宽');
+    const warning = elements[0];
+    expect(warning).toMatchObject({ elementId: 'barcode1', level: 'omitted', short: '条码不印：框不够宽' });
+    expect(issues).toEqual([`条码「窄」不印：内容 6901234567892 至少要 ${warning?.minWidthMm}mm 宽（现在 3mm）`]);
+    expect(warning?.text).toBe(issues[0]);
+  });
+
+  // 最小宽度要和画条码用同一套取整到点的规则：填成这个宽度，元素无论落在哪个小数位置都印得出；
+  // 再窄 0.3mm（比取整的余量多）就印不出。两种分辨率的打印点不同，各算各的。
+  test.each([203, 300])('gives a minimum barcode width that always prints at %i dpi', (dpi) => {
+    const narrow = render([element('barcode', { symbology: 'code128', value: '{商品码}', width: 3, height: 10 })], dpi);
+    const minWidthMm = narrow.elements[0]?.minWidthMm ?? 0;
+    expect(minWidthMm).toBeGreaterThan(3);
+    for (const x of [5, 5.03, 5.07, 5.1, 5.12]) {
+      const fits = render(
+        [element('barcode', { symbology: 'code128', value: '{商品码}', x, width: minWidthMm, height: 10 })],
+        dpi,
+      );
+      expect(fits.barcodeOmitted).toBe(false);
+      const tooNarrow = render(
+        [element('barcode', { symbology: 'code128', value: '{商品码}', x, width: minWidthMm - 0.3, height: 10 })],
+        dpi,
+      );
+      expect(tooNarrow.barcodeOmitted).toBe(true);
+    }
+  });
+
+  test('gives the minimum as a height for a barcode turned by 90 degrees', () => {
+    const { elements } = render([
+      element('barcode', { symbology: 'code128', value: '{商品码}', width: 10, height: 3, rotation: 90 }),
+    ]);
+    expect(elements[0]?.minWidthMm).toBeNull();
+    expect(elements[0]?.minHeightMm).toBeGreaterThan(3);
+  });
+
+  test('warns, without a print issue, when a barcode is within 10% of its minimum width', () => {
+    const minWidthMm =
+      render([element('barcode', { symbology: 'code128', value: '{商品码}', width: 3, height: 10 })]).elements[0]
+        ?.minWidthMm ?? 0;
+    const tight = render([
+      element('barcode', { name: '紧', symbology: 'code128', value: '{商品码}', width: minWidthMm + 0.5, height: 10 }),
+    ]);
+    expect(tight.barcodeOmitted).toBe(false);
+    expect(tight.issues).toEqual([]);
+    expect(tight.elements).toEqual([
+      {
+        elementId: 'barcode1',
+        level: 'warning',
+        text: `条码「紧」只比最小宽度宽一点：内容再长一些就印不出（至少要 ${minWidthMm}mm 宽）`,
+        short: null,
+        minWidthMm,
+        minHeightMm: null,
+      },
+    ]);
+    const roomy = render([
+      element('barcode', { symbology: 'code128', value: '{商品码}', width: minWidthMm * 1.2, height: 10 }),
+    ]);
+    expect(roomy.elements).toEqual([]);
+  });
+
+  test('gives the minimum height of a barcode that is too short', () => {
+    const { elements } = render([
+      element('barcode', { symbology: 'code128', value: '{商品码}', showText: false, width: 40, height: 3 }),
+    ]);
+    expect(elements[0]).toMatchObject({ level: 'omitted', short: '条码不印：太矮', minWidthMm: null });
+    const minHeightMm = elements[0]?.minHeightMm ?? 0;
+    const fits = render([
+      element('barcode', { symbology: 'code128', value: '{商品码}', showText: false, width: 40, height: minHeightMm }),
+    ]);
+    expect(fits.barcodeOmitted).toBe(false);
+  });
+
+  test('ties every print issue to an element', () => {
+    const { issues, elements } = render([
+      element('barcode', { symbology: 'ean13', value: '{品名}' }),
+      element('qr', { value: 'x'.repeat(200), width: 3, height: 3 }),
+      element('text', { text: '很长'.repeat(50), width: 5, height: 2, x: 0.5 }),
+    ]);
+    expect(issues.length).toBeGreaterThan(2);
+    const omitted = elements.filter((warning) => warning.level === 'omitted');
+    expect(omitted.map((warning) => warning.short)).toEqual([
+      '条码不印：有这种条码不能编的字',
+      '二维码不印：内容太长、框太小',
+    ]);
+    expect(issues.every((issue) => elements.some((warning) => warning.text === issue))).toBe(true);
   });
 
   test('leaves out a barcode whose bars would be too short to scan and says so', () => {

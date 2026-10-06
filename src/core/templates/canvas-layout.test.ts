@@ -123,6 +123,28 @@ describe('layoutCanvas', () => {
     expect(layoutAt([insideMargin], dotMm).issues).toEqual(['「太靠边」靠近纸边（离纸边不到 1.5mm），可能打不全']);
   });
 
+  test('ties every issue to the element it is about, so the designer can point at it', () => {
+    const cut = { ...text({ name: '长文字', text: '很长很长的文字'.repeat(20), width: 10, height: 3 }), id: 'cut' };
+    const edge = { ...text({ name: '边上', x: 0.5, y: 10 }), id: 'edge' };
+    const empty = { ...newCanvasElement('barcode', 'empty', PAPER), name: '商品码', value: '{商品码}' };
+    const { issues, elementIssues } = layout([cut, edge, empty]);
+    expect(elementIssues).toEqual([
+      { elementId: 'cut', level: 'warning', text: '文字「长文字」放不下，已截断：加大文字框或调小字号', short: null },
+      { elementId: 'edge', level: 'warning', text: '「边上」靠近纸边（离纸边不到 1.5mm），可能打不全', short: null },
+      {
+        elementId: 'empty',
+        level: 'omitted',
+        text: '条码「商品码」这一张没有内容，不印',
+        short: '条码不印：这一张没有内容',
+      },
+    ]);
+    expect(issues).toEqual(elementIssues.map((issue) => issue.text));
+  });
+
+  test('keeps the element id on each laid element', () => {
+    expect(layout([{ ...text({}), id: 'mine' }]).elements[0]?.id).toBe('mine');
+  });
+
   test('reports a barcode that has nothing to encode', () => {
     const barcode = { ...newCanvasElement('barcode', 'b', PAPER), name: '商品码', value: '{商品码}' };
     const result = layout([barcode]);

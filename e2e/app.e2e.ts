@@ -824,7 +824,7 @@ test('lays out every built-in waybill so that no line is clipped with the system
     // 排版自己报的问题（格子装不下、条码或二维码放不下）也不能有：下面只量横向有没有被裁。
     expect({ template: template.name, warnings }).toEqual({
       template: template.name,
-      warnings: { qrOmitted: false, barcodeOmitted: false, overflowCells: 0, issues: [] },
+      warnings: { qrOmitted: false, barcodeOmitted: false, overflowCells: 0, issues: [], elements: [] },
     });
     const clipped = await clippedLines(app, html);
     expect({ template: template.name, clipped }).toEqual({ template: template.name, clipped: [] });

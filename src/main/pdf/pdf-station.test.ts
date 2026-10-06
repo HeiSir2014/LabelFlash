@@ -462,4 +462,30 @@ describe('PdfStation on quit', () => {
     await station.closeDocument();
     expect(pieces.stored.has(key)).toBe(true);
   });
+
+  // 退出时不删掉这些块的话，它们要等 7 天的保留期才会被清理（1000 张约 260MB）：正常退出（没有
+  // 在打印）也要把这次出块里没打过的块删掉，省得白占磁盘。
+  test('discardUnprintedCache deletes the pieces of the current run that were never printed', async () => {
+    const { station, pieces, result } = await laidOut();
+    await station.print({ runId: result.runId, pieceIds: ['1-1'], copies: 1 });
+    await waitUntil(() => station.status().print?.state === 'done');
+    expect(pieces.stored.size).toBe(8);
+    await station.discardUnprintedCache();
+    // 只剩打过的那一块：其余 7 块没人会再用，不用等 7 天后的保留期清理才删掉。
+    expect(pieces.stored.size).toBe(1);
+  });
+
+  test('discardUnprintedCache keeps the bitmaps pinned by a confirmed quit', async () => {
+    const stuck = stuckOnFirstLabel();
+    const { station, result, pieces } = await laidOut({ printFields: stuck.printFields });
+    await station.print({ runId: result.runId, pieceIds: ['1-1', '2-3'], copies: 1 });
+    await settle();
+    station.confirmQuit();
+    station.cancel();
+    stuck.release();
+    await station.whenIdle();
+    await station.discardUnprintedCache();
+    // 1-1 打过了，2-3 被 confirmQuit 钉住（记成「退出时未打」）：两块都留着，其余 6 块删掉。
+    expect(pieces.stored.size).toBe(2);
+  });
 });

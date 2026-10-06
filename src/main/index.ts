@@ -708,13 +708,25 @@ async function bootstrap(): Promise<void> {
           return;
         }
         // 弹确认框的这段时间批次、PDF 可能还在打：重新查一遍，只记下这一刻真的还没轮到的——
-        // 不能用弹框之前的旧名单，那时候「没打」的几张可能这期间已经打完或者失败了。
+        // 不能用弹框之前的旧名单，那时候「没打」的几张可能这期间已经打完或者失败了。confirmQuit
+        // （不是 pendingQuit）钉住 PDF 这几块的位图：从这一刻起要把它们记成「退出时未打」。
         const stillPendingBatch = batch.pendingQuit();
+        const stillPendingPdf = pdf.confirmQuit();
+        // 两边先都取消，再一起等它们真的停下来：各自最多等 BATCH_CANCEL_SETTLE_TIMEOUT_MS，
+        // 一前一后做的话最坏要等两份超时，一起等最坏只等一份。
         if (stillPendingBatch !== null) {
-          // 先取消、等正在打的那一张真的结束（它自己的打印结果已经有记录了），再记 CANCELED、
-          // 最后才退出：不然要么这一张会在被标成「没打」之后又打出来，要么退出时它还没打完。
           batch.cancel();
-          await waitForBatchIdle(() => batch.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS);
+        }
+        if (stillPendingPdf !== null) {
+          pdf.cancel();
+        }
+        await Promise.all([
+          stillPendingBatch !== null ? waitForBatchIdle(() => batch.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS) : null,
+          stillPendingPdf !== null ? waitForBatchIdle(() => pdf.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS) : null,
+        ]);
+        // 正在打的那一张结束之后（它自己的打印结果已经有记录了）才记 CANCELED、最后才退出：
+        // 不然要么这一张会在被标成「没打」之后又打出来，要么退出时它还没打完。
+        if (stillPendingBatch !== null) {
           for (const record of canceledJobRecords(
             stillPendingBatch.batchId,
             stillPendingBatch.template,
@@ -725,10 +737,7 @@ async function bootstrap(): Promise<void> {
             jobs.append(record);
           }
         }
-        const stillPendingPdf = pdf.pendingQuit();
         if (stillPendingPdf !== null) {
-          pdf.cancel();
-          await waitForBatchIdle(() => pdf.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS);
           for (const record of canceledPdfJobRecords(stillPendingPdf.labels, randomUUID, Date.now)) {
             jobs.append(record);
           }
@@ -838,6 +847,11 @@ async function bootstrap(): Promise<void> {
     onHidden: () => tray?.notifyHiddenOnce(),
     startup,
   });
+  // 主窗口真的被关掉（不是藏进托盘）时放掉隐藏的 PDF 渲染窗口：它是另一个 BrowserWindow，不跟着主窗口
+  // 一起关的话，Electron 不会判定「所有窗口都关了」，没有托盘时关闭主窗口就退不出程序，一直在后台挂着。
+  mainWindow.on('closed', () => {
+    pdfRenderer.close();
+  });
   // 窗口关在托盘里的起始时间：关到托盘后的静默更新要等一会儿（background-update.ts）。
   let hiddenSince: number | null = startup === 'tray' ? Date.now() : null;
   mainWindow.on('hide', () => {
@@ -884,7 +898,14 @@ async function bootstrap(): Promise<void> {
     }
   }, BACKGROUND_UPDATE_CHECK_MS);
   warmVoice();
-  app.on('will-quit', () => {
+  // 退出前要删缓存文件（异步）：先拦住这一次 will-quit，清理完再自己调用 app.quit() 真正退出，
+  // 不然悬着的 Promise 没人等，进程可能在文件删掉之前就已经退出了。
+  let willQuitDone = false;
+  app.on('will-quit', (event) => {
+    if (willQuitDone) {
+      return;
+    }
+    event.preventDefault();
     clearInterval(mobileTicker);
     clearInterval(backgroundUpdateTimer);
     void localApi.stop();
@@ -892,8 +913,17 @@ async function bootstrap(): Promise<void> {
     status.stop();
     probeHost?.dispose();
     pdfRenderer.close();
-    tray?.destroy();
-    closeDatabase();
+    // 这次出块里没打过的块（已经打过的、confirmQuit 钉住的除外）不会再被用到：现在删掉，
+    // 不然要等 7 天的保留期才会被清理（1000 张约 260MB）。
+    pdf
+      .discardUnprintedCache()
+      .catch((error: unknown) => console.error('[pdf] failed to discard the unprinted cache on quit', error))
+      .finally(() => {
+        tray?.destroy();
+        closeDatabase();
+        willQuitDone = true;
+        app.quit();
+      });
   });
 }
 

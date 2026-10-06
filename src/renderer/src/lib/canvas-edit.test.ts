@@ -125,6 +125,24 @@ describe('resizeBox', () => {
     expect(resizeBox(start, 'n', 0, -50, PAPER)).toEqual({ x: 10, y: 0, width: 20, height: 20 });
   });
 
+  test('keeps the aspect ratio from a corner, following the larger change, with the opposite corner fixed', () => {
+    expect(resizeBox(start, 'se', 10, 0, PAPER, true)).toEqual({ x: 10, y: 10, width: 30, height: 15 });
+    expect(resizeBox(start, 'nw', 0, -4, PAPER, true)).toEqual({ x: 2, y: 6, width: 28, height: 14 });
+  });
+
+  test('keeps the aspect ratio from an edge, growing the other side around the centre', () => {
+    expect(resizeBox(start, 'e', 10, 0, PAPER, true)).toEqual({ x: 10, y: 7.5, width: 30, height: 15 });
+    expect(resizeBox(start, 's', 0, 10, PAPER, true)).toEqual({ x: 0, y: 10, width: 40, height: 20 });
+  });
+
+  test('stops a kept-ratio resize at the paper edge and at the minimum size', () => {
+    // 往右下拖很远：右边先碰到纸边（60），按比例停在宽 50、高 25。
+    expect(resizeBox(start, 'se', 100, 100, PAPER, true)).toEqual({ x: 10, y: 10, width: 50, height: 25 });
+    const shrunk = resizeBox(start, 'se', -100, -100, PAPER, true);
+    expect(shrunk.height).toBeCloseTo(0.25);
+    expect(shrunk.width).toBeCloseTo(0.5);
+  });
+
   test('resizes from the ne, sw and s handles, and stops dragging n past the bottom', () => {
     expect(resizeBox(start, 'ne', -5, -3, PAPER)).toEqual({ x: 10, y: 7, width: 15, height: 13 });
     expect(resizeBox(start, 'sw', 5, -5, PAPER)).toEqual({ x: 15, y: 10, width: 15, height: 5 });

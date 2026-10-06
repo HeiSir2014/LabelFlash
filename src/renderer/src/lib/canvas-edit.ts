@@ -158,8 +158,22 @@ export const RESIZE_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as co
 /** `RESIZE_HANDLES` 里的一个：两个字母是角，一个字母是边的中点。 */
 export type ResizeHandle = (typeof RESIZE_HANDLES)[number];
 
-/** 拖控制点改框：只动这个控制点所在的边，对边不动；不小于最小尺寸、不出纸。 */
-export function resizeBox(start: Box, handle: ResizeHandle, dx: number, dy: number, paper: PaperSize): Box {
+/**
+ * 拖控制点改框：只动这个控制点所在的边，对边不动；不小于最小尺寸、不出纸。
+ * keepRatio 时保持宽高比（Shift；图片、二维码默认）：拖角时按变化大的那一边等比缩放、对角不动；
+ * 拖边时另一边跟着等比变、以中线为准两头一起长。碰到纸边或最小尺寸时整体按比例停下。
+ */
+export function resizeBox(
+  start: Box,
+  handle: ResizeHandle,
+  dx: number,
+  dy: number,
+  paper: PaperSize,
+  keepRatio = false,
+): Box {
+  if (keepRatio && start.width > 0 && start.height > 0) {
+    return resizeKeepingRatio(start, handle, dx, dy, paper);
+  }
   const min = CANVAS_LIMITS.minSizeMm;
   let left = start.x;
   let top = start.y;
@@ -178,6 +192,53 @@ export function resizeBox(start: Box, handle: ResizeHandle, dx: number, dy: numb
     bottom = Math.max(top + min, Math.min(paper.heightMm, bottom + dy));
   }
   return { x: roundMm(left), y: roundMm(top), width: roundMm(right - left), height: roundMm(bottom - top) };
+}
+
+/** 一个方向上等比缩放时的「锚」：拖的是哪一头（另一头不动），或者两头都动（以中线为准）。 */
+type RatioAnchor = 'start' | 'end' | 'centre';
+
+/** 等比缩放：倍数 s 先按拖动算，再收在「不小于最小尺寸、不出纸」之间，最后按锚摆好框。 */
+function resizeKeepingRatio(start: Box, handle: ResizeHandle, dx: number, dy: number, paper: PaperSize): Box {
+  // x 方向：拖西边时东边不动（锚在 end），拖东边时西边不动（锚在 start），拖南北边时左右以中线为准。
+  const xAnchor: RatioAnchor = handle.includes('w') ? 'end' : handle.includes('e') ? 'start' : 'centre';
+  const yAnchor: RatioAnchor = handle.includes('n') ? 'end' : handle.includes('s') ? 'start' : 'centre';
+  const scaleX = (start.width + (xAnchor === 'end' ? -dx : dx)) / start.width;
+  const scaleY = (start.height + (yAnchor === 'end' ? -dy : dy)) / start.height;
+  const wanted =
+    xAnchor === 'centre'
+      ? scaleY
+      : yAnchor === 'centre'
+        ? scaleX
+        : Math.abs(scaleX - 1) >= Math.abs(scaleY - 1)
+          ? scaleX
+          : scaleY;
+  // 每个方向上最多能放大多少：锚定的那一头到纸边的距离，或者以中线为准到两边纸边较近的那个。
+  const room = (anchor: RatioAnchor, from: number, size: number, total: number) => {
+    switch (anchor) {
+      case 'start':
+        return (total - from) / size;
+      case 'end':
+        return (from + size) / size;
+      case 'centre':
+        return (2 * Math.min(from + size / 2, total - from - size / 2)) / size;
+    }
+  };
+  const maxScale = Math.min(
+    room(xAnchor, start.x, start.width, paper.widthMm),
+    room(yAnchor, start.y, start.height, paper.heightMm),
+  );
+  const minScale = CANVAS_LIMITS.minSizeMm / Math.min(start.width, start.height);
+  const scale = Math.max(minScale, Math.min(maxScale, wanted));
+  const width = start.width * scale;
+  const height = start.height * scale;
+  const place = (anchor: RatioAnchor, from: number, oldSize: number, newSize: number) =>
+    anchor === 'start' ? from : anchor === 'end' ? from + oldSize - newSize : from + (oldSize - newSize) / 2;
+  return {
+    x: roundMm(place(xAnchor, start.x, start.width, width)),
+    y: roundMm(place(yAnchor, start.y, start.height, height)),
+    width: roundMm(width),
+    height: roundMm(height),
+  };
 }
 
 /**

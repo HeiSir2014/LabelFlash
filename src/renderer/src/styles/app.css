@@ -3500,15 +3500,62 @@ fieldset.designer-zoom__menu {
   outline-style: dashed;
 }
 
+/* 控制点：看到的 10px，可点范围 24px（::before 往外扩，鼠标和数位板的笔都好抓）；角上圆点，边上圆角方块 */
 .canvas-overlay__handle {
   position: absolute;
   z-index: 1;
   width: var(--designer-handle-size);
   height: var(--designer-handle-size);
   margin: calc(var(--designer-handle-size) / -2) 0 0 calc(var(--designer-handle-size) / -2);
-  border: 1px solid var(--color-selection);
+  border: 1.5px solid var(--color-selection);
+  border-radius: 3px;
   background: var(--color-field);
+  box-shadow: 0 1px 2px rgb(24 33 30 / 0.2);
   pointer-events: auto;
+}
+
+.canvas-overlay__handle--corner {
+  border-radius: 50%;
+}
+
+.canvas-overlay__handle::before,
+.canvas-overlay__rotate::before {
+  position: absolute;
+  inset: calc((var(--designer-handle-hit) - var(--designer-handle-size)) / -2);
+  content: "";
+}
+
+/* 旋转手柄：选框正下方，和选框用一根细线连着；拖动只转直角 */
+.canvas-overlay__rotate {
+  position: absolute;
+  top: calc(100% + 20px);
+  left: 50%;
+  width: var(--designer-handle-size);
+  height: var(--designer-handle-size);
+  margin-left: calc(var(--designer-handle-size) / -2);
+  border: 1.5px solid var(--color-selection);
+  border-radius: 50%;
+  background: var(--color-selection);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.canvas-overlay__rotate::after {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  width: 1px;
+  height: 20px;
+  background: var(--color-selection);
+  content: "";
+}
+
+/* 选中好几个时合起来的外框：按在里面整组拖动 */
+.canvas-overlay__group {
+  position: absolute;
+  outline: 1px dashed var(--color-selection);
+  outline-offset: 3px;
+  pointer-events: none;
 }
 
 .canvas-overlay__handle[data-handle="nw"] {

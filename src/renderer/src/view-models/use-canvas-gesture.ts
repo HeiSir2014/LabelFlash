@@ -7,6 +7,7 @@ import {
   moveBy,
   type Point,
   rectFromPoints,
+  rotateElement,
   roundTo,
   setBox,
   toggleId,
@@ -16,8 +17,11 @@ import {
   type GestureView,
   hasPassedDragThreshold,
   isResizeHandle,
+  keepsRatio,
   moveGestureBox,
+  ROTATE_HANDLE,
   resizeGestureBox,
+  rotationFromPointer,
   viewOf,
 } from '../lib/canvas-gesture';
 import { hitStack, hitTest, nextInStack } from '../lib/canvas-hit';
@@ -134,6 +138,21 @@ export function useCanvasGesture(options: GestureOptions): {
         };
   };
 
+  /** 选中了不止一个时，点是不是落在它们合起来的外框里（覆盖层画着这个框，可以按住它整组拖动）。 */
+  const isInsideGroup = (point: Point): boolean => {
+    if (selection.length < 2) {
+      return false;
+    }
+    const group = boundsOf(hittable.filter((element) => selection.includes(element.id)));
+    return (
+      group !== null &&
+      point.x >= group.x &&
+      point.x <= group.x + group.width &&
+      point.y >= group.y &&
+      point.y <= group.y + group.height
+    );
+  };
+
   const marqueeOf = (client: Point, isAdditive: boolean): Gesture => {
     // 不按 Shift 先清空选中（单击空白就是取消选中），再开始框选。
     const base = isAdditive ? selection : [];
@@ -166,7 +185,7 @@ export function useCanvasGesture(options: GestureOptions): {
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    // 只认主键（左键、触屏、笔尖）。
+    // 只认主键（鼠标左键、数位板的笔尖）；笔杆按键、右键走 contextmenu，中键由平移接走。
     if (event.button !== 0) {
       return;
     }
@@ -176,7 +195,17 @@ export function useCanvasGesture(options: GestureOptions): {
     const resized = template.elements.find((candidate) => candidate.id === handleOwner);
     const client: Point = { x: event.clientX, y: event.clientY };
     let next: Gesture | null;
-    if (isResizeHandle(handle) && resized !== undefined && !resized.locked) {
+    if (handle === ROTATE_HANDLE && resized !== undefined && !resized.locked) {
+      next = {
+        kind: 'rotate',
+        client,
+        hasMoved: false,
+        id: resized.id,
+        center: { x: resized.x + resized.width / 2, y: resized.y + resized.height / 2 },
+        startRotation: resized.rotation,
+        rotation: resized.rotation,
+      };
+    } else if (isResizeHandle(handle) && resized !== undefined && !resized.locked) {
       next = {
         kind: 'resize',
         client,
@@ -192,8 +221,16 @@ export function useCanvasGesture(options: GestureOptions): {
       next = marqueeOf(client, event.shiftKey);
     } else {
       // 按点中测试认元素，不按覆盖层上框的 DOM 顺序：只有边框的矩形、锁定的元素不挡住下面的。
-      const stack = hitStack(hittable, toPaper(client), zoom);
-      next = stack.length === 0 ? marqueeOf(client, event.shiftKey) : pressOn(stack, event, client);
+      const point = toPaper(client);
+      const stack = hitStack(hittable, point, zoom);
+      if (stack.length > 0) {
+        next = pressOn(stack, event, client);
+      } else if (!event.shiftKey && isInsideGroup(point)) {
+        // 选中了好几个时，按在它们合起来的外框里（元素之间的空隙也算）：整组拖动。
+        next = moveOf(selection, client, null);
+      } else {
+        next = marqueeOf(client, event.shiftKey);
+      }
     }
     if (next !== null) {
       overlayRef.current?.setPointerCapture(event.pointerId);
@@ -231,6 +268,15 @@ export function useCanvasGesture(options: GestureOptions): {
       onSelect([...new Set([...current.base, ...touched])]);
       return;
     }
+    if (current.kind === 'rotate') {
+      const rotation = rotationFromPointer(
+        current.center,
+        toPaper({ x: event.clientX, y: event.clientY }),
+        current.startRotation,
+      );
+      setBoth({ ...current, hasMoved: true, rotation });
+      return;
+    }
     const dx = roundTo(pxToMm(dxPx, zoom), DRAG_STEP_MM);
     const dy = roundTo(pxToMm(dyPx, zoom), DRAG_STEP_MM);
     if (current.kind === 'move') {
@@ -247,6 +293,7 @@ export function useCanvasGesture(options: GestureOptions): {
       targetsWithout([current.id]),
       threshold,
       snap,
+      keepsRatio(template.elements.find((element) => element.id === current.id)?.kind ?? 'text', event.shiftKey),
     );
     setBoth({ ...current, hasMoved: true, box: snapped.box, guides: snapped.guides });
   };
@@ -267,6 +314,8 @@ export function useCanvasGesture(options: GestureOptions): {
       onCommit(moveBy(template, current.ids, current.box.x - current.start.x, current.box.y - current.start.y));
     } else if (current.kind === 'resize') {
       onCommit(setBox(template, current.id, current.box));
+    } else if (current.kind === 'rotate' && current.rotation !== current.startRotation) {
+      onCommit(rotateElement(template, current.id, current.rotation));
     }
   };
 

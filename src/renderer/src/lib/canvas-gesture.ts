@@ -1,8 +1,13 @@
 /**
- * 画布上鼠标操作的纯计算部分：拖动、缩放的框算法，覆盖层要画的内容，触控板缩放的节流。
+ * 画布上鼠标（和数位板的笔）操作的纯计算部分：拖动、缩放、旋转的算法，覆盖层要画的内容。
  * 不碰 React、DOM 和指针事件——指针事件的接线、指针捕获、ref 这些留在 view-models/use-canvas-gesture.ts。
  */
-import type { CanvasTemplate } from '../../../core/templates/canvas-model';
+import {
+  type CanvasElementKind,
+  type CanvasTemplate,
+  ROTATIONS,
+  type Rotation,
+} from '../../../core/templates/canvas-model';
 import type { PaperSize } from '../../../shared/paper-sizes';
 import {
   type Box,
@@ -13,6 +18,7 @@ import {
   type ResizeHandle,
   rectFromPoints,
   resizeBox,
+  rotateElement,
 } from './canvas-edit';
 import { type Guide, type Snapped, type SnapTargets, snapMove, snapResize } from './canvas-snap';
 
@@ -66,7 +72,41 @@ export interface MarqueeGesture extends Pressed {
   base: readonly string[];
 }
 
-export type Gesture = MoveGesture | ResizeGesture | MarqueeGesture;
+/** 拖旋转手柄：只转直角，松手时才改模板。 */
+export interface RotateGesture extends Pressed {
+  kind: 'rotate';
+  id: string;
+  /** 元素中心（纸上的毫米）：按指针绕它的方向算转多少。 */
+  center: Point;
+  startRotation: Rotation;
+  rotation: Rotation;
+}
+
+export type Gesture = MoveGesture | ResizeGesture | MarqueeGesture | RotateGesture;
+
+/** 天生要保持比例的元素：图片拉变形就失真，二维码本来就是方的。按住 Shift 时反过来。 */
+const RATIO_KINDS: ReadonlySet<CanvasElementKind> = new Set(['image', 'qr']);
+
+/** 缩放时要不要保持宽高比：图片、二维码默认保持（Shift 放开），其余按住 Shift 才保持。 */
+export function keepsRatio(kind: CanvasElementKind, isShiftHeld: boolean): boolean {
+  return RATIO_KINDS.has(kind) !== isShiftHeld;
+}
+
+/** 一个直角的度数。 */
+const RIGHT_ANGLE_DEG = 90;
+const FULL_TURN_DEG = 360;
+
+/**
+ * 拖旋转手柄时转到哪个直角：手柄起初在元素正下方，指针绕中心转过的角度（屏幕上顺时针为正）就近取整到 90°，
+ * 加到原来的角度上。只转直角：任意角度时边缘落不到打印点上，条码会糊。
+ */
+export function rotationFromPointer(center: Point, pointer: Point, startRotation: Rotation): Rotation {
+  // 从「正下方」量起：屏幕 y 向下，正下方 → 左边是顺时针。
+  const degrees = (Math.atan2(center.x - pointer.x, pointer.y - center.y) * 180) / Math.PI;
+  const turns = Math.round(degrees / RIGHT_ANGLE_DEG);
+  const next = (((startRotation + turns * RIGHT_ANGLE_DEG) % FULL_TURN_DEG) + FULL_TURN_DEG) % FULL_TURN_DEG;
+  return ROTATIONS.find((rotation) => rotation === next) ?? startRotation;
+}
 
 /** 覆盖层上要画的：拖动中的临时框、吸附参考线、框选的范围。模板在松手时才改。 */
 export interface GestureView {
@@ -76,6 +116,9 @@ export interface GestureView {
 }
 
 export const NO_GESTURE_VIEW: GestureView = { boxes: new Map(), guides: [], marquee: null };
+
+/** 旋转手柄的 data-handle：选中一个元素时画在它正下方。 */
+export const ROTATE_HANDLE = 'rotate';
 
 /** 指针按下的位置是不是落在某个控制点上（看 data-handle 的值）。 */
 export function isResizeHandle(value: string | undefined): value is ResizeHandle {
@@ -107,6 +150,17 @@ export function viewOf(gesture: Gesture | null, template: CanvasTemplate): Gestu
       return { boxes: new Map([[gesture.id, gesture.box]]), guides: gesture.guides, marquee: null };
     case 'marquee':
       return { boxes: new Map(), guides: [], marquee: rectFromPoints(gesture.origin, gesture.current) };
+    case 'rotate': {
+      // 转直角时框按中心交换宽高（和松手后的结果一模一样，用的就是同一个函数）。
+      const rotated = rotateElement(template, gesture.id, gesture.rotation).elements.find(
+        (element) => element.id === gesture.id,
+      );
+      return {
+        boxes: rotated === undefined ? new Map() : new Map([[gesture.id, boxOf(rotated)]]),
+        guides: [],
+        marquee: null,
+      };
+    }
   }
 }
 
@@ -141,8 +195,10 @@ export function resizeGestureBox(
   targets: SnapTargets,
   threshold: number,
   snap: boolean,
+  keepRatio = false,
 ): Snapped {
-  const resized = resizeBox(start, handle, dx, dy, paper);
-  const snapped = snap ? snapResize(resized, handle, targets, threshold) : { box: resized, guides: [] };
+  const resized = resizeBox(start, handle, dx, dy, paper, keepRatio);
+  // 保持比例时不吸附：吸到一条参考线就得改另一边，比例就保不住了。
+  const snapped = snap && !keepRatio ? snapResize(resized, handle, targets, threshold) : { box: resized, guides: [] };
   return { box: clampBox(snapped.box, paper), guides: snapped.guides };
 }

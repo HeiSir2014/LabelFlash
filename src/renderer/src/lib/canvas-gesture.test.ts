@@ -5,9 +5,11 @@ import {
   type Gesture,
   hasPassedDragThreshold,
   isResizeHandle,
+  keepsRatio,
   moveGestureBox,
   NO_GESTURE_VIEW,
   resizeGestureBox,
+  rotationFromPointer,
   viewOf,
 } from './canvas-gesture';
 import type { SnapTargets } from './canvas-snap';
@@ -77,6 +79,35 @@ describe('hasPassedDragThreshold', () => {
       [2, -2],
     ] as const;
     expect(wobble.some(([dx, dy]) => hasPassedDragThreshold(dx, dy))).toBe(false);
+  });
+});
+
+describe('keepsRatio', () => {
+  test('keeps the ratio of images and QR codes unless Shift is held', () => {
+    expect(keepsRatio('image', false)).toBe(true);
+    expect(keepsRatio('qr', false)).toBe(true);
+    expect(keepsRatio('image', true)).toBe(false);
+  });
+
+  test('keeps the ratio of other elements only while Shift is held', () => {
+    expect(keepsRatio('text', false)).toBe(false);
+    expect(keepsRatio('barcode', true)).toBe(true);
+  });
+});
+
+describe('rotationFromPointer', () => {
+  const center = { x: 20, y: 20 };
+
+  test('keeps the rotation while the pointer is still below the element, where the handle starts', () => {
+    expect(rotationFromPointer(center, { x: 20, y: 40 }, 0)).toBe(0);
+    expect(rotationFromPointer(center, { x: 23, y: 40 }, 90)).toBe(90);
+  });
+
+  test('turns clockwise in right angles as the handle is dragged around the centre', () => {
+    expect(rotationFromPointer(center, { x: 0, y: 20 }, 0)).toBe(90);
+    expect(rotationFromPointer(center, { x: 20, y: 0 }, 0)).toBe(180);
+    expect(rotationFromPointer(center, { x: 40, y: 20 }, 0)).toBe(270);
+    expect(rotationFromPointer(center, { x: 0, y: 20 }, 270)).toBe(0);
   });
 });
 

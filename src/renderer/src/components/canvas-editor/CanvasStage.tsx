@@ -6,7 +6,8 @@ import {
   type CanvasTemplate,
 } from '../../../../core/templates/canvas-model';
 import type { ElementWarning } from '../../../../shared/render-warnings';
-import { type Box, RESIZE_HANDLES } from '../../lib/canvas-edit';
+import { type Box, boundsOf, RESIZE_HANDLES } from '../../lib/canvas-edit';
+import { ROTATE_HANDLE } from '../../lib/canvas-gesture';
 import { ELEMENT_DRAG_TYPE, pxToMm } from '../../lib/canvas-view';
 import type { GestureHandlers, GestureView } from '../../view-models/use-canvas-gesture';
 import { Ruler } from '../Ruler';
@@ -92,6 +93,15 @@ export function CanvasStage({
   const { paper } = template;
   const single =
     selection.length === 1 ? (template.elements.find((element) => element.id === selection[0]) ?? null) : null;
+  // 选中好几个时画一个合起来的外框（拖动中跟着临时框走），按在框里就能整组拖动。
+  const groupBox =
+    selection.length > 1
+      ? boundsOf(
+          template.elements
+            .filter((element) => selection.includes(element.id) && !hidden.has(element.id))
+            .map((element) => gesture.boxes.get(element.id) ?? element),
+        )
+      : null;
 
   const onDragOver = (event: DragEvent<HTMLDivElement>) => {
     if (event.dataTransfer.types.includes(ELEMENT_DRAG_TYPE)) {
@@ -212,14 +222,28 @@ export function CanvasStage({
                   style={boxStyle(gesture.boxes.get(element.id) ?? element)}
                 >
                   {omitted?.short && <span className="canvas-overlay__reason">{omitted.short}</span>}
-                  {single?.id === element.id &&
-                    !element.locked &&
-                    RESIZE_HANDLES.map((handle) => (
-                      <div key={handle} className="canvas-overlay__handle" data-handle={handle} />
-                    ))}
+                  {single?.id === element.id && !element.locked && (
+                    <>
+                      {RESIZE_HANDLES.map((handle) => (
+                        <div
+                          key={handle}
+                          className={`canvas-overlay__handle canvas-overlay__handle--${handle.length === 2 ? 'corner' : 'edge'}`}
+                          data-handle={handle}
+                        />
+                      ))}
+                      <div
+                        className="canvas-overlay__rotate"
+                        data-handle={ROTATE_HANDLE}
+                        title="拖动旋转（只转直角）"
+                      />
+                    </>
+                  )}
                 </div>
               );
             })}
+            {groupBox !== null && (
+              <div className="canvas-overlay__group" aria-hidden="true" style={boxStyle(groupBox)} />
+            )}
             {gesture.guides.map((guide) => (
               <div
                 key={`${guide.axis}${guide.at}`}

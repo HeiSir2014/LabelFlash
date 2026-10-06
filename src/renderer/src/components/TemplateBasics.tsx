@@ -49,8 +49,9 @@ export function TemplateBasics<T extends LabelTemplate>({
     assignedName === null
       ? null
       : (printers.find((printer) => printer.name === assignedName)?.displayName ?? assignedName);
+  // 选项只写「按纸张分配」，分配到哪台写在下面会折行的说明里：打印机名很长时，窄的检查器里下拉框放不下整句。
   const printerOptions = [
-    { value: '', label: `按纸张分配（当前是 ${assigned ?? '还没有'}）` },
+    { value: '', label: '按纸张分配' },
     // 指定的打印机不在这台电脑上：仍然显示它的名字，不悄悄显示成别的选项。
     ...(draft.printer !== null && !names.includes(draft.printer)
       ? [{ value: draft.printer, label: `${draft.printer}（这台电脑上没有）` }]
@@ -109,6 +110,7 @@ export function TemplateBasics<T extends LabelTemplate>({
         onChange={(value) => onChange({ ...draft, printer: value === '' ? null : value })}
       />
       <p className="form-hint">
+        {`这种纸现在分配给${assigned === null ? '：还没有打印机' : `「${assigned}」`}。`}
         通常按纸张分配（在配置中心的「打印机」页设置）；同一种纸要打到不同打印机时，在这里为模板指定一台。
       </p>
     </>

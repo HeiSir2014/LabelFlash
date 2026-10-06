@@ -24,21 +24,27 @@ function warning(patch: Partial<ElementWarning>): ElementWarning {
 }
 
 describe('growToPrint', () => {
-  test('widens the element to the minimum width, keeping its position', () => {
+  // 放大到最小尺寸的 1.1 倍（往上取到 0.1mm）：刚好到最小尺寸的话，马上又会冒出「只比最小宽度宽一点」的提醒。
+  test('widens the element past the early-warning margin, keeping its position', () => {
     const result = growToPrint(canvas(barcode), warning({ minWidthMm: 40.5 }));
     expect(result.status).toBe('grown');
-    expect(result.status === 'grown' && result.template.elements[0]).toMatchObject({ x: 2, width: 40.5, height: 12 });
+    expect(result.status === 'grown' && result.template.elements[0]).toMatchObject({ x: 2, width: 44.6, height: 12 });
   });
 
   test('raises the height when the minimum is a height', () => {
     const result = growToPrint(canvas(barcode), warning({ minHeightMm: 14.2 }));
-    expect(result.status === 'grown' && result.template.elements[0]).toMatchObject({ width: 38, height: 14.2 });
+    expect(result.status === 'grown' && result.template.elements[0]).toMatchObject({ width: 38, height: 15.7 });
+  });
+
+  test('grows only to the minimum when the margin does not fit on the paper', () => {
+    const result = growToPrint(canvas({ ...barcode, x: 0 }), warning({ minWidthMm: 58 }));
+    expect(result.status === 'grown' && result.template.elements[0]).toMatchObject({ width: 58 });
   });
 
   test('moves the element back onto the paper when growing would push it off the edge', () => {
     const atEdge = { ...barcode, x: 20 };
     const result = growToPrint(canvas(atEdge), warning({ minWidthMm: 45 }));
-    expect(result.status === 'grown' && result.template.elements[0]).toMatchObject({ x: 15, width: 45 });
+    expect(result.status === 'grown' && result.template.elements[0]).toMatchObject({ x: 10.5, width: 49.5 });
   });
 
   test('says the paper is too small when the minimum does not fit on it', () => {

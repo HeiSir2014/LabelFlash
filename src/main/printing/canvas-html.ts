@@ -10,7 +10,7 @@ import { decodeGray, fitContain, monoBmp, resizeGray, toMono } from '../../core/
 import { LINE_HEIGHT } from '../../core/templates/text-fit';
 import { LINE_WIDTH_SLACK, textWidthMm } from '../../core/templates/waybill-layout';
 import type { LabelJob } from '../../core/types';
-import type { ElementWarning, RenderWarnings } from '../../shared/render-warnings';
+import { BARCODE_TIGHT_RATIO, type ElementWarning, type RenderWarnings } from '../../shared/render-warnings';
 import {
   CANVAS_MAX_MODULE_MM,
   encodeBarcode,
@@ -45,8 +45,6 @@ interface Findings {
   overflowCount: number;
 }
 
-/** 条码宽度不到最小宽度的 1.1 倍就提前提醒：内容（例如编码）再长几位就印不出了。 */
-const TIGHT_WIDTH_RATIO = 1.1;
 /** 「至少要多宽」往上取到 0.1mm：数字框按 0.1mm 调，操作员照着填也印得出。 */
 const MINIMUM_SIZE_STEP_MM = 0.1;
 /** 取整前去掉浮点误差：40.5 算成 40.500000001 时不该进到 40.6。 */
@@ -301,7 +299,7 @@ function barcodeHtml(
       frameHeightMm: minimumSizeMm(neededHeightDots, dot),
     });
   }
-  if (widthDots < neededWidthDots * TIGHT_WIDTH_RATIO) {
+  if (widthDots < neededWidthDots * BARCODE_TIGHT_RATIO) {
     // 印得出，但内容再长几位就印不出：只在设计器里提醒，不算打印问题（不进 issues、不写打印日志）。
     report(
       findings,

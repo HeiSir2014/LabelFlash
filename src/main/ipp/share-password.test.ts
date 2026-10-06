@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { FakeClock } from '../../core/testing/fake-clock';
-import { parseBasicAuth, SharePassword, type SharePasswordStore, type StoredPassword } from './share-password';
+import {
+  MAX_PARALLEL_DERIVATIONS,
+  parseBasicAuth,
+  SharePassword,
+  type SharePasswordStore,
+  type StoredPassword,
+} from './share-password';
 
 class MemoryStore implements SharePasswordStore {
   stored: StoredPassword | null = null;
@@ -56,6 +62,30 @@ describe('SharePassword', () => {
     const password = new SharePassword(store, new FakeClock());
     await password.set('1234');
     expect(await password.verify('1'.repeat(10_000))).toBe(false);
+  });
+});
+
+describe('SharePassword derivation limit', () => {
+  // 不同地址同时来猜也不能把 libuv 线程池占满：同时最多算 MAX_PARALLEL_DERIVATIONS 个。
+  test('derives at most two digests at a time across all callers', async () => {
+    const store = new MemoryStore();
+    let running = 0;
+    let peak = 0;
+    const derive = async (password: string) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      running -= 1;
+      return new Uint8Array(32).fill(password.length);
+    };
+    const password = new SharePassword(store, new FakeClock(), derive);
+    await password.set('1234');
+    peak = 0;
+    const results = await Promise.all(
+      ['1234', 'a', 'bb', 'ccc', '1234', 'ddddd'].map((value) => password.verify(value)),
+    );
+    expect(peak).toBe(MAX_PARALLEL_DERIVATIONS);
+    expect(results).toEqual([true, false, false, false, true, false]);
   });
 });
 

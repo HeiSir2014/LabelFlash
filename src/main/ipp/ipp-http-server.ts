@@ -132,6 +132,8 @@ export class IppHttpServer {
   private readonly authFailures: RateLimiter;
   private readonly lockedUntil = new Map<string, number>();
   private readonly verified = new Map<string, number>();
+  /** 每个地址正在算的那一次摘要（认证头的摘要和结果）。 */
+  private readonly verifying = new Map<string, { cacheKey: string; result: Promise<boolean> }>();
   private startedAt = 0;
   /** 所有连接正在收的正文字节数。 */
   private inFlightBytes = 0;
@@ -330,14 +332,39 @@ export class IppHttpServer {
     if ((this.lockedUntil.get(address) ?? 0) > now) {
       return 'locked';
     }
-    if (await this.deps.password.verify(credentials.password)) {
-      remember(this.verified, cacheKey, now + VERIFIED_AUTH_MS, now);
-      return 'ok';
+    // 同一个地址同一时间只算一次摘要：同样的认证头等着那一次的结果；换着密码并发来猜的，在算之前就记一次尝试并拒绝。
+    // 不这样的话，「先查锁、算完再记失败」之间并发的几十个猜测全都会被算一遍，锁形同虚设。
+    const inFlight = this.verifying.get(address);
+    if (inFlight !== undefined) {
+      if (inFlight.cacheKey === cacheKey) {
+        return (await inFlight.result) ? 'ok' : 'wrong';
+      }
+      return this.countAttempt(address, now) ? 'wrong' : 'locked';
     }
-    if (!this.authFailures.take(address)) {
-      remember(this.lockedUntil, address, now + LOCKOUT_MS, now);
+    // 先记一次尝试再算：猜的次数和算的次数一样多，不会多。
+    if (!this.countAttempt(address, now)) {
+      return 'locked';
     }
-    return 'wrong';
+    const result = this.deps.password.verify(credentials.password);
+    this.verifying.set(address, { cacheKey, result });
+    try {
+      if (await result) {
+        remember(this.verified, cacheKey, now + VERIFIED_AUTH_MS, now);
+        return 'ok';
+      }
+      return 'wrong';
+    } finally {
+      this.verifying.delete(address);
+    }
+  }
+
+  /** 记一次认证尝试；超过限额就锁住这个地址一会儿，返回 false。 */
+  private countAttempt(address: string, now: number): boolean {
+    if (this.authFailures.take(address)) {
+      return true;
+    }
+    remember(this.lockedUntil, address, now + LOCKOUT_MS, now);
+    return false;
   }
 
   private challenge(request: IncomingMessage, response: ServerResponse): void {

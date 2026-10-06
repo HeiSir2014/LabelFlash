@@ -22,6 +22,8 @@ interface Options {
   password?: string;
   decision?: ClientDecision;
   limits?: Partial<typeof IPP_HTTP_LIMITS>;
+  /** 假的 verify 要花多久（模拟 scrypt）。 */
+  verifyDelayMs?: number;
 }
 
 function createServer(options: Options = {}) {
@@ -38,6 +40,9 @@ function createServer(options: Options = {}) {
       isSet: () => options.password !== undefined,
       verify: async (value) => {
         verified.push(value);
+        if (options.verifyDelayMs !== undefined) {
+          await new Promise((resolve) => setTimeout(resolve, options.verifyDelayMs));
+        }
         return value === options.password;
       },
     },
@@ -207,6 +212,35 @@ describe('IppHttpServer', () => {
     expect((await sendIpp(url, ippRequest(OPERATIONS.printJob), MINIMAL_PDF, basicAuth('x', '1234'))).httpStatus).toBe(
       503,
     );
+  });
+
+  // 评审的探针（lockout-race.ts）：40 个并发猜测原来全都算了摘要，锁形同虚设。
+  test('derives at most once for a burst of parallel guesses from one address', async () => {
+    const { server, verified } = createServer({ password: '1234', verifyDelayMs: 50 });
+    const { url } = await start(server);
+    const statuses = await Promise.all(
+      Array.from({ length: 40 }, (_, index) =>
+        sendIpp(url, ippRequest(OPERATIONS.printJob), MINIMAL_PDF, basicAuth('x', `guess${index}`)).then(
+          (reply) => reply.httpStatus,
+        ),
+      ),
+    );
+    expect(verified.length).toBeLessThanOrEqual(1);
+    expect(statuses.every((status) => status === 401 || status === 503)).toBe(true);
+    expect(statuses).toContain(503);
+  });
+
+  test('lets parallel requests with the same good password share one derivation', async () => {
+    const { server, verified } = createServer({ password: '1234', verifyDelayMs: 50 });
+    const { url } = await start(server);
+    const auth = basicAuth('zhang', '1234');
+    const statuses = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        sendIpp(url, ippRequest(OPERATIONS.getJobs), new Uint8Array(), auth).then((reply) => reply.httpStatus),
+      ),
+    );
+    expect(statuses).toEqual([200, 200, 200, 200, 200]);
+    expect(verified).toEqual(['1234']);
   });
 
   test('refuses a large upload without the password before reading it', async () => {

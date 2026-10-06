@@ -23,7 +23,16 @@ export interface SharePasswordStore {
   clearPassword(): void;
 }
 
-function derive(password: string, salt: Uint8Array): Promise<Buffer> {
+/**
+ * 同时最多算 2 个摘要：scrypt 在 libuv 线程池里跑（默认 4 个线程），局域网里几台电脑一起猜也占不满它，
+ * 文件读写、DNS 这些同样用线程池的事不会被拖住。正常使用（偶尔有电脑第一次带密码来）远碰不到。
+ */
+export const MAX_PARALLEL_DERIVATIONS = 2;
+
+/** 按密码和盐算摘要；测试里换成假的。 */
+export type DeriveKey = (password: string, salt: Uint8Array) => Promise<Uint8Array>;
+
+function scryptKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     scrypt(password.normalize('NFC'), salt, KEY_BYTES, { N: SCRYPT_COST }, (error, key) => {
       if (error) {
@@ -40,9 +49,13 @@ function derive(password: string, salt: Uint8Array): Promise<Buffer> {
  * 局域网里的电脑按 HTTP 基本认证交来，用户名不核对（共享只有一个密码）。
  */
 export class SharePassword {
+  private running = 0;
+  private readonly waiting: Array<() => void> = [];
+
   constructor(
     private readonly store: SharePasswordStore,
     private readonly clock: Clock,
+    private readonly deriveKey: DeriveKey = scryptKey,
   ) {}
 
   isSet(): boolean {
@@ -55,7 +68,7 @@ export class SharePassword {
       throw new Error('Invalid share password');
     }
     const salt = randomBytes(SALT_BYTES);
-    this.store.writePassword({ salt, hash: await derive(password, salt) }, this.clock.now());
+    this.store.writePassword({ salt, hash: await this.derive(password, salt) }, this.clock.now());
   }
 
   clear(): void {
@@ -68,8 +81,28 @@ export class SharePassword {
     if (stored === null || Buffer.byteLength(password, 'utf8') > MAX_CANDIDATE_BYTES) {
       return false;
     }
-    const key = await derive(password, stored.salt);
+    const key = await this.derive(password, stored.salt);
     return key.length === stored.hash.length && timingSafeEqual(key, stored.hash);
+  }
+
+  /** 排队算摘要：同时最多 MAX_PARALLEL_DERIVATIONS 个。 */
+  private async derive(password: string, salt: Uint8Array): Promise<Uint8Array> {
+    if (this.running >= MAX_PARALLEL_DERIVATIONS) {
+      await new Promise<void>((resolve) => this.waiting.push(resolve));
+    } else {
+      this.running += 1;
+    }
+    try {
+      return await this.deriveKey(password, salt);
+    } finally {
+      const next = this.waiting.shift();
+      if (next) {
+        // 名额直接交给排队的下一个，running 不变。
+        next();
+      } else {
+        this.running -= 1;
+      }
+    }
   }
 }
 

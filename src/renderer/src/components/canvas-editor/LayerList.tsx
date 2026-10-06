@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { CANVAS_ELEMENT_LABELS, type CanvasElement } from '../../../../core/templates/canvas-model';
 import { toggleId } from '../../lib/canvas-edit';
+import { displayName } from '../../lib/canvas-names';
 
 interface LayerListProps {
   elements: readonly CanvasElement[];
@@ -28,12 +29,12 @@ export function LayerList({ elements, selection, onSelect }: LayerListProps) {
                 aria-pressed={selection.includes(element.id)}
                 aria-label={
                   element.locked
-                    ? `${element.name}（${CANVAS_ELEMENT_LABELS[element.kind]} · 锁定）`
-                    : `${element.name}（${CANVAS_ELEMENT_LABELS[element.kind]}）`
+                    ? `${displayName(element)}（${CANVAS_ELEMENT_LABELS[element.kind]} · 锁定）`
+                    : `${displayName(element)}（${CANVAS_ELEMENT_LABELS[element.kind]}）`
                 }
                 onClick={(event) => onSelect(event.shiftKey ? toggleId(selection, element.id) : [element.id])}
               >
-                <span className="layer-list__name">{element.name}</span>
+                <span className="layer-list__name">{displayName(element)}</span>
                 <span className="layer-list__kind">
                   {element.locked
                     ? `${CANVAS_ELEMENT_LABELS[element.kind]} · 锁定`

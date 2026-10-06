@@ -99,7 +99,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 - **测试**：新功能、修 bug 都先写失败的测试。测试名用英文描述行为；纯逻辑放进可测的模块（core、`lib/`、主进程里不依赖 Electron 的文件）。
 - **用词**：界面文字和播报用词保持一致，只说程序确知的事。例如驱动回调成功只代表任务进了打印队列，所以写「已发送打印」，不写「打印成功」。
 - **出错**：不吞异常。主进程把错误和上下文写进日志，界面给出中文提示和下一步该怎么做。
-- **依赖**：不随意引入新依赖，先用现有的：运行时有 electron-log、electron-updater、msedge-tts、qrcode、bwip-js（自由设计模板的条码编码）、read-excel-file（批量打印读 .xlsx，只在读表格的子进程里用），以及电脑、中转服务、扫码页共用的 @msgpack/msgpack（手机扫码的线上编码）；开发时有 sharp、Playwright、Biome，以及只打进手机扫码页的 zxing-wasm。
+- **依赖**：不随意引入新依赖，先用现有的：运行时有 electron-log、electron-updater、msedge-tts、qrcode、bwip-js（自由设计模板的条码编码）、read-excel-file（批量打印读 .xlsx，只在读表格的子进程里用）、pdfjs-dist（打印 PDF、局域网共享，只在 sandbox 的渲染页里跑），以及电脑、中转服务、扫码页共用的 @msgpack/msgpack（手机扫码的线上编码）；开发时有 sharp、Playwright、Biome，以及只打进手机扫码页的 zxing-wasm。
 
 ## 命名与措辞限制
 
@@ -174,9 +174,10 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 
 | 文档 | 内容 |
 |---|---|
-| `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心、手机扫码打印、多台打印机与多种纸张、本机接口、快递面单模板 |
+| `docs/superpowers/specs/` | 设计：总设计、通用识别规则、工作台与配置中心、手机扫码打印、多台打印机与多种纸张、本机接口、本地文字识别引擎、货架号识别、快递面单模板、功能补齐（2.0.0 的设计器、模板库、批量、PDF、打印机管理、局域网共享） |
 | `docs/superpowers/plans/` | 实施计划 |
-| `docs/local-api.md` | 给第三方的本机接口接入说明（含 JavaScript、Python、C#、Java 示例） |
+| `docs/local-api.md` | 给第三方的本机接口接入说明（含 JavaScript、Python、C#、Java 示例）和打印结果通知 |
+| `docs/lan-sharing.md` | 局域网共享的用法和真机验证清单 |
 | `docs/driver-catalog.md` | 给出品方：驱动清单的密钥、格式、签名、上传、续签 |
 | `docs/roadmap.md` | 路线图 |
 | `docs/windows-acceptance.md` | Windows 验收记录 |

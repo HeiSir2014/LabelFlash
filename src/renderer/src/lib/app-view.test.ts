@@ -31,10 +31,11 @@ describe('config navigation', () => {
     expect(pageLabel('notes')).toBe('常用备注');
   });
 
-  test('keeps the local api with the other integrations', () => {
+  test('keeps the local api and LAN sharing with the other integrations', () => {
     const integrations = CONFIG_NAV.find((group) => group.label === '集成');
-    expect(integrations?.pages.map((item) => item.page)).toEqual(['webhooks', 'localApi']);
+    expect(integrations?.pages.map((item) => item.page)).toEqual(['webhooks', 'localApi', 'sharing']);
     expect(pageLabel('localApi')).toBe('本机接口');
+    expect(pageLabel('sharing')).toBe('局域网共享');
   });
 
   // 打印机是准备工作（按纸张分配），和模板放在一起；工作台右侧只留每天都看的打印记录。

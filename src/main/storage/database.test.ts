@@ -23,6 +23,8 @@ describe('openDatabase', () => {
     expect(tableNames(db)).toEqual([
       'api_jobs',
       'api_keys',
+      'ipp_clients',
+      'ipp_share_password',
       'jobs',
       'jobs_search',
       'lookup_rows',
@@ -287,6 +289,48 @@ describe('migration 7', () => {
       "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, pdf_file, pdf_page, pdf_piece, pdf_bitmap) VALUES ('c', 3, 'x', 'P', 'pdf', 'printed', 0, 'x.pdf', 0, 1, 'k')",
     );
     expect(() => insert.run()).toThrow();
+    db.close();
+  });
+});
+
+describe('migration 8', () => {
+  test('adds the computer and user columns and keeps every row', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, MIGRATIONS.slice(0, 7));
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES ('a', 1, 'CL5640', 'P', 'desktop', 'printed', 0)",
+    ).run();
+    migrate(db);
+    expect({ ...db.prepare("SELECT seq, ipp_client, ipp_user FROM jobs WHERE id = 'a'").get() }).toEqual({
+      seq: 1,
+      ipp_client: null,
+      ipp_user: null,
+    });
+    db.prepare(
+      "INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, ipp_client, ipp_user) VALUES ('b', 2, '面单 第 1 页第 1 张', 'P', 'ipp', 'printed', 0, '192.168.1.23', 'zhang')",
+    ).run();
+    expect({ ...db.prepare("SELECT ipp_client FROM jobs WHERE id = 'b'").get() }).toEqual({
+      ipp_client: '192.168.1.23',
+    });
+    db.close();
+  });
+
+  test('keeps one decision per computer and at most one password', () => {
+    const db = openDatabase(':memory:');
+    db.prepare(
+      "INSERT INTO ipp_clients (address, decision, last_user, decided_at) VALUES ('192.168.1.23', 'allow', '', 1)",
+    ).run();
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO ipp_clients (address, decision, last_user, decided_at) VALUES ('192.168.1.24', 'maybe', '', 1)",
+        )
+        .run(),
+    ).toThrow();
+    db.prepare("INSERT INTO ipp_share_password (id, salt, hash, updated_at) VALUES (1, x'00', x'00', 1)").run();
+    expect(() =>
+      db.prepare("INSERT INTO ipp_share_password (id, salt, hash, updated_at) VALUES (2, x'00', x'00', 1)").run(),
+    ).toThrow();
     db.close();
   });
 });

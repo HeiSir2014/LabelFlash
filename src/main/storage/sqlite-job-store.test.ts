@@ -250,6 +250,14 @@ describe('SqliteJobStore', () => {
     expect(store.get('job-1')?.pdf).toEqual(PDF_PIECE);
   });
 
+  test('keeps the computer and user of a LAN share job', () => {
+    const store = new SqliteJobStore(db, 100);
+    const ipp = { client: '192.168.1.23', user: '' };
+    store.append(job(1, { source: 'ipp', pdf: PDF_PIECE, ipp }));
+    store.append(job(2));
+    expect(store.listPage({ limit: 10 }).jobs.map((record) => record.ipp)).toEqual([undefined, ipp]);
+  });
+
   test('leaves PDF prints out of the recent prints', () => {
     const store = new SqliteJobStore(db, 100);
     store.append(job(1, { source: 'pdf', pdf: PDF_PIECE }));

@@ -8,6 +8,7 @@ import {
   BATCH_RULE,
   type FieldsPrint,
   fieldsRuleFor,
+  IPP_RULE,
   PDF_RULE,
   PrintService,
   TEST_RAW,
@@ -781,5 +782,32 @@ describe('fieldsRuleFor', () => {
     expect(fieldsRuleFor({})).toBe(API_RULE);
     expect(fieldsRuleFor({ batch: { id: '20261002-143501-a1b2', row: 1, copy: 1 } })).toBe(BATCH_RULE);
     expect(fieldsRuleFor({ pdf: { file: 'a.pdf', page: 1, piece: 1, bitmap: 'k' } })).toBe(PDF_RULE);
+  });
+});
+
+describe('PrintService.printFields for a LAN share', () => {
+  const ipp = { client: '192.168.1.23', user: 'zhang' };
+  const pdf = { file: '面单', page: 1, piece: 1, bitmap: '0f8fad5b-d9cb-469f-a165-70867728950e' };
+
+  test('records the computer and user and names the rule after LAN sharing', async () => {
+    const { service, store, recorded } = createHarness();
+    const result = await service.printFields({
+      template: PICK_TEMPLATE,
+      fields: [{ name: '文件', value: '面单' }],
+      content: '面单 第 1 页第 1 张',
+      source: 'ipp',
+      caller: null,
+      printerName: null,
+      pdf,
+      ipp,
+    });
+    expect(result.status).toBe('printed');
+    expect(store.listRecent(1)[0]).toMatchObject({ source: 'ipp', pdf, ipp });
+    expect(recorded.at(-1)?.scan).toMatchObject({ ruleId: IPP_RULE.id, ruleName: '局域网共享' });
+  });
+
+  // 局域网共享打来的也带着 PDF 的位图编号：规则名先认局域网共享。
+  test('names the rule after LAN sharing before PDF', () => {
+    expect(fieldsRuleFor({ pdf, ipp })).toBe(IPP_RULE);
   });
 });

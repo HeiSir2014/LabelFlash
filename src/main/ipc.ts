@@ -372,9 +372,11 @@ export function registerIpc(deps: IpcDeps): void {
       source: 'history',
       caller: job.caller ?? null,
       printerName: null,
-      // 批量打的重打后还算这一批的这一行这一份（重打成功的不再算失败）；PDF 的重打指着同一张位图。
+      // 批量打的重打后还算这一批的这一行这一份（重打成功的不再算失败）；PDF 的重打指着同一张位图；
+      // 局域网共享打来的重打后仍记着原来的电脑和用户（显示为「原提交」）。
       ...(job.batch === undefined ? {} : { batch: job.batch }),
       ...(job.pdf === undefined ? {} : { pdf: job.pdf }),
+      ...(job.ipp === undefined ? {} : { ipp: job.ipp }),
     });
   });
   handle(IpcChannel.GetSettings, () => deps.settings.current);

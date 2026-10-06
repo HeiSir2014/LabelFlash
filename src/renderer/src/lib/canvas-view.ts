@@ -49,6 +49,36 @@ export function zoomOut(current: number): number {
   return [...ZOOM_LEVELS].reverse().find((level) => level < current - ZOOM_EPSILON) ?? min;
 }
 
+/**
+ * Ctrl+滚轮、触控板捏合的缩放速度：deltaY 每 1 个单位放大或缩小 0.2%。鼠标滚轮一格约 100，约 1.2 倍；
+ * 捏合一次只发几个单位，缩放连续、跟手（Chromium 把捏合发成带 ctrlKey 的 wheel）。
+ */
+export const WHEEL_ZOOM_PER_DELTA = 0.002;
+/** 缩放倍数只留三位小数：百分比显示到个位，再细的小数只会让布局抖。 */
+const ZOOM_PRECISION = 1000;
+
+/** 滚轮、捏合之后的倍数：连续变化，收在最小档和最大档之间。 */
+export function wheelZoom(current: number, deltaY: number): number {
+  const min = ZOOM_LEVELS[0] ?? current;
+  const max = ZOOM_LEVELS.at(-1) ?? current;
+  const next = current * Math.exp(-deltaY * WHEEL_ZOOM_PER_DELTA);
+  return Math.round(Math.min(max, Math.max(min, next)) * ZOOM_PRECISION) / ZOOM_PRECISION;
+}
+
+/**
+ * 以指针为中心缩放：缩放前记下指针下面是纸上哪一点（anchor，mm），缩放后覆盖层左上角到了 origin（窗口坐标），
+ * 这一点跑到了 origin + anchor × 新倍数；画布要滚动这么多，它才回到指针下面。
+ */
+export function scrollToKeep(
+  anchor: { x: number; y: number },
+  pointer: { x: number; y: number },
+  origin: { x: number; y: number },
+  zoom: number,
+): { x: number; y: number } {
+  const pxPerMm = PX_PER_MM * zoom;
+  return { x: origin.x + anchor.x * pxPerMm - pointer.x, y: origin.y + anchor.y * pxPerMm - pointer.y };
+}
+
 /** 屏幕像素 → 纸上的毫米（在 zoom 倍下）。 */
 export function pxToMm(px: number, zoom: number): number {
   return px / (PX_PER_MM * zoom);

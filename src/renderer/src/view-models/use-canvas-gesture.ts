@@ -12,7 +12,6 @@ import {
   toggleId,
 } from '../lib/canvas-edit';
 import {
-  accumulateWheelZoom,
   type Gesture,
   type GestureView,
   hasPassedDragThreshold,
@@ -289,15 +288,18 @@ export function useCanvasGesture(options: GestureOptions): {
 }
 
 /**
- * Ctrl（macOS 上 ⌘）+ 滚轮缩放画布。React 的 onWheel 是被动监听，拦不住页面自己的滚动，所以挂原生监听（passive: false）。
+ * Ctrl（macOS 上 ⌘）+ 滚轮、触控板捏合（Chromium 发成带 ctrlKey 的 wheel）缩放画布，交出 deltaY 和指针位置，
+ * 调用方以指针为中心连续缩放（lib/canvas-view 的 wheelZoom、scrollToKeep）。不按 Ctrl 的滚轮、两指滑动照常滚动画布。
+ * React 的 onWheel 是被动监听，拦不住页面自己的缩放和滚动，所以挂原生监听（passive: false）。
  */
-export function useCtrlWheelZoom(ref: RefObject<HTMLElement | null>, onZoom: (direction: 1 | -1) => void): void {
+export function useWheelZoom(
+  ref: RefObject<HTMLElement | null>,
+  onZoom: (deltaY: number, client: Point) => void,
+): void {
   const latest = useRef(onZoom);
   useEffect(() => {
     latest.current = onZoom;
   });
-  // 触控板捏合缩放会连续发很多个 deltaY 很小的 wheel 事件：攒够阈值才真的切一档（见 lib/canvas-gesture.ts）。
-  const accumulated = useRef(0);
   useEffect(() => {
     const element = ref.current;
     if (element === null) {
@@ -308,13 +310,70 @@ export function useCtrlWheelZoom(ref: RefObject<HTMLElement | null>, onZoom: (di
         return;
       }
       event.preventDefault();
-      const step = accumulateWheelZoom(accumulated.current, event.deltaY);
-      accumulated.current = step.nextAccumulated;
-      if (step.direction !== null) {
-        latest.current(step.direction);
-      }
+      latest.current(event.deltaY, { x: event.clientX, y: event.clientY });
     };
     element.addEventListener('wheel', onWheel, { passive: false });
     return () => element.removeEventListener('wheel', onWheel);
   }, [ref]);
+}
+
+/**
+ * 平移画布：按住中键拖，或画布有焦点时按住空格再拖。只认空格本身：扫码枪的第一个字符本来就不会是空格
+ * （配置中心转交扫码时也不认空格，见 lib/scan-focus 的 isScannerCharacter），字母数字照常交给「预览内容」。
+ * 拖动时直接改滚动区的滚动位置，不经 React 渲染。笔（数位板）和鼠标走同一条路。
+ */
+export function useCanvasPan(stageRef: RefObject<HTMLElement | null>) {
+  const [isSpaceHeld, setIsSpaceHeld] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const panRef = useRef<{ client: Point; scroll: Point } | null>(null);
+
+  /** 按下时要不要开始平移；开始了就返回 true，调用方不再当成选中、拖动元素。 */
+  const onPointerDown = (event: ReactPointerEvent<HTMLElement>): boolean => {
+    const stage = stageRef.current;
+    if (stage === null || !(event.button === 1 || (event.button === 0 && isSpaceHeld))) {
+      return false;
+    }
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    panRef.current = {
+      client: { x: event.clientX, y: event.clientY },
+      scroll: { x: stage.scrollLeft, y: stage.scrollTop },
+    };
+    setIsPanning(true);
+    return true;
+  };
+  const onPointerMove = (event: ReactPointerEvent<HTMLElement>): boolean => {
+    const pan = panRef.current;
+    const stage = stageRef.current;
+    if (pan === null || stage === null) {
+      return false;
+    }
+    stage.scrollLeft = pan.scroll.x - (event.clientX - pan.client.x);
+    stage.scrollTop = pan.scroll.y - (event.clientY - pan.client.y);
+    return true;
+  };
+  const end = (): boolean => {
+    if (panRef.current === null) {
+      return false;
+    }
+    panRef.current = null;
+    setIsPanning(false);
+    return true;
+  };
+  return {
+    isSpaceHeld,
+    isPanning,
+    onPointerDown,
+    onPointerMove,
+    end,
+    /** 画布上的空格：按下开始「抓手」，松开结束。返回 true 表示这个按键已经用掉。 */
+    onKey: (event: { key: string; type: string; repeat: boolean }): boolean => {
+      if (event.key !== ' ') {
+        return false;
+      }
+      setIsSpaceHeld(event.type === 'keydown');
+      return true;
+    },
+    releaseSpace: () => setIsSpaceHeld(false),
+  };
 }

@@ -3439,6 +3439,15 @@ fieldset.designer-zoom__menu {
   cursor: move;
 }
 
+/* 平移画布：按住空格是抓手，拖动中是抓着（写在「移动」后面，按住空格时优先） */
+.canvas-overlay.canvas-overlay--grab {
+  cursor: grab;
+}
+
+.canvas-overlay.canvas-overlay--grabbing {
+  cursor: grabbing;
+}
+
 /* 元素框不接指针：按在哪个元素上按位置算（只有边框的矩形不挡住下面的元素），只有控制点接指针。
    每个元素一圈浅色虚线（只在屏幕上，不打印）：空的文字框、没内容的条码也看得见在哪 */
 .canvas-overlay__box {

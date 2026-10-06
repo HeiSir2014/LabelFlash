@@ -1,4 +1,11 @@
-import { type KeyboardEvent, useCallback, useRef, useState } from 'react';
+import {
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { CANVAS_ELEMENT_LABELS, type CanvasTemplate } from '../../../../core/templates/canvas-model';
 import { type ElementWarning, NO_RENDER_WARNINGS, renderWarningTexts } from '../../../../shared/render-warnings';
 import type { Platform } from '../../lib/app-view';
@@ -18,13 +25,14 @@ import {
   designerCommand,
   hideElementsInHtml,
   PX_PER_MM,
+  pxToMm,
+  scrollToKeep,
   undoShortcutLabel,
-  zoomIn,
-  zoomOut,
+  wheelZoom,
 } from '../../lib/canvas-view';
 import { insertFieldOptions } from '../../lib/insert-field-options';
 import { useCanvasDesigner } from '../../view-models/use-canvas-designer';
-import { useCanvasGesture, useCtrlWheelZoom } from '../../view-models/use-canvas-gesture';
+import { useCanvasGesture, useCanvasPan, useWheelZoom } from '../../view-models/use-canvas-gesture';
 import { useFitScale } from '../../view-models/use-fit-scale';
 import type { TemplatePreview } from '../../view-models/use-template-preview';
 import { RULER_DEPTH_MM } from '../Ruler';
@@ -121,7 +129,58 @@ export function CanvasDesigner({
     onSelect: designer.select,
     onCommit: designer.commit,
   });
-  useCtrlWheelZoom(stageRef, (direction) => designer.setZoom(direction > 0 ? zoomIn(zoom) : zoomOut(zoom)));
+  const pan = useCanvasPan(stageRef);
+  // 以指针为中心缩放：缩放前记下指针下面是纸上哪一点，缩放后（布局已经按新倍数排好）把画布滚回去，让这一点还在指针下面。
+  const zoomAnchorRef = useRef<{ mm: Point; client: Point } | null>(null);
+  useWheelZoom(stageRef, (deltaY, client) => {
+    const rect = overlayRef.current?.getBoundingClientRect();
+    if (rect === undefined) {
+      return;
+    }
+    zoomAnchorRef.current = {
+      mm: { x: pxToMm(client.x - rect.left, zoom), y: pxToMm(client.y - rect.top, zoom) },
+      client,
+    };
+    designer.setZoom(wheelZoom(zoom, deltaY));
+  });
+  useLayoutEffect(() => {
+    const anchor = zoomAnchorRef.current;
+    const stage = stageRef.current;
+    const rect = overlayRef.current?.getBoundingClientRect();
+    zoomAnchorRef.current = null;
+    if (anchor === null || stage === null || rect === undefined) {
+      return;
+    }
+    const adjustment = scrollToKeep(anchor.mm, anchor.client, { x: rect.left, y: rect.top }, zoom);
+    stage.scrollLeft += adjustment.x;
+    stage.scrollTop += adjustment.y;
+  }, [zoom]);
+  const handlers = {
+    ...gesture.handlers,
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!pan.onPointerDown(event)) {
+        gesture.handlers.onPointerDown(event);
+      }
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!pan.onPointerMove(event)) {
+        gesture.handlers.onPointerMove(event);
+      }
+    },
+    onPointerUp: () => {
+      if (!pan.end()) {
+        gesture.handlers.onPointerUp();
+      }
+    },
+    onPointerCancel: () => {
+      pan.end();
+      gesture.handlers.onPointerCancel();
+    },
+    onLostPointerCapture: () => {
+      pan.end();
+      gesture.handlers.onLostPointerCapture();
+    },
+  };
   const selected =
     designer.selection.length === 1
       ? (draft.elements.find((element) => element.id === designer.selection[0]) ?? null)
@@ -239,6 +298,11 @@ export function CanvasDesigner({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.nativeEvent.isComposing) {
+      return;
+    }
+    // 空格：按住拖动平移画布（不让浏览器把它当成滚动页面）。
+    if (pan.onKey(event)) {
+      event.preventDefault();
       return;
     }
     const command = designerCommand(event);
@@ -396,7 +460,14 @@ export function CanvasDesigner({
           hoverId={gesture.hoverId}
           warnings={warnings.elements}
           gesture={gesture.view}
-          handlers={gesture.handlers}
+          handlers={handlers}
+          panMode={pan.isPanning ? 'grabbing' : pan.isSpaceHeld ? 'grab' : null}
+          onKeyUp={(event) => {
+            if (pan.onKey(event)) {
+              event.preventDefault();
+            }
+          }}
+          onBlur={pan.releaseSpace}
           stageRef={stageRef}
           overlayRef={overlayRef}
           onKeyDown={onKeyDown}

@@ -33,6 +33,10 @@ interface CanvasStageProps {
   stageRef: RefObject<HTMLDivElement | null>;
   overlayRef: RefObject<HTMLDivElement | null>;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
+  onKeyUp: (event: KeyboardEvent<HTMLDivElement>) => void;
+  onBlur: () => void;
+  /** 平移画布：按住空格时是「抓手」，拖动中是「抓着」；平常为 null。 */
+  panMode: 'grab' | 'grabbing' | null;
   onDropElement: (kind: CanvasElementKind, center: { x: number; y: number }) => void;
   /** 双击：纸上的位置（mm）。调用方按选中的元素决定就地改哪段字。 */
   onEditText: (point: { x: number; y: number }) => void;
@@ -77,6 +81,9 @@ export function CanvasStage({
   stageRef,
   overlayRef,
   onKeyDown,
+  onKeyUp,
+  onBlur,
+  panMode,
   onDropElement,
   onEditText,
   onContextMenu,
@@ -127,6 +134,7 @@ export function CanvasStage({
               'canvas-overlay',
               showGrid ? 'canvas-overlay--grid' : null,
               hoverId !== null ? 'canvas-overlay--over-element' : null,
+              panMode === null ? null : `canvas-overlay--${panMode}`,
             ]
               .filter(Boolean)
               .join(' ')}
@@ -135,6 +143,14 @@ export function CanvasStage({
             // biome-ignore lint/a11y/noNoninteractiveTabindex: 画布是自定义的鼠标和键盘控件（role=application），键盘操作写在 aria-label 里
             tabIndex={0}
             onKeyDown={onKeyDown}
+            onKeyUp={onKeyUp}
+            onBlur={onBlur}
+            onMouseDown={(event) => {
+              // 中键按下：Windows 上浏览器会进「自动滚动」模式，和中键拖动平移抢，拦下。
+              if (event.button === 1) {
+                event.preventDefault();
+              }
+            }}
             onPointerDown={handlers.onPointerDown}
             onPointerMove={handlers.onPointerMove}
             onPointerUp={handlers.onPointerUp}

@@ -146,26 +146,3 @@ export function resizeGestureBox(
   const snapped = snap ? snapResize(resized, handle, targets, threshold) : { box: resized, guides: [] };
   return { box: clampBox(snapped.box, paper), guides: snapped.guides };
 }
-
-/**
- * 触控板捏合缩放一次会连续发出很多个 deltaY 很小的 wheel 事件（Chrome 用 ctrlKey = true 表示这是捏合手势，
- * 不是真的按着 Ctrl 转滚轮），不积累的话捏一下就会跳好几档；普通鼠标滚轮转一格的 deltaY 通常上百，
- * 单次就能过线，手感和不设阈值时一样。
- */
-export const WHEEL_ZOOM_ACCUMULATION_THRESHOLD = 50;
-
-export interface WheelZoomStep {
-  /** 这一次要不要切一档，和切的方向；没过线时为 null。 */
-  direction: 1 | -1 | null;
-  /** 下一次调用要带着的累积值：触发了就清零，没触发就是累加后的值。 */
-  nextAccumulated: number;
-}
-
-/** 累积一次 wheel 事件的 deltaY，过线就报告要切的方向并清零。 */
-export function accumulateWheelZoom(accumulated: number, deltaY: number): WheelZoomStep {
-  const next = accumulated + deltaY;
-  if (Math.abs(next) < WHEEL_ZOOM_ACCUMULATION_THRESHOLD) {
-    return { direction: null, nextAccumulated: next };
-  }
-  return { direction: next < 0 ? 1 : -1, nextAccumulated: 0 };
-}

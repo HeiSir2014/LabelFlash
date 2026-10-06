@@ -7,7 +7,9 @@ import {
   NUDGE_MM,
   PX_PER_MM,
   pxToMm,
+  scrollToKeep,
   undoShortcutLabel,
+  wheelZoom,
   ZOOM_LEVELS,
   zoomIn,
   zoomOut,
@@ -44,6 +46,35 @@ describe('zoom', () => {
 
   test('converts screen pixels to millimetres at a zoom', () => {
     expect(pxToMm(PX_PER_MM * 2, 2)).toBe(1);
+  });
+});
+
+describe('wheelZoom', () => {
+  test('zooms in when the wheel or the pinch goes up, and out when it goes down', () => {
+    expect(wheelZoom(2, -100)).toBeGreaterThan(2);
+    expect(wheelZoom(2, 100)).toBeLessThan(2);
+  });
+
+  test('changes smoothly for the small steps of a trackpad pinch', () => {
+    const pinched = wheelZoom(2, -4);
+    expect(pinched).toBeGreaterThan(2);
+    expect(pinched).toBeLessThan(2.05);
+  });
+
+  test('stays within the zoom levels', () => {
+    expect(wheelZoom(ZOOM_LEVELS.at(-1) ?? 0, -1000)).toBe(ZOOM_LEVELS.at(-1) ?? 0);
+    expect(wheelZoom(ZOOM_LEVELS[0] ?? 0, 1000)).toBe(ZOOM_LEVELS[0] ?? 0);
+  });
+});
+
+describe('scrollToKeep', () => {
+  test('scrolls by how far the point under the pointer moved when the zoom changed', () => {
+    // 纸上 (10mm, 5mm) 原来在指针下；放大后覆盖层左上角在 (100, 50)，这一点到了 100 + 10mm×2 倍，要往右滚这么多。
+    const anchor = { x: 10, y: 5 };
+    const pointer = { x: 150, y: 80 };
+    const adjustment = scrollToKeep(anchor, pointer, { x: 100, y: 50 }, 2);
+    expect(adjustment.x).toBeCloseTo(100 + 10 * PX_PER_MM * 2 - 150);
+    expect(adjustment.y).toBeCloseTo(50 + 5 * PX_PER_MM * 2 - 80);
   });
 });
 

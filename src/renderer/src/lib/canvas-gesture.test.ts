@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { CanvasTemplate } from '../../../core/templates/canvas-model';
 import {
-  accumulateWheelZoom,
   DRAG_START_PX,
   type Gesture,
   hasPassedDragThreshold,
@@ -10,7 +9,6 @@ import {
   NO_GESTURE_VIEW,
   resizeGestureBox,
   viewOf,
-  WHEEL_ZOOM_ACCUMULATION_THRESHOLD,
 } from './canvas-gesture';
 import type { SnapTargets } from './canvas-snap';
 
@@ -185,35 +183,5 @@ describe('resizeGestureBox', () => {
     const result = resizeGestureBox(start, 'e', 0.3, 0, PAPER, targets, 1, true);
     expect(result.box.width).toBe(20.4);
     expect(result.guides).toEqual([{ axis: 'x', at: 30.4 }]);
-  });
-});
-
-describe('accumulateWheelZoom', () => {
-  test('does not step while the accumulated delta is under the threshold', () => {
-    const step = accumulateWheelZoom(0, 5);
-    expect(step.direction).toBeNull();
-    expect(step.nextAccumulated).toBe(5);
-  });
-
-  test('keeps accumulating across several small trackpad-pinch events before stepping', () => {
-    let accumulated = 0;
-    for (let i = 0; i < 4; i += 1) {
-      const step = accumulateWheelZoom(accumulated, 5);
-      accumulated = step.nextAccumulated;
-      expect(step.direction).toBeNull();
-    }
-    expect(accumulated).toBe(20);
-  });
-
-  test('steps once the magnitude passes the threshold and resets the accumulator', () => {
-    const step = accumulateWheelZoom(WHEEL_ZOOM_ACCUMULATION_THRESHOLD - 1, 5);
-    expect(step.direction).toBe(-1);
-    expect(step.nextAccumulated).toBe(0);
-  });
-
-  test('a single large mouse-wheel notch steps immediately, same as before', () => {
-    const step = accumulateWheelZoom(0, -120);
-    expect(step.direction).toBe(1);
-    expect(step.nextAccumulated).toBe(0);
   });
 });

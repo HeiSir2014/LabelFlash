@@ -49,16 +49,16 @@ React 19 + TypeScript，按 MVVM 分三层。页面结构（工作台 + 全窗�
 
 设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 3.3 节。
 
-- **分层**：纯逻辑在 `lib/`：`canvas-edit.ts`（移动、缩放和等比缩放、旋转、增删和新元素错开、对齐、等距、叠放和上下移一层、图层拖动排序、复制粘贴和复制一份）、`canvas-hit.ts`（点中测试、框选、Alt+点击轮流选）、`canvas-snap.ts`（吸附、和邻居的间距）、`canvas-gesture.ts`（手势的框、旋转手柄、拖动阈值、指针旁的标签）、`canvas-history.ts`、`canvas-table.ts`（含双击落在哪一格）、`canvas-view.ts`（缩放档位和以指针为中心的滚动、按键 → 命令、设计器里隐藏元素的样式）、`canvas-names.ts`（图层名的内容摘要）、`canvas-fix.ts`（「放大到能印」）、`canvas-inline.ts`（就地改字）、`canvas-menu.ts`（右键菜单的项）、`canvas-float.ts`（浮动工具条放哪）、`designer-shortcuts.ts`（快捷键的写法和快捷键表）、`insert-field-options.ts`、`gray-image.ts`；状态在 `view-models/use-canvas-designer.ts`（选中、撤销历史、剪贴板、缩放、开关、只在设计器里隐藏的元素）、`use-canvas-gesture.ts`（拖动、缩放、旋转、框选、平移、Ctrl+滚轮）、`use-image-import.ts`；组件在 `components/canvas-editor/`。
-- **布局**（参考平板上的绘图、排版软件，画布优先）：上面一条窄栏（预览内容、网格、吸附、「?」）；左边竖排元素图标；中间画布，左上角撤销重做、右下角缩放胶囊；选中时选框上方一条浮动工具条（拖动时藏起来，画布有焦点时 Tab 能到）；右边检查器分段标签（元素「文字 / 排列 / 图层」，没选中「模板 / 图层」，多选「排列 / 图层」；在「图层」页点选时留在这一页）；下面打印前检查收成一条，点开是清单，点一项选中那个元素。
-- **画布就是预览**：标签是模板页预览的同一份 HTML（`previewTemplate`），透明覆盖层只画框；拖动时只动覆盖层，松手才改草稿。不要在覆盖层上自己画元素内容。每个元素一圈浅色虚线；这一张不印的元素浅红底、框里写短原因（`RenderWarnings.elements`），条码宽度离最小不到 10% 时黄框。「隐藏」只在设计器里：往预览 HTML 里加一段按 `data-element-id` 藏起来的样式，不进模板。
-- **点中测试**：按位置算（`lib/canvas-hit.ts`），不按覆盖层的 DOM 顺序；只有边框的矩形、线只在描边 ±4 屏幕像素内点中，框里面落到下面的元素上；锁定的点不中、框不中，只能在图层里选；Ctrl / ⌘ + 拖动一定框选。
+- **分层**：纯逻辑在 `lib/`：`canvas-edit.ts`（移动、缩放和等比缩放、旋转、增删和新元素错开、对齐、等距、叠放和上下移一层、图层拖动排序、复制粘贴和复制一份）、`canvas-hit.ts`（点中测试、框选、Alt+点击轮流选）、`canvas-snap.ts`（吸附、和邻居的间距）、`canvas-gesture.ts`（手势的框、旋转手柄、拖动阈值、指针旁的标签）、`canvas-history.ts`、`canvas-table.ts`（含双击落在哪一格）、`canvas-view.ts`（缩放档位和以指针为中心的滚动、按键 → 命令、设计器里隐藏元素的样式）、`canvas-names.ts`（图层名的内容摘要）、`canvas-fix.ts`（「放大到能印」）、`canvas-inline.ts`（就地改字）、`canvas-menu.ts`（右键菜单的项）、`canvas-float.ts`（浮动工具条放哪些按钮、放在哪）、`designer-shortcuts.ts`（快捷键的写法和快捷键表）、`insert-field-options.ts`、`gray-image.ts`；状态在 `view-models/use-canvas-designer.ts`（选中、撤销历史、剪贴板、缩放、开关、只在设计器里隐藏的元素）、`use-canvas-gesture.ts`（拖动、缩放、旋转、框选、平移、Ctrl+滚轮；拖动中的手势和悬停放在一个小仓库里，只有 `CanvasStage` 订阅，拖动时设计器的其他部分不重新渲染）、`use-image-import.ts`；组件在 `components/canvas-editor/`。
+- **布局**（参考平板上的绘图、排版软件，画布优先）：上面一条窄栏（预览内容、网格、吸附、「?」）；左边竖排元素图标；中间画布，左上角撤销重做、右下角缩放胶囊；选中时选框上方一条浮动工具条（一行不折、六到八个按钮，按哪些看 `floatingTools`；锁定、叠放、等距在「⋯」里；真的拖起来才藏，画布有焦点时 Tab 能到）；点了设计器里的按钮（图层列表除外）焦点留在画布上，Ctrl+Z、方向键接着能用；右边检查器分段标签（元素「文字 / 排列 / 图层」，没选中「模板 / 图层」，多选「排列 / 图层」；在「图层」页点选时留在这一页）；下面打印前检查收成一条，点开是清单，点一项选中那个元素。
+- **画布就是预览**：标签是模板页预览的同一份 HTML（`previewTemplate`），透明覆盖层只画框；拖动时只动覆盖层，松手才改草稿。不要在覆盖层上自己画元素内容。画布要安静：网格默认关，标尺是纸色（不是模板页的黄色软尺），元素框只在悬停时出现；这一张不印的元素浅红底、框里写短原因（`RenderWarnings.elements`），条码宽度离最小不到 10% 时黄框。「隐藏」只在设计器里：往预览 HTML 里加一段按 `data-element-id` 藏起来的样式，不进模板。
+- **点中测试**：按位置算（`lib/canvas-hit.ts`），不按覆盖层的 DOM 顺序；只有边框的矩形、线只在描边 ±4 屏幕像素内点中，框里面落到下面的元素上；锁定的点不中、框不中，只能在图层里选；Ctrl+点击（macOS 上 ⌘+点击，`isToggleClick`）和 Shift+点击加选减选，Ctrl / ⌘ + 拖过 3px 是框选。
 - **输入设备**：支持鼠标、键盘、触控板和数位板；不支持触摸屏，不写触摸专用的代码。数位板的笔是 `pointerType: 'pen'`，和鼠标同一条路，不按 pointerType 过滤；按下后挪不到 3px 不算拖动，笔尖落下的抖动不会挪动元素；笔杆按键走 `contextmenu`。中键或空格 + 拖动平移；Ctrl+滚轮、触控板捏合以指针为中心缩放。
 - **扫码**：画布是可聚焦的 `div`，不是输入框；只处理方向键、Delete / Backspace、Esc、F1、菜单键 / Shift+F10、空格（平移）和 Ctrl / ⌘ 组合键（`designerCommand`，有测试）。不要拦字母、数字做快捷键，也不要给画布加 `data-keep-focus`（那只对工作台有意义）：配置中心要把扫码枪的字符送进「预览内容」。就地改字、图层改名是普通输入框，扫码枪的字会进去（正在打字，本来就该这样）。
 - **右键菜单**是页面里的（`ContextMenu.tsx`，挂在 body 上），画布 `preventDefault` 掉浏览器的右键，主进程的系统菜单不会在画布上弹出。
 - **改模板只经 `commit`**：先记撤销历史再交给草稿；同一个字段的连续输入用同一个合并键；就地改字改完才提交一次（一步撤销）；按住方向键合成一步。
 - **剪贴板**在设计器的内存里；**图片**在页面里解码，模板只存灰度像素。
-- **退出时没保存的模板**：`use-templates` 经 `templates:unsaved-changed` 告诉主进程；主进程问「保存并退出」时经 `templates:save-for-quit` 请界面按平常的流程保存，界面用 `templates:saved-for-quit` 回答。
+- **退出时没保存的模板**：`use-templates` 经 `templates:unsaved-changed` 告诉主进程；主进程问「保存并退出」时经 `templates:save-for-quit` 请界面按平常的流程保存，界面用 `templates:saved-for-quit` 回答。就地改字在窗口失去焦点时就提交，改的字先进草稿、算没保存。「重启更新」在装之前先问（安装程序会直接结束本程序），有没保存的模板时不静默更新。
 - **模板库**：模板页的第三个视图（列表 / 编辑 / 模板库），算作模板页的「编辑器」（Esc、面包屑回到列表）。筛选和缩略图比例在 `lib/template-library.ts`，读取在 `view-models/use-template-library.ts`，组件 `components/TemplateLibrary.tsx`；缩略图是 `sandbox=""` 的 iframe，不要换成能跑脚本的方式。「用这个模板」之后预览内容绑着模板库示例（`use-sample-content.ts` 的 `library`，只对复制出的那个模板生效，`librarySampleIdFor`），改预览内容就解除。
 
 ## 播报与提示音

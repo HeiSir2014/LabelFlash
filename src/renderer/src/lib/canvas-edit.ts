@@ -255,12 +255,38 @@ export function addElement(template: CanvasTemplate, kind: CanvasElementKind, ce
   const id = newElementId(template.elements);
   const created = newCanvasElement(kind, id, template.paper);
   const at = center ?? { x: template.paper.widthMm / 2, y: template.paper.heightMm / 2 };
-  const box = clampBox(
-    { ...boxOf(created), x: at.x - created.width / 2, y: at.y - created.height / 2 },
-    template.paper,
+  const box = clearOfStack(
+    clampBox({ ...boxOf(created), x: at.x - created.width / 2, y: at.y - created.height / 2 }, template.paper),
+    template,
   );
   const element = withBox({ ...created, name: uniqueName(created.name, template.elements) }, box);
   return { template: { ...template, elements: [...template.elements, element] }, ids: [id], skippedImages: 0 };
+}
+
+/** 和已有元素的左上角重合（差不到这么多毫米）就算叠在一起：比数字框能显示的 0.01mm 还细。 */
+const SAME_SPOT_MM = 0.005;
+
+/**
+ * 新元素正好落在已有元素上（连点几下「文字」，全落在纸中间）时，像粘贴一样往右下错开 2mm，直到不再重合；
+ * 收进纸内后位置不再变（已经顶到纸边）就停下，宁可重合也不死循环。
+ */
+function clearOfStack(box: Box, template: CanvasTemplate): Box {
+  const isTaken = (candidate: Box) =>
+    template.elements.some(
+      (element) => Math.abs(element.x - candidate.x) < SAME_SPOT_MM && Math.abs(element.y - candidate.y) < SAME_SPOT_MM,
+    );
+  let current = box;
+  while (isTaken(current)) {
+    const next = clampBox(
+      { ...current, x: current.x + PASTE_OFFSET_MM, y: current.y + PASTE_OFFSET_MM },
+      template.paper,
+    );
+    if (next.x === current.x && next.y === current.y) {
+      break;
+    }
+    current = next;
+  }
+  return current;
 }
 
 /** 删掉选中的（锁定的留着）；没有能删的原样返回。 */

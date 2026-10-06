@@ -207,6 +207,29 @@ describe('adding elements', () => {
     expect(second?.template.elements.map((element) => element.name)).toEqual(['文字', '文字 2']);
   });
 
+  test('offsets a new element that would land exactly on an existing one, like paste', () => {
+    const first = addElement(canvas(), 'text');
+    const second = first && addElement(first.template, 'text');
+    const third = second && addElement(second.template, 'text');
+    expect(third?.template.elements.map((element) => [element.x, element.y])).toEqual([
+      [15, 17],
+      [17, 19],
+      [19, 21],
+    ]);
+  });
+
+  test('keeps an offset new element inside the paper', () => {
+    // 宽 30 的文字只能在 x 0–30 之间：错开到纸外时收回纸内，这时就不再错开了（不会死循环）。
+    let template = canvas();
+    for (let count = 0; count < 12; count += 1) {
+      template = addElement(template, 'text', { x: 45, y: 37 })?.template ?? template;
+    }
+    for (const element of template.elements) {
+      expect(element.x + element.width).toBeLessThanOrEqual(PAPER.widthMm);
+      expect(element.y + element.height).toBeLessThanOrEqual(PAPER.heightMm);
+    }
+  });
+
   test('refuses to add past the element limit', () => {
     const full = canvas(...Array.from({ length: CANVAS_LIMITS.elements }, (_, index) => rect(`r${index}`, 0, 0, 1, 1)));
     expect(addElement(full, 'line')).toBeNull();

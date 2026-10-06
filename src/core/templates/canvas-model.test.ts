@@ -60,6 +60,12 @@ describe('canvas model', () => {
     }
   });
 
+  // {完整内容} 常带中文，一维码编不了，新加的条码一上来就是「不印」；{编码} 是识别规则里最常见、只有字母数字的字段。
+  test('binds a new barcode to the code field', () => {
+    const barcode = newCanvasElement('barcode', 'e1', { widthMm: 60, heightMm: 40 });
+    expect(barcode.kind === 'barcode' && barcode.value).toBe('{编码}');
+  });
+
   describe('snapBorderDots', () => {
     test('has no border at zero or less', () => {
       expect(snapBorderDots(0, DOT)).toBe(0);

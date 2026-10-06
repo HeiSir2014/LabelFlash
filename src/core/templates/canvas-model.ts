@@ -284,7 +284,8 @@ export function newCanvasElement(kind: CanvasElementKind, id: string, paper: Pap
         inverse: false,
       };
     case 'barcode':
-      return { ...base, kind, symbology: 'code128', value: '{完整内容}', showText: true, textSizeMm: 2.5 };
+      // 默认印 {编码}：{完整内容} 常带中文，一维码编不了，新加的条码一上来就是「不印」。
+      return { ...base, kind, symbology: 'code128', value: '{编码}', showText: true, textSizeMm: 2.5 };
     case 'qr':
       return { ...base, kind, value: '{完整内容}', errorCorrection: 'M' };
     case 'image':

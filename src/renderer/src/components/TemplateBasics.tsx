@@ -3,6 +3,7 @@ import { resolvePrinter } from '../../../core/printing/resolve-printer';
 import { type LabelTemplate, TEMPLATE_LIMITS, withPaper } from '../../../core/templates/template-model';
 import type { PrinterInfo } from '../../../core/types';
 import { findPreset, PAPER_LIMITS_MM, PAPER_PRESETS, type PaperSize, paperKey } from '../../../shared/paper-sizes';
+import { paperOptionLabel } from '../lib/paper-text';
 import { NumberField, SelectField, TextInput } from './form-controls';
 
 /** 自定义纸张尺寸按 0.1mm 调：驱动和打印页面的精度都是这个量级。 */
@@ -11,7 +12,7 @@ const PAPER_STEP_MM = 0.1;
 const CUSTOM_PAPER = 'custom';
 
 const PAPER_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  ...PAPER_PRESETS.map((preset) => ({ value: paperKey(preset), label: `${preset.name}（${preset.usage}）` })),
+  ...PAPER_PRESETS.map((preset) => ({ value: paperKey(preset), label: paperOptionLabel(preset) })),
   { value: CUSTOM_PAPER, label: '自定义…' },
 ];
 

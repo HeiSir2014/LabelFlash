@@ -1,6 +1,15 @@
 import { formatPaperSize, type PaperCheck } from '../../../shared/driver-paper';
 import type { PaperSize } from '../../../shared/paper-sizes';
 
+/** 用途里的括号说明（「（内置模板）」）：放进下拉框会变成括号套括号，读起来乱，去掉。 */
+const BRACKETED_NOTE = /（[^）]*）/g;
+
+/** 纸张下拉框的一项：「60×40 标签 · 样衣标签」，尺寸和用途用间隔号分开。 */
+export function paperOptionLabel(preset: { name: string; usage: string }): string {
+  const usage = preset.usage.replace(BRACKETED_NOTE, '').trim();
+  return usage === '' ? preset.name : `${preset.name} · ${usage}`;
+}
+
 export interface PaperCheckView {
   tone: 'ok' | 'warning';
   text: string;

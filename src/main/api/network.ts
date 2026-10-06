@@ -123,6 +123,28 @@ export function isLanClientAddress(address: string | undefined): boolean {
   );
 }
 
+/**
+ * 对方是不是这台电脑所在网段里的（局域网共享、mDNS 只理这些）：和选中的某块局域网网卡同一个子网。
+ * 本机回环只在开发 / E2E 的开关打开时算（安装版里本机不需要连自己的共享打印机）。
+ */
+export function isOnLanSubnet(
+  address: string | undefined,
+  interfaces: readonly LanInterface[],
+  allowLoopback: boolean,
+): boolean {
+  if (address === undefined) {
+    return false;
+  }
+  const plain = plainAddress(address);
+  if (isIP(plain) !== 4) {
+    return false;
+  }
+  if (plain.startsWith(IPV4_LOOPBACK_PREFIX)) {
+    return allowLoopback;
+  }
+  return interfaces.some((iface) => isSameSubnet(iface.address, plain, iface.netmask));
+}
+
 const BITS_PER_OCTET = 8;
 const OCTET_RANGE = 2 ** BITS_PER_OCTET;
 

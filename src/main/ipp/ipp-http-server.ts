@@ -15,7 +15,7 @@ import { PDF_LIMITS } from '../../core/pdf/pdf-model';
 import type { Clock } from '../../core/types';
 import { BRAND } from '../../shared/brand';
 import { DEFAULT_IPP_PORT } from '../../shared/ipp-sharing';
-import { isLanClientAddress, plainAddress } from '../api/network';
+import { isLoopbackAddress, plainAddress } from '../api/network';
 import { RateLimiter } from '../api/rate-limiter';
 import { HttpListener, type ListenStatus } from '../net/http-listener';
 import { printerListPage, printerPage } from './ipp-pages';
@@ -95,8 +95,8 @@ export interface IppHttpServerDeps {
   onAccepted: (job: AcceptedJob) => void;
   /** 请求没带合规的 Host 时网址里用的主机（这台电脑的第一个局域网地址）。 */
   fallbackHost: () => string;
-  /** 只接受这些地址来的连接；默认只接受局域网。测试里换掉。 */
-  isAllowedAddress?: ((address: string | undefined) => boolean) | undefined;
+  /** 只接受这些地址来的连接（IppSharing 给的是「和选中的局域网网卡同一网段」）。 */
+  isAllowedAddress: (address: string | undefined) => boolean;
   /** 测试里调小。 */
   limits?: Partial<typeof IPP_HTTP_LIMITS> | undefined;
   /** 绑定的 IPv4 地址，默认 0.0.0.0；测试和 E2E 用 127.0.0.1，不在局域网上开端口。 */
@@ -178,10 +178,12 @@ export class IppHttpServer {
   }
 
   private configure(server: Server): void {
-    const isAllowed = this.deps.isAllowedAddress ?? isLanClientAddress;
-    // 不是局域网来的连接一个字节都不读：防火墙没拦住的公网、VPN 地址到这里为止。
+    // 不是这台电脑所在网段来的连接一个字节都不读：防火墙没拦住的公网、别的网段、VPN 地址到这里为止。
+    // 监听的仍是 0.0.0.0 而不是逐块网卡绑：笔记本换 Wi-Fi、DHCP 换地址时逐个绑的地址会失效，
+    // 要跟着重绑；按连接时的网卡列表核对子网，地址变了也立刻生效。
+    // 本机回环例外放进来：监听后的自检（HttpListener 从 127.0.0.1 请求自己）要能连上；回环来的其余请求在 serve 里断开。
     server.on('connection', (socket) => {
-      if (!isAllowed(socket.remoteAddress)) {
+      if (!this.deps.isAllowedAddress(socket.remoteAddress) && !isLoopbackAddress(socket.remoteAddress)) {
         socket.destroy();
       }
     });
@@ -201,6 +203,11 @@ export class IppHttpServer {
       return true;
     };
     try {
+      // 只有自检能走到这里之前（HttpListener.dispatch 先认它）；不在许可网段的回环连接到这里断开。
+      if (!this.deps.isAllowedAddress(request.socket.remoteAddress)) {
+        request.socket.destroy();
+        return;
+      }
       if (!this.addressLimiter.take(address)) {
         sendText(request, response, HTTP.unavailable, '请求太快，请稍后再试', {
           'retry-after': String(RETRY_AFTER_SECONDS),

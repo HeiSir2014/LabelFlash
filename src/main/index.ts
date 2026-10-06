@@ -763,8 +763,9 @@ async function bootstrap(): Promise<void> {
     firewall: {
       check: () => firewallStatus(app.getPath('exe')),
       add: async () => {
-        const result = await addFirewallRule(app.getPath('exe'));
-        // 同一条脚本也放行了局域网共享（TCP 和 UDP 5353）：共享重新看要不要监听、广播。
+        // 脚本会先删掉本程序同名的旧规则：共享开着时要连 mDNS 那条一起重新加上。
+        const result = await addFirewallRule(app.getPath('exe'), { discovery: settings.current.ippSharingEnabled });
+        // 同一条脚本也放行了局域网共享的 TCP（和开着时的 UDP 5353）：共享重新看要不要监听、广播。
         // ippSharing 在下面才建：这个回调要等操作员点按钮才会跑，那时已经有了。
         void ippSharing.firewallChanged();
         return result;
@@ -817,7 +818,7 @@ async function bootstrap(): Promise<void> {
       check: () => firewallStatus(app.getPath('exe')),
       checkDiscovery: () => discoveryFirewallStatus(app.getPath('exe')),
       add: async () => {
-        const result = await addFirewallRule(app.getPath('exe'));
+        const result = await addFirewallRule(app.getPath('exe'), { discovery: true });
         // 本机接口用的是同一条规则：它也重新检查。
         await localApi.checkFirewall();
         return result;
@@ -826,6 +827,8 @@ async function bootstrap(): Promise<void> {
     holdUntilFirewallAllows: app.isPackaged,
     candidatePorts: ippCandidatePorts(process.env, app.isPackaged),
     ipv4Host: ippBindHost(process.env, app.isPackaged),
+    // 只在开发 / E2E 把共享限制在本机回环时才接受回环来的连接。
+    allowLoopback: ippBindHost(process.env, app.isPackaged) !== undefined,
     discoveryEnabled: isDiscoveryEnabled(process.env, app.isPackaged),
     lanInterfaces: () => lanIPv4Interfaces(networkInterfaces()),
     render: { renderer: ippRenderer, pieces: pdfCache, printFields: (input) => service.printFields(input) },

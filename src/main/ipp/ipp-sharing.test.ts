@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { connect } from 'node:net';
 import { nameAttr } from '../../core/ipp/ipp-attributes';
 import { GROUP_TAGS, OPERATIONS } from '../../core/ipp/ipp-constants';
 import { attributeIn, ippRequest, MINIMAL_PDF } from '../../core/ipp/testing/ipp-requests';
@@ -64,6 +65,7 @@ function createSharing(patch: Partial<AppSettings> = {}, overrides: Partial<IppS
     candidatePorts: [0],
     // 测试只在本机回环上开端口，不往局域网广播。
     ipv4Host: '127.0.0.1',
+    allowLoopback: true,
     discoveryEnabled: false,
     lanInterfaces: () => [],
     render: {
@@ -173,6 +175,24 @@ describe('IppSharing', () => {
     await sharing.settingsChanged(settings(), before);
     expect(sharing.pendingJobs).toBe(0);
     expect(sharing.status().pendingClients).toEqual([]);
+  });
+
+  // 安装版里本机回环不算局域网：只有和选中网卡同一网段的电脑连得上。
+  test('drops connections from outside the selected subnets', async () => {
+    const { sharing } = createSharing({}, { allowLoopback: false });
+    await sharing.start();
+    // 裸 TCP：Bun 1.4 的 fetch 碰到一连上就断开的服务偶尔会让测试进程崩溃。
+    const port = new URL(urlOf(sharing.status())).port;
+    const received = await new Promise<string>((resolve) => {
+      let text = '';
+      const socket = connect(Number(port), '127.0.0.1', () => socket.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n'));
+      socket.on('data', (chunk) => {
+        text += chunk.toString();
+      });
+      socket.on('error', () => undefined);
+      socket.on('close', () => resolve(text));
+    });
+    expect(received).toBe('');
   });
 
   test('asks for the share password once it is set', async () => {

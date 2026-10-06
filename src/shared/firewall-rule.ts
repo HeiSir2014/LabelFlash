@@ -41,6 +41,8 @@ const IMPORT_MODULE = `Import-Module (Join-Path $env:SystemRoot 'System32\\Windo
  *   不按名称删别处的规则：每个 Windows 用户各装一份，各有各的规则，不能互相删。
  * - 只放行 TCP（本机接口、局域网共享）和 UDP 5353（mDNS）；所有网络类型都生效
  *   （Windows 给新连的 Wi-Fi 默认是「公用网络」，只放专用网络的话店里多半连不上）。
+ * - UDP 5353 只在打开了局域网共享时加（$Discovery），只放行同一网段（LocalSubnet）；安装包不加它。
+ *   TCP 那条不限网段：本机接口的局域网调用方可能在别的网段（经路由器），局域网共享在程序里按网段过滤连接。
  *   这是按需求方的取舍：公司内部局域网使用，方便优先；局域网里的调用照样要程序密钥。
  */
 const MUTATE_BODY = `
@@ -54,7 +56,9 @@ try {
     Sort-Object -Property Name -Unique | Remove-NetFirewallRule
   if (-not $Remove) {
     New-NetFirewallRule -DisplayName $Name -Direction Inbound -Action Allow -Protocol TCP -Program $Program -Profile Any | Out-Null
-    New-NetFirewallRule -DisplayName $Name -Direction Inbound -Action Allow -Protocol UDP -LocalPort ${MDNS_UDP_PORT} -Program $Program -Profile Any | Out-Null
+    if ($Discovery) {
+      New-NetFirewallRule -DisplayName $Name -Direction Inbound -Action Allow -Protocol UDP -LocalPort ${MDNS_UDP_PORT} -RemoteAddress LocalSubnet -Program $Program -Profile Any | Out-Null
+    }
   }
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)
@@ -113,8 +117,18 @@ if ($Check) {
 }
 `;
 
+/** 加规则时的选项。 */
+export interface FirewallOptions {
+  /** 同时加 mDNS（UDP 5353，只限同一网段）那条：局域网共享打开着时为 true。 */
+  discovery: boolean;
+}
+
 /** 程序里用：路径直接写进脚本（再整段 Base64 交给 -EncodedCommand，不经过命令行转义）。 */
-export function firewallScript(action: FirewallAction, program: string): string {
+export function firewallScript(
+  action: FirewallAction,
+  program: string,
+  options: FirewallOptions = { discovery: false },
+): string {
   const variables = [`$Name = ${powerShellLiteral(FIREWALL_RULE_NAME)}`, `$Program = ${powerShellLiteral(program)}`];
   if (action === 'check') {
     return [...variables, CHECK_BODY].join('\n');
@@ -122,7 +136,8 @@ export function firewallScript(action: FirewallAction, program: string): string 
   if (action === 'check-discovery') {
     return [...variables, CHECK_DISCOVERY_BODY].join('\n');
   }
-  return [...variables, `$Remove = $${action === 'remove'}`, MUTATE_BODY].join('\n');
+  const flags = [`$Remove = $${action === 'remove'}`, `$Discovery = $${options.discovery}`];
+  return [...variables, ...flags, MUTATE_BODY].join('\n');
 }
 
 /**
@@ -134,6 +149,8 @@ export function firewallInstallerScript(): string {
   return [
     'param([Parameter(Mandatory = $true)][string]$Program, [switch]$Remove, [switch]$Check)',
     `$Name = ${powerShellLiteral(FIREWALL_RULE_NAME)}`,
+    // 安装时不加 mDNS 那条：局域网共享默认关，打开共享时由程序里的按钮加。
+    '$Discovery = $false',
     CHECK_EXISTS_FOR_INSTALLER,
     MUTATE_BODY,
   ].join('\n');

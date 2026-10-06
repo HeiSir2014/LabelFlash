@@ -11,7 +11,7 @@ import type { FirewallStatus } from '../../shared/local-api';
 import { formatPaperName, type PaperSize, paperKey, parsePaperKey } from '../../shared/paper-sizes';
 import type { PrinterReadiness } from '../../shared/printer-readiness';
 import type { AppSettings } from '../../shared/settings';
-import type { LanInterface } from '../api/network';
+import { isOnLanSubnet, type LanInterface } from '../api/network';
 import { ANY_FREE_PORT, portOrder } from '../net/http-listener';
 import type { SqliteIppStore } from '../storage/sqlite-ipp-store';
 import { ClientApprovals, type PendingClient } from './client-approvals';
@@ -98,6 +98,8 @@ export interface IppSharingDeps {
   candidatePorts: readonly number[];
   /** 监听的 IPv4 地址；默认所有网卡，测试和 E2E 用 127.0.0.1。 */
   ipv4Host?: string | undefined;
+  /** 接受本机回环来的连接（只在开发 / E2E 的开关打开时）；其余只接受和选中的局域网网卡同一网段的。 */
+  allowLoopback: boolean;
   discoveryEnabled: boolean;
   lanInterfaces: () => LanInterface[];
   /** 渲染页、位图缓存、打印（PrintService.printFields）。 */
@@ -173,6 +175,7 @@ export class IppSharing {
         this.publish();
       },
       fallbackHost: () => deps.lanInterfaces()[0]?.address ?? LOOPBACK_HOST,
+      isAllowedAddress: (address) => isOnLanSubnet(address, deps.lanInterfaces(), deps.allowLoopback),
       ipv4Host: deps.ipv4Host,
     });
     this.advertiser = new MdnsAdvertiser({

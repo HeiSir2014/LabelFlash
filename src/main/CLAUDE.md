@@ -134,7 +134,8 @@
   - `mdns-advertiser.ts`：UDP 5353（`reuseAddr`），每块局域网网卡加入组播组、用自己的地址回答，只理局域网地址来的包；测试换成本机回环上的收包口，不发组播；
   - `ipp-quit.ts`：退出确认的文字、拒绝「重启更新」的说明、停共享最多等多久。
 - **退出**：`index.ts` 的同一个 before-quit 里处理（模板 → 共享 → 批量和 PDF → 删缓存、停共享），不在 will-quit 里等；will-quit 只再 `void stop()` 一次兜底（「重启更新」、关机不经过 before-quit 的收尾）。
-- **防火墙**：本机接口那条规则按程序放行 TCP（覆盖 IPP 端口），另有 UDP 5353 一条；`check` 只看 TCP（旧安装不回退），`check-discovery` 看 UDP。任一边加了规则，两边都重新检查。
+- **网段**：连接（和 mDNS 的包）只接受和 `lanIPv4Interfaces()` 某块网卡同一子网的（`isOnLanSubnet`），本机回环只在开发开关下；仍监听 0.0.0.0，不逐块网卡绑（地址会变）。
+- **防火墙**：本机接口那条规则按程序放行 TCP（覆盖 IPP 端口，不限网段），UDP 5353 一条只在共享打开时加、只限 LocalSubnet（`firewallScript` 的 `discovery`；两个按钮加规则时都按共享开没开传，免得删掉它）；`check` 只看 TCP（旧安装不回退），`check-discovery` 看 UDP。任一边加了规则，两边都重新检查。
 - **net/**：`http-listener.ts` 是本机接口和局域网共享共用的监听（端口回退、回环自检、重启时收尾）。
 
 ## 本地文字识别（`ocr/`）

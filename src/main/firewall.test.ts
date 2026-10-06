@@ -27,6 +27,7 @@ describe('firewall', () => {
     const command = elevatedCommand(
       "C:\\O'Neil\\CDL-LabelFlash.exe",
       'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      { discovery: false },
     );
     expect(command).toMatch(
       /^\$p = Start-Process 'C:\\Windows\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe' -Verb RunAs -Wait -PassThru -WindowStyle Hidden /,

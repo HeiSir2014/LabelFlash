@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { firewallScript, powerShellLiteral } from '../shared/firewall-rule';
+import { type FirewallOptions, firewallScript, powerShellLiteral } from '../shared/firewall-rule';
 import { FIREWALL_STATES, type FirewallStatus } from '../shared/local-api';
 
 /** 查规则最多等这么久：PowerShell 第一次加载防火墙模块要一两秒。 */
@@ -26,8 +26,8 @@ function encode(script: string): string {
  * 以管理员身份运行加规则的脚本：外层 PowerShell 用 Start-Process -Verb RunAs 弹管理员确认，
  * 内层只拿到 Base64，程序路径不经过任何命令行转义。操作员拒绝时 Start-Process 报错，外层退出码不为 0。
  */
-export function elevatedCommand(program: string, powerShell: string): string {
-  const inner = encode(firewallScript('add', program));
+export function elevatedCommand(program: string, powerShell: string, options: FirewallOptions): string {
+  const inner = encode(firewallScript('add', program, options));
   return [
     `$p = Start-Process ${powerShellLiteral(powerShell)} -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${inner}'`,
     'exit $p.ExitCode',
@@ -75,14 +75,16 @@ export async function discoveryFirewallStatus(program: string): Promise<Firewall
 }
 
 /**
- * 弹管理员确认，加两条只放行这个程序的入站规则（TCP 所有端口、UDP 5353）；返回加完之后查到的 TCP 那条的状态。
+ * 弹管理员确认，加只放行这个程序的入站规则：TCP 所有端口，打开了局域网共享时再加 UDP 5353（只限同一网段）。
+ * 加之前会删掉本程序同名的旧规则，所以本机接口那边加规则时也要按共享开没开传 discovery，不然会把 mDNS 那条删掉。
+ * 返回加完之后查到的 TCP 那条的状态。
  */
-export async function addFirewallRule(program: string): Promise<FirewallStatus> {
+export async function addFirewallRule(program: string, options: FirewallOptions): Promise<FirewallStatus> {
   if (process.platform !== 'win32') {
     return 'unknown';
   }
   const { ok } = await runPowerShell(
-    ['-Command', elevatedCommand(program, powerShellPath(process.env))],
+    ['-Command', elevatedCommand(program, powerShellPath(process.env), options)],
     ADD_TIMEOUT_MS,
   );
   if (!ok) {

@@ -26,7 +26,7 @@
 | 驱动纸张检测、打开打印机设置 | ✅ 常驻 PowerShell 查询 CIM；驱动「打印首选项」 | ✅ `ipptool`；系统设置「打印机与扫描仪」 |
 | 图中文字识别（货架号，本地 OCR） | ✅ 安装包带扩展和模型（`resources/ocr/`）；扩展静态链接自己编的 ONNX Runtime（/MT），不需要 VC++ 运行库，不要求 AVX2 | 未做：不带 OCR，这一步跳过，电脑不向手机要图 |
 | 本机接口（HTTP） | ✅ 防火墙规则：安装时和配置页按钮（PowerShell NetSecurity，弹 UAC）；占用端口的程序用 `Get-NetTCPConnection` 查 | ✅（未在 Mac 上验证）pkg 装完把程序加进系统防火墙允许列表；占用端口的程序用 `lsof` 查 |
-| 局域网共享（IPP 打印服务、mDNS 自动发现） | ✅ 防火墙规则（TCP + UDP 5353）和本机接口共用 | ✅（未在 Mac 上验证）和系统的 mDNSResponder 共用 5353 |
+| 局域网共享（IPP 打印服务、mDNS 自动发现） | ✅ TCP 规则和本机接口共用；打开共享后加只限同一网段的 UDP 5353 | ✅（未在 Mac 上验证）和系统的 mDNSResponder 共用 5353 |
 | 驱动安装（在线签名清单） | ✅ PnP 检测、Authenticode、一次 UAC 静默安装 | ✅（未在 Mac 上验证）只认清单里有的型号；pkg + 管理员密码，或打开官方下载页 |
 | 打印机状态检测与异常通知 | ✅ | 未做：状态按「未知」处理，不阻止打印；计划改用 CUPS 的 `printer-state-reasons` |
 | 打印机诊断修复 | ✅ 探测进程查服务、状态、USB（PnP）、队列；修复经一次性 / 提权的 PowerShell（UAC） | ✅（未在 Mac 上验证）`lpstat`、`ipptool`、`system_profiler`；改 CUPS 先以当前用户，被拒再经 `osascript` 要管理员密码 |
@@ -133,7 +133,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 - IPC 只接受主窗口主 frame 发来的消息，参数全部经过 `src/main/ipc-validators.ts` 校验。
 - 密钥用 Electron `safeStorage` 加密保存，不写进日志，不随规则导出，也不回传给界面。
 - 用户写的正则只在隔离上下文里执行，有超时。HTTP 查询和打印结果通知用 `net.fetch`。
-- 局域网共享默认关；只接受私有网段、链路本地和本机的连接（在 connection 事件里就断开别的），先认证再读正文，文档和同时在收的总量有上限；收到的 PDF、图片只在 sandbox 的渲染页里解析，光栅由 core 的纯 TS 解码；对方只能用六个 IPP 操作，碰不到程序的别的功能。共享密码只存摘要。测试只在 127.0.0.1 上开端口，不改防火墙、不发组播。
+- 局域网共享默认关；只接受和选中的局域网网卡同一子网的连接（在 connection 事件里就断开别的；本机回环只在开发开关下），先认证再读正文，文档和同时在收的总量有上限；收到的 PDF、图片只在 sandbox 的渲染页里解析，光栅由 core 的纯 TS 解码；对方只能用六个 IPP 操作，碰不到程序的别的功能。共享密码只存摘要。测试只在 127.0.0.1 上开端口，不改防火墙、不发组播。
 - `electron-builder.yml` 里的 fuses 不放开。
 - 主进程和 preload 的 bundle 必须自包含，安装包里没有 `node_modules`，由 `bun run verify:bundle` 把关。
 - 下载的驱动安装包在核对大小、SHA-256（签名清单里的值）和签名者之前绝不运行；运行的是复制到管理员专属目录、复核过哈希的那份。驱动清单只用内置公钥核对通过、没过期、不比用过的旧的。

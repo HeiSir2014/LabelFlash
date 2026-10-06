@@ -59,12 +59,15 @@ describe('firewall rule scripts', () => {
     expect(script).toContain('-Profile Any');
   });
 
-  // 局域网共享的自动发现要收 UDP 5353：和 TCP 那条一起加，安装包用同一份脚本。
-  test('allows mDNS on UDP 5353 for the same program alongside TCP', () => {
-    for (const script of [firewallScript('add', 'C:\\a.exe'), firewallInstallerScript()]) {
-      expect(script).toContain('-Protocol TCP');
-      expect(script).toContain(`-Protocol UDP -LocalPort ${MDNS_UDP_PORT}`);
-    }
+  // 局域网共享的自动发现要收 UDP 5353：只在打开了共享时加，而且只放行同一网段来的；安装包不加。
+  test('allows mDNS on UDP 5353 from the local subnet only when sharing asks for it', () => {
+    const udp = `-Protocol UDP -LocalPort ${MDNS_UDP_PORT} -RemoteAddress LocalSubnet`;
+    const withDiscovery = firewallScript('add', 'C:\\a.exe', { discovery: true });
+    expect(withDiscovery).toContain('$Discovery = $true');
+    expect(withDiscovery).toContain(udp);
+    expect(withDiscovery).toContain('-Protocol TCP');
+    expect(firewallScript('add', 'C:\\a.exe')).toContain('$Discovery = $false');
+    expect(firewallInstallerScript()).toContain('$Discovery = $false');
   });
 
   // 原来的查询只看 TCP 那条：只有旧规则的电脑上本机接口照旧算放行。

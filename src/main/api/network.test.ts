@@ -3,6 +3,7 @@ import {
   isLanClientAddress,
   isLoopbackAddress,
   isLoopbackHost,
+  isOnLanSubnet,
   isSameSubnet,
   lanIPv4Addresses,
   lanIPv4Interfaces,
@@ -101,6 +102,25 @@ describe('isLanClientAddress', () => {
     for (const address of ['8.8.8.8', '172.32.0.1', '100.64.0.1', '198.18.0.1', '::1', 'fe80::1', '', undefined]) {
       expect(isLanClientAddress(address)).toBe(false);
     }
+  });
+});
+
+describe('isOnLanSubnet', () => {
+  const cards = [{ name: 'Wi-Fi', address: '192.168.1.10', netmask: '255.255.255.0' }];
+
+  // 「局域网」指这台电脑所在的网段，不是任何私有地址：同一公司别的网段、VPN 分到的私有地址都不算。
+  test('accepts only peers on the subnet of a selected card', () => {
+    expect(isOnLanSubnet('192.168.1.23', cards, false)).toBe(true);
+    expect(isOnLanSubnet('::ffff:192.168.1.23', cards, false)).toBe(true);
+    expect(isOnLanSubnet('192.168.2.23', cards, false)).toBe(false);
+    expect(isOnLanSubnet('10.0.0.5', cards, false)).toBe(false);
+    expect(isOnLanSubnet('fe80::1', cards, false)).toBe(false);
+    expect(isOnLanSubnet(undefined, cards, false)).toBe(false);
+  });
+
+  test('accepts loopback only with the development switch', () => {
+    expect(isOnLanSubnet('127.0.0.1', cards, false)).toBe(false);
+    expect(isOnLanSubnet('127.0.0.1', [], true)).toBe(true);
   });
 });
 

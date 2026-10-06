@@ -82,6 +82,21 @@ test('loads the UI over app:// and previews a scanned label', async ({ electronA
   await expect(page.locator('.status-strip__title')).toHaveText('扫码内容无法识别');
 });
 
+/**
+ * 退出不能卡住：没有批量打印、没有 PDF 在打印时，关窗应该在几秒内让程序真的退出，不是等到测试框架的
+ * 60 秒整体超时才发现。曾经因为在 will-quit 里 preventDefault 之后又在 will-quit 里重新调用
+ * app.quit()（而不是走 before-quit 本来就有的那一套）而彻底卡死：Electron 不会因为在 will-quit
+ * 里再调一次 app.quit() 就重新走一遍退出流程，进程永远不会真的退出。
+ */
+test('quits promptly when nothing is printing', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  const start = Date.now();
+  await app.close();
+  // 明显比测试整体的 60 秒超时短：正常退出不该接近这个数，拖到这么久本身就说明卡住了。
+  expect(Date.now() - start).toBeLessThan(10_000);
+});
+
 test('takes a burst of lines with Enters in between as one multi-line scan', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
   await allowSlowScannerLines(page);

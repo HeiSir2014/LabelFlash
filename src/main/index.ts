@@ -685,9 +685,19 @@ async function bootstrap(): Promise<void> {
     const pendingPdf = pdf.pendingQuit();
     const totalPending = (pendingBatch?.labels.length ?? 0) + (pendingPdf?.labels.length ?? 0);
     if (!shouldConfirmBatchQuit(totalPending, isSystemShutdown)) {
-      readyToQuit = true;
-      isQuitting = true;
-      mobile.quit();
+      // 没有要确认的，但还要删掉这次出块里没打过的缓存位图（见 discardUnprintedCache）：这是异步的，
+      // 不能让退出真的发生之后才做——进程可能在文件删掉之前就已经退出了。先拦住这一次，删完再调用
+      // app.quit() 重新触发：这时 readyToQuit 已经是 true，下一次进这个处理器会直接放行，不会再拦一次。
+      event.preventDefault();
+      pdf
+        .discardUnprintedCache()
+        .catch((error: unknown) => console.error('[pdf] failed to discard the unprinted cache on quit', error))
+        .finally(() => {
+          readyToQuit = true;
+          isQuitting = true;
+          mobile.quit();
+          app.quit();
+        });
       return;
     }
     event.preventDefault();
@@ -742,6 +752,11 @@ async function bootstrap(): Promise<void> {
             jobs.append(record);
           }
         }
+        // 这次出块里没打过的缓存位图（打过的、confirmQuit 钉住的除外）现在删掉，不然要等 7 天
+        // 的保留期才会被清理（1000 张约 260MB）。
+        await pdf
+          .discardUnprintedCache()
+          .catch((error: unknown) => console.error('[pdf] failed to discard the unprinted cache on quit', error));
         readyToQuit = true;
         isQuitting = true;
         mobile.quit();
@@ -898,14 +913,11 @@ async function bootstrap(): Promise<void> {
     }
   }, BACKGROUND_UPDATE_CHECK_MS);
   warmVoice();
-  // 退出前要删缓存文件（异步）：先拦住这一次 will-quit，清理完再自己调用 app.quit() 真正退出，
-  // 不然悬着的 Promise 没人等，进程可能在文件删掉之前就已经退出了。
-  let willQuitDone = false;
-  app.on('will-quit', (event) => {
-    if (willQuitDone) {
-      return;
-    }
-    event.preventDefault();
+  // 纯同步：will-quit 是退出前最后一个事件，这里 preventDefault 之后再异步收尾、重新调用
+  // app.quit() 不会正确重启退出流程（它不是 before-quit，Electron 不会重新走一遍这个事件链，
+  // 进程会一直挂着）。会写文件的收尾（PDF 缓存清理）放在 before-quit 里用那边已经在用的
+  // 「preventDefault → 异步 → 置位 → app.quit()」来做，这里只做不需要等待、不能阻塞关机的收尾。
+  app.on('will-quit', () => {
     clearInterval(mobileTicker);
     clearInterval(backgroundUpdateTimer);
     void localApi.stop();
@@ -913,17 +925,8 @@ async function bootstrap(): Promise<void> {
     status.stop();
     probeHost?.dispose();
     pdfRenderer.close();
-    // 这次出块里没打过的块（已经打过的、confirmQuit 钉住的除外）不会再被用到：现在删掉，
-    // 不然要等 7 天的保留期才会被清理（1000 张约 260MB）。
-    pdf
-      .discardUnprintedCache()
-      .catch((error: unknown) => console.error('[pdf] failed to discard the unprinted cache on quit', error))
-      .finally(() => {
-        tray?.destroy();
-        closeDatabase();
-        willQuitDone = true;
-        app.quit();
-      });
+    tray?.destroy();
+    closeDatabase();
   });
 }
 

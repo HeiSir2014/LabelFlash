@@ -33,6 +33,9 @@ function labelSession() {
       }
       return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
     });
+    // 和主窗口、PDF 渲染页一样：这个分区的权限请求、权限查询一律拒绝（标签内容来自扫码和第三方）。
+    labelSessionInstance.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    labelSessionInstance.setPermissionCheckHandler(() => false);
     protocolRegistered = true;
   }
   return labelSessionInstance;

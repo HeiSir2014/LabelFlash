@@ -10,6 +10,27 @@
 不做：任意角度旋转、曲线和自由绘制、嵌套组合、颜色和灰度、层级数字框、样式库、母版、设计器里的数据表、字母快捷键、
 跨程序剪贴板、用户拖出的参考线、Ctrl+G 组合。
 
+## 设计方向（用户 2026-10-06：「尽量按照易用的类似苹果 iPad 的 Procreate 绘图排版软件设计和优化」）
+
+照平板上的绘图、排版软件的做法：内容优先，周围的界面安静；操作放在正在改的东西旁边；点击目标大；直接拖、捏、滚。
+和下面任务重叠的地方（右键菜单、工具条、右栏）以这一节为准。
+
+- **画布优先**：画布占最多的地方，平静的中性底色，纸是带柔和阴影的卡片；两侧面板轻：不画重边框，分组、留白。
+  元素栏变成竖排的图标工具栏（悬停提示）。
+- **跟着选中走的浮动工具条**：选中东西时，选框上方（放不下就下方）出现一条圆角小工具条，放这一类最常用的操作——
+  文字：字号 −/+、加粗、对齐、改字；条码 / 二维码：绑定字段、需要时「放大到能印」；任何元素：复制一份、删除、锁定、叠放，
+  「⋯」打开完整的菜单。拖动时藏起来，松手再出现；画布有焦点时 Tab 能走到它；不盖住控制点。
+- **检查器**：右栏按元素类型分段标签（文字「文字 / 排列」，条码「内容 / 排列」……）另加「图层」；数字是毫米，带步进；
+  分组标题用小号标签，行高一致。没选中时是「模板 / 图层」，多选时是「排列 / 图层」。
+- **直接操作**：触控板捏合缩放（Chromium 里是带 ctrlKey 的 wheel）以指针为中心；两指滚动平移；画布有焦点、不在输入框里时
+  空格 + 拖动平移；中键拖动平移；触屏一指拖元素、两指捏合缩放。控制点更大（看到的至少 10px，可点范围 24px，角上是圆点），
+  另有一个旋转手柄（只转直角）。悬停高亮。面板和工具条 120–180ms 的过渡，`prefers-reduced-motion` 时不动。
+- **智能参考线**：参考线、间距（mm）、等距标记，拖动、缩放时指针旁显示「32.0 × 8.0 mm」这类尺寸 / 位置。
+- **撤销重做**：画布区左上角两个图标按钮；缩放比例是右下角的小胶囊，点开是「适合窗口 / 100% / 200%」。
+- **样式**：只用 `tokens.css` 变量（需要时新增；程序目前只有浅色）；浮动界面圆角 8–12px、柔和阴影；图标是同一笔画粗细的内联 SVG。
+- **约束不变**：画布不拦字母数字；仍是真实打印 HTML + 覆盖层，修改只经 commit；措辞只说确知的事；1366×768 @150% 放得下
+  （检查器可以收起）。
+
 ## 任务（按顺序）
 
 | # | 任务 | 文件 | 测试 |
@@ -20,21 +41,19 @@
 | 4 | **新元素错开**：落点和上一个新加的元素完全重合时往右下错开 2mm（同粘贴），收在纸内；新条码默认 `{编码}` | `lib/canvas-edit.ts`、`core/templates/canvas-model.ts` | `canvas-edit.test.ts`、`canvas-model.test.ts` |
 | 5 | **每个元素的问题**：`RenderWarnings.elements`（元素 id、级别、画布上的短原因、条码最小宽）；条码最小宽按渲染同一套点取整（模板的 dpi）；宽度离最小不到 10% 时提前提醒（黄）；「不印」的文字写出要多宽 | `shared/render-warnings.ts`、`core/templates/canvas-layout.ts`、`main/printing/barcode.ts`、`canvas-html.ts` | `render-warnings.test.ts`、`canvas-layout.test.ts`、`canvas-html.test.ts` |
 | 6 | **看得见**：每个元素一圈 1px 浅色虚线（只在覆盖层，不打印）；不印的元素浅红底 + 框内短原因；属性栏「放大到能印」 | `CanvasStage.tsx`、`ElementProperties.tsx`、`lib/canvas-fix.ts` | `canvas-fix.test.ts` |
-| 7 | **图层面板**：每行锁定、隐藏（只在设计器里隐藏，照常打印）按钮；双击改名；拖动排序；每次修改都经 commit | `LayerList.tsx`、`lib/canvas-edit.ts`（`moveLayer`）、`use-canvas-designer.ts` | `canvas-edit.test.ts` |
-| 8 | **就地改字**：双击文字（表格双击某一格）盖一个同字体、字号、对齐的 textarea；Enter 换行，Ctrl/⌘+Enter 或点外面提交，Esc 取消；整段编辑一步撤销 | `components/canvas-editor/InlineTextEditor.tsx`、`lib/canvas-inline.ts`、`lib/canvas-table.ts`（`tableCellAt`） | `canvas-inline.test.ts`、`canvas-table.test.ts` |
-| 9 | **右键菜单**：页面内菜单（键盘上下、Enter、Esc），复制、粘贴、复制一份、删除、四个叠放、锁定 / 解锁，选 2 个以上时有「对齐」子菜单；画布上不弹系统的输入框菜单 | `components/canvas-editor/ContextMenu.tsx`、`lib/canvas-menu.ts` | `canvas-menu.test.ts` |
-| 10 | **缩放**：Ctrl+滚轮以指针为中心缩放；按钮改名「适合窗口」「100%」 | `lib/canvas-view.ts`（`scrollForZoom`）、`use-canvas-gesture.ts`、`DesignerToolbar.tsx` | `canvas-view.test.ts` |
-| 11 | **标尺**：指针位置细线，选中元素的范围在标尺上标出 | `CanvasStage.tsx`、`app.css` | — |
-| 12 | **吸附距离**：拖动吸到邻居时在参考线旁写出间距（mm），间距相等时标等距 | `lib/canvas-snap.ts`（`snapGaps`）、`CanvasStage.tsx` | `canvas-snap.test.ts` |
-| 13 | **工具条**：对齐、等距、叠放换成内联 SVG 图标按钮，提示里写快捷键（按平台 Ctrl / ⌘）；单选时对齐提示写「对齐到安全区」；1366 宽一行放下，「预览内容」挪到画布上方 | `DesignerToolbar.tsx`、`components/canvas-editor/icons.tsx`、`lib/designer-shortcuts.ts` | `designer-shortcuts.test.ts` |
-| 14 | **窄窗口**：右栏变成「属性 | 图层」两个标签页；「打印前检查」收成底部一条「⚠ N 项」，点开展开，点某一项选中它的元素 | `CanvasDesigner.tsx`、`DesignerChecks.tsx`、`app.css` | — |
+| 7 | **画布优先的布局**：竖排图标工具栏（元素）、画布区左上角撤销 / 重做、右下角缩放胶囊（适合窗口 / 100% / 200%）、上方一条窄栏（预览内容、网格、吸附、「?」）；检查器分段标签（按元素类型 + 图层；没选中「模板」、多选「排列」）；对齐、等距、叠放是带快捷键提示的图标按钮（单选时提示「对齐到安全区」）；「打印前检查」收成底部一条「⚠ N 项」，点开展开，点某一项选中它的元素；1366×768 @150% 放得下 | `CanvasDesigner.tsx`、`ElementPalette.tsx`、`DesignerToolbar.tsx`、`Inspector.tsx`、`DesignerChecks.tsx`、`icons.tsx`、`lib/designer-shortcuts.ts`、`tokens.css`、`app.css` | `designer-shortcuts.test.ts` |
+| 8 | **图层面板**：每行锁定、隐藏（只在设计器里隐藏，照常打印）按钮；双击改名；拖动排序；每次修改都经 commit | `LayerList.tsx`、`lib/canvas-edit.ts`（`moveLayer`）、`use-canvas-designer.ts` | `canvas-edit.test.ts` |
+| 9 | **浮动工具条**：选中时出现在选框上方（放不下在下方），按类型放常用操作，「⋯」开完整菜单；拖动时隐藏；Tab 可达；不盖控制点 | `FloatingToolbar.tsx`、`lib/canvas-float.ts`（位置） | `canvas-float.test.ts` |
+| 10 | **右键菜单**：页面内菜单（键盘上下、Enter、Esc），复制、粘贴、复制一份、删除、四个叠放、锁定 / 解锁，选 2 个以上时有「对齐」子菜单；画布上不弹系统的输入框菜单；浮动工具条的「⋯」打开同一个菜单 | `ContextMenu.tsx`、`lib/canvas-menu.ts` | `canvas-menu.test.ts` |
+| 11 | **就地改字**：双击文字（表格双击某一格）盖一个同字体、字号、对齐的 textarea；Enter 换行，Ctrl/⌘+Enter 或点外面提交，Esc 取消；整段编辑一步撤销 | `InlineTextEditor.tsx`、`lib/canvas-inline.ts`、`lib/canvas-table.ts`（`tableCellAt`） | `canvas-inline.test.ts`、`canvas-table.test.ts` |
+| 12 | **缩放和平移**：Ctrl+滚轮 / 捏合以指针为中心连续缩放；两指滚动、空格 + 拖动、中键拖动平移；触屏两指捏合缩放 | `lib/canvas-view.ts`（`zoomAt`、`scrollForZoom`）、`use-canvas-gesture.ts` | `canvas-view.test.ts` |
+| 13 | **控制点**：看到 10px、可点 24px，角上圆点；旋转手柄（拖动吸到直角）；缩放时 Shift 等比，图片、二维码默认等比（Shift 放开）；多选时一个合起来的外框，整体拖动 | `lib/canvas-edit.ts`（`resizeBox` 的 `keepRatio`）、`lib/canvas-gesture.ts`（`rotationFromPointer`）、`CanvasStage.tsx` | `canvas-edit.test.ts`、`canvas-gesture.test.ts` |
+| 14 | **标尺和智能参考线**：指针位置细线、选中范围；吸到邻居时写间距（mm），间距相等时标等距；拖动、缩放时指针旁显示尺寸 / 位置 | `lib/canvas-snap.ts`（`snapGaps`）、`CanvasStage.tsx` | `canvas-snap.test.ts` |
 | 15 | **退出时没保存的模板**：界面经校验过的 IPC 报告「有没保存的模板」；托盘退出、系统退出时问「保存并退出 / 不保存退出 / 取消」（保存经界面现有的保存流程往返一次，超时或失败就不退出并说明）；系统关机不问 | `shared/ipc-contract.ts`、`main/template-quit.ts`、`main/ipc.ts`、`main/ipc-validators.ts`、`main/index.ts`、`preload/index.ts`、`view-models/use-templates.ts`、`App.tsx` | `template-quit.test.ts`、`ipc-validators.test.ts` |
 | 16 | **快捷键表**：「?」按钮和 F1 打开快捷键小表（平台正确的 Ctrl / ⌘），写出方向键步长 | `components/canvas-editor/ShortcutSheet.tsx`、`lib/designer-shortcuts.ts` | `designer-shortcuts.test.ts` |
 | 17 | **插入字段**：选项写「编码 — CL5640-TK」（这段预览内容识别出的值），没有的写「（这段内容里没有）」 | `lib/insert-field-options.ts`、`InsertField.tsx` | `insert-field-options.test.ts` |
 | 18 | **纸张下拉**：「60×40 标签 · 样衣标签」，不套括号 | `lib/paper-text.ts`、`TemplateBasics.tsx` | `paper-text.test.ts` |
 | 19 | **空画布引导**：「从左边点一个元素加进来，或 从模板库新建」 | `CanvasStage.tsx`、`TemplatesPage.tsx` | — |
-| 20 | **等比缩放**：缩放时按住 Shift 保持比例；图片和二维码默认保持（Shift 放开） | `lib/canvas-edit.ts`（`resizeBox` 的 `keepRatio`）、`use-canvas-gesture.ts` | `canvas-edit.test.ts` |
-| 21 | **多选外框**：选中多个时画一个合起来的外框，可以整体拖动（不做整体缩放） | `CanvasStage.tsx`、`use-canvas-gesture.ts` | — |
 | 22 | **E2E**：边框矩形点穿、Ctrl+A、就地改字和撤销、右键菜单、图层锁定 / 隐藏 / 改名 / 排序、「放大到能印」、退出时没保存的模板（换掉确认框） | `e2e/designer.e2e.ts`、`e2e/app.e2e.ts` | — |
 | 23 | **视觉验收**：新界面的验收项（1280、1024、1366 @150%） | `e2e/visual/acceptance.visual.ts` | — |
 | 24 | **文档**：`src/renderer/CLAUDE.md` 设计器一节、设计文档第 3.3 节 | — | — |
@@ -42,5 +61,5 @@
 ## 验收
 
 - 每个提交 `bun run check`；最后跑完整的 `bun run test:e2e` 和视觉验收，逐张看截图。
-- 用走查脚本重跑一遍原来的场景，对比前后截图。
+- 用走查脚本重跑一遍原来的场景，对比前后截图；另截文字、条码、多选时的浮动工具条和检查器。
 - 只在 Windows 上验证：macOS 的 ⌘ 快捷键、真机打印待验证。

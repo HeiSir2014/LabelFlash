@@ -68,7 +68,7 @@ import { DriverStation } from './drivers/driver-station';
 import { FakeDrivers, parseFakeDrivers, testCatalogKey } from './drivers/fake-drivers';
 import { cleanupOldDownloads, createInstallerDownloader } from './drivers/installer-downloader';
 import { addFirewallRule, firewallStatus } from './firewall';
-import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
+import { createGpuCrashHandler, PendingRelaunch, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
 import { LOGS_DIR_NAME } from './log-files';
 import { setupLogging } from './logging';
@@ -164,6 +164,8 @@ let isQuitting = false;
 // 操作系统正在关机、注销（而不是操作员自己退出程序）：批量打印还有没打的也不弹确认，不能挡着关机。
 // Windows 走 session-end（before-quit 根本不会触发，见下面的处理），这里主要是给 macOS/Linux 用。
 let isSystemShutdown = false;
+// GPU 进程崩溃后排着的「用软件渲染重启」：退出确定要发生时才交给 app.relaunch（见 gpu-fallback.ts）。
+const pendingRelaunch = new PendingRelaunch();
 
 /** 仅开发 / E2E 测试可用：把数据目录指到临时目录，测试之间互不干扰。安装版忽略它。 */
 const USER_DATA_OVERRIDE_ENV = 'CDL_LABELFLASH_USER_DATA';
@@ -258,7 +260,7 @@ async function bootstrap(): Promise<void> {
     isSoftwareRendering,
     args: process.argv.slice(1),
     canRelaunch: () => !isQuitting,
-    relaunch: (args) => app.relaunch({ args }),
+    relaunch: (args) => pendingRelaunch.request(args),
     quit,
     warn: (message) => console.warn(message),
   });
@@ -675,6 +677,8 @@ async function bootstrap(): Promise<void> {
       // 要问的（没保存的模板、批量打印）都在装之前问过或挡下了：安装引起的退出不再问第二遍。
       readyToQuit = true;
       isQuitting = true;
+      // 安装程序装完会自己带 --updated 启动新版本：不再另外重启一次。
+      pendingRelaunch.cancel();
       relaunch.write(window);
     },
   });
@@ -888,7 +892,9 @@ async function bootstrap(): Promise<void> {
 
   app.on('before-quit', (event) => {
     if (readyToQuit) {
+      // 这一次放行，退出确定要发生：GPU 崩溃排着的重启现在才交出去。
       isQuitting = true;
+      pendingRelaunch.commit((args) => app.relaunch({ args }));
       mobile.quit();
       return;
     }
@@ -944,6 +950,10 @@ async function bootstrap(): Promise<void> {
         console.error('[quit] the quit confirmation failed, staying open', error);
       } finally {
         isConfirmingQuit = false;
+        // 确认框取消了（或出错没退出）：程序接着用，GPU 崩溃排着的重启作废，下一次退出不能被它变成重启。
+        if (!readyToQuit) {
+          pendingRelaunch.cancel();
+        }
       }
     })();
   });

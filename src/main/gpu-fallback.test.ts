@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
+import { createGpuCrashHandler, PendingRelaunch, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 
 const GPU_CRASH = { type: 'GPU', reason: 'crashed', exitCode: 1 };
 
@@ -44,6 +44,33 @@ describe('createGpuCrashHandler', () => {
   test('does not relaunch while the app is quitting', () => {
     const { handle, relaunched } = harness({ canRelaunch: false });
     handle(GPU_CRASH);
+    expect(relaunched).toEqual([]);
+  });
+});
+
+describe('PendingRelaunch', () => {
+  test('relaunches only once the quit is certain', () => {
+    const pending = new PendingRelaunch();
+    const relaunched: string[][] = [];
+    pending.request(['.', SOFTWARE_RENDERING_SWITCH]);
+    expect(relaunched).toEqual([]);
+    pending.commit((args) => relaunched.push(args));
+    pending.commit((args) => relaunched.push(args));
+    expect(relaunched).toEqual([['.', SOFTWARE_RENDERING_SWITCH]]);
+  });
+
+  test('forgets the relaunch when the operator cancels the quit prompt', () => {
+    const pending = new PendingRelaunch();
+    const relaunched: string[][] = [];
+    pending.request(['.', SOFTWARE_RENDERING_SWITCH]);
+    pending.cancel();
+    pending.commit((args) => relaunched.push(args));
+    expect(relaunched).toEqual([]);
+  });
+
+  test('does nothing on a plain quit', () => {
+    const relaunched: string[][] = [];
+    new PendingRelaunch().commit((args) => relaunched.push(args));
     expect(relaunched).toEqual([]);
   });
 });

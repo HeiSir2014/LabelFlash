@@ -34,8 +34,10 @@ import {
   formatBounds,
   isSameRectangle,
   pushBatchStatus,
+  pushPdfStatus,
   pushUpdateStatus,
   resize,
+  SIZE_911_150,
   SIZE_1024,
   SIZE_1280,
   SIZE_1366_150,
@@ -263,6 +265,12 @@ const BATCH_PRINTERS: FakePrinterSpec[] = [
     printDelayMs: 300,
   },
 ];
+/** V67：名字很长的打印机，标题栏放不下时打印机胶囊要用省略号收短。 */
+const LONG_NAME_PRINTER: FakePrinterSpec = {
+  name: '仓库一楼发货台左边那台热敏标签机（60×40）',
+  paper: { widthMm: 60, heightMm: 40, dpi: 203 },
+  readiness: { ready: true },
+};
 /** V61：12 行，第 5 行缺颜色（标黄）；表里没有「货架号」（对列标红）。 */
 const BATCH_CSV = [
   '编码,颜色,尺码,备注',
@@ -1455,6 +1463,47 @@ const ITEMS: Item[] = [
         isActive: true,
       });
       await expect(page.getByRole('button', { name: '批量打印' })).toContainText('19999/20000');
+    },
+  },
+  {
+    id: 'V67',
+    title: '标题栏 · 更新、批量和 PDF 的进度同时在',
+    points:
+      '有待安装的更新、批量打印和打印 PDF 都在打时：标题栏不换行、不溢出，窗口按钮（最小化、最大化、关闭）完整留在右边；放不下时打印机胶囊用省略号收短；1100 宽以下更新胶囊只剩「重启更新」、店铺胶囊让出；960 宽以下按钮上的进度数字也让出，打印机胶囊留得下几个字；911 宽（1366×768 屏开 150%）同样不溢出',
+    sizes: [SIZE_1280, SIZE_1024, SIZE_911_150],
+    launch: { fakePrinters: [LONG_NAME_PRINTER] },
+    setup: async ({ page, window }) => {
+      await callApi(page, 'updateSettings', { paperPrinters: { '60x40': LONG_NAME_PRINTER.name } });
+      await page.reload();
+      await expect(page.locator('.printer-chip')).toContainText(LONG_NAME_PRINTER.name);
+      await pushUpdateStatus(window, { state: 'ready', version: '2.0.1' });
+      await pushBatchStatus(window, {
+        batchId: '20261002-143501-a1b2',
+        state: 'running',
+        total: 20000,
+        sent: 12345,
+        failed: 0,
+        pauseReason: null,
+        failures: [],
+        templateName: '通用',
+        tableId: null,
+        isActive: true,
+      });
+      await pushPdfStatus(window, {
+        fileName: 'grid.pdf',
+        processing: null,
+        print: {
+          batchId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+          state: 'paused',
+          total: 800,
+          sent: 456,
+          failed: 0,
+          pauseReason: 'operator',
+        },
+        isActive: true,
+      });
+      await expect(page.locator('.update-pill')).toBeVisible();
+      await expect(page.getByRole('button', { name: /打印 PDF/ })).toContainText('456/800');
     },
   },
   {

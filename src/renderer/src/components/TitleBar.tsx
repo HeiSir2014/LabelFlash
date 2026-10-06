@@ -85,8 +85,15 @@ export function TitleBar({
       <div className="title-bar__actions">
         {readyUpdateVersion && (
           // 点一次就重启：静默安装，新版本自己回到前台。更新是操作员主动点的，不再二次确认。
-          <button type="button" className="update-pill" onClick={onInstallUpdate}>
-            新版本 {readyUpdateVersion} 已就绪 · 重启更新
+          // 窄窗口只显示「重启更新」（app.css），完整的话在悬停提示和读屏名称里。
+          <button
+            type="button"
+            className="update-pill"
+            title={`新版本 ${readyUpdateVersion} 已就绪 · 重启更新`}
+            aria-label={`新版本 ${readyUpdateVersion} 已就绪 · 重启更新`}
+            onClick={onInstallUpdate}
+          >
+            <span className="update-pill__detail">新版本 {readyUpdateVersion} 已就绪 · </span>重启更新
           </button>
         )}
         {/* 批量打印页和配置中心同级：按下状态表示正在看它；在打的时候按钮上带进度，关掉页面也看得到。 */}
@@ -137,7 +144,8 @@ export function TitleBar({
         <button
           type="button"
           className={`printer-chip printer-chip--${printerChip.tone}`}
-          title="打印机：点一下打开右侧的打印机页"
+          // 名字放不下时胶囊用省略号收短：完整的写在悬停提示里。
+          title={`${printerChip.text}：点一下打开右侧的打印机页`}
           onClick={onOpenPrinters}
         >
           <span className="printer-chip__dot" aria-hidden="true" />

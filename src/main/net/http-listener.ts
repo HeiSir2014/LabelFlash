@@ -19,6 +19,8 @@ const PROBE_HEADER = 'x-labelflash-probe';
 /** 自检最多等这么久：本机回环地址上的请求通常几毫秒就回来。 */
 const PROBE_TIMEOUT_MS = 2_000;
 const NO_CONTENT = 204;
+/** 设了请求头时限时每秒查一次超时：查得太稀，15 秒的时限实际会拖到 45 秒。 */
+const TIMEOUT_CHECK_MS = 1_000;
 /** 端口候选的最后一个：0 = 由系统分配一个空闲端口，保证服务总能起来。 */
 export const ANY_FREE_PORT = 0;
 
@@ -36,6 +38,8 @@ export interface HttpListenerOptions {
   /** 日志前缀，例如 [api]、[ipp]。 */
   logTag: string;
   requestTimeoutMs: number;
+  /** 请求头要在这么久内收完（不设用 node:http 的默认 60 秒，每 30 秒才查一次）。 */
+  headersTimeoutMs?: number | undefined;
   maxConnections: number;
   /** 每个请求（自检请求除外）。 */
   onRequest: (request: IncomingMessage, response: ServerResponse) => void;
@@ -165,7 +169,13 @@ export class HttpListener {
   }
 
   private listenOn(port: number, host: string): Promise<Server> {
-    const server = createServer((request, response) => this.dispatch(request, response));
+    const handler = (request: IncomingMessage, response: ServerResponse) => this.dispatch(request, response);
+    const { headersTimeoutMs } = this.options;
+    // node:http 按 connectionsCheckingInterval（默认 30 秒）才查一次超时：设了短的请求头时限就跟着查勤一些。
+    const server =
+      headersTimeoutMs === undefined
+        ? createServer(handler)
+        : createServer({ headersTimeout: headersTimeoutMs, connectionsCheckingInterval: TIMEOUT_CHECK_MS }, handler);
     server.requestTimeout = this.options.requestTimeoutMs;
     server.maxConnections = this.options.maxConnections;
     this.options.configure?.(server);

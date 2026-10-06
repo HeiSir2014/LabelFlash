@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { request as httpRequest } from 'node:http';
-import { connect } from 'node:net';
+import { connect, type Socket } from 'node:net';
 import { integerAttr, nameAttr, stringValue } from '../../core/ipp/ipp-attributes';
 import { encodeIppMessage } from '../../core/ipp/ipp-codec';
 import { GROUP_TAGS, OPERATIONS, STATUS } from '../../core/ipp/ipp-constants';
@@ -8,7 +8,13 @@ import { IppJobBook } from '../../core/ipp/ipp-job-book';
 import type { ClientDecision } from '../../core/ipp/ipp-operations';
 import { attributeIn, ippRequest, MINIMAL_PDF, testPrinter } from '../../core/ipp/testing/ipp-requests';
 import { FakeClock } from '../../core/testing/fake-clock';
-import { type AcceptedJob, IPP_HTTP_LIMITS, IppHttpServer, requestHost } from './ipp-http-server';
+import {
+  type AcceptedJob,
+  IPP_CONNECTION_LIMITS,
+  IPP_HTTP_LIMITS,
+  IppHttpServer,
+  requestHost,
+} from './ipp-http-server';
 import { basicAuth, sendIpp } from './testing/ipp-client';
 
 const PRINTER = testPrinter();
@@ -24,7 +30,14 @@ interface Options {
   limits?: Partial<typeof IPP_HTTP_LIMITS>;
   /** 假的 verify 要花多久（模拟 scrypt）。 */
   verifyDelayMs?: number;
+  headersTimeoutMs?: number;
 }
+
+/** 测试里请求头只等 300 毫秒；服务按 1 秒一次检查超时，3 秒内一定断开。 */
+const SHORT_HEADERS_TIMEOUT_MS = 300;
+const HEADERS_TIMEOUT_SLACK_MS = 3_000;
+/** 服务端处理完一条连接关闭（计数减一）要一点时间。 */
+const SOCKET_SETTLE_MS = 50;
 
 function createServer(options: Options = {}) {
   const clock = new FakeClock();
@@ -51,6 +64,7 @@ function createServer(options: Options = {}) {
     fallbackHost: () => '192.168.1.10',
     isAllowedAddress: () => isAllowed,
     limits: options.limits,
+    headersTimeoutMs: options.headersTimeoutMs,
     // 测试只在本机回环上开端口。
     ipv4Host: '127.0.0.1',
   });
@@ -109,6 +123,17 @@ function sendExpectingContinue(port: number, body: Uint8Array): Promise<{ status
  * 用裸 TCP 发一段请求，收到连接关闭为止，返回收到的全部文字。
  * 不用 fetch：Bun 1.4 的 fetch 碰到服务端一连上就断开时偶尔会让整个测试进程崩溃（Bun 自己的问题）。
  */
+/** 连上、只发请求行就停住的连接（慢慢发请求头的那种）。等服务那边认下这条连接再返回。 */
+async function openSlowSocket(port: number): Promise<Socket> {
+  const socket = await new Promise<Socket>((resolve, reject) => {
+    const opened = connect(port, '127.0.0.1', () => resolve(opened));
+    opened.on('error', reject);
+  });
+  socket.write('GET /printers/60x40 HTTP/1.1\r\n');
+  await new Promise((resolve) => setTimeout(resolve, SOCKET_SETTLE_MS));
+  return socket;
+}
+
 function rawExchange(port: number, text: string): Promise<string> {
   return new Promise((resolve) => {
     let received = '';
@@ -226,12 +251,13 @@ describe('IppHttpServer', () => {
     );
   });
 
-  // 评审的探针（lockout-race.ts）：40 个并发猜测原来全都算了摘要，锁形同虚设。
+  // 评审的探针（lockout-race.ts）：并发的猜测原来全都算了摘要，锁形同虚设。
+  // 一个地址同时最多开 perAddress 条连接，所以并发数取它（再多的连接直接被断开）。
   test('derives at most once for a burst of parallel guesses from one address', async () => {
     const { server, verified } = createServer({ password: '1234', verifyDelayMs: 50 });
     const { url } = await start(server);
     const statuses = await Promise.all(
-      Array.from({ length: 40 }, (_, index) =>
+      Array.from({ length: IPP_CONNECTION_LIMITS.perAddress }, (_, index) =>
         sendIpp(url, ippRequest(OPERATIONS.printJob), MINIMAL_PDF, basicAuth('x', `guess${index}`)).then(
           (reply) => reply.httpStatus,
         ),
@@ -308,6 +334,37 @@ describe('IppHttpServer', () => {
     const { url, port } = await start(server);
     refuseEveryone();
     expect(await rawExchange(port, `GET ${new URL(url).pathname} HTTP/1.1\r\nHost: x\r\n\r\n`)).toBe('');
+  });
+
+  // 一台电脑开满 64 条空连接就把别的电脑全挡在外面：每个地址只给几条。
+  test('lets one address hold only a few connections at a time', async () => {
+    const { server } = createServer();
+    const { port } = await start(server);
+    // 一条一条开：监听后自检的那条回环连接这时早已关掉，不占名额。
+    const idle: Socket[] = [];
+    while (idle.length < IPP_CONNECTION_LIMITS.perAddress) {
+      idle.push(await openSlowSocket(port));
+    }
+    const page = `GET /printers/60x40 HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`;
+    expect(await rawExchange(port, page)).toBe('');
+    const closed = new Promise((resolve) => idle[0]?.once('close', resolve));
+    idle[0]?.destroy();
+    await closed;
+    await new Promise((resolve) => setTimeout(resolve, SOCKET_SETTLE_MS));
+    expect(await rawExchange(port, page)).toStartWith('HTTP/1.1 200');
+    for (const socket of idle) {
+      socket.destroy();
+    }
+  });
+
+  // 慢慢发请求头（每隔一会儿一个字节）能一直占着连接：请求头限时收完。
+  test('closes a connection whose request headers do not arrive in time', async () => {
+    const { server } = createServer({ headersTimeoutMs: SHORT_HEADERS_TIMEOUT_MS });
+    const { port } = await start(server);
+    const socket = await openSlowSocket(port);
+    const startedAt = Date.now();
+    await new Promise((resolve) => socket.once('close', resolve));
+    expect(Date.now() - startedAt).toBeLessThan(HEADERS_TIMEOUT_SLACK_MS);
   });
 });
 

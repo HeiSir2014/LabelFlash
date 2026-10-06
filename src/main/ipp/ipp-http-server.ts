@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import type { Socket } from 'node:net';
 import {
   type DecodedIpp,
   decodeIppMessage,
@@ -42,6 +43,12 @@ export const DEFAULT_IPP_PORTS: readonly number[] = Array.from(
 const REQUEST_TIMEOUT_MS = 120_000;
 /** 同时最多 64 条连接：几台电脑的打印队列每台只开一两条。 */
 const MAX_CONNECTIONS = 64;
+export const IPP_CONNECTION_LIMITS = {
+  /** 每个地址同时最多 8 条连接：一台电脑的打印队列只开一两条；挡住一台电脑把 64 条占满、别的电脑连不上。 */
+  perAddress: 8,
+  /** 请求头 15 秒内要收完：正常的请求头一个包就到；挡住慢慢发请求头、一直占着连接。 */
+  headersTimeoutMs: 15_000,
+} as const;
 /** 每个地址每秒 20 个请求、突发 40 个：打印队列每秒查一两次任务状态，加上查打印机，远用不到。 */
 const ADDRESS_LIMITS = { perSecond: 20, burst: 40 };
 /** 密码错 5 次之后，每错一次锁 10 秒：正常输错几次不受影响，挡住逐个猜。 */
@@ -105,6 +112,8 @@ export interface IppHttpServerDeps {
   isAllowedAddress: (address: string | undefined) => boolean;
   /** 测试里调小。 */
   limits?: Partial<typeof IPP_HTTP_LIMITS> | undefined;
+  /** 测试里调小。 */
+  headersTimeoutMs?: number | undefined;
   /** 绑定的 IPv4 地址，默认 0.0.0.0；测试和 E2E 用 127.0.0.1，不在局域网上开端口。 */
   ipv4Host?: string | undefined;
 }
@@ -141,16 +150,23 @@ export class IppHttpServer {
   /** 每个地址正在算的那一次摘要（认证头的摘要和结果）。 */
   private readonly verifying = new Map<string, { cacheKey: string; result: Promise<boolean> }>();
   private startedAt = 0;
+  /** 每个地址开着的连接数。 */
+  private readonly connections = new Map<string, number>();
+  /** 还没收完第一个请求头的连接和它的计时器。 */
+  private readonly awaitingHeaders = new WeakMap<Socket, ReturnType<typeof setTimeout>>();
+  private readonly headersTimeoutMs: number;
   /** 所有连接正在收的正文字节数。 */
   private inFlightBytes = 0;
 
   constructor(private readonly deps: IppHttpServerDeps) {
     this.limits = { ...IPP_HTTP_LIMITS, ...deps.limits };
+    this.headersTimeoutMs = deps.headersTimeoutMs ?? IPP_CONNECTION_LIMITS.headersTimeoutMs;
     this.addressLimiter = new RateLimiter(deps.clock, ADDRESS_LIMITS);
     this.authFailures = new RateLimiter(deps.clock, AUTH_FAILURE_LIMITS);
     this.listener = new HttpListener({
       logTag: '[ipp]',
       requestTimeoutMs: REQUEST_TIMEOUT_MS,
+      headersTimeoutMs: this.headersTimeoutMs,
       maxConnections: MAX_CONNECTIONS,
       onRequest: (request, response) => void this.serve(request, response, false),
       configure: (server) => this.configure(server),
@@ -191,13 +207,36 @@ export class IppHttpServer {
     server.on('connection', (socket) => {
       if (!this.deps.isAllowedAddress(socket.remoteAddress) && !isLoopbackAddress(socket.remoteAddress)) {
         socket.destroy();
+        return;
       }
+      const address = plainAddress(socket.remoteAddress ?? '');
+      const open = this.connections.get(address) ?? 0;
+      if (open >= IPP_CONNECTION_LIMITS.perAddress) {
+        socket.destroy();
+        return;
+      }
+      this.connections.set(address, open + 1);
+      // 第一个请求的请求头自己计时（node:http 的 headersTimeout 管同一连接上后面的请求）：
+      // 连上后迟迟发不完请求头的连接到时断开。
+      const headersTimer = setTimeout(() => socket.destroy(), this.headersTimeoutMs);
+      this.awaitingHeaders.set(socket, headersTimer);
+      socket.once('close', () => {
+        clearTimeout(headersTimer);
+        const left = (this.connections.get(address) ?? 1) - 1;
+        if (left > 0) {
+          this.connections.set(address, left);
+        } else {
+          this.connections.delete(address);
+        }
+      });
     });
     // 带 Expect: 100-continue 的请求（大文档）：先看过认证和大小，再让对方发正文。
     server.on('checkContinue', (request, response) => void this.serve(request, response, true));
   }
 
   private async serve(request: IncomingMessage, response: ServerResponse, expectsContinue: boolean): Promise<void> {
+    clearTimeout(this.awaitingHeaders.get(request.socket));
+    this.awaitingHeaders.delete(request.socket);
     const address = plainAddress(request.socket.remoteAddress ?? '');
     let reserved = 0;
     const reserve = (bytes: number): boolean => {

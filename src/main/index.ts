@@ -118,6 +118,7 @@ import {
   templateQuitChoice,
   templateQuitDialogText,
   templateSaveFailedText,
+  UNSAVED_TEMPLATE_FALLBACK_NAME,
 } from './template-quit';
 import { type AppTray, createTray } from './tray';
 import { AppUpdater } from './updater';
@@ -722,7 +723,7 @@ async function bootstrap(): Promise<void> {
    * （template-quit.ts）；没存上就不退出，并说明。返回 true 表示可以接着退出。
    */
   const confirmTemplateQuit = async (): Promise<boolean> => {
-    const name = templateQuit.unsaved || '未命名的模板';
+    const name = templateQuit.unsaved || UNSAVED_TEMPLATE_FALLBACK_NAME;
     const { message, detail } = templateQuitDialogText(name);
     const { response } = await showQuitDialog({
       type: 'warning',
@@ -1003,6 +1004,8 @@ async function bootstrap(): Promise<void> {
   mainWindow.on('show', () => {
     hiddenSince = null;
   });
+  // 界面进程崩了：没保存的模板修改随它没了，别再拿它挡退出和静默更新（重新加载后界面会重新报告）。
+  mainWindow.webContents.on('render-process-gone', () => templateQuit.rendererGone());
   // 必须先于下面的 session-end 处理注册：关机时先保存窗口位置，再关闭数据库。
   trackWindowPlacement(mainWindow, windowStates, placement.bounds);
   // 读打印机列表要用主窗口：窗口建好后立即检测一次状态、预读驱动资料，不等下一轮轮询。

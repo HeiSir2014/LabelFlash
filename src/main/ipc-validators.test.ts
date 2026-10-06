@@ -37,6 +37,7 @@ import {
   requireWebhookId,
   requireWebOrigin,
 } from './ipc-validators';
+import { UNSAVED_TEMPLATE_FALLBACK_NAME } from './template-quit';
 
 describe('requireUnsavedTemplateName', () => {
   test('accepts null (nothing unsaved) or a template name within the name limit', () => {
@@ -45,10 +46,13 @@ describe('requireUnsavedTemplateName', () => {
     expect(requireUnsavedTemplateName('')).toBe('');
   });
 
-  test('rejects anything else, including an over-long name', () => {
-    expect(() => requireUnsavedTemplateName(undefined)).toThrow();
-    expect(() => requireUnsavedTemplateName(3)).toThrow();
-    expect(() => requireUnsavedTemplateName('长'.repeat(TEMPLATE_LIMITS.nameLength + 1))).toThrow();
+  // 宁可多问一次，也不能因为名字不合规就当作「没有没保存的修改」，退出时悄悄丢掉。
+  test('treats anything else, including an over-long name, as unsaved under a fallback name', () => {
+    expect(requireUnsavedTemplateName(undefined)).toBe(UNSAVED_TEMPLATE_FALLBACK_NAME);
+    expect(requireUnsavedTemplateName(3)).toBe(UNSAVED_TEMPLATE_FALLBACK_NAME);
+    expect(requireUnsavedTemplateName('长'.repeat(TEMPLATE_LIMITS.nameLength + 1))).toBe(
+      UNSAVED_TEMPLATE_FALLBACK_NAME,
+    );
   });
 });
 

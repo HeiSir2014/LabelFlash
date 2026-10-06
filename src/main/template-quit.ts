@@ -5,6 +5,9 @@
  * 界面保存完回一句成不成功。等不到回答（界面卡住、出错）就当没存上，不退出，免得改了半天的模板悄悄丢掉。
  */
 
+/** 模板没有名字（新建的还没起名）或报来的名字不合规时，确认框里写的名字。 */
+export const UNSAVED_TEMPLATE_FALLBACK_NAME = '未命名的模板';
+
 /** 确认框的按钮，顺序就是 showMessageBox 返回的 response。 */
 export const TEMPLATE_QUIT_BUTTONS = ['取消', '不保存退出', '保存并退出'] as const;
 
@@ -81,6 +84,15 @@ export class TemplateQuitGuard {
       };
       ask();
     });
+  }
+
+  /**
+   * 界面进程崩了（会重新加载）：没保存的修改已经随它没了，忘掉这个模板，退出时不再拿一个存不了的模板去问；
+   * 正在等的保存请求当作没存上，不用干等到超时。
+   */
+  rendererGone(): void {
+    this.unsavedName = null;
+    this.settle(false);
   }
 
   /** 界面回答保存结果；没人在等时什么也不做（比如超时之后才回来）。 */

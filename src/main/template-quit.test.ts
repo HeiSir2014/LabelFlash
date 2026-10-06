@@ -40,6 +40,18 @@ describe('TemplateQuitGuard', () => {
   });
 });
 
+describe('TemplateQuitGuard.rendererGone', () => {
+  // 界面进程没了，没保存的修改也跟着没了：退出时再问「要不要保存」已经存不了。
+  test('forgets the unsaved template and fails a pending save request', async () => {
+    const guard = new TemplateQuitGuard();
+    guard.setUnsaved('吊牌');
+    const saving = guard.requestSave(() => undefined, 1_000);
+    guard.rendererGone();
+    expect(guard.unsaved).toBeNull();
+    expect(await saving).toBe(false);
+  });
+});
+
 describe('TemplateQuitGuard.confirmBeforeInstall', () => {
   test('installs right away when no template has unsaved changes', async () => {
     const guard = new TemplateQuitGuard();

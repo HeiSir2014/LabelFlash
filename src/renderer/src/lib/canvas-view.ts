@@ -104,6 +104,20 @@ export function hideElementsInHtml(html: string, hidden: ReadonlySet<string>): s
     : html.replace('</head>', `<style>${selectors.join(',')}{visibility:hidden}</style></head>`);
 }
 
+/**
+ * 点了设计器里的按钮（浮动工具条、检查器、元素栏……）之后，要不要把焦点还给画布。
+ * 设计器的快捷键（Ctrl+Z、方向键、Delete）挂在画布上：焦点留在按钮上，这些键就不起作用了。
+ * focus：操作做完那一刻焦点在哪——clicked = 还在点的按钮上，body = 掉到了页面上（按钮随操作没了，比如删除），
+ * elsewhere = 操作自己把焦点交给了别处（就地改字的输入框、菜单），那里接着用，不抢。
+ * 用键盘按的（Tab 走到工具条、按空格）焦点留在按钮上，方便接着用键盘走工具条。
+ */
+export function shouldReturnFocusToCanvas(click: {
+  isPointerClick: boolean;
+  focus: 'clicked' | 'body' | 'elsewhere';
+}): boolean {
+  return click.focus === 'body' || (click.isPointerClick && click.focus === 'clicked');
+}
+
 /** 从元素栏拖到画布上时，拖动数据里放元素类型用的格式名（只在这个页面内部用）。 */
 export const ELEMENT_DRAG_TYPE = 'application/x-labelflash-element';
 

@@ -194,6 +194,29 @@ test('nudges with the arrow keys and undoes a held key in one step', async ({ el
   await expect.poll(async () => Number(await x.inputValue())).toBeCloseTo(2, 5);
 });
 
+test('keeps the keyboard on the canvas after a floating toolbar button', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  const d = await openDesigner(page, [PRICE]);
+  const toolbar = page.getByRole('toolbar', { name: '选中元素的工具条' });
+  await showLayers(d);
+  await clickAt(page, d, 10, 19);
+
+  // 点工具条上的「加粗」之后方向键照样挪选中的元素。
+  await toolbar.getByRole('button', { name: '加粗' }).click();
+  await d.inspector.getByRole('tab', { name: '排列' }).click();
+  const x = d.inspector.getByLabel('X', { exact: true });
+  await toolbar.getByRole('button', { name: '加粗' }).click();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => Number(await x.inputValue())).toBeCloseTo(2.1, 5);
+
+  // 用工具条删掉之后 Ctrl+Z 能撤销：按钮随元素一起没了，焦点回到画布。
+  await toolbar.getByRole('button', { name: '删除' }).click();
+  await showLayers(d);
+  await expect(layer(d, '¥199.00（文字）')).toHaveCount(0);
+  await page.keyboard.press('Control+z');
+  await expect(layer(d, '¥199.00（文字）')).toHaveCount(1);
+});
+
 test('opens the context menu on the canvas and runs its items from the keyboard', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
   const d = await openDesigner(page, [PRICE, BORDER]);

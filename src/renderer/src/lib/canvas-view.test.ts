@@ -8,6 +8,7 @@ import {
   PX_PER_MM,
   pxToMm,
   scrollToKeep,
+  shouldReturnFocusToCanvas,
   undoShortcutLabel,
   wheelZoom,
   ZOOM_LEVELS,
@@ -197,5 +198,27 @@ describe('designerCommand', () => {
     expect(designerCommand(key('z', { code: 'KeyY', ctrlKey: true }))).toEqual({ kind: 'undo' });
     // 法语 AZERTY：Ctrl+W 物理键位是 KeyZ，但 key 是「w」，不是快捷键，不该被 code 误判成撤销。
     expect(designerCommand(key('w', { code: 'KeyZ', ctrlKey: true }))).toBeNull();
+  });
+});
+
+describe('shouldReturnFocusToCanvas', () => {
+  // 鼠标点了工具条、检查器的按钮之后，Ctrl+Z 和方向键要接着对画布起作用。
+  test('returns focus after a mouse click left it on the button', () => {
+    expect(shouldReturnFocusToCanvas({ isPointerClick: true, focus: 'clicked' })).toBe(true);
+  });
+
+  // 按钮随这次操作没了（删除），焦点掉到 body 上：不管是不是鼠标点的都还给画布。
+  test('returns focus when it fell to the page body', () => {
+    expect(shouldReturnFocusToCanvas({ isPointerClick: false, focus: 'body' })).toBe(true);
+  });
+
+  // 用 Tab 走到工具条、按空格的：焦点留在按钮上，接着用键盘走工具条。
+  test('leaves focus on the button after a keyboard press', () => {
+    expect(shouldReturnFocusToCanvas({ isPointerClick: false, focus: 'clicked' })).toBe(false);
+  });
+
+  // 按钮自己把焦点交给了别处（就地改字的输入框、菜单）：不抢。
+  test('leaves focus where the action moved it', () => {
+    expect(shouldReturnFocusToCanvas({ isPointerClick: true, focus: 'elsewhere' })).toBe(false);
   });
 });

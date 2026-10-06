@@ -1,7 +1,9 @@
 import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -27,6 +29,7 @@ import {
   PX_PER_MM,
   pxToMm,
   scrollToKeep,
+  shouldReturnFocusToCanvas,
   undoShortcutLabel,
   wheelZoom,
 } from '../../lib/canvas-view';
@@ -98,6 +101,60 @@ function checkItemsOf(warnings: typeof NO_RENDER_WARNINGS): CheckItem[] {
 }
 
 /**
+ * 设计器里点了按钮（浮动工具条、检查器、元素栏、撤销重做……）之后把焦点还给画布（规则见 shouldReturnFocusToCanvas）：
+ * 快捷键挂在画布上，焦点留在按钮上的话，接着按 Ctrl+Z、方向键都没反应。
+ * 图层列表除外：那里的行要能拖动排序、双击改名，焦点由它自己管。
+ * 鼠标（数位板的笔也一样）按下按钮时就把焦点放到画布上、不让按钮接走：在按下这一刻做，松手后紧接着的按键一定落在画布上，
+ * 不和下一帧赛跑。按钮的操作自己要焦点的（就地改字的输入框、菜单）在这之后照样拿走。
+ * 用键盘按的看操作做完之后焦点落在哪（下一个任务里看：原生 click 监听在 React 的处理之前跑）。
+ */
+function useReturnFocusToCanvas(
+  sectionRef: RefObject<HTMLElement | null>,
+  overlayRef: RefObject<HTMLDivElement | null>,
+): void {
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (section === null) {
+      return;
+    }
+    let timer = 0;
+    const buttonOf = (event: MouseEvent): HTMLButtonElement | null => {
+      const button = event.target instanceof Element ? event.target.closest('button') : null;
+      return button === null || button.closest('.layer-list, .designer-empty') !== null ? null : button;
+    };
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button === 0 && buttonOf(event) !== null) {
+        event.preventDefault();
+        overlayRef.current?.focus({ preventScroll: true });
+      }
+    };
+    const onClick = (event: MouseEvent) => {
+      const button = buttonOf(event);
+      if (button === null) {
+        return;
+      }
+      const isPointerClick = event.detail > 0;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const active = document.activeElement;
+        const focus =
+          active === button ? 'clicked' : active === null || active === document.body ? 'body' : 'elsewhere';
+        if (shouldReturnFocusToCanvas({ isPointerClick, focus })) {
+          overlayRef.current?.focus({ preventScroll: true });
+        }
+      });
+    };
+    section.addEventListener('mousedown', onMouseDown);
+    section.addEventListener('click', onClick);
+    return () => {
+      window.clearTimeout(timer);
+      section.removeEventListener('mousedown', onMouseDown);
+      section.removeEventListener('click', onClick);
+    };
+  }, [sectionRef, overlayRef]);
+}
+
+/**
  * 自由设计模板的设计器：画布优先。上面一条窄栏（预览内容、网格、吸附、快捷键），左边竖排的元素图标，
  * 中间画布（左上角撤销重做、右下角缩放），右边检查器（分段标签），下面一条打印前检查。
  * 状态在 use-canvas-designer、use-canvas-gesture；这里只把它们接到各个部分上。
@@ -114,8 +171,10 @@ export function CanvasDesigner({
   paperPrinters,
 }: CanvasDesignerProps) {
   const designer = useCanvasDesigner({ draft, onChange });
+  const sectionRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  useReturnFocusToCanvas(sectionRef, overlayRef);
   // 就地改字：改的是哪个元素（哪一格）、输入框盖在哪；没在改时为 null。
   const [inline, setInline] = useState<{ target: InlineTarget; layout: InlineEditorLayout } | null>(null);
   const fitZoom = useFitScale(
@@ -453,7 +512,7 @@ export function CanvasDesigner({
     selected === null ? [] : warnings.elements.filter((warning) => warning.elementId === selected.id);
 
   return (
-    <section className="canvas-designer" aria-label="设计器">
+    <section ref={sectionRef} className="canvas-designer" aria-label="设计器">
       <DesignerHeader designer={designer} sample={sample} platform={platform} />
       <ElementPalette onAdd={(kind) => designer.add(kind)} />
       <div className="designer-stage-area">

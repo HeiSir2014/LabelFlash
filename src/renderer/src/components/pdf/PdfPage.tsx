@@ -10,6 +10,7 @@ import {
 } from '../../lib/pdf-view';
 import type { PdfViewModel } from '../../view-models/use-pdf';
 import { LabelPreview } from '../LabelPreview';
+import { type PageScanSink, PrintPageScanSink } from '../ScanSinkField';
 import { PdfBoxEditor } from './PdfBoxEditor';
 import { PdfPieces } from './PdfPieces';
 import { PdfSetup } from './PdfSetup';
@@ -20,11 +21,12 @@ const PDF_PREVIEW_MAX_SCALE = 2;
 interface PdfPageProps {
   pdf: PdfViewModel;
   paperOptions: readonly PaperOption[];
+  scan: PageScanSink;
   onClose: () => void;
 }
 
 /** 打印 PDF 页：和配置中心、批量打印同级，铺满标题栏以下；自上而下文件、纸张和裁切、（框选）、预览，底部是打印和进度。 */
-export function PdfPage({ pdf, paperOptions, onClose }: PdfPageProps) {
+export function PdfPage({ pdf, paperOptions, scan, onClose }: PdfPageProps) {
   const fileTitleId = useId();
   const boxesTitleId = useId();
   const previewTitleId = useId();
@@ -45,6 +47,7 @@ export function PdfPage({ pdf, paperOptions, onClose }: PdfPageProps) {
         <h1 ref={focusTitle} className="config-header__title" tabIndex={-1}>
           打印 PDF
         </h1>
+        <PrintPageScanSink scan={scan} label="扫码内容（打印 PDF 页上不打印）" />
       </div>
       <div className="config-content">
         <div className="config-content__inner pdf-page__inner">
@@ -156,12 +159,18 @@ export function PdfPage({ pdf, paperOptions, onClose }: PdfPageProps) {
         )}
         {pdf.isPrinting ? (
           <>
+            {/* 两个按钮不同 key：换成另一个时是新元素，焦点不会留在刚出现的那个上（回车不会立刻点下它）。 */}
             {status?.print?.state === 'paused' ? (
-              <button type="button" className="button button--primary" onClick={() => pdf.control('resume')}>
+              <button
+                key="resume"
+                type="button"
+                className="button button--primary"
+                onClick={() => pdf.control('resume')}
+              >
                 继续
               </button>
             ) : (
-              <button type="button" className="button" onClick={() => pdf.control('pause')}>
+              <button key="pause" type="button" className="button" onClick={() => pdf.control('pause')}>
                 暂停
               </button>
             )}

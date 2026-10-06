@@ -73,6 +73,32 @@ export function fakePrints(app: ElectronApplication): Promise<FakePrint[]> {
   );
 }
 
+/**
+ * 等打印数量稳定下来（连续两次读到的一样）：暂停、取消之后用，比固定等一段时间更快也更可靠——
+ * 慢的时候（CI 负载高）不会因为等得不够久而读错，快的时候也不用白等。
+ * 读的间隔要比一张的打印延迟（printDelayMs）长，不然可能在正在打的那一张还没落地时
+ * 就连续读到两次一样的旧值，提前把还没结束的当成已经结束（暂停、取消这一刻可能正有一张在打，
+ * 状态已经是 paused/canceled 了，但它还没真的打完）。
+ */
+export async function waitForPrintCountToSettle(app: ElectronApplication, printDelayMs: number): Promise<number> {
+  let previous = -1;
+  await expect
+    .poll(
+      async () => {
+        const current = (await fakePrints(app)).length;
+        const isStable = current === previous;
+        previous = current;
+        return isStable;
+      },
+      { intervals: [printDelayMs + SETTLE_MARGIN_MS] },
+    )
+    .toBe(true);
+  return previous;
+}
+
+/** 读打印数量的间隔比一张的打印延迟多出这么多：留给 IPC 和记录落地。 */
+const SETTLE_MARGIN_MS = 100;
+
 /** 假打印机收到的标签机指令（字节按 latin1 转成的文字）。 */
 export function fakeRawJobs(app: ElectronApplication): Promise<FakeRawJob[]> {
   return app.evaluate(

@@ -82,7 +82,20 @@ describe('describeFeedback', () => {
         mode: 'scan',
       }),
     ).toEqual({ cue: 'noPrinter', tone: 'warning' });
-    expect(describeFeedback({ kind: 'configuring' })).toEqual({ cue: 'configuring', tone: 'warning' });
+    expect(describeFeedback({ kind: 'scan-ignored', where: 'config' })).toEqual({
+      cue: 'configuring',
+      tone: 'warning',
+    });
+  });
+
+  test('says which print page swallowed a scan', () => {
+    expect(describeFeedback({ kind: 'scan-ignored', where: 'batch' })).toEqual({
+      cue: 'batchPageScan',
+      tone: 'warning',
+    });
+    expect(describeFeedback({ kind: 'scan-ignored', where: 'pdf' })).toEqual({ cue: 'pdfPageScan', tone: 'warning' });
+    expect(VOICE_CUE_TEXT.batchPageScan).toBe('批量打印页上扫码不打印');
+    expect(VOICE_CUE_TEXT.pdfPageScan).toBe('PDF 打印页上扫码不打印');
   });
 
   test('covers events that are not print results, with a fallback tone per level', () => {
@@ -98,7 +111,7 @@ describe('describeFeedback', () => {
   });
 
   test('every cue has text and a level', () => {
-    expect(VOICE_CUES).toHaveLength(21);
+    expect(VOICE_CUES).toHaveLength(23);
     for (const cue of VOICE_CUES) {
       expect(VOICE_CUE_TEXT[cue].length).toBeGreaterThan(0);
       expect(VOICE_CUE_LEVEL[cue]).toBeDefined();

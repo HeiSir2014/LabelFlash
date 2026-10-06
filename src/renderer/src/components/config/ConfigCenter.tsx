@@ -1,19 +1,12 @@
-import { type KeyboardEvent, type ReactNode, type RefObject, useCallback, useId } from 'react';
+import { type ReactNode, useCallback, useId } from 'react';
 import { CONFIG_NAV, type ConfigPage, isFillPage, pageLabel } from '../../lib/app-view';
 import type { ScanFieldType } from '../../lib/scan-field';
+import { IgnoredScanPill, type ScanSink, ScanSinkField } from '../ScanSinkField';
 
 /** 二级页面（编辑视图）的面包屑：「识别规则 / 编辑：下划线查货架」，第一段回到列表。 */
 export interface Breadcrumb {
   current: string;
   onList: () => void;
-}
-
-/** 隐藏的扫码接收框（见 use-config-scan.ts）。 */
-export interface ScanSink {
-  sinkRef: RefObject<HTMLInputElement | null>;
-  value: string;
-  onChange: (value: string) => void;
-  onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
 }
 
 interface ConfigCenterProps {
@@ -76,27 +69,9 @@ export function ConfigCenter({
             pageLabel(page)
           )}
         </h1>
-        {/*
-          只在这里扫了码之后出现（每一页都挂着就是噪音）；换 key 重新挂载，闪烁动画才会每次都从头播放。
-          离开配置中心就收起（use-config-center.ts）。
-        */}
-        {pillFlashes > 0 && (
-          <span key={pillFlashes} className="config-pill config-pill--flash" role="status">
-            配置中不打印
-          </span>
-        )}
-        <input
-          ref={sink.sinkRef}
-          type={scanFieldType}
-          className="visually-hidden"
-          aria-label="扫码内容（配置中心里不打印）"
-          tabIndex={-1}
-          value={sink.value}
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => sink.onChange(event.target.value)}
-          onKeyDown={sink.onKeyDown}
-        />
+        {/* 离开配置中心就收起（use-config-center.ts）。 */}
+        <IgnoredScanPill flashes={pillFlashes} text="配置中不打印" />
+        <ScanSinkField sink={sink} fieldType={scanFieldType} label="扫码内容（配置中心里不打印）" />
       </div>
       <nav className="config-nav" aria-label="配置">
         {CONFIG_NAV.map((group) => (

@@ -56,6 +56,7 @@ import { useMediaQuery } from './view-models/use-media-query';
 import { useMobileStation } from './view-models/use-mobile-station';
 import { useNotices } from './view-models/use-notices';
 import { usePdf } from './view-models/use-pdf';
+import { usePrintPageScan } from './view-models/use-print-page-scan';
 import { usePrinterCommands } from './view-models/use-printer-commands';
 import { usePrinterProfiles } from './view-models/use-printer-profiles';
 import { usePrinters } from './view-models/use-printers';
@@ -196,10 +197,17 @@ export function App() {
     latestScanRaw: station.scan?.raw ?? null,
     // 查找表、密钥、规则指定的模板改了都会影响这一张：回到工作台时统一按新配置刷新一次。
     onClosed: () => void station.refreshPreview(),
-    onScanIgnored: () => feedback.announce({ kind: 'configuring' }),
+    onScanIgnored: () => feedback.announce({ kind: 'scan-ignored', where: 'config' }),
   });
   const { appView } = config;
   const isWorkbench = isWorkbenchActive(appView.view);
+  const printPageScan = usePrintPageScan({
+    view: appView.view,
+    canReceive: appView.leaveConfirm === null,
+    lineGapMs: settings?.scanLineGapMs ?? DEFAULT_SETTINGS.scanLineGapMs,
+    onScanIgnored: (where) => feedback.announce({ kind: 'scan-ignored', where }),
+  });
+  const printPageSink = { sink: printPageScan.sink, fieldType, pillFlashes: printPageScan.pillFlashes };
 
   // 打印机页打开时检测缺驱动的设备；装好之后立即刷新打印机列表（新打印机出现、驱动纸张的「建议」跟着出现）。
   const refreshPrinters = useCallback(() => void printers.refresh(), [printers.refresh]);
@@ -534,9 +542,11 @@ export function App() {
         </ConfigCenter>
       )}
       {settings !== null && isBatchOpen && (
-        <BatchPage batch={batch} templates={templates.templates} onClose={appView.close} />
+        <BatchPage batch={batch} templates={templates.templates} scan={printPageSink} onClose={appView.close} />
       )}
-      {settings !== null && isPdfOpen && <PdfPage pdf={pdf} paperOptions={pdfPaperOptions} onClose={appView.close} />}
+      {settings !== null && isPdfOpen && (
+        <PdfPage pdf={pdf} paperOptions={pdfPaperOptions} scan={printPageSink} onClose={appView.close} />
+      )}
       {isMobileOverlayShown && (
         <MobileOverlay
           view={describeMobileOverlay(mobile.status, {

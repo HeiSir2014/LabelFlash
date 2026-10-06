@@ -1,6 +1,7 @@
 import type { PrintResult } from '../../../core/types';
 import { type PrintMode, printResultCue } from '../../../shared/print-cues';
 import { VOICE_CUE_LEVEL, type VoiceCue, type VoiceLevel } from '../../../shared/voice';
+import type { IgnoredScanPlace } from './scan-routing';
 import type { FeedbackTone } from './status-text';
 
 export type { PrintMode };
@@ -11,8 +12,8 @@ export type FeedbackEvent =
   | { kind: 'invalid' }
   /** 手动模式下扫码成功、预览已出来（等待按 F2）。 */
   | { kind: 'scanned' }
-  /** 配置中心里扫了码：不打印，提醒操作员回工作台。 */
-  | { kind: 'configuring' }
+  /** 配置中心、批量打印页、打印 PDF 页里扫了码：不打印，提醒操作员是在哪一页。 */
+  | { kind: 'scan-ignored'; where: IgnoredScanPlace }
   | { kind: 'internal-error' };
 
 export interface FeedbackCue {
@@ -20,6 +21,12 @@ export interface FeedbackCue {
   /** 语音不可用时退回的提示音：按播报级别选。 */
   tone: FeedbackTone;
 }
+
+const IGNORED_SCAN_CUES: Record<IgnoredScanPlace, VoiceCue> = {
+  config: 'configuring',
+  batch: 'batchPageScan',
+  pdf: 'pdfPageScan',
+};
 
 const LEVEL_TONE: Record<VoiceLevel, FeedbackTone> = {
   confirm: 'success',
@@ -43,8 +50,8 @@ function cueFor(event: FeedbackEvent): VoiceCue {
       return printResultCue(event.result, event.mode);
     case 'invalid':
       return 'invalid';
-    case 'configuring':
-      return 'configuring';
+    case 'scan-ignored':
+      return IGNORED_SCAN_CUES[event.where];
     case 'scanned':
       return 'scanned';
     case 'internal-error':

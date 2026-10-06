@@ -2,9 +2,19 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ElectronApplication, Page } from '@playwright/test';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
-import { callApi, fakePrints, stubOpenDialog } from './support/app-helpers';
+import {
+  callApi,
+  fakePrints,
+  recordVoiceCues,
+  stubOpenDialog,
+  typeLikeScanner,
+  waitForPrintCountToSettle,
+} from './support/app-helpers';
 import { expect, test } from './support/fixtures';
 import { gridPdfBytes, writeGridPdf } from './support/pdf-files';
+
+/** 暂停的用例里每张打 300ms：按钮要在打完之前点到。 */
+const SLOW_PRINT_MS = 300;
 
 const WAYBILL_PRINTER: FakePrinterSpec = {
   name: '面单机',
@@ -89,6 +99,30 @@ test('prints the chosen pieces in the chosen order with copies', async ({ electr
     'grid.pdf 第 1 页第 1 张',
     'grid.pdf 第 1 页第 1 张',
   ]);
+});
+
+test('a scan on a paused PDF print prints nothing and leaves it paused', async ({ electronApp }) => {
+  const { app, page, userData } = await electronApp.launch({
+    fakePrinters: [{ ...WAYBILL_PRINTER, printDelayMs: SLOW_PRINT_MS }],
+  });
+  await assignWaybillPrinter(page);
+  const voiceCues = await recordVoiceCues(app);
+  await openGrid(app, page, userData);
+  await page.getByLabel('每张份数').fill('3');
+  await page.getByRole('button', { name: '打印 24 张' }).click();
+  await expect.poll(async () => (await fakePrints(app)).length).toBeGreaterThan(0);
+  await page.getByRole('button', { name: '暂停' }).click();
+  await expect(pdfStatus(page)).toContainText('已暂停');
+  const pausedAt = await waitForPrintCountToSettle(app, SLOW_PRINT_MS);
+
+  // 扫码枪的回车不能落到刚出现的「继续」上。
+  await typeLikeScanner(page, ['202609280001']);
+  await expect.poll(voiceCues).toEqual(['pdfPageScan']);
+  await expect(page.locator('.pdf-page .config-pill')).toHaveText('扫码不打印');
+  expect(await waitForPrintCountToSettle(app, SLOW_PRINT_MS)).toBe(pausedAt);
+  await expect(pdfStatus(page)).toContainText('已暂停');
+  await expect(page.getByRole('button', { name: '继续' })).toBeVisible();
+  await page.getByRole('button', { name: '取消' }).click();
 });
 
 test('applies a box drawn on the first page to every page', async ({ electronApp }) => {

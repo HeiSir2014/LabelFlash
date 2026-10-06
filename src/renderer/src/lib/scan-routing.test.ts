@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { BATCH_VIEW, PDF_VIEW, WORKBENCH } from './app-view';
-import { isWorkbenchActive, scanTargetFor } from './scan-routing';
+import { ignoredScanPlace, isWorkbenchActive, scanTargetFor } from './scan-routing';
 
 describe('scanTargetFor', () => {
   test('uses the scan box on the workbench', () => {
@@ -14,6 +14,15 @@ describe('scanTargetFor', () => {
     expect(scanTargetFor({ kind: 'config', page: 'secrets' })).toBe('sink');
     expect(scanTargetFor(BATCH_VIEW)).toBe('sink');
     expect(scanTargetFor(PDF_VIEW)).toBe('sink');
+  });
+});
+
+describe('ignoredScanPlace', () => {
+  test('names the page that swallowed a scan so the announcement can say where', () => {
+    expect(ignoredScanPlace({ kind: 'config', page: 'general' })).toBe('config');
+    expect(ignoredScanPlace(BATCH_VIEW)).toBe('batch');
+    expect(ignoredScanPlace(PDF_VIEW)).toBe('pdf');
+    expect(ignoredScanPlace(WORKBENCH)).toBeNull();
   });
 });
 

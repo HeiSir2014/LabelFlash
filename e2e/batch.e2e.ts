@@ -3,7 +3,14 @@ import { join } from 'node:path';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { minimalXlsx } from '../src/main/batch/testing/minimal-xlsx';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
-import { callApi, fakePrints, stubOpenDialog } from './support/app-helpers';
+import {
+  callApi,
+  fakePrints,
+  recordVoiceCues,
+  stubOpenDialog,
+  typeLikeScanner,
+  waitForPrintCountToSettle as waitForPrintCountToSettleAfter,
+} from './support/app-helpers';
 import { stubBatchQuitConfirm } from './support/electron-app';
 import { expect, test } from './support/fixtures';
 
@@ -15,27 +22,8 @@ const LABEL_PRINTER: FakePrinterSpec = {
 /** 暂停、取消的用例里每张打 300ms：按钮要在打完之前点到。 */
 const SLOW_PRINT_MS = 300;
 
-/**
- * 等打印数量稳定下来（连续两次读到的一样）：暂停、取消之后用，比固定等一段时间更快也更可靠——
- * 慢的时候（CI 负载高）不会因为等得不够久而读错，快的时候也不用白等。
- */
-async function waitForPrintCountToSettle(app: ElectronApplication): Promise<number> {
-  let previous = -1;
-  await expect
-    .poll(
-      async () => {
-        const current = (await fakePrints(app)).length;
-        const isStable = current === previous;
-        previous = current;
-        return isStable;
-      },
-      // 两次读到一样的数才算稳定：间隔要比一张的打印延迟长，不然可能在正在打的那一张还没落地时
-      // 就连续读到两次一样的旧值，提前把还没结束的当成已经结束（暂停、取消这一刻可能正有一张在打，
-      // 状态已经是 paused/canceled 了，但它还没真的打完）。
-      { intervals: [SLOW_PRINT_MS + 100] },
-    )
-    .toBe(true);
-  return previous;
+function waitForPrintCountToSettle(app: ElectronApplication): Promise<number> {
+  return waitForPrintCountToSettleAfter(app, SLOW_PRINT_MS);
 }
 
 /** 60×40 分给标签机A（当前模板「通用」就是 60×40）。 */
@@ -158,6 +146,28 @@ test('pauses, resumes and cancels a running batch between labels', async ({ elec
   await expect(batchStatus(page)).toContainText('已取消');
   const canceledAt = await waitForPrintCountToSettle(app);
   expect(canceledAt).toBeLessThan(20);
+});
+
+test('a scan on a paused batch page prints nothing and leaves the batch paused', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch({ fakePrinters: [{ ...LABEL_PRINTER, printDelayMs: SLOW_PRINT_MS }] });
+  await assignLabelPrinter(page);
+  const voiceCues = await recordVoiceCues(app);
+  await openBatch(page);
+  await page.getByRole('button', { name: '只按序号打' }).click();
+  await page.getByLabel('张数').fill('20');
+  await page.getByRole('button', { name: '打印 20 张' }).click();
+  await expect.poll(async () => (await fakePrints(app)).length).toBeGreaterThan(0);
+  await page.getByRole('button', { name: '暂停' }).click();
+  await expect(batchStatus(page)).toContainText('已暂停');
+  const pausedAt = await waitForPrintCountToSettle(app);
+
+  // 扫码枪的回车不能落到刚出现的「继续」上。
+  await typeLikeScanner(page, ['202609280001']);
+  await expect.poll(voiceCues).toEqual(['batchPageScan']);
+  await expect(page.locator('.batch-page .config-pill')).toHaveText('扫码不打印');
+  expect(await waitForPrintCountToSettle(app)).toBe(pausedAt);
+  await expect(batchStatus(page)).toContainText('已暂停');
+  await expect(page.getByRole('button', { name: '继续' })).toBeVisible();
 });
 
 test('quitting mid-batch and confirming records exactly one CANCELED job per unattempted label', async ({

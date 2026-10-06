@@ -23,6 +23,23 @@ export function scanTargetFor(view: AppView): ScanTarget {
   return TEST_BOXES.get(view.page) ?? 'sink';
 }
 
+/** 扫码被隐藏接收框收下、没有打印的地方：播报按它说清楚是在哪一页。 */
+export type IgnoredScanPlace = 'config' | 'batch' | 'pdf';
+
+/** 在这个视图上扫码不打印时，提醒里说的地方；工作台上扫码照常打印，返回 null。 */
+export function ignoredScanPlace(view: AppView): IgnoredScanPlace | null {
+  switch (view.kind) {
+    case 'workbench':
+      return null;
+    case 'config':
+      return 'config';
+    case 'batch':
+      return 'batch';
+    case 'pdf':
+      return 'pdf';
+  }
+}
+
 /**
  * F2 打印和扫码框的自动回焦只在工作台生效：配置中心、批量打印页、打印 PDF 页里管理员在填表，
  * 焦点留在他放的位置。

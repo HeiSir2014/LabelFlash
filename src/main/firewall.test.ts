@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { elevatedCommand, parseFirewallCheck, powerShellPath } from './firewall';
+import { discoveryFirewallStatus, elevatedCommand, parseFirewallCheck, powerShellPath } from './firewall';
 
 describe('firewall', () => {
+  // 只在不是 Windows 的电脑上跑：Windows 上它会真的去查本机的防火墙。
+  test.skipIf(process.platform === 'win32')('treats the mDNS rule as unknown outside Windows', async () => {
+    expect(await discoveryFirewallStatus('/Applications/x.app')).toBe('unknown');
+  });
+
   test('reads the result of the check script', () => {
     expect(parseFirewallCheck('allowed\r\n')).toBe('allowed');
     expect(parseFirewallCheck('missing\r\n')).toBe('missing');

@@ -1,5 +1,6 @@
 /**
- * Windows 防火墙规则：允许局域网里的电脑连到本机接口。程序（配置中心的按钮）和安装包用同一份脚本。
+ * Windows 防火墙规则：允许局域网里的电脑连到本机接口和局域网共享（TCP，按程序放行），
+ * 以及局域网共享的自动发现（mDNS，UDP 5353）。程序（配置中心的按钮）和安装包用同一份脚本。
  * 用 PowerShell 的 NetSecurity 命令而不是 netsh：程序路径里有中文、空格都不用另外转义，还能按程序路径找规则。
  */
 
@@ -8,7 +9,10 @@ import { BRAND } from './brand';
 /** 规则名只用 ASCII：经命令行、安装脚本传来传去都不会乱码。 */
 export const FIREWALL_RULE_NAME = `${BRAND.productNameAscii} local API`;
 
-export type FirewallAction = 'add' | 'remove' | 'check';
+/** mDNS 的端口（RFC 6762）：局域网共享自动发现要收别的电脑发来的查询。 */
+export const MDNS_UDP_PORT = 5353;
+
+export type FirewallAction = 'add' | 'remove' | 'check' | 'check-discovery';
 
 /**
  * PowerShell 的分词器除了 ASCII 单引号（U+0027）还把几种 Unicode 「智能引号」当单引号用
@@ -35,7 +39,8 @@ const IMPORT_MODULE = `Import-Module (Join-Path $env:SystemRoot 'System32\\Windo
  * - 只动这个程序路径下的规则：本程序的同名规则，和针对本程序的阻止规则。用户拒绝过 Windows 自己弹的防火墙提示时，
  *   系统给这个程序留下了阻止规则，阻止优先于放行，不删的话加了放行规则也没用。
  *   不按名称删别处的规则：每个 Windows 用户各装一份，各有各的规则，不能互相删。
- * - 只放行 TCP；所有网络类型都生效（Windows 给新连的 Wi-Fi 默认是「公用网络」，只放专用网络的话店里多半连不上）。
+ * - 只放行 TCP（本机接口、局域网共享）和 UDP 5353（mDNS）；所有网络类型都生效
+ *   （Windows 给新连的 Wi-Fi 默认是「公用网络」，只放专用网络的话店里多半连不上）。
  *   这是按需求方的取舍：公司内部局域网使用，方便优先；局域网里的调用照样要程序密钥。
  */
 const MUTATE_BODY = `
@@ -49,6 +54,7 @@ try {
     Sort-Object -Property Name -Unique | Remove-NetFirewallRule
   if (-not $Remove) {
     New-NetFirewallRule -DisplayName $Name -Direction Inbound -Action Allow -Protocol TCP -Program $Program -Profile Any | Out-Null
+    New-NetFirewallRule -DisplayName $Name -Direction Inbound -Action Allow -Protocol UDP -LocalPort ${MDNS_UDP_PORT} -Program $Program -Profile Any | Out-Null
   }
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)
@@ -77,6 +83,26 @@ try {
 }
 `;
 
+/**
+ * 查 mDNS（UDP 5353）那条规则，输出一个词：allowed / missing / unknown（含义同 CHECK_BODY）。
+ * 和 CHECK_BODY 分开：只装过旧版、只有 TCP 规则的电脑上，本机接口照旧算放行，只是局域网共享不能自动发现。
+ */
+const CHECK_DISCOVERY_BODY = `
+$ProgressPreference = 'SilentlyContinue'
+try {
+  ${IMPORT_MODULE}
+  if (-not @(Get-NetFirewallProfile -ErrorAction Stop | Where-Object { $_.Enabled -eq 'True' }).Count) { 'allowed'; exit 0 }
+  $rules = @(Get-NetFirewallApplicationFilter -Program $Program -ErrorAction SilentlyContinue |
+    Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' })
+  $mdns = @($rules | Where-Object { $_.DisplayName -eq $Name -and $_.Action -eq 'Allow' } |
+    Where-Object { @($_ | Get-NetFirewallPortFilter | Where-Object { $_.Protocol -eq 'UDP' -and $_.LocalPort -eq '${MDNS_UDP_PORT}' }).Count -gt 0 })
+  $blocked = @($rules | Where-Object { $_.Action -eq 'Block' })
+  if ($mdns.Count -eq 0 -or $blocked.Count -gt 0) { 'missing' } else { 'allowed' }
+} catch {
+  'unknown'
+}
+`;
+
 /** 安装包的 -Check：卸载时用，只看本程序的同名规则在不在。 */
 const CHECK_EXISTS_FOR_INSTALLER = `
 if ($Check) {
@@ -92,6 +118,9 @@ export function firewallScript(action: FirewallAction, program: string): string 
   const variables = [`$Name = ${powerShellLiteral(FIREWALL_RULE_NAME)}`, `$Program = ${powerShellLiteral(program)}`];
   if (action === 'check') {
     return [...variables, CHECK_BODY].join('\n');
+  }
+  if (action === 'check-discovery') {
+    return [...variables, CHECK_DISCOVERY_BODY].join('\n');
   }
   return [...variables, `$Remove = $${action === 'remove'}`, MUTATE_BODY].join('\n');
 }

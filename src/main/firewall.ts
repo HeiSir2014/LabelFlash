@@ -62,7 +62,21 @@ export async function firewallStatus(program: string): Promise<FirewallStatus> {
   return ok ? parseFirewallCheck(stdout) : 'unknown';
 }
 
-/** 弹管理员确认，加一条只放行这个程序（TCP）的入站规则；返回加完之后查到的状态。 */
+/** mDNS（UDP 5353）那条规则放行没有（局域网共享的自动发现）。只有 Windows 查；其他平台为 unknown。 */
+export async function discoveryFirewallStatus(program: string): Promise<FirewallStatus> {
+  if (process.platform !== 'win32') {
+    return 'unknown';
+  }
+  const { ok, stdout } = await runPowerShell(
+    ['-EncodedCommand', encode(firewallScript('check-discovery', program))],
+    CHECK_TIMEOUT_MS,
+  );
+  return ok ? parseFirewallCheck(stdout) : 'unknown';
+}
+
+/**
+ * 弹管理员确认，加两条只放行这个程序的入站规则（TCP 所有端口、UDP 5353）；返回加完之后查到的 TCP 那条的状态。
+ */
 export async function addFirewallRule(program: string): Promise<FirewallStatus> {
   if (process.platform !== 'win32') {
     return 'unknown';

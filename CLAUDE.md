@@ -26,6 +26,7 @@
 | 驱动纸张检测、打开打印机设置 | ✅ 常驻 PowerShell 查询 CIM；驱动「打印首选项」 | ✅ `ipptool`；系统设置「打印机与扫描仪」 |
 | 图中文字识别（货架号，本地 OCR） | ✅ 安装包带扩展和模型（`resources/ocr/`）；扩展静态链接自己编的 ONNX Runtime（/MT），不需要 VC++ 运行库，不要求 AVX2 | 未做：不带 OCR，这一步跳过，电脑不向手机要图 |
 | 本机接口（HTTP） | ✅ 防火墙规则：安装时和配置页按钮（PowerShell NetSecurity，弹 UAC）；占用端口的程序用 `Get-NetTCPConnection` 查 | ✅（未在 Mac 上验证）pkg 装完把程序加进系统防火墙允许列表；占用端口的程序用 `lsof` 查 |
+| 局域网共享（IPP 打印服务、mDNS 自动发现） | ✅ 防火墙规则（TCP + UDP 5353）和本机接口共用 | ✅（未在 Mac 上验证）和系统的 mDNSResponder 共用 5353 |
 | 驱动安装（在线签名清单） | ✅ PnP 检测、Authenticode、一次 UAC 静默安装 | ✅（未在 Mac 上验证）只认清单里有的型号；pkg + 管理员密码，或打开官方下载页 |
 | 打印机状态检测与异常通知 | ✅ | 未做：状态按「未知」处理，不阻止打印；计划改用 CUPS 的 `printer-state-reasons` |
 | 打印机诊断修复 | ✅ 探测进程查服务、状态、USB（PnP）、队列；修复经一次性 / 提权的 PowerShell（UAC） | ✅（未在 Mac 上验证）`lpstat`、`ipptool`、`system_profiler`；改 CUPS 先以当前用户，被拒再经 `osascript` 要管理员密码 |
@@ -74,7 +75,7 @@ CI（GitHub Actions）会在 PR 和 `master` 上跑：windows-latest 上 check�
 ```
 src/core      业务层：纯 TypeScript，不依赖 Electron / Node / SQLite
 src/shared    主进程和界面共用：IPC 契约、设置的校验、品牌、常量
-src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）、批量打印（batch/）、PDF 打印（pdf/）、标签机指令（printing/printer-commands-station.ts）
+src/main      Electron 主进程：窗口、app:// 协议、IPC、SQLite、打印、语音、密钥、通知、更新、本机接口（api/）、批量打印（batch/）、PDF 打印（pdf/）、局域网共享（ipp/）、标签机指令（printing/printer-commands-station.ts）
 src/preload   contextBridge，只暴露类型化 API
 src/renderer  界面：React 19，MVVM（lib → view-models → components）
 scripts       构建脚本（bundle 检查、图标、安装包、中转服务的构建与发布）
@@ -117,6 +118,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 
 - **隔离数据**：开发版和 E2E 用环境变量 `CDL_LABELFLASH_USER_DATA` 指向单独的数据目录。这个变量只对未打包的程序生效。
 - **本机接口的端口**：E2E 用 `CDL_LABELFLASH_API_PORT=0`（系统分配），和本机上跑着的安装版、并行的用例互不抢端口。同样只对未打包的程序生效。
+- **局域网共享的端口和广播**：E2E 用 `CDL_LABELFLASH_IPP_PORT=0`（系统分配）、`CDL_LABELFLASH_IPP_LOOPBACK=1`（只监听 127.0.0.1）、`CDL_LABELFLASH_IPP_DISCOVERY=0`（不发 mDNS）。同样只对未打包的程序生效。
 - **假打印机**：E2E 和视觉验收用环境变量 `CDL_LABELFLASH_FAKE_PRINTERS`（打印机名、驱动纸张、状态的 JSON）代替系统打印机，打印只记下来。同样只对未打包的程序生效，见 `src/main/printing/fake-printers.ts`。
 - **假驱动环境**：E2E 和视觉验收用 `CDL_LABELFLASH_FAKE_DRIVERS`（缺驱动的设备、安装包下载、签名核对、提权安装）和 `CDL_LABELFLASH_DRIVER_CATALOG_TEST_KEY`（额外信任的清单公钥），同样只对未打包的程序生效，见 `src/main/drivers/fake-drivers.ts`。
 - **数据库迁移**：1.0.1 发布之前，表结构直接改在 `src/main/storage/migrations.ts` 的初始 schema 里，开发机删掉旧库即可。发布之后，已发布的迁移不能改，只能在末尾追加。
@@ -131,6 +133,7 @@ native/ocr    本地 OCR 引擎：Rust（ocr-core）+ Node-API 扩展（ocr-addo
 - IPC 只接受主窗口主 frame 发来的消息，参数全部经过 `src/main/ipc-validators.ts` 校验。
 - 密钥用 Electron `safeStorage` 加密保存，不写进日志，不随规则导出，也不回传给界面。
 - 用户写的正则只在隔离上下文里执行，有超时。HTTP 查询和打印结果通知用 `net.fetch`。
+- 局域网共享默认关；只接受私有网段、链路本地和本机的连接（在 connection 事件里就断开别的），先认证再读正文，文档和同时在收的总量有上限；收到的 PDF、图片只在 sandbox 的渲染页里解析，光栅由 core 的纯 TS 解码；对方只能用六个 IPP 操作，碰不到程序的别的功能。共享密码只存摘要。测试只在 127.0.0.1 上开端口，不改防火墙、不发组播。
 - `electron-builder.yml` 里的 fuses 不放开。
 - 主进程和 preload 的 bundle 必须自包含，安装包里没有 `node_modules`，由 `bun run verify:bundle` 把关。
 - 下载的驱动安装包在核对大小、SHA-256（签名清单里的值）和签名者之前绝不运行；运行的是复制到管理员专属目录、复核过哈希的那份。驱动清单只用内置公钥核对通过、没过期、不比用过的旧的。

@@ -177,6 +177,22 @@
 | 安全软件 | Windows 安全中心开着时第一次发送不被拦（PowerShell 里 Add-Type + P/Invoke） | |
 | 打印中发设置 | 批量打印进行中点「保存并发送」：指令排在两张之间，之后的标签按新设置出 | |
 
+## 驱动安装（子项目 5c，待验收）
+
+| 项 | 怎么验 | 结果 / 日期 |
+|---|---|---|
+| 真实签名的清单 | 用真实私钥签一份只含一个型号的清单，上传，安装版里「驱动清单地址」填它：显示签发日期、型号数 | |
+| 真机安装一台没装驱动的热敏标签机 | 一台没装驱动的热敏标签机（插上后设备管理器里是问题代码 28 的「未知设备」或「USB 打印支持」下的打印机）：「驱动」一节列出它；点「安装驱动」→ 下载、核对 → UAC（显示的是 Windows PowerShell）→ 静默安装不弹安装程序窗口 → 30 秒内出现新打印机 → 「纸张 → 打印机」出现「建议」→ 分配后打一张测试页。日志里每一步都有记录、没有秘密 | |
+| UAC 点「否」 | 提示「管理员确认被取消了」，临时目录（`%TEMP%\cdl-labelflash-driver-*`）已删除 | |
+| SHA-256 被改 | 把清单里的 SHA-256 改一位重签：提示「SHA-256 不一致」，没有弹 UAC | |
+| 防火墙 / 杀毒软件 | Windows 防火墙、杀毒软件开着时安装过程不被拦截（被拦截时记录现象） | |
+| macOS pkg 安装 | Apple 芯片和 Intel 各一次：清单里有 pkg 的型号输管理员密码安装、只有下载页的型号打开浏览器；`system_profiler` 新旧两种输出都能认出设备 | |
+
+以下是本次开发中在这台开发机上做过的验证，不算真机验收，但记录以备查：
+
+- `detectWindowsDevices()`：在没有接驱动不全的 USB 打印设备时跑通，返回 `[]`，脚本本身能运行、输出能解析（2026-10-05）。
+- `checkWindowsSignature()` / `driver-catalog:describe`：在这台开发机上读 `notepad.exe` 的大小和 SHA-256 成功。最初读 Authenticode 签名失败，原因是这台机器的 `PSModulePath` 里手工装的 PowerShell 7 的模块路径排在 Windows PowerShell 5.1 自己的模块路径之前，`Get-AuthenticodeSignature` 所在的 `Microsoft.PowerShell.Security` 模块加载到不兼容的版本而失败（`query failed (exit 1)`）。代码审查后在 `run-command.ts` 的 `runPowerShell`（所有调用它的脚本共用）里去掉了子进程环境里的 `PSModulePath`，重新验证：`checkWindowsSignature(notepad.exe 的路径)` 现在返回 `{ status: 'valid', signer: 'CN=Microsoft Windows, …' }`，问题已解决。
+
 ## 已知限制
 
 - 安装包未做代码签名，首次运行会被 SmartScreen 拦一次。

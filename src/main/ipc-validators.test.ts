@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { BatchPlan } from '../core/batch/batch-model';
 import {
+  driverInstallBlocksUpdate,
   MAX_IPC_STRING_LENGTH,
   MAX_RAW_INPUT_LENGTH,
   requireApiKeyId,
@@ -11,6 +12,7 @@ import {
   requireBytes,
   requireDiagnosisCheck,
   requireDiagnosisFixRequest,
+  requireDriverDeviceKey,
   requireIndex,
   requireJobQuery,
   requireLibraryTemplateId,
@@ -203,6 +205,24 @@ describe('ipc validators', () => {
     const patch = { autoPrint: false, printerCommands: { 标签机A: { commandSet: 'tspl' } } };
     expect(requireSettingsPatch(patch)).toEqual({ autoPrint: false });
     expect(() => requireSettingsPatch('x')).toThrow(TypeError);
+  });
+});
+
+describe('requireDriverDeviceKey', () => {
+  test('accepts device keys and rejects anything else', () => {
+    expect(requireDriverDeviceKey('usb-1234-abcd-0a1b2c3d')).toBe('usb-1234-abcd-0a1b2c3d');
+    expect(() => requireDriverDeviceKey('https://example.invalid/x.exe')).toThrow();
+    expect(() => requireDriverDeviceKey(7)).toThrow();
+  });
+});
+
+describe('driverInstallBlocksUpdate', () => {
+  test('blocks installing an update while a driver install is running', () => {
+    expect(driverInstallBlocksUpdate(true)).toContain('正在安装驱动');
+  });
+
+  test('allows installing an update when no driver install is running', () => {
+    expect(driverInstallBlocksUpdate(false)).toBeNull();
   });
 });
 

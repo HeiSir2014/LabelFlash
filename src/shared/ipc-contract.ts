@@ -10,6 +10,7 @@ import type { PreviewResult, PrinterInfo, PrintResult } from '../core/types';
 import type { BatchCheckResult, BatchPreviewResult, BatchStartResult, BatchStatus, BatchTableResult } from './batch';
 import type { CheckVerdict, DiagnosisCheckId, FixOutcome, FixRequest } from './diagnosis';
 import type { PaperCheck } from './driver-paper';
+import type { DriverStatus } from './drivers';
 import type { JobPage, JobQuery } from './job-history';
 import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from './local-api';
 import type { MobileStatus } from './mobile-status';
@@ -114,6 +115,13 @@ export const IpcChannel = {
   BatchRetryFailed: 'batch:retry-failed',
   BatchStatus: 'batch:status',
   BatchStatusChanged: 'batch:status-changed',
+  GetDriverStatus: 'drivers:status',
+  DetectDrivers: 'drivers:detect',
+  InstallDriver: 'drivers:install',
+  CancelDriverInstall: 'drivers:cancel-install',
+  OpenDriverDownloadPage: 'drivers:open-download-page',
+  DriverStatusChanged: 'drivers:status-changed',
+  ReinstallPrinterDriver: 'drivers:reinstall-for-printer',
 } as const;
 
 /** 渲染进程只能发起这两种来源；mobile 属于 Phase 2 的 HTTP 入口。 */
@@ -161,6 +169,8 @@ export interface AppInfo {
   logsDir: string;
   /** 安装包自带的手机扫码中转地址（设置里没填时用它）；自己构建、没有注入时为 null。 */
   defaultRelayUrl: string | null;
+  /** 安装包自带的驱动清单地址（设置里没填时用它）；自己构建、没有注入时为 null。 */
+  defaultDriverCatalogUrl: string | null;
   /** 这台电脑能识别标签图上的字（加工步骤「图中文字识别」）；macOS 这一版和缺文件时为 false。 */
   canReadImageText: boolean;
 }
@@ -315,6 +325,18 @@ export interface LabelFlashApi {
   getBatchStatus(): Promise<BatchStatus | null>;
   /** 批量打印的进度（合并推送，状态变化立即推）。 */
   onBatchStatus(listener: (status: BatchStatus | null) => void): () => void;
+  getDriverStatus(): Promise<DriverStatus>;
+  /** 读驱动清单（force：重新下载）并检测缺驱动的 USB 设备。 */
+  detectDrivers(force: boolean): Promise<DriverStatus>;
+  /** 给「驱动」一节列出的一台设备装驱动（只能按设备编号，不能指定地址）；进度经 onDriverStatus 推送。 */
+  installDriver(deviceKey: string): Promise<DriverStatus>;
+  /** 取消下载（开始提权安装之后取消不了）。 */
+  cancelDriverInstall(): Promise<void>;
+  /** 用系统浏览器打开清单里这台设备的官方下载页（地址来自签过名的清单）。 */
+  openDriverDownloadPage(deviceKey: string): Promise<void>;
+  onDriverStatus(listener: (status: DriverStatus) => void): () => void;
+  /** 5b 诊断里的「重新安装驱动」：按这台打印机的驱动名在清单里找型号，走同一套下载、核对、提权安装；进度经 onDriverStatus 推送。 */
+  reinstallPrinterDriver(printerName: string): Promise<DriverStatus>;
 }
 
 export interface WindowControlsApi {

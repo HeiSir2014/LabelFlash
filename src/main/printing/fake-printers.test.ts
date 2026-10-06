@@ -53,6 +53,12 @@ describe('FakePrinters', () => {
     });
   });
 
+  test('adds a printer, as if a driver had just been installed', async () => {
+    const printers = new FakePrinters([]);
+    printers.add({ name: '示例标签机', paper: null, readiness: null });
+    expect((await printers.listPrinters()).map((printer) => printer.name)).toEqual(['示例标签机']);
+  });
+
   // 诊断的「自动设置驱动纸张」改的是假驱动纸张：之后读到的是新纸张。
   test('lets the driver paper be changed', async () => {
     const printers = new FakePrinters(SPEC);

@@ -22,6 +22,7 @@ import {
   stubPrinting,
   typeLikeScanner,
 } from '../support/app-helpers';
+import { catalogModel, catalogText, e2eCatalogKeys, fakeDrivers } from '../support/driver-catalog';
 import { APP_ROOT, type LaunchOptions } from '../support/electron-app';
 import { expect, test } from '../support/fixtures';
 import { connectTestPhone, type LocalRelay, startLocalRelay, type TestPhone } from '../support/relay-server';
@@ -48,7 +49,7 @@ import { type Issue, pageChecks } from './checks';
 
 /**
  * 视觉验收（设计文档 §8.2 的验收项，V01 起；模板库是 V50–V55，批量打印是 V60–V63，标签机指令是 V80–V83，
- * 诊断是 V84–V86）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 诊断是 V84–V86，驱动安装是 V87–V89）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
  * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
@@ -148,6 +149,24 @@ const COMMAND_PRINTERS: FakePrinterSpec[] = [
     driverName: 'Office Inkjet',
   },
 ];
+
+/** V87–V89：测试现场生成的清单密钥（公钥经启动选项交给程序）。 */
+const DRIVER_KEYS = e2eCatalogKeys();
+/** V88：假的提权安装停在「安装」这一步，够截图。 */
+const DRIVER_INSTALL_HOLD_MS = 600_000;
+/** V89：60 天前签的清单（有效期 30 天），已过期。 */
+const EXPIRED_CATALOG_AGE_MS = 60 * 86_400_000;
+
+async function openDriverCard(ctx: Context, catalog: string): Promise<void> {
+  const server = await startServer((_request, response) => {
+    response.setHeader('Content-Type', 'application/json');
+    response.end(catalog);
+  });
+  ctx.cleanups.push(server.close);
+  await callApi(ctx.page, 'updateSettings', { driverCatalogUrl: `${server.origin}/driver-catalog.json` });
+  await openConfig(ctx.page, '打印机');
+  await ctx.page.getByRole('region', { name: '驱动' }).scrollIntoViewIfNeeded();
+}
 
 /** 分配好纸张、打开打印机页，展开这台打印机的「标签机指令」。 */
 async function openPrinterCommands(page: Page, printerName: string): Promise<Locator> {
@@ -1633,6 +1652,47 @@ const ITEMS: Item[] = [
       await commands.getByRole('button', { name: '走一张纸' }).click();
       await commands.getByRole('button', { name: '没反应' }).click();
       await expect(commands).toContainText('标签机没有反应');
+    },
+  },
+  {
+    id: 'V87',
+    title: '打印机 · 驱动（发现缺驱动的设备）',
+    points:
+      '「驱动」卡片在打印机卡片下面，标题和「重新检测」同一行；清单那一行「驱动清单：… 签发，1 个型号，有效期到 …」是普通灰字；两台设备各一行：「示例品牌 示例型号 X1」右侧「安装驱动（0.0 MB）」按钮、下面「USB 1234:ABCD · 没装驱动」；另一台「USB 打印支持」没有按钮，下面是通用驱动的指引；长名字省略不撑宽；「驱动清单地址」收起；1024 宽时按钮不换到下一行',
+    launch: { fakePrinters: [], fakeDrivers: fakeDrivers(), driverCatalogKey: DRIVER_KEYS.publicKey },
+    setup: async (ctx) => {
+      await openDriverCard(ctx, catalogText(DRIVER_KEYS, [catalogModel()]));
+      await expect(ctx.page.getByRole('region', { name: '驱动' })).toContainText('1 个型号');
+    },
+  },
+  {
+    id: 'V88',
+    title: '打印机 · 驱动（正在安装）',
+    points:
+      '安装区淡黄底：步骤「下载 核对 安装 找打印机」前两步绿色、「安装」加粗、最后一步灰；下面一句「请在 Windows 弹出的窗口里点「是」…」完整换行不溢出；没有取消按钮（提权之后取消不了）；设备行的按钮和「重新检测」都灰掉',
+    launch: {
+      fakePrinters: [],
+      fakeDrivers: fakeDrivers({ installDelayMs: DRIVER_INSTALL_HOLD_MS }),
+      driverCatalogKey: DRIVER_KEYS.publicKey,
+    },
+    setup: async (ctx) => {
+      await openDriverCard(ctx, catalogText(DRIVER_KEYS, [catalogModel()]));
+      const card = ctx.page.getByRole('region', { name: '驱动' });
+      await card.getByRole('button', { name: /安装驱动/ }).click();
+      await expect(card.getByRole('status')).toContainText('点「是」');
+    },
+  },
+  {
+    id: 'V89',
+    title: '打印机 · 驱动（清单不能用）',
+    points:
+      '清单那一行红字「驱动清单不能用：驱动清单已在 … 过期（电脑时间是 …）…」完整换行；设备行都没有按钮，指引「驱动清单不可用，不能自动安装：…」；展开「驱动清单地址」后是一行地址设置（输入框、「恢复默认」），和「通用」页的中转地址那一行对齐方式一致',
+    launch: { fakePrinters: [], fakeDrivers: fakeDrivers(), driverCatalogKey: DRIVER_KEYS.publicKey },
+    setup: async (ctx) => {
+      await openDriverCard(ctx, catalogText(DRIVER_KEYS, [catalogModel()], Date.now() - EXPIRED_CATALOG_AGE_MS));
+      const card = ctx.page.getByRole('region', { name: '驱动' });
+      await expect(card).toContainText('过期');
+      await card.getByText('驱动清单地址', { exact: true }).first().click();
     },
   },
 ];

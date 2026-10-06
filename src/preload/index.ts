@@ -99,6 +99,13 @@ const api: LabelFlashApi = {
   retryBatchFailures: (batchId, row) => ipcRenderer.invoke(IpcChannel.BatchRetryFailed, batchId, row),
   getBatchStatus: () => ipcRenderer.invoke(IpcChannel.BatchStatus),
   onBatchStatus: (listener) => subscribe(IpcChannel.BatchStatusChanged, listener),
+  getDriverStatus: () => ipcRenderer.invoke(IpcChannel.GetDriverStatus),
+  detectDrivers: (force) => ipcRenderer.invoke(IpcChannel.DetectDrivers, force),
+  installDriver: (deviceKey) => ipcRenderer.invoke(IpcChannel.InstallDriver, deviceKey),
+  cancelDriverInstall: () => ipcRenderer.invoke(IpcChannel.CancelDriverInstall),
+  openDriverDownloadPage: (deviceKey) => ipcRenderer.invoke(IpcChannel.OpenDriverDownloadPage, deviceKey),
+  onDriverStatus: (listener) => subscribe(IpcChannel.DriverStatusChanged, listener),
+  reinstallPrinterDriver: (printerName) => ipcRenderer.invoke(IpcChannel.ReinstallPrinterDriver, printerName),
 };
 
 const windowControls: WindowControlsApi = {

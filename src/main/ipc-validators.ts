@@ -2,6 +2,7 @@ import type { BatchPlan } from '../core/batch/batch-model';
 import { BATCH_ID_PATTERN } from '../core/batch/batch-model';
 import { parseBatchPlan } from '../core/batch/parse-batch-plan';
 import type { RequestedDiagnosisFix } from '../core/diagnosis/diagnosis-model';
+import { DEVICE_KEY_PATTERN } from '../core/drivers/detected-device';
 import { WEBHOOK_ID_PATTERN } from '../core/notify/webhook-model';
 import { isPrinterAction, type PrinterAction, type PrinterCommandConfig } from '../core/printer-commands/command-model';
 import { parseCommandConfig } from '../core/printer-commands/sanitize-command-config';
@@ -259,6 +260,14 @@ export function requireSettingsPatch(value: unknown): Record<string, unknown> {
   return rest;
 }
 
+/** 设备编号来自主进程的检测结果（usb-厂商号-产品号-摘要）；界面传不进地址或路径。 */
+export function requireDriverDeviceKey(value: unknown): string {
+  if (typeof value !== 'string' || !DEVICE_KEY_PATTERN.test(value)) {
+    throw new TypeError('Invalid driver device key');
+  }
+  return value;
+}
+
 export function requireDiagnosisCheck(value: unknown): DiagnosisCheckId {
   if (!isDiagnosisCheckId(value)) {
     throw new TypeError('Invalid diagnosis check');
@@ -286,4 +295,15 @@ export function requireDiagnosisFixRequest(value: unknown): RequestedDiagnosisFi
     fix,
     admin: requireBoolean(record['admin'], 'admin'),
   };
+}
+
+/**
+ * 正在装驱动时不让「重启更新」结束程序：提权安装是系统在跑，程序退出后没人等它结束，装到一半也没法恢复。
+ * 装完（成功或失败）再点一次「重启更新」就行。和批量打印的 BATCH_BLOCKS_UPDATE_ISSUE 同一个做法：不抛异常，
+ * 回一句能直接给操作员看的中文说明（或 null = 不挡），ipc.ts 按它决定要不要真的调用 updater.install。
+ */
+export const DRIVER_INSTALL_BLOCKS_UPDATE_ISSUE = '正在安装驱动：请等它装完（成功或失败）后再重启更新';
+
+export function driverInstallBlocksUpdate(isInstalling: boolean): string | null {
+  return isInstalling ? DRIVER_INSTALL_BLOCKS_UPDATE_ISSUE : null;
 }

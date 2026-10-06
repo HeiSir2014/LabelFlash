@@ -39,8 +39,10 @@ import type { LocalApi } from './api/local-api';
 import { BATCH_BLOCKS_UPDATE_ISSUE } from './batch/batch-quit';
 import type { BatchStation } from './batch/batch-station';
 import type { DiagnosisStation } from './diagnosis/diagnosis-station';
+import type { DriverStation } from './drivers/driver-station';
 import { logFailures } from './ipc-errors';
 import {
+  driverInstallBlocksUpdate,
   requireApiKeyId,
   requireApiKeyName,
   requireBatchId,
@@ -49,6 +51,7 @@ import {
   requireBytes,
   requireDiagnosisCheck,
   requireDiagnosisFixRequest,
+  requireDriverDeviceKey,
   requireIndex,
   requireJobQuery,
   requireLibraryTemplateId,
@@ -124,6 +127,10 @@ export interface IpcDeps {
   voice: VoiceClips;
   mobile: MobileStation;
   localApi: LocalApi;
+  /** 驱动安装（打印机页的「驱动」一节）。 */
+  drivers: DriverStation;
+  /** 打印机的驱动名（按驱动名查清单）。 */
+  driverNameOf: (printerName: string) => Promise<string | null>;
   /** 每台打印机的驱动纸张和分辨率（短时缓存）。 */
   profiles: PrinterProfiles;
   /** 打印机页的「诊断」。 */
@@ -407,8 +414,12 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
   handle(IpcChannel.InstallUpdate, () => {
-    // quitAndInstall 会在任何确认之前就把安装程序拉起来：不像正常退出能先弹确认框，
-    // 批量打印还在打或暂停中时只能直接拒绝，让操作员自己先打完或取消这一批。
+    // quitAndInstall 会在任何确认之前就把安装程序拉起来：不像正常退出能先弹确认框，批量打印还在打或
+    // 暂停中、或者正在装驱动时只能直接拒绝，让操作员自己先打完 / 取消这一批，或者等驱动装完。
+    const driverIssue = driverInstallBlocksUpdate(deps.drivers.isInstalling);
+    if (driverIssue !== null) {
+      return { status: 'refused', issue: driverIssue } as const;
+    }
     if (deps.batch.pendingQuit() !== null) {
       return { status: 'refused', issue: BATCH_BLOCKS_UPDATE_ISSUE } as const;
     }
@@ -446,6 +457,21 @@ export function registerIpc(deps: IpcDeps): void {
   );
   handle(IpcChannel.FirewallStatus, () => deps.localApi.checkFirewall());
   handle(IpcChannel.AddFirewallRule, () => deps.localApi.addFirewallRule());
+  handle(IpcChannel.GetDriverStatus, () => deps.drivers.status());
+  handle(IpcChannel.DetectDrivers, (force) => deps.drivers.detect(requireBoolean(force, 'force')));
+  handle(IpcChannel.InstallDriver, (deviceKey) => deps.drivers.install(requireDriverDeviceKey(deviceKey)));
+  handle(IpcChannel.CancelDriverInstall, () => deps.drivers.cancelInstall());
+  handle(IpcChannel.OpenDriverDownloadPage, (deviceKey) =>
+    deps.drivers.openDownloadPage(requireDriverDeviceKey(deviceKey)),
+  );
+  handle(IpcChannel.ReinstallPrinterDriver, async (printerName) => {
+    const name = await requireKnownPrinter(printerName);
+    const driverName = await deps.driverNameOf(name);
+    if (driverName === null) {
+      throw new Error(`Cannot read the driver name of ${name}`);
+    }
+    return deps.drivers.installForDriverName(driverName);
+  });
 
   handle(IpcChannel.BatchOpenFile, async (): Promise<BatchTableResult> => {
     const window = deps.getWindow();

@@ -1132,6 +1132,127 @@ textarea {
   font-size: 12px;
 }
 
+/* ── 打印机页的「驱动」卡片 ── */
+.driver-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.driver-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.driver-section__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.driver-section__catalog,
+.driver-section__note {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+.driver-section__catalog--warning {
+  color: var(--color-warning-text);
+}
+
+.driver-section__catalog--error {
+  color: var(--color-error);
+}
+
+.driver-devices {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.driver-device {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-rule);
+}
+
+.driver-device__title {
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-device__detail,
+.driver-device__guide {
+  grid-column: 1 / -1;
+  margin: var(--space-1) 0 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+.driver-install {
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--color-tape-wash);
+}
+
+.driver-install--ok {
+  background: var(--color-housing);
+}
+
+.driver-install--error {
+  background: var(--color-error-wash);
+}
+
+.driver-install__text {
+  margin: 0;
+}
+
+.driver-install__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.driver-install__progress {
+  flex: 1;
+}
+
+.driver-steps {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.driver-steps__item--done {
+  color: var(--color-success);
+}
+
+.driver-steps__item--current {
+  font-weight: 700;
+}
+
+.driver-steps__item--todo {
+  color: var(--color-ink-soft);
+}
+
+.driver-section__source summary {
+  cursor: pointer;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
 .printer-empty-actions {
   padding: 0 var(--space-3) var(--space-2);
 }

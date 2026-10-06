@@ -83,11 +83,19 @@ function isSpec(value: unknown): value is FakePrinterSpec {
 export class FakePrinters {
   readonly printed: FakePrint[] = [];
   readonly rawJobs: FakeRawJob[] = [];
+  private readonly specs: FakePrinterSpec[];
 
   /** 诊断「自动设置驱动纸张」改过的驱动纸张。 */
   private readonly paperOverrides = new Map<string, DriverPaper>();
 
-  constructor(private readonly specs: readonly FakePrinterSpec[]) {}
+  constructor(specs: readonly FakePrinterSpec[]) {
+    this.specs = [...specs];
+  }
+
+  /** 假驱动装好以后系统里多出一台打印机（E2E 的驱动安装用，见 drivers/fake-drivers.ts）。 */
+  add(spec: FakePrinterSpec): void {
+    this.specs.push(spec);
+  }
 
   async listPrinters(): Promise<PrinterInfo[]> {
     return this.specs.map(({ name }) => ({ name, displayName: name }));

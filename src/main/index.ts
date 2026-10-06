@@ -11,6 +11,7 @@ import {
   nativeImage,
   net,
   powerMonitor,
+  shell,
   utilityProcess,
 } from 'electron';
 import appIcon from '../../resources/icon.png?asset';
@@ -18,7 +19,7 @@ import trayIcon from '../../resources/tray.png?asset';
 import { batchIdFor } from '../core/batch/batch-model';
 import { DedupGuard } from '../core/dedup-guard';
 import { SubmittedJobs } from '../core/diagnosis/submitted-jobs';
-import { NO_DRIVER_HINTS } from '../core/drivers/driver-hints';
+import type { DriverPlatform } from '../core/drivers/install-plan';
 import { PrintQueue } from '../core/print-queue';
 import { BATCH_RULE, fieldsScan, PrintService } from '../core/print-service';
 import { effectiveCommandSet } from '../core/printer-commands/command-set';
@@ -30,6 +31,7 @@ import { TemplateCatalog } from '../core/templates/template-catalog';
 import type { LabelTemplate } from '../core/templates/template-model';
 import { type PrinterInfo, systemClock } from '../core/types';
 import { BRAND } from '../shared/brand';
+import { DRIVER_CATALOG_PUBLIC_KEYS } from '../shared/driver-catalog-keys';
 import { IpcChannel } from '../shared/ipc-contract';
 import { PRINT_TIMEOUT_MS } from '../shared/print-timing';
 import { notSentText, rawSendFailureText } from '../shared/printer-commands';
@@ -53,6 +55,15 @@ import { DiagnosisStation } from './diagnosis/diagnosis-station';
 import { diagnosisPlatformOf } from './diagnosis/diagnosis-system';
 import { FakeDiagnosis, FakeLabelCommands } from './diagnosis/fake-diagnosis';
 import type { LabelCommandsSeam } from './diagnosis/seams';
+import { BUILD_DEFAULT_DRIVER_CATALOG_URL } from './drivers/build-defaults';
+import { CatalogClient } from './drivers/catalog-client';
+import { trustedKeys } from './drivers/catalog-signature';
+import { SqliteCatalogStateStore } from './drivers/catalog-state-store';
+import { createDriverReinstallSeam } from './drivers/diagnosis-seam';
+import { systemDriverPorts } from './drivers/driver-ports';
+import { DriverStation } from './drivers/driver-station';
+import { FakeDrivers, parseFakeDrivers, testCatalogKey } from './drivers/fake-drivers';
+import { cleanupOldDownloads, createInstallerDownloader } from './drivers/installer-downloader';
 import { addFirewallRule, firewallStatus } from './firewall';
 import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
@@ -380,6 +391,10 @@ async function bootstrap(): Promise<void> {
     async (name): Promise<PrinterReadiness | null> => ((await isInstalled(name)) ? probeReadiness(name) : null),
     createPrinterAlertNotifier(new AlertThrottle(systemClock), showMainWindow),
   );
+  // 打印机的驱动名（Windows 的 DriverName、macOS 的 printer-make-and-model）：5a「自动」猜指令集、
+  // 5c 的在线清单都按它查型号。假打印机直接给，真机经驻留探测进程查。
+  const driverNameOf = (name: string): Promise<string | null> =>
+    fakePrinters ? fakePrinters.driverName(name) : queryDriverName(name, probeHost);
   // 标签机指令：只发给系统打印机列表里有的打印机；设置存在设置表的 printerCommands 里。
   // Windows 经常驻探测进程（winspool RAW），macOS 用 lp -o raw；E2E 用假打印机记下来。
   const printerCommands = new PrinterCommands({
@@ -388,11 +403,12 @@ async function bootstrap(): Promise<void> {
     saveConfigs: (next) => {
       settings.update({ printerCommands: next });
     },
-    driverNameOf: (name) => (fakePrinters ? fakePrinters.driverName(name) : queryDriverName(name, probeHost)),
+    driverNameOf,
     driverDpi: async (name) => (await profiles.get(name))?.dpi ?? null,
-    // 5c（驱动安装）的在线驱动清单接进来之前，「自动」只按驱动名认。
-    // 取值函数：5c 的在线驱动清单接进来后替换这里，不用重启主进程或重建 PrinterCommands 就能生效。
-    hints: () => NO_DRIVER_HINTS,
+    // 取值函数：清单下载完、装好驱动之后才会有内容，不能在构造时取一次就定住，每次用到都要重新取。
+    // drivers（DriverStation）在本函数后面才建：这里只是存一个会在调用时才执行的箭头函数，调用发生在
+    // drivers 已经赋值之后（操作员点「自动」的时候），JS 闭包按引用捕获变量，声明顺序不影响这一点。
+    hints: () => drivers.hints(),
     sender: fakePrinters
       ? { send: (name, data) => fakePrinters.sendRaw(name, data) }
       : createRawSender(process.platform, probeHost),
@@ -445,8 +461,9 @@ async function bootstrap(): Promise<void> {
     openPreferences: fakeDiagnosis ? (name) => fakeDiagnosis.openPreferences(name) : openPrinterPreferences,
     submitted: submittedJobs,
     commands: labelCommands,
-    // 5c（驱动安装）的计划把这里换成它的实现；在那之前「重新安装驱动」不出现。
-    drivers: null,
+    // getDrivers 是取值函数：DriverStation 在这之后才构造（和上面 printerCommands 的 hints 同一个道理，
+    // 闭包按引用捕获，调用时 drivers 已经赋值）。
+    drivers: createDriverReinstallSeam(() => drivers, driverNameOf),
     clock: systemClock,
     log: (message) => console.info(message),
   });
@@ -738,6 +755,50 @@ async function bootstrap(): Promise<void> {
     );
   });
 
+  // 驱动安装（打印机页的「驱动」一节）。E2E 换掉设备检测、安装包下载、签名核对和提权安装（见 drivers/fake-drivers.ts），
+  // 清单照样真实下载、真实验签。安装版不读这些环境变量。
+  const fakeDriverSpec = parseFakeDrivers(process.env, app.isPackaged);
+  const fakeDrivers = fakeDriverSpec ? new FakeDrivers(fakeDriverSpec, fakePrinters) : null;
+  if (fakeDrivers) {
+    console.info('[drivers] using fake devices and installers');
+    (globalThis as { e2eFakeDrivers?: FakeDrivers }).e2eFakeDrivers = fakeDrivers;
+  }
+  const driverPlatform: DriverPlatform | null =
+    fakeDrivers !== null || process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : null;
+  const driverLog = (line: string) => console.info(line);
+  // 上次没来得及关掉程序（崩溃、被杀、断电）时，下载到一半的临时目录可能没删干净：启动时清一遍。
+  void cleanupOldDownloads(app.getPath('temp'), driverLog);
+  const systemPorts = systemDriverPorts(driverPlatform, driverLog);
+  const drivers = new DriverStation({
+    platform: driverPlatform,
+    catalog: new CatalogClient({
+      url: () => settings.current.driverCatalogUrl ?? BUILD_DEFAULT_DRIVER_CATALOG_URL,
+      fetch: (url, init) => net.fetch(url, init),
+      keys: trustedKeys({ ...DRIVER_CATALOG_PUBLIC_KEYS, ...testCatalogKey(process.env, app.isPackaged) }),
+      store: new SqliteCatalogStateStore(database),
+      clock: systemClock,
+      userAgent,
+      log: driverLog,
+    }),
+    devices: fakeDrivers?.deviceSource() ?? systemPorts.devices,
+    flow: {
+      downloader: createInstallerDownloader({
+        fetch: fakeDrivers?.fetch() ?? ((url, init) => net.fetch(url, init)),
+        tempRoot: app.getPath('temp'),
+        userAgent,
+      }),
+      verifier: fakeDrivers?.verifier() ?? systemPorts.verifier,
+      installer: fakeDrivers?.installer() ?? systemPorts.installer,
+      listPrinters: () => adapter.knownPrinterNames(),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      clock: systemClock,
+    },
+    openExternal: (url) => shell.openExternal(url),
+    onStatus: (status) => sendToMainWindow(IpcChannel.DriverStatusChanged, status),
+    clock: systemClock,
+    log: driverLog,
+  });
+
   registerIpc({
     service,
     adapter,
@@ -770,12 +831,15 @@ async function bootstrap(): Promise<void> {
       dataPath,
       logsDir,
       defaultRelayUrl: BUILD_DEFAULT_RELAY_URL,
+      defaultDriverCatalogUrl: BUILD_DEFAULT_DRIVER_CATALOG_URL,
       canReadImageText: canReadImages(),
     },
     updater,
     voice,
     mobile,
     localApi,
+    drivers,
+    driverNameOf,
     profiles,
     printerCommands,
     getWindow: () => mainWindow,
@@ -811,6 +875,9 @@ async function bootstrap(): Promise<void> {
       }
       if (JSON.stringify(next.webhooks) !== JSON.stringify(previous.webhooks)) {
         outbox.endpointsChanged();
+      }
+      if (next.driverCatalogUrl !== previous.driverCatalogUrl) {
+        drivers.catalogUrlChanged();
       }
       mobile.settingsChanged(next, previous);
       await localApi.settingsChanged(next, previous);
@@ -871,7 +938,8 @@ async function bootstrap(): Promise<void> {
       // 托盘建不起来时关窗就是退出，不会有「关在托盘里」。
       hiddenSince: tray === null ? null : hiddenSince,
       // 批量打印还有没打的（暂停中的也算）时不静默更新：重启会丢掉这一批剩下的。
-      pendingPrints: printQueue.pending + localApi.pendingJobs + batch.pendingLabels,
+      // 正在装驱动也算有事没做完：静默更新会结束本程序，装到一半的提权安装就没人等了。
+      pendingPrints: printQueue.pending + localApi.pendingJobs + batch.pendingLabels + (drivers.isInstalling ? 1 : 0),
       isMobileOn: mobile.status().state !== 'off',
       now: Date.now(),
     };
@@ -887,6 +955,7 @@ async function bootstrap(): Promise<void> {
     void localApi.stop();
     outbox.stop();
     status.stop();
+    drivers.cancelInstall();
     probeHost?.dispose();
     diagnosisProbeHost?.dispose();
     tray?.destroy();

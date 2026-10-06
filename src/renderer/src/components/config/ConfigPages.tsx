@@ -33,6 +33,8 @@ interface ConfigPagesProps {
   webhooks: Omit<WebhooksPageProps, 'webhooks' | 'onChange' | 'onOpenPage'>;
   /** 打印机页：纸张分配和本机打印机（components/PrinterList）。 */
   printers: ReactNode;
+  /** 打印机页下面的「驱动」卡片（components/DriverSection）。 */
+  drivers: ReactNode;
   localApi: LocalApiModel;
   general: GeneralPageExtras;
   about: AboutPageProps;
@@ -52,6 +54,7 @@ export function ConfigPages({
   secrets,
   webhooks,
   printers,
+  drivers,
   localApi,
   general,
   about,
@@ -68,6 +71,9 @@ export function ConfigPages({
         <div className="config-page">
           <section className="config-card printers-card" aria-label="打印机">
             {printers}
+          </section>
+          <section className="config-card driver-card" aria-label="驱动">
+            {drivers}
           </section>
         </div>
       );

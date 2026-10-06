@@ -87,6 +87,16 @@
 - **拖进窗口的文件**：界面读成字节经 `batch:read-dropped` 交来，主进程不接受任何路径（打开对话框选的文件由主进程自己读）。
 - **静默更新**：批量打印还有没打的（含暂停中的）时不静默更新。
 
+## 驱动安装（`drivers/`）
+
+设计见 `docs/superpowers/specs/2026-10-01-feature-parity-design.md` 第 7.3 节，给出品方的说明在 `docs/driver-catalog.md`。
+
+- **清单**：`catalog-signature.ts`（Ed25519 信封，不依赖 electron，签名脚本也用）、`catalog-client.ts`（`net.fetch`、2MB 上限、15 秒超时、验签 → `sanitizeCatalog` → 过期和防回滚、退回同一地址上次的清单）、`catalog-state-store.ts`（最高版本和上次的清单存在 settings 表的独立键里，界面改不到）。地址：设置 `driverCatalogUrl` 优先，构建时注入的默认值（`build-defaults.ts`）兜底；代码里不写域名。内置公钥表是空的（开源 / 自己构建没填）时，清单直接按 `no-keys` 处理，不下载、也不提示填地址。
+- **下载**：`installer-downloader.ts`：只要 https（跳转后也是），按清单的大小截断，边写边算 SHA-256，空闲 60 秒 / 总共 30 分钟超时，只删自己建的临时目录；启动时 `cleanupOldDownloads` 清一遍上次没清干净的临时目录。
+- **平台**：`windows-devices.ts`（一次性 PowerShell 查 `Win32_PnPEntity`，不放进常驻探测进程）、`windows-signature.ts`（Authenticode，查询失败是 `unverifiable`，不等同「签名无效」）、`windows-install.ts`（一次 UAC；提权脚本只用 .NET 类型，在管理员专属目录复核哈希后运行，安装程序的 TEMP/TMP 也指到这个目录）、`mac-devices.ts`、`mac-install.ts`（`osascript … with administrator privileges` 运行固定脚本）；解析都是纯函数，按平台测试。平台选择只在 `driver-ports.ts`。共用的 `runPowerShell`（`run-command.ts`）会去掉子进程环境里的 `PSModulePath`，避免另外装的 PowerShell（例如 7）的模块路径抢在 Windows PowerShell 5.1 自己的模块路径前面。
+- **编排**：`driver-station.ts`：同一时间一个安装；界面只能按设备编号装、打开清单里的 https 下载页；进度最多 0.25 秒推一次（`drivers:status-changed`）；装驱动时不静默更新、不能「重启更新」。`hints()` 给 5a、5b 按驱动名查；`reinstall(driverName)` 是 5b 用的接口，等真正装完（成功或失败）才返回，和 IPC 的 `drivers:reinstall-for-printer`（立即返回、进度照推）是两条路。按驱动名重装（`deviceKey` 为 null）跳过「找新打印机」，装完说「驱动已重新安装」。
+- **假环境**：`fake-drivers.ts`（`CDL_LABELFLASH_FAKE_DRIVERS`、`CDL_LABELFLASH_DRIVER_CATALOG_TEST_KEY`，只对未打包的程序生效），一律走 Windows 流程；清单照样真实下载、真实验签。
+
 ## 本机接口（`api/`）
 
 设计见 `docs/superpowers/specs/2026-09-30-local-api-design.md`，给第三方的说明在 `docs/local-api.md`。

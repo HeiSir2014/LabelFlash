@@ -11,3 +11,7 @@ playwright-report/
 models/
 native/ocr/target/
 *.node
+
+# 驱动清单：源文件、签好的清单和私钥都不进仓库（品牌和厂家网址只在线上清单里，见 docs/driver-catalog.md）
+driver-catalog*.json
+*.pem

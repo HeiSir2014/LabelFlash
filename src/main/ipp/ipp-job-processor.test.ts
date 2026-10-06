@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { IppJobBook } from '../../core/ipp/ipp-job-book';
 import type { AcceptedDocument } from '../../core/ipp/ipp-operations';
 import { rasterJobLimits } from '../../core/ipp/raster';
+import { jpegHeader, pngHeader } from '../../core/ipp/testing/image-fixtures';
 import { MINIMAL_PDF, testPrinter } from '../../core/ipp/testing/ipp-requests';
 import { grayPage, pwgRaster } from '../../core/ipp/testing/raster-fixtures';
 import { PDF_PIECE_TEMPLATE_ID } from '../../core/pdf/pdf-model';
@@ -160,9 +161,26 @@ describe('IppJobProcessor', () => {
 
   test('opens images in the render page at their own size', async () => {
     const { processor, book, renderer, printed } = createProcessor();
-    await processor.enqueue(acceptJob(book, { format: 'image/jpeg', data: Uint8Array.of(0xff, 0xd8, 0xff) }));
+    await processor.enqueue(acceptJob(book, { format: 'image/jpeg', data: jpegHeader(120, 80) }));
     expect(renderer.calls).toEqual(['open-image image/jpeg', 'render 1 72', 'close']);
     expect(printed).toHaveLength(1);
+  });
+
+  // 文件头声明的大小先在主进程里看：解码炸弹不交给渲染页。
+  test('refuses an image whose header declares a huge size without decoding it', async () => {
+    const { processor, book, renderer } = createProcessor();
+    const accepted = acceptJob(book, { format: 'image/png', data: pngHeader(100_000, 100_000) });
+    await processor.enqueue(accepted);
+    expect(renderer.calls).not.toContain('open-image image/png');
+    expect(book.get(accepted.job.id)).toMatchObject({ state: 'aborted', message: IPP_JOB_MESSAGES.imageTooLarge });
+  });
+
+  test('refuses an image whose size cannot be read without decoding it', async () => {
+    const { processor, book, renderer } = createProcessor();
+    const accepted = acceptJob(book, { format: 'image/jpeg', data: Uint8Array.of(0xff, 0xd8, 0xff) });
+    await processor.enqueue(accepted);
+    expect(renderer.calls).not.toContain('open-image image/jpeg');
+    expect(book.get(accepted.job.id)).toMatchObject({ state: 'aborted', message: IPP_JOB_MESSAGES.badImage });
   });
 
   test('stops a job canceled while printing and drops the pieces it did not print', async () => {

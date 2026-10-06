@@ -1,4 +1,5 @@
 import type { DocumentFormat } from '../../core/ipp/document-format';
+import { IMAGE_LIMITS, imageSize, isImageTooLarge } from '../../core/ipp/image-size';
 import type { IppJobBook } from '../../core/ipp/ipp-job-book';
 import type { AcceptedDocument } from '../../core/ipp/ipp-operations';
 import { chooseIppCrop, ippFields } from '../../core/ipp/ipp-print';
@@ -29,6 +30,8 @@ import type { AcceptedJob } from './ipp-http-server';
 const MM_PER_INCH = 25.4;
 /** 转黑白的阈值：和 PDF 打印的默认值一样。 */
 const MONO_THRESHOLD = 128;
+/** 「万像素」：提示里按中文习惯写像素数。 */
+const PIXELS_PER_WAN = 10_000;
 
 /** 渲染 PDF、解图片和光栅的那一端（IPP 专用的一个 PdfRenderHost）。 */
 export interface IppDocumentRenderer {
@@ -74,6 +77,7 @@ export const IPP_JOB_MESSAGES = {
   blank: '文档是空白的，没有打印',
   tooManyPages: `文档超过 ${PDF_LIMITS.pages} 页：拆开再打`,
   badImage: '图片打不开：文件不完整或不是 JPEG / PNG',
+  imageTooLarge: `图片太大（一边超过 ${IMAGE_LIMITS.side} 像素或超过 ${IMAGE_LIMITS.pixels / PIXELS_PER_WAN} 万像素）：缩小后再打`,
   badRaster: '收到的光栅数据不完整或格式不支持：在打印对话框里换一种打印方式再试',
   notReady: '热敏标签机现在不能打印（缺纸、卡纸、开盖或离线）：处理好再打',
   printerTimeout: '热敏标签机没有响应：检查连接后再打',
@@ -249,6 +253,14 @@ export class IppJobProcessor {
       }
       case 'image/jpeg':
       case 'image/png': {
+        // 先按文件头看大小：几 KB 的文件能声明几十亿像素，这种不交给渲染页去解码。
+        const declared = imageSize(document.data, document.format);
+        if (declared === null) {
+          throw new IppJobError(IPP_JOB_MESSAGES.badImage);
+        }
+        if (isImageTooLarge(declared)) {
+          throw new IppJobError(IPP_JOB_MESSAGES.imageTooLarge);
+        }
         const opened = await renderer.openImage(document.data, document.format);
         const size = opened.pages[0];
         if (size === undefined) {

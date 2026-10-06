@@ -288,12 +288,21 @@ export function requirePieceId(value: unknown): string {
 }
 
 /**
- * settings:update 的补丁：是一个对象即可，但 printerCommands 只能经 printer:commands-apply 的严格校验
- * （认指令集、核对打印机在系统列表里、按范围把关）写入，这里要把它挡在外面，不让界面绕过去直接改设置表。
+ * settings:update 的补丁：是一个对象即可，但下面几项界面不能经它改，挡在外面：
+ * - printerCommands 只能经 printer:commands-apply 的严格校验（认指令集、核对打印机在系统列表里、按范围把关）写入；
+ * - apiAuthorizedOrigins 只能经「允许 / 撤销」（api:origins:decide、api:origins:remove）改：
+ *   否则界面一条补丁就能给任意网站开门，绕过操作员确认；
+ * - apiInstanceId、apiLastPort 是本机接口自己记的（实例编号、上次用成功的端口），界面没有理由写。
  */
 export function requireSettingsPatch(value: unknown): Record<string, unknown> {
   const patch = requireRecord(value, 'settings patch');
-  const { printerCommands: _ignored, ...rest } = patch;
+  const {
+    printerCommands: _commands,
+    apiAuthorizedOrigins: _origins,
+    apiInstanceId: _instanceId,
+    apiLastPort: _lastPort,
+    ...rest
+  } = patch;
   return rest;
 }
 

@@ -1,3 +1,4 @@
+import { request as httpRequest } from 'node:http';
 import { type ElectronApplication, expect, type Locator, type Page } from '@playwright/test';
 import type { FakePrint, FakeRawJob } from '../../src/main/printing/fake-printers';
 import { IpcChannel, type LabelFlashApi } from '../../src/shared/ipc-contract';
@@ -64,6 +65,34 @@ export async function callApi<K extends keyof LabelFlashApi>(
     },
     { name: method, params: args as unknown[] },
   ) as Promise<Awaited<ReturnType<LabelFlashApi[K]>>>;
+}
+
+/**
+ * 让一个网站像操作员点了「允许」那样成为已授权的网站：网站先带 Origin 来请求（被挡下、进入等确认），
+ * 再经「允许」的通道放行。授权网站不能经 updateSettings 直接写（ipc-validators.ts 的 requireSettingsPatch）。
+ */
+export async function authorizeWebsite(page: Page, origin: string): Promise<void> {
+  await expect
+    .poll(async () => (await callApi(page, 'getLocalApiStatus')).server.state, { timeout: 10_000 })
+    .toBe('listening');
+  const { server } = await callApi(page, 'getLocalApiStatus');
+  if (server.state !== 'listening') {
+    throw new Error('local api is not listening');
+  }
+  await new Promise<void>((resolve, reject) => {
+    const outgoing = httpRequest(
+      `http://127.0.0.1:${server.port}/v1/templates`,
+      { headers: { origin } },
+      (response) => {
+        response.resume();
+        resolve();
+      },
+    );
+    outgoing.on('error', reject);
+    outgoing.end();
+  });
+  await callApi(page, 'decideApiOrigin', origin, true);
+  await expect.poll(async () => (await callApi(page, 'getLocalApiStatus')).authorizedOrigins).toContain(origin);
 }
 
 /** 假打印机收到的打印（启动时带 fakePrinters，见 src/main/printing/fake-printers.ts）。 */

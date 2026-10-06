@@ -248,6 +248,17 @@ describe('ipc validators', () => {
     expect(requireSettingsPatch(patch)).toEqual({ autoPrint: false });
     expect(() => requireSettingsPatch('x')).toThrow(TypeError);
   });
+
+  // 授权网站只经「允许 / 撤销」的专用通道改；实例编号、上次的端口只由主进程自己写。
+  test('requireSettingsPatch strips the local API fields only the main process may write', () => {
+    const patch = {
+      apiPort: 17700,
+      apiAuthorizedOrigins: ['https://evil.example'],
+      apiInstanceId: '00000000-0000-4000-8000-000000000000',
+      apiLastPort: 17631,
+    };
+    expect(requireSettingsPatch(patch)).toEqual({ apiPort: 17700 });
+  });
 });
 
 describe('requireDriverDeviceKey', () => {

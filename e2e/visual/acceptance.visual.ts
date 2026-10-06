@@ -11,6 +11,7 @@ import { RECENT_DELIVERY_COUNT } from '../../src/shared/ipc-contract';
 import { HISTORY_LIMIT_RANGE } from '../../src/shared/settings';
 import {
   allowSlowScannerLines,
+  authorizeWebsite,
   blurActiveElement,
   callApi,
   clickSwitch,
@@ -1322,7 +1323,7 @@ const ITEMS: Item[] = [
     setup: async ({ page }) => {
       await callApi(page, 'createApiKey', 'ERP 服务器');
       await callApi(page, 'createApiKey', '仓库面单机');
-      await callApi(page, 'updateSettings', { apiAuthorizedOrigins: ['https://erp.example.com'] });
+      await authorizeWebsite(page, 'https://erp.example.com');
     },
     shots: [
       {

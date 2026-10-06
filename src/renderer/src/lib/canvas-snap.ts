@@ -105,7 +105,11 @@ export function neighbourGaps(box: Box, others: readonly Box[]): Gap[] {
           : otherStart >= boxEnd
             ? { start: boxEnd, end: otherStart }
             : null;
-      if (gap !== null && (best === null || gap.end - gap.start < best.end - best.start)) {
+      // 贴着的邻居（间距差不多是 0）不写：一个「0」只是噪音，参考线已经说明对齐了。
+      if (gap === null || gap.end - gap.start < EQUAL_GAP_TOLERANCE_MM) {
+        continue;
+      }
+      if (best === null || gap.end - gap.start < best.end - best.start) {
         best = { axis, ...gap, cross: (overlap[0] + overlap[1]) / 2, isEqual: false };
       }
     }

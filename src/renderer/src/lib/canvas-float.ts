@@ -8,6 +8,11 @@ export interface FloatingPosition {
   left: number;
   top: number;
   placement: 'above' | 'below' | 'inside';
+  /**
+   * 让不开、还盖着的浮动控件（工具条太宽、挪到它右边就出范围了）：调用方把工具条收窄（折行）到
+   * 这个宽度以内再算一次，就能放在控件右边。没盖着时为 null。
+   */
+  narrowTo: number | null;
 }
 
 interface FloatingInput {
@@ -30,23 +35,26 @@ function overlaps(a: Box, b: Box): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
-/** 碰上了要让开的控件就挪到它右边；挪过去会出范围时保持原位。 */
+/** 碰上了要让开的控件就挪到它右边；挪过去会出范围时保持原位，并给出要收窄到多宽才放得下。 */
 function clearOf(
   position: FloatingPosition,
   size: { width: number; height: number },
   avoid: readonly Box[],
   right: number,
-) {
+): FloatingPosition {
   let { left } = position;
+  let narrowTo: number | null = null;
   for (const box of avoid) {
     if (overlaps({ x: left, y: position.top, ...size }, box)) {
       const shifted = box.x + box.width + AVOID_GAP_PX;
       if (shifted + size.width <= right) {
         left = shifted;
+      } else {
+        narrowTo = right - shifted;
       }
     }
   }
-  return { ...position, left };
+  return { ...position, left, narrowTo };
 }
 
 export function floatingToolbarPosition({
@@ -63,9 +71,9 @@ export function floatingToolbarPosition({
   const below = selection.y + selection.height + gapBelow;
   const placed: FloatingPosition =
     above >= bounds.top
-      ? { left, top: above, placement: 'above' }
+      ? { left, top: above, placement: 'above', narrowTo: null }
       : below + toolbar.height <= bounds.bottom
-        ? { left, top: below, placement: 'below' }
-        : { left, top: bounds.top, placement: 'inside' };
+        ? { left, top: below, placement: 'below', narrowTo: null }
+        : { left, top: bounds.top, placement: 'inside', narrowTo: null };
   return clearOf(placed, toolbar, avoid, bounds.right);
 }

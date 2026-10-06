@@ -18,6 +18,8 @@ const GAP_ABOVE_PX = 18;
 const GAP_BELOW_PX = 46;
 /** 工具条离画布滚动区的边至少留这么多（px）。 */
 const EDGE_MARGIN_PX = 8;
+/** 为了让开撤销重做按钮最多收窄到这么窄（px）：再窄一行只剩两三个按钮，不如盖着一点。 */
+const MIN_NARROW_WIDTH_PX = 200;
 
 interface FloatingToolbarProps {
   /** 选中的元素（一个或几个）。 */
@@ -105,7 +107,7 @@ export function FloatingToolbar(props: FloatingToolbarProps) {
       const rect = control.getBoundingClientRect();
       return { x: rect.left - overlayRect.left, y: rect.top - overlayRect.top, width: rect.width, height: rect.height };
     });
-    setPosition(
+    const place = () =>
       floatingToolbarPosition({
         selection: { x: box.x * pxPerMm, y: box.y * pxPerMm, width: box.width * pxPerMm, height: box.height * pxPerMm },
         toolbar: { width: toolbar.offsetWidth, height: toolbar.offsetHeight },
@@ -113,8 +115,14 @@ export function FloatingToolbar(props: FloatingToolbarProps) {
         gap: GAP_ABOVE_PX,
         gapBelow: GAP_BELOW_PX,
         avoid,
-      }),
-    );
+      });
+    let placed = place();
+    // 太宽、让不开撤销重做按钮：收窄（多折一行）放到它右边，不盖住任何一个按钮。
+    if (placed.narrowTo !== null && placed.narrowTo >= MIN_NARROW_WIDTH_PX) {
+      toolbar.style.maxWidth = `${placed.narrowTo}px`;
+      placed = place();
+    }
+    setPosition(placed);
   }, [box.x, box.y, box.width, box.height, zoom, scrollTick, elements]);
 
   return (

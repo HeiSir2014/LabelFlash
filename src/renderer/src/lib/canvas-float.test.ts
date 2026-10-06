@@ -13,7 +13,7 @@ describe('floatingToolbarPosition', () => {
       bounds: BOUNDS,
       gap: GAP,
     });
-    expect(position).toEqual({ left: 50, top: 200 - GAP - 40, placement: 'above' });
+    expect(position).toEqual({ left: 50, top: 200 - GAP - 40, placement: 'above', narrowTo: null });
   });
 
   test('goes below the selection when there is no room above', () => {
@@ -23,7 +23,7 @@ describe('floatingToolbarPosition', () => {
       bounds: BOUNDS,
       gap: GAP,
     });
-    expect(position).toEqual({ left: 50, top: 20 + GAP, placement: 'below' });
+    expect(position).toEqual({ left: 50, top: 20 + GAP, placement: 'below', narrowTo: null });
   });
 
   test('keeps a larger gap below, where the rotation handle is', () => {
@@ -47,6 +47,19 @@ describe('floatingToolbarPosition', () => {
       avoid: [history],
     });
     expect(position.left).toBe(history.x + history.width + 8);
+    expect(position.narrowTo).toBeNull();
+  });
+
+  test('asks to narrow a toolbar too wide to slide past, to the room right of the control', () => {
+    const history = { x: -30, y: -50, width: 100, height: 40 };
+    const position = floatingToolbarPosition({
+      selection: { x: 0, y: 30, width: 600, height: 20 },
+      toolbar: { width: 660, height: 40 },
+      bounds: BOUNDS,
+      gap: GAP,
+      avoid: [history],
+    });
+    expect(position.narrowTo).toBe(BOUNDS.right - (history.x + history.width + 8));
   });
 
   test('stays inside the area horizontally', () => {
@@ -73,6 +86,6 @@ describe('floatingToolbarPosition', () => {
       bounds: BOUNDS,
       gap: GAP,
     });
-    expect(position).toEqual({ left: 200, top: BOUNDS.top, placement: 'inside' });
+    expect(position).toEqual({ left: 200, top: BOUNDS.top, placement: 'inside', narrowTo: null });
   });
 });

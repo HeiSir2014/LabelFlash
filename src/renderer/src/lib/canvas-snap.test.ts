@@ -48,6 +48,11 @@ describe('neighbourGaps', () => {
     expect(neighbourGaps(moving, [offRow, overlapping])).toEqual([]);
   });
 
+  test('says nothing about a neighbour it touches: a zero gap is not worth a label', () => {
+    const touching = { x: 10, y: 10, width: 10, height: 5 };
+    expect(neighbourGaps(moving, [touching])).toEqual([]);
+  });
+
   test('marks both gaps when the element sits exactly midway between two neighbours', () => {
     const left = { x: 10, y: 10, width: 5, height: 5 };
     const right = { x: 35, y: 10, width: 5, height: 5 };

@@ -20,7 +20,7 @@
 TRAILER=$'Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01LgHoPxpB2ZvtVDHDUepJjK'
 ```
 
-- **顺序和分支**：实施顺序 1 → 3 批量 → 2 模板库 → 4 PDF → 5a 指令 → **5b 本计划** → 5c 驱动 → 6a IPP → 6b 远程。5a 合并进 master 之后，从 master 拉 `feature/printer-diagnosis`。
+- **顺序和分支**：实施顺序 1 → 3 批量 → 2 模板库 → 4 PDF → 5a 指令 → **5b 本计划** → 5c 驱动 → 6a IPP。5a 合并进 master 之后，从 master 拉 `feature/printer-diagnosis`。
 - **迁移**：本计划不改数据库（账本只在内存里，没有新设置项）。实施中如果发现要落库，用「实施时的下一个空号」追加迁移，并先和用户确认。
 - **视觉验收编号**：本计划固定用 **V84–V86**，追加在 `ITEMS` 当时最后一项之后。
 - **用词**：只说程序确知的事。驱动没报问题写「驱动没有报告问题」，不写「打印机正常」；取消任务写「已请求取消」，是否真的清掉由随后的重新检查说；走纸写「走纸指令已发送（进了打印队列）」。要管理员权限的按钮两个平台都写「（需要管理员权限）」。

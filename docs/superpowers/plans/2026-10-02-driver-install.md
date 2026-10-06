@@ -20,7 +20,7 @@
 TRAILER=$'Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01LgHoPxpB2ZvtVDHDUepJjK'
 ```
 
-- **分支**：实施顺序 1 → 3 批量 → 2 模板库 → 4 PDF → 5a 指令 → 5b 诊断 → **5c 本计划** → 6a IPP → 6b 远程。5b 合进 master 之后从 master 拉 `feature/driver-install`。视觉验收项固定用 **V87–V89**，追加在 `e2e/visual/acceptance.visual.ts` 当时最后一项之后。
+- **分支**：实施顺序 1 → 3 批量 → 2 模板库 → 4 PDF → 5a 指令 → 5b 诊断 → **5c 本计划** → 6a IPP。5b 合进 master 之后从 master 拉 `feature/driver-install`。视觉验收项固定用 **V87–V89**，追加在 `e2e/visual/acceptance.visual.ts` 当时最后一项之后。
 - **不需要数据库迁移**：清单的本机记录和窗口位置一样存在 `settings` 表的独立键里（`SqliteSettingsStore` 只读写已知的设置字段，界面的 `updateSettings` 改不到它）。如果实施时发现必须加表，迁移号用「实施时的下一个空号」，只在末尾追加。
 - **命名限制**：仓库里不写任何打印机品牌、型号、厂家网址和清单服务器的域名。测试和文档的示例一律用「示例品牌」「示例型号 X1」和 `https://example.invalid/…`；界面和文档里打印机只说「热敏标签机」。
 - **名词**：界面说「驱动已装好」（安装程序退出码表示成功），不说「打印机可以用了」（要等系统建好打印机、操作员分配纸张）。

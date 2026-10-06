@@ -64,6 +64,10 @@ export interface CanvasDesignerProps extends PrinterChoices {
   /** 快捷键的文字按平台显示（Windows「Ctrl+Z」，macOS「⌘Z」）。 */
   platform: Platform;
   onChange: (draft: CanvasTemplate) => void;
+  /**
+   * 空画布上的「从模板库新建」：离开这个空白模板、打开模板库。有没保存的修改时为 null（不提供，免得悄悄丢掉）。
+   */
+  onOpenLibrary: (() => void) | null;
 }
 
 /** 检查器的三种标签页：第一页（元素自己的设置；没选中时是模板、多选时是排列）、排列、图层。 */
@@ -105,6 +109,7 @@ export function CanvasDesigner({
   fieldNames,
   platform,
   onChange,
+  onOpenLibrary,
   printers,
   paperPrinters,
 }: CanvasDesignerProps) {
@@ -513,6 +518,19 @@ export function CanvasDesigner({
         />
         {menu !== null && (
           <ContextMenu items={menuItems} at={menu.at} onAction={designer.runMenuAction} onClose={closeMenu} />
+        )}
+        {draft.elements.length === 0 && (
+          <p className="designer-empty">
+            从左边点一个元素加进来
+            {onOpenLibrary !== null && (
+              <>
+                ，或{' '}
+                <button type="button" className="designer-empty__link" onClick={onOpenLibrary}>
+                  从模板库新建
+                </button>
+              </>
+            )}
+          </p>
         )}
         <HistoryButtons designer={designer} platform={platform} />
         {designer.isShortcutSheetOpen && (

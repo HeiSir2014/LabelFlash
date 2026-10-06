@@ -3328,6 +3328,35 @@ fieldset.designer-zoom__menu {
   background: var(--color-housing);
 }
 
+/* 空画布的引导：纸的正中间一句话；只有链接接指针，往画布上拖元素不受影响 */
+.designer-empty {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-float);
+  background: color-mix(in srgb, var(--color-paper) 92%, transparent);
+  box-shadow: var(--shadow-float);
+  color: var(--color-ink-soft);
+  font-size: 14px;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.designer-empty__link {
+  padding: 0;
+  border: 0;
+  color: var(--color-selection);
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 /* 浮在画布上的界面：圆角、柔和阴影 */
 .designer-float {
   display: flex;

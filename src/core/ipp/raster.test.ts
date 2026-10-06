@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { RasterError, readPwgRaster, readUrf } from './raster';
+import { MAX_RASTER_JOB_PIXELS, RasterError, rasterJobLimits, readPwgRaster, readUrf } from './raster';
 import {
   CUPS_SGRAY,
   CUPS_SRGB,
@@ -87,6 +87,53 @@ describe('readPwgRaster', () => {
   test('refuses more than 200 pages', () => {
     const tiny = grayPage(1, 1);
     expect(() => [...readPwgRaster(pwgRaster(Array.from({ length: 201 }, () => tiny)))]).toThrow(RasterError);
+  });
+});
+
+/** 评审的探针（raster-bomb.ts）：200 页、每页 4000×4000 的空白，压缩后只有 365KB。 */
+function rasterBomb(pages: number): Uint8Array {
+  const side = 4000;
+  const header = pwgHeader({ width: side, height: side, dpi: 600, bitsPerPixel: 8, colorSpace: CUPS_SGRAY });
+  const rows: number[] = [];
+  for (let y = 0; y < side; y += 256) {
+    rows.push(255, 128);
+  }
+  const page = Uint8Array.from([...header, ...rows]);
+  const data = new Uint8Array(SYNC.length + page.length * pages);
+  data.set(SYNC);
+  for (let index = 0; index < pages; index += 1) {
+    data.set(page, SYNC.length + index * page.length);
+  }
+  return data;
+}
+
+describe('raster job limits', () => {
+  const LABEL = rasterJobLimits({ widthMm: 60, heightMm: 40 }, 203);
+
+  test('allow pages up to twice the paper at the printer resolution', () => {
+    // 60mm 在 203dpi 下是 479.5 点，两倍向上取整 960。
+    expect(LABEL.maxSideDots).toBe(960);
+    expect(LABEL.maxTotalPixels).toBe(MAX_RASTER_JOB_PIXELS);
+  });
+
+  test('refuse pages far bigger than the paper', () => {
+    expect(() => [...readPwgRaster(pwgRaster([grayPage(961, 10)]), LABEL)]).toThrow(RasterError);
+    expect([...readPwgRaster(pwgRaster([grayPage(960, 10)]), LABEL)]).toHaveLength(1);
+  });
+
+  test('cap the pixels decoded for a whole job', () => {
+    const limits = { maxSideDots: 100, maxTotalPixels: 50 };
+    const pages = readPwgRaster(pwgRaster([grayPage(7, 4), grayPage(7, 4)]), limits);
+    expect(pages.next().done).toBe(false);
+    expect(() => pages.next()).toThrow(RasterError);
+    expect(() => [...readUrf(urfRaster([grayPage(7, 4), grayPage(7, 4)]), limits)]).toThrow(RasterError);
+  });
+
+  // 之前在主进程里连续算了 80 秒；按纸张限制后第一页的页头就拒绝。
+  test('refuse the raster bomb at once', () => {
+    const started = performance.now();
+    expect(() => [...readPwgRaster(rasterBomb(200), LABEL)]).toThrow(RasterError);
+    expect(performance.now() - started).toBeLessThan(100);
   });
 });
 

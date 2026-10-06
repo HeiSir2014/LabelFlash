@@ -129,7 +129,7 @@
 - **分层**：都不 import electron，用 `bun test` 测试；HTTP 服务和组装用 `testing/ipp-client.ts` 真的发 IPP 请求测（只绑 127.0.0.1）。
   - `ipp-sharing.ts`：组装、跟随设置启停（默认关）、共享打印机 = 已分配且装着的纸、防火墙没放行时先不监听、关掉时中止没打完的任务、改名后重新广播；
   - `ipp-http-server.ts`：只监听 IPv4（复用 `net/http-listener.ts` 的端口回退和自检），connection 事件里按地址过滤，先认证再读正文（没认证最多 64KB），100-continue 先看认证，同时在收的正文总量有上限，密码错多了按地址锁一会儿；
-  - `ipp-job-processor.ts`：新电脑先等确认（不占队列），再一次一个任务；PDF / 图片交给 IPP 专用的 `PdfRenderHost`，光栅用 core 解，复用 PDF 打印的裁切、位图缓存和临时模板，经 `printFields`（来源 `ipp`）；
+  - `ipp-job-processor.ts`：新电脑先等确认（不占队列），再一次一个任务；PDF、图片和光栅都交给 IPP 专用的 `PdfRenderHost`（光栅也在 sandbox 渲染页里用 core 解，按纸张和打印机分辨率限制页大小、按 `MAX_RASTER_JOB_PIXELS` 限制整个任务；主进程不解行程编码），复用 PDF 打印的裁切、位图缓存和临时模板，经 `printFields`（来源 `ipp`）；
   - `client-approvals.ts`：新电脑等确认（2 分钟、最多 3 台），决定存 `ipp_clients`；`share-password.ts`：scrypt 摘要；
   - `mdns-advertiser.ts`：UDP 5353（`reuseAddr`），每块局域网网卡加入组播组、用自己的地址回答，只理局域网地址来的包；测试换成本机回环上的收包口，不发组播；
   - `ipp-quit.ts`：退出确认的文字、拒绝「重启更新」的说明、停共享最多等多久。

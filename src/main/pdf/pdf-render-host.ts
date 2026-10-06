@@ -1,10 +1,13 @@
+import type { RasterJobLimits } from '../../core/ipp/raster';
 import { PDF_LIMITS } from '../../core/pdf/pdf-model';
 import type { GrayImage } from '../../core/templates/mono-image';
 import {
   type ExpectedReply,
   type PageSize,
   POINTS_PER_INCH,
+  type RasterPageInfo,
   type RenderImageType,
+  type RenderRasterType,
   type RenderReply,
   type RenderRequest,
   readRenderReply,
@@ -89,7 +92,38 @@ export class PdfRenderHost {
     return this.openWith((id) => ({ id, kind: 'open-image', data, type }));
   }
 
-  private async openWith(build: (id: number) => RenderRequest): Promise<OpenedPdf> {
+  /**
+   * 打开一份光栅（关掉上一个文档）：解码在渲染页里做（行程编码几百 KB 能写出几十亿像素，不能让它占住主进程），
+   * 按 limits（这张纸、这台打印机的上限）拒绝过大的页；返回每页的大小和分辨率。
+   */
+  async openRaster(data: Uint8Array, type: RenderRasterType, limits: RasterJobLimits): Promise<RasterPageInfo[]> {
+    await this.attach();
+    const reply = await this.request(
+      (id) => ({ id, kind: 'open-raster', data, type, limits }),
+      (id) => ({ id, kind: 'raster-opened', maxPages: PDF_LIMITS.pages }),
+      this.deps.openTimeoutMs,
+    );
+    if (reply.kind !== 'raster-opened') {
+      throw new PdfRenderError(PDF_ISSUES.failed, `unexpected ${reply.kind} reply to open-raster`);
+    }
+    return reply.pages;
+  }
+
+  /** 光栅的第 page 页（从 1 数）：原样大小的灰度，宽高必须和打开时报的一样。 */
+  async renderRaster(page: number, info: RasterPageInfo): Promise<RenderedPage> {
+    const reply = await this.request(
+      (id) => ({ id, kind: 'render-raster', page }),
+      (id) => ({ id, kind: 'rendered', width: info.width, height: info.height }),
+      this.deps.pageTimeoutMs,
+    );
+    if (reply.kind !== 'rendered') {
+      throw new PdfRenderError(PDF_ISSUES.failed, `unexpected ${reply.kind} reply to render-raster`);
+    }
+    return { image: { width: reply.width, height: reply.height, pixels: reply.gray }, dpi: info.dpi };
+  }
+
+  /** 关掉上一个文档，开一个新的渲染页。 */
+  private async attach(): Promise<void> {
     this.close();
     const port = await this.deps.openPort();
     this.port = port;
@@ -100,6 +134,10 @@ export class PdfRenderHost {
         this.drop(new PdfRenderError(PDF_ISSUES.gone, 'render page is gone'));
       }
     });
+  }
+
+  private async openWith(build: (id: number) => RenderRequest): Promise<OpenedPdf> {
+    await this.attach();
     const reply = await this.request(
       build,
       (id) => ({ id, kind: 'opened', maxPages: PDF_LIMITS.pages }),

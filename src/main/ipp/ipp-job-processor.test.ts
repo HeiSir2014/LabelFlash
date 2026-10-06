@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { IppJobBook } from '../../core/ipp/ipp-job-book';
 import type { AcceptedDocument } from '../../core/ipp/ipp-operations';
+import { rasterJobLimits } from '../../core/ipp/raster';
 import { MINIMAL_PDF, testPrinter } from '../../core/ipp/testing/ipp-requests';
 import { grayPage, pwgRaster } from '../../core/ipp/testing/raster-fixtures';
 import { PDF_PIECE_TEMPLATE_ID } from '../../core/pdf/pdf-model';
@@ -110,11 +111,44 @@ describe('IppJobProcessor', () => {
     expect(book.get(accepted.job.id)?.state).toBe('completed');
   });
 
-  test('decodes PWG raster without the render page', async () => {
+  // 行程编码几百 KB 能写出几十亿像素：解码交给 sandbox 的渲染页，主进程不解。
+  test('decodes PWG raster in the render page within the limits of the paper', async () => {
     const { processor, book, renderer, printed } = createProcessor();
     await processor.enqueue(acceptJob(book, { format: 'image/pwg-raster', data: pwgRaster([grayPage(479, 319)]) }));
     expect(printed).toHaveLength(1);
-    expect(renderer.calls).toEqual(['close']);
+    expect(renderer.calls).toEqual(['open-raster image/pwg-raster', 'render-raster 1', 'close']);
+    expect(renderer.rasterLimits).toEqual(rasterJobLimits({ widthMm: 60, heightMm: 40 }, 203));
+  });
+
+  test('refuses raster pages far larger than the paper', async () => {
+    const { processor, book, printed } = createProcessor();
+    const accepted = acceptJob(book, { format: 'image/pwg-raster', data: pwgRaster([grayPage(2000, 319)]) });
+    await processor.enqueue(accepted);
+    expect(printed).toEqual([]);
+    expect(book.get(accepted.job.id)).toMatchObject({ state: 'aborted', message: IPP_JOB_MESSAGES.badRaster });
+  });
+
+  test('takes a cancel while a raster page is still being decoded', async () => {
+    const { processor, book, renderer, printed } = createProcessor();
+    const pages = [grayPage(479, 319), grayPage(479, 319), grayPage(479, 319)];
+    const accepted = acceptJob(book, { format: 'image/pwg-raster', data: pwgRaster(pages) });
+    const decoding = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    renderer.beforeRasterPage = async (page) => {
+      if (page === 2) {
+        decoding.resolve();
+        await release.promise;
+      }
+    };
+    const done = processor.enqueue(accepted);
+    await decoding.promise;
+    // 第 2 页还在解：主进程照样收下取消（对方的取消请求在这时到达）。
+    expect(book.cancel(accepted.job.id, '192.168.1.23')).toBe('requested');
+    release.resolve();
+    await done;
+    expect(book.get(accepted.job.id)?.state).toBe('canceled');
+    expect(renderer.calls).not.toContain('render-raster 3');
+    expect(printed).toEqual([]);
   });
 
   test('aborts with a reason when the raster is broken', async () => {

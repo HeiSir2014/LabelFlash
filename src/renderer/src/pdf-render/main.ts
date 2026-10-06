@@ -1,12 +1,15 @@
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { type RasterJobLimits, type RasterPage, readPwgRaster, readUrf } from '../../../core/ipp/raster';
 import { PDF_LIMITS } from '../../../core/pdf/pdf-model';
 import {
   MAX_PAGE_POINTS,
   type PageSize,
   type PdfHostApi,
+  type RasterPageInfo,
   type RenderError,
   type RenderImageType,
+  type RenderRasterType,
   type RenderReply,
   type RenderRequest,
   renderedSize,
@@ -26,8 +29,18 @@ const ASSETS = new URL('pdfjs/', document.baseURI);
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
-/** 打开着的文档：PDF，或者一张已解码的图片（只有一页，局域网共享收到的 JPEG / PNG）。 */
-type OpenDocument = { kind: 'pdf'; pdf: PDFDocumentProxy } | { kind: 'image'; bitmap: ImageBitmap };
+/** 一份打开着的光栅：数据、限制，和按顺序往下解的那个生成器（下一页是 next）。 */
+interface OpenRaster {
+  kind: 'raster';
+  data: Uint8Array;
+  type: RenderRasterType;
+  limits: RasterJobLimits;
+  pages: Iterator<RasterPage> | null;
+  next: number;
+}
+
+/** 打开着的文档：PDF、一张已解码的图片（只有一页），或一份光栅（局域网共享收到的）。 */
+type OpenDocument = { kind: 'pdf'; pdf: PDFDocumentProxy } | { kind: 'image'; bitmap: ImageBitmap } | OpenRaster;
 
 let current: OpenDocument | null = null;
 
@@ -54,7 +67,63 @@ function handle(request: RenderRequest): Promise<RenderReply> {
       return openImage(request.id, request.data, request.type);
     case 'render':
       return render(request.id, request.page, request.scale);
+    case 'open-raster':
+      return openRaster(request.id, request.data, request.type, request.limits);
+    case 'render-raster':
+      return renderRaster(request.id, request.page);
   }
+}
+
+function readRaster(raster: OpenRaster): Iterator<RasterPage> {
+  return raster.type === 'image/pwg-raster'
+    ? readPwgRaster(raster.data, raster.limits)
+    : readUrf(raster.data, raster.limits);
+}
+
+/**
+ * 光栅在这一页里解（不在主进程里）：先整份解一遍取每页的大小（同一时刻只占一页的内存），
+ * 超过限制（这张纸的边长、整个任务的像素数）就抛 RasterError。
+ */
+async function openRaster(
+  id: number,
+  data: Uint8Array,
+  type: RenderRasterType,
+  limits: RasterJobLimits,
+): Promise<RenderReply> {
+  await closeCurrent();
+  const raster: OpenRaster = { kind: 'raster', data: new Uint8Array(data), type, limits, pages: null, next: 1 };
+  const pages: RasterPageInfo[] = [];
+  const all = readRaster(raster);
+  for (let step = all.next(); step.done !== true; step = all.next()) {
+    pages.push({ width: step.value.image.width, height: step.value.image.height, dpi: step.value.dpi });
+  }
+  current = raster;
+  return { id, kind: 'raster-opened', pages };
+}
+
+/** 光栅的第 page 页：主进程按顺序要，接着往下解；往回要就从头再解。 */
+async function renderRaster(id: number, page: number): Promise<RenderReply> {
+  const raster = current;
+  if (raster?.kind !== 'raster') {
+    throw new Error('no raster is open');
+  }
+  if (raster.pages === null || page < raster.next) {
+    raster.pages = readRaster(raster);
+    raster.next = 1;
+  }
+  let found: RasterPage | null = null;
+  while (raster.next <= page) {
+    const step = raster.pages.next();
+    if (step.done === true) {
+      throw new Error(`raster page ${page} does not exist`);
+    }
+    raster.next += 1;
+    found = step.value;
+  }
+  if (found === null) {
+    throw new Error(`raster page ${page} does not exist`);
+  }
+  return { id, kind: 'rendered', width: found.image.width, height: found.image.height, gray: found.image.pixels };
 }
 
 async function closeCurrent(): Promise<void> {
@@ -109,8 +178,8 @@ async function open(id: number, data: Uint8Array): Promise<RenderReply> {
 
 async function render(id: number, number: number, scale: number): Promise<RenderReply> {
   const opened = current;
-  if (opened === null) {
-    throw new Error('no document is open');
+  if (opened === null || opened.kind === 'raster') {
+    throw new Error('no PDF or image is open');
   }
   if (opened.kind === 'image') {
     const { bitmap } = opened;
@@ -156,11 +225,12 @@ async function drawGray(
 
 /**
  * pdf.js 的异常名：PasswordException（要密码）、InvalidPDFException（不是 PDF 或坏了）；
- * 图片解不开是 InvalidStateError / EncodingError，太大是 InvalidImageError。
+ * 图片解不开是 InvalidStateError / EncodingError，太大是 InvalidImageError；光栅坏了或超过限制是 RasterError。
  */
 const INVALID_ERROR_NAMES: ReadonlySet<string> = new Set([
   'InvalidPDFException',
   'InvalidImageError',
+  'RasterError',
   'InvalidStateError',
   'EncodingError',
 ]);

@@ -109,6 +109,22 @@ describe('PdfRenderHost', () => {
     expect((await rendering).image).toMatchObject({ width: 4, height: 2 });
   });
 
+  test('hands raster to the render page and reads back each page at its own size', async () => {
+    const { host, ports } = createHost();
+    const limits = { maxSideDots: 960, maxTotalPixels: 1_000 };
+    const opening = host.openRaster(Uint8Array.of(0x52), 'image/pwg-raster', limits);
+    await settle();
+    const port = ports[0];
+    expect(port?.sent[0]).toMatchObject({ kind: 'open-raster', type: 'image/pwg-raster', limits });
+    port?.reply({ id: port.sent[0]?.id, kind: 'raster-opened', pages: [{ width: 4, height: 2, dpi: 203 }] });
+    const opened = await opening;
+    expect(opened).toEqual([{ width: 4, height: 2, dpi: 203 }]);
+    const rendering = host.renderRaster(1, { width: 4, height: 2, dpi: 203 });
+    expect(port?.sent[1]).toMatchObject({ kind: 'render-raster', page: 1 });
+    port?.reply({ id: port.sent[1]?.id, kind: 'rendered', width: 4, height: 2, gray: new Uint8Array(8) });
+    expect(await rendering).toMatchObject({ image: { width: 4, height: 2 }, dpi: 203 });
+  });
+
   test('renders a page at the requested resolution', async () => {
     const { host, port } = await opened();
     const rendering = host.render(1, A4, 72);

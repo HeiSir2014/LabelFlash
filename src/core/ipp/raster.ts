@@ -20,6 +20,35 @@ export const RASTER_LIMITS = {
   maxDpi: 2400,
 } as const;
 
+/**
+ * 一个任务一共最多解出 2 亿像素：200 页 100×150mm 在 203dpi 下约 1.9 亿；再多就是故意的（几百 KB 的行程编码能写出几十亿像素），
+ * 解码虽然不在主进程里，也不能让渲染页一直算下去。
+ */
+export const MAX_RASTER_JOB_PIXELS = 200_000_000;
+/** 一页的长、短边最多是纸在打印机分辨率下的 2 倍：我们只声明了这一种纸和这台打印机的分辨率，客户端照着它出光栅。 */
+const PAGE_TO_PAPER_FACTOR = 2;
+const MM_PER_INCH = 25.4;
+
+/** 一个任务的光栅限制（按这台共享打印机的纸和分辨率算）。 */
+export interface RasterJobLimits {
+  /** 每页任一边最多多少点。 */
+  maxSideDots: number;
+  /** 整个任务一共最多解出多少像素。 */
+  maxTotalPixels: number;
+}
+
+/** 不知道纸的时候（测试、只看格式）：只有通用的上限。 */
+const UNBOUNDED_JOB: RasterJobLimits = { maxSideDots: MAX_MONO_SIDE, maxTotalPixels: MAX_RASTER_JOB_PIXELS };
+
+/** 这张纸、这台打印机的光栅限制：页面任一边不超过纸的长边在打印机分辨率下的 2 倍。 */
+export function rasterJobLimits(paper: { widthMm: number; heightMm: number }, printerDpi: number): RasterJobLimits {
+  const longMm = Math.max(paper.widthMm, paper.heightMm);
+  return {
+    maxSideDots: Math.min(MAX_MONO_SIDE, Math.ceil((longMm / MM_PER_INCH) * printerDpi * PAGE_TO_PAPER_FACTOR)),
+    maxTotalPixels: MAX_RASTER_JOB_PIXELS,
+  };
+}
+
 /** 一页：灰度（0 黑 – 255 白）和它的分辨率。 */
 export interface RasterPage {
   image: GrayImage;
@@ -127,24 +156,44 @@ function checkPage(format: PageFormat): void {
   }
 }
 
-/** PWG 5102.4：'RaS2'，然后每页一个 1796 字节的页头和压缩数据，直到文件末尾。 */
-export function* readPwgRaster(data: Uint8Array): Generator<RasterPage> {
-  if (!startsWith(data, PWG_SYNC)) {
-    throw new RasterError('not a PWG raster stream');
-  }
-  const cursor = new Cursor(data, PWG_SYNC.length);
+/**
+ * 一页页解：先看页头（这张纸的边长上限、整个任务的像素上限都在分配内存、解码之前核对），再解这一页。
+ * 几百 KB 的行程编码能写出几十亿像素：超过上限的在页头就拒绝，不先解出来再说。
+ */
+function* readPages(
+  cursor: Cursor,
+  headerBytes: number,
+  parseHeader: (header: Uint8Array) => PageFormat,
+  limits: RasterJobLimits,
+): Generator<RasterPage> {
   let pages = 0;
+  let pixels = 0;
   while (cursor.remaining > 0) {
     if (pages >= RASTER_LIMITS.pages) {
       throw new RasterError(`more than ${RASTER_LIMITS.pages} pages`);
     }
-    const format = pwgFormat(cursor.take(PWG_HEADER_BYTES));
+    const format = parseHeader(cursor.take(headerBytes));
+    if (format.width > limits.maxSideDots || format.height > limits.maxSideDots) {
+      throw new RasterError(`a page of ${format.width}×${format.height} dots is far bigger than the paper`);
+    }
+    pixels += format.width * format.height;
+    if (pixels > limits.maxTotalPixels) {
+      throw new RasterError(`the job decodes to more than ${limits.maxTotalPixels} pixels`);
+    }
     pages += 1;
     yield { image: decodePage(cursor, format), dpi: format.dpi };
   }
   if (pages === 0) {
     throw new RasterError('the raster has no pages');
   }
+}
+
+/** PWG 5102.4：'RaS2'，然后每页一个 1796 字节的页头和压缩数据，直到文件末尾。 */
+export function readPwgRaster(data: Uint8Array, limits: RasterJobLimits = UNBOUNDED_JOB): Generator<RasterPage> {
+  if (!startsWith(data, PWG_SYNC)) {
+    throw new RasterError('not a PWG raster stream');
+  }
+  return readPages(new Cursor(data, PWG_SYNC.length), PWG_HEADER_BYTES, pwgFormat, limits);
 }
 
 function pwgFormat(header: Uint8Array): PageFormat {
@@ -177,7 +226,7 @@ function pwgFormat(header: Uint8Array): PageFormat {
 }
 
 /** Apple Raster：'UNIRAST\0' + 页数，然后每页一个 32 字节的页头和压缩数据。 */
-export function* readUrf(data: Uint8Array): Generator<RasterPage> {
+export function readUrf(data: Uint8Array, limits: RasterJobLimits = UNBOUNDED_JOB): Generator<RasterPage> {
   if (!startsWith(data, URF_MAGIC) || data.length < URF_FILE_HEADER_BYTES) {
     throw new RasterError('not an Apple raster stream');
   }
@@ -185,19 +234,7 @@ export function* readUrf(data: Uint8Array): Generator<RasterPage> {
   if (declared > RASTER_LIMITS.pages) {
     throw new RasterError(`the raster declares ${declared} pages`);
   }
-  const cursor = new Cursor(data, URF_FILE_HEADER_BYTES);
-  let pages = 0;
-  while (cursor.remaining > 0) {
-    if (pages >= RASTER_LIMITS.pages) {
-      throw new RasterError(`more than ${RASTER_LIMITS.pages} pages`);
-    }
-    const format = urfFormat(cursor.take(URF_PAGE_HEADER_BYTES));
-    pages += 1;
-    yield { image: decodePage(cursor, format), dpi: format.dpi };
-  }
-  if (pages === 0) {
-    throw new RasterError('the raster has no pages');
-  }
+  return readPages(new Cursor(data, URF_FILE_HEADER_BYTES), URF_PAGE_HEADER_BYTES, urfFormat, limits);
 }
 
 function urfFormat(header: Uint8Array): PageFormat {

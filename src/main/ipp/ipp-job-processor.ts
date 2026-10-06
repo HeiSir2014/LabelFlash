@@ -2,7 +2,7 @@ import type { DocumentFormat } from '../../core/ipp/document-format';
 import type { IppJobBook } from '../../core/ipp/ipp-job-book';
 import type { AcceptedDocument } from '../../core/ipp/ipp-operations';
 import { chooseIppCrop, ippFields } from '../../core/ipp/ipp-print';
-import { RasterError, type RasterPage, readPwgRaster, readUrf } from '../../core/ipp/raster';
+import { type RasterJobLimits, rasterJobLimits } from '../../core/ipp/raster';
 import { inkMask } from '../../core/pdf/content-box';
 import type { MonoBitmap } from '../../core/pdf/mono-pack';
 import { cropRects, splitOptionsFor } from '../../core/pdf/page-split';
@@ -15,7 +15,13 @@ import type { ImageMode } from '../../core/templates/canvas-model';
 import type { GrayImage } from '../../core/templates/mono-image';
 import type { PrintResult } from '../../core/types';
 import type { PaperSize } from '../../shared/paper-sizes';
-import { type PageSize, POINTS_PER_INCH, type RenderImageType } from '../../shared/pdf-render-protocol';
+import {
+  type PageSize,
+  POINTS_PER_INCH,
+  type RasterPageInfo,
+  type RenderImageType,
+  type RenderRasterType,
+} from '../../shared/pdf-render-protocol';
 import { type OpenedPdf, PdfRenderError, type RenderedPage } from '../pdf/pdf-render-host';
 import type { ApprovalResult } from './client-approvals';
 import type { AcceptedJob } from './ipp-http-server';
@@ -24,11 +30,13 @@ const MM_PER_INCH = 25.4;
 /** 转黑白的阈值：和 PDF 打印的默认值一样。 */
 const MONO_THRESHOLD = 128;
 
-/** 渲染 PDF、解图片的那一端（IPP 专用的一个 PdfRenderHost）。 */
+/** 渲染 PDF、解图片和光栅的那一端（IPP 专用的一个 PdfRenderHost）。 */
 export interface IppDocumentRenderer {
   open(data: Uint8Array): Promise<OpenedPdf>;
   openImage(data: Uint8Array, type: RenderImageType): Promise<OpenedPdf>;
   render(page: number, size: PageSize, dpi: number): Promise<RenderedPage>;
+  openRaster(data: Uint8Array, type: RenderRasterType, limits: RasterJobLimits): Promise<RasterPageInfo[]>;
+  renderRaster(page: number, info: RasterPageInfo): Promise<RenderedPage>;
   close(): void;
 }
 
@@ -165,8 +173,10 @@ export class IppJobProcessor {
     // 照片用抖动（灰度层次）；文档、光栅里多是文字和条码，用阈值，边缘干净。
     const mono: ImageMode = document.format === 'image/jpeg' ? 'dither' : 'threshold';
     let pageNumber = 0;
-    for await (const source of this.pages(document, dpi)) {
+    for await (const source of this.pages(document, printer.paper, dpi)) {
       pageNumber += 1;
+      // 每页之间让出一次事件循环：裁切、转黑白在主进程里做，页多时别连着占住它（取消、别的请求要能进来）。
+      await nextTurn();
       if (book.isCancelRequested(job.id)) {
         return CANCELED;
       }
@@ -216,16 +226,27 @@ export class IppJobProcessor {
     return { state: 'completed', reasons: ['job-completed-successfully'], message: IPP_JOB_MESSAGES.done };
   }
 
-  /** 一页页的灰度：光栅在这里解；PDF 按打印机的分辨率渲染；图片按原图大小渲染（不知道实际尺寸，按去白边处理）。 */
-  private async *pages(document: AcceptedDocument, dpi: number): AsyncGenerator<SourcePage> {
+  /** 一页页的灰度，都在渲染页里解：光栅按原样大小；PDF 按打印机的分辨率；图片按原图大小（不知道实际尺寸，按去白边处理）。 */
+  private async *pages(document: AcceptedDocument, paper: PaperSize, dpi: number): AsyncGenerator<SourcePage> {
     const { renderer } = this.deps;
     switch (document.format) {
       case 'image/pwg-raster':
-        yield* rasterPages(readPwgRaster(document.data));
+      case 'image/urf': {
+        // 解码在 sandbox 的渲染页里（行程编码几百 KB 能写出几十亿像素）；页的大小按这张纸、这台打印机限制。
+        const infos = await renderer.openRaster(document.data, document.format, rasterJobLimits(paper, dpi));
+        for (const [index, info] of infos.entries()) {
+          const rendered = await renderer.renderRaster(index + 1, info);
+          yield {
+            image: rendered.image,
+            dpi: rendered.dpi,
+            sizeMm: {
+              widthMm: (info.width / info.dpi) * MM_PER_INCH,
+              heightMm: (info.height / info.dpi) * MM_PER_INCH,
+            },
+          };
+        }
         return;
-      case 'image/urf':
-        yield* rasterPages(readUrf(document.data));
-        return;
+      }
       case 'image/jpeg':
       case 'image/png': {
         const opened = await renderer.openImage(document.data, document.format);
@@ -262,30 +283,23 @@ export class IppJobProcessor {
     if (error instanceof IppJobError) {
       return error.message;
     }
-    if (error instanceof RasterError) {
-      this.deps.log(`[ipp] bad raster: ${error.message}`);
-      return IPP_JOB_MESSAGES.badRaster;
-    }
     if (error instanceof PdfRenderError) {
       // 渲染页的原始原因 PdfRenderHost 已经写过日志。
-      return format === 'application/pdf' ? error.issue : IPP_JOB_MESSAGES.badImage;
+      if (format === 'application/pdf') {
+        return error.issue;
+      }
+      return format === 'image/pwg-raster' || format === 'image/urf'
+        ? IPP_JOB_MESSAGES.badRaster
+        : IPP_JOB_MESSAGES.badImage;
     }
     this.deps.log(`[ipp] processing failed: ${describe(error)}`);
     return IPP_JOB_MESSAGES.failed;
   }
 }
 
-function* rasterPages(pages: Iterable<RasterPage>): Generator<SourcePage> {
-  for (const page of pages) {
-    yield {
-      image: page.image,
-      dpi: page.dpi,
-      sizeMm: {
-        widthMm: (page.image.width / page.dpi) * MM_PER_INCH,
-        heightMm: (page.image.height / page.dpi) * MM_PER_INCH,
-      },
-    };
-  }
+/** 让出一次事件循环（排在已经到达的网络事件之后）。 */
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function failureMessage(result: PrintResult): string {

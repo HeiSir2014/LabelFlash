@@ -5,7 +5,7 @@ import { reportError } from '../lib/notices';
 export interface DriversModel {
   /** 还没读到时为 null。 */
   status: DriverStatus | null;
-  /** force：重新下载清单（「重新检测」按钮）。 */
+  /** force：重新下载清单（「重新检查」按钮）。 */
   detect: (force: boolean) => Promise<void>;
   install: (deviceKey: string) => Promise<void>;
   cancel: () => Promise<void>;

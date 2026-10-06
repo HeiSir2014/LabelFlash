@@ -205,7 +205,6 @@ export function PrinterList({
                   onClose={diagnosis.close}
                   onFix={diagnosis.applyFix}
                   onAnswerFeed={diagnosis.answerFeed}
-                  onTestPrint={() => void runTest(printer.name, expectedKey ?? LABEL_PAPER_KEY)}
                   commandSetPicker={renderCommandSetPicker(printer.name)}
                 />
               )}
@@ -238,7 +237,6 @@ export function PrinterList({
           onClose={diagnosis.close}
           onFix={diagnosis.applyFix}
           onAnswerFeed={diagnosis.answerFeed}
-          onTestPrint={null}
           commandSetPicker={null}
         />
       )}

@@ -191,7 +191,7 @@ function describeFetchError(error: unknown): string {
     return error.message;
   }
   if (error instanceof DOMException && error.name === 'TimeoutError') {
-    return '下载驱动清单超时：检查网络后点「重新检测」';
+    return '下载驱动清单超时：检查网络后点「重新检查」';
   }
-  return '连不上驱动清单地址：检查网络后点「重新检测」';
+  return '连不上驱动清单地址：检查网络后点「重新检查」';
 }

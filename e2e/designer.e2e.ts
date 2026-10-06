@@ -175,6 +175,14 @@ test('edits text in place, undoes the whole edit in one step and cancels with Es
   await expect(editor).toHaveCount(0);
   await expect(content).toHaveValue('¥199.00');
   await expect(d.designer).toBeVisible();
+
+  // 窗口失去焦点（切到别的程序、点托盘菜单退出）算改完：改的字进草稿，退出时才会问要不要保存。
+  await page.mouse.dblclick(point.x, point.y);
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('¥66');
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(editor).toHaveCount(0);
+  await expect(content).toHaveValue('¥66');
 });
 
 test('nudges with the arrow keys and undoes a held key in one step', async ({ electronApp }) => {

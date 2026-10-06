@@ -1,4 +1,4 @@
-import { type CSSProperties, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { CANVAS_LIMITS } from '../../../../core/templates/canvas-model';
 import { LINE_HEIGHT } from '../../../../core/templates/text-fit';
 import type { InlineEditorLayout } from '../../lib/canvas-inline';
@@ -45,6 +45,17 @@ export function InlineTextEditor({ layout, onCommit, onCancel }: InlineTextEdito
       onCancel();
     }
   };
+  // 窗口失去焦点（切到别的程序、点托盘菜单「退出」、系统弹出退出确认框）也算改完：改了的字马上进草稿，
+  // 模板页据此报告「有没保存的修改」，退出时才会问要不要保存；不然这几个字只在输入框里，退出时悄悄丢掉。
+  const finishRef = useRef(finish);
+  useEffect(() => {
+    finishRef.current = finish;
+  });
+  useEffect(() => {
+    const onWindowBlur = () => finishRef.current(true);
+    window.addEventListener('blur', onWindowBlur);
+    return () => window.removeEventListener('blur', onWindowBlur);
+  }, []);
   const { box, rotation } = layout;
   const isTurned = rotation === 90 || rotation === 270;
   const frame = isTurned ? { width: box.height, height: box.width } : { width: box.width, height: box.height };

@@ -133,21 +133,40 @@ textarea {
  * 窄窗口（1024 起）放不下店铺胶囊和「新版本已就绪」胶囊：有待安装的更新时先让出店铺胶囊（「关于」页里也有店铺链接），
  * 重启更新后它就回来。平时两者不会同时出现，店铺胶囊照常显示。打印 PDF 加入标题栏后 1280 宽也挤不下这两个胶囊
  * 同时出现的情形，断点改到 1280（含）。
+ * macOS（.title-bar--traffic-lights）左边让出 --traffic-light-inset（80px）给系统红绿灯，标题栏能用的
+ * 宽度本来就少这么多：同样的挤法在 Windows 不会出现的宽度上就会出现，断点要往右移同样的 80px（1360px）。
+ * 这一条还没在真 Mac 上核对过断点是否正好合适，见 docs/roadmap.md。
  */
 @media (max-width: 1280px) {
-  .title-bar:has(.update-pill) .title-bar__shop {
+  .title-bar:not(.title-bar--traffic-lights):has(.update-pill) .title-bar__shop {
     display: none;
   }
 
   /* 「批量打印」「打印 PDF」两个按钮一直都在（不是只在各自页面才有），标题栏更挤：1280 宽起收紧这两个
    * 按钮的内边距、让出店铺名，保留店铺图标和其余按钮。不用 :has(.batch-button) 判断——这些按钮
    * 不是有条件渲染的，判断是多余的。 */
-  .title-bar .batch-button,
-  .title-bar .pdf-button {
+  .title-bar:not(.title-bar--traffic-lights) .batch-button,
+  .title-bar:not(.title-bar--traffic-lights) .pdf-button {
     padding-inline: var(--space-1);
   }
 
-  .title-bar__shop-name {
+  .title-bar:not(.title-bar--traffic-lights) .title-bar__shop-name {
+    display: none;
+  }
+}
+
+/* macOS 版：同一组收紧，断点按 --traffic-light-inset 的值往右移 80px（见上面的说明）。 */
+@media (max-width: 1360px) {
+  .title-bar--traffic-lights:has(.update-pill) .title-bar__shop {
+    display: none;
+  }
+
+  .title-bar--traffic-lights .batch-button,
+  .title-bar--traffic-lights .pdf-button {
+    padding-inline: var(--space-1);
+  }
+
+  .title-bar--traffic-lights .title-bar__shop-name {
     display: none;
   }
 }

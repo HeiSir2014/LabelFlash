@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { CanvasTemplate } from '../../../core/templates/canvas-model';
 import {
+  createGestureStore,
   DRAG_START_PX,
   type Gesture,
   gestureBadge,
+  gesturePhase,
   hasPassedDragThreshold,
   isResizeHandle,
   keepsRatio,
@@ -11,6 +13,7 @@ import {
   NO_GESTURE_VIEW,
   resizeGestureBox,
   rotationFromPointer,
+  sameIds,
   viewOf,
 } from './canvas-gesture';
 import type { SnapTargets } from './canvas-snap';
@@ -258,5 +261,75 @@ describe('resizeGestureBox', () => {
     const result = resizeGestureBox(start, 'e', 0.3, 0, PAPER, targets, 1, true);
     expect(result.box.width).toBe(20.4);
     expect(result.guides).toEqual([{ axis: 'x', at: 30.4 }]);
+  });
+});
+
+describe('gesturePhase', () => {
+  const pressed: Gesture = {
+    kind: 'marquee',
+    client: { x: 0, y: 0 },
+    hasMoved: false,
+    origin: { x: 0, y: 0 },
+    current: { x: 0, y: 0 },
+    base: [],
+  };
+
+  // 按下还没拖（笔尖落下的抖动、一次点选）时浮动工具条不藏：藏了又出来会闪一下。
+  test('tells idle, pressed and dragging apart', () => {
+    expect(gesturePhase(null)).toBe('idle');
+    expect(gesturePhase(pressed)).toBe('pressed');
+    expect(gesturePhase({ ...pressed, hasMoved: true })).toBe('dragging');
+  });
+});
+
+describe('createGestureStore', () => {
+  test('notifies subscribers of every change until they unsubscribe', () => {
+    const store = createGestureStore();
+    let calls = 0;
+    const unsubscribe = store.subscribe(() => {
+      calls += 1;
+    });
+    store.setHover('e1');
+    expect(store.get().hoverId).toBe('e1');
+    unsubscribe();
+    store.setHover('e2');
+    expect(calls).toBe(1);
+  });
+
+  // 指针在同一个元素上挪动时不重新渲染覆盖层。
+  test('does not notify when nothing changed', () => {
+    const store = createGestureStore();
+    store.setHover('e1');
+    let calls = 0;
+    store.subscribe(() => {
+      calls += 1;
+    });
+    store.setHover('e1');
+    store.setGesture(null);
+    expect(calls).toBe(0);
+  });
+
+  test('keeps the gesture and the hover side by side', () => {
+    const store = createGestureStore();
+    const gesture: Gesture = {
+      kind: 'marquee',
+      client: { x: 0, y: 0 },
+      hasMoved: false,
+      origin: { x: 0, y: 0 },
+      current: { x: 0, y: 0 },
+      base: [],
+    };
+    store.setHover('e1');
+    store.setGesture(gesture);
+    expect(store.get()).toEqual({ gesture, hoverId: 'e1' });
+  });
+});
+
+describe('sameIds', () => {
+  // 框选每挪一下都算一次框到了谁：没变就不改选中，整个设计器不跟着重新渲染。
+  test('compares selections regardless of order', () => {
+    expect(sameIds(['a', 'b'], ['b', 'a'])).toBe(true);
+    expect(sameIds(['a'], ['a', 'b'])).toBe(false);
+    expect(sameIds([], [])).toBe(true);
   });
 });

@@ -17,7 +17,7 @@ import { type Box, boundsOf, RESIZE_HANDLES } from '../../lib/canvas-edit';
 import { ROTATE_HANDLE } from '../../lib/canvas-gesture';
 import type { Gap } from '../../lib/canvas-snap';
 import { ELEMENT_DRAG_TYPE, pxToMm } from '../../lib/canvas-view';
-import type { GestureHandlers, GestureView } from '../../view-models/use-canvas-gesture';
+import { type GestureHandlers, type GestureStore, useGestureState } from '../../view-models/use-canvas-gesture';
 import { Ruler } from '../Ruler';
 
 interface CanvasStageProps {
@@ -30,13 +30,15 @@ interface CanvasStageProps {
   /** 覆盖层 aria-label 里撤销快捷键的文字（Windows「Ctrl+Z」，macOS「⌘Z」），由调用方按平台算好传入。 */
   undoShortcut: string;
   selection: readonly string[];
-  /** 指针下面的元素（点中测试的结果）：画浅色框，指针变成「移动」。 */
-  hoverId: string | null;
   /** 这次排版每个元素的问题：不印的浅红底、框里写短原因；条码宽度快不够的黄框。 */
   warnings: readonly ElementWarning[];
   /** 只在设计器里隐藏的元素：不画框（标签上的内容由调用方从 HTML 里藏起来）。 */
   hidden: ReadonlySet<string>;
-  gesture: GestureView;
+  /**
+   * 拖动中的手势和指针下面的元素（悬停画浅色框、指针变成「移动」）：这里自己订阅，
+   * 拖动中只重画画布这一块，设计器的其他部分不跟着重新渲染。
+   */
+  gestureStore: GestureStore;
   handlers: GestureHandlers;
   /** 外层滚动区：量「适合窗口」的大小、挂 Ctrl+滚轮。 */
   stageRef: RefObject<HTMLDivElement | null>;
@@ -141,10 +143,9 @@ export function CanvasStage({
   showGrid,
   undoShortcut,
   selection,
-  hoverId,
   warnings,
   hidden,
-  gesture,
+  gestureStore,
   handlers,
   stageRef,
   overlayRef,
@@ -158,6 +159,7 @@ export function CanvasStage({
   floating,
 }: CanvasStageProps) {
   const { paper } = template;
+  const { view: gesture, hoverId } = useGestureState(gestureStore, template);
   const single =
     selection.length === 1 ? (template.elements.find((element) => element.id === selection[0]) ?? null) : null;
   // 选中的东西现在占的框（拖动中跟着临时框走）：标尺上标出范围；选中好几个时画一个合起来的外框，按在框里就能整组拖动。

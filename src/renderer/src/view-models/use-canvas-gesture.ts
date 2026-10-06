@@ -1,4 +1,11 @@
-import { type PointerEvent as ReactPointerEvent, type RefObject, useEffect, useRef, useState } from 'react';
+import {
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { CanvasTemplate } from '../../../core/templates/canvas-model';
 import {
   boundsOf,
@@ -12,8 +19,12 @@ import {
   toggleId,
 } from '../lib/canvas-edit';
 import {
+  createGestureStore,
   type Gesture,
+  type GesturePhase,
+  type GestureStore,
   type GestureView,
+  gesturePhase,
   hasPassedDragThreshold,
   isResizeHandle,
   keepsRatio,
@@ -21,6 +32,7 @@ import {
   ROTATE_HANDLE,
   resizeGestureBox,
   rotationFromPointer,
+  sameIds,
   viewOf,
 } from '../lib/canvas-gesture';
 import { hitStack, hitTest, marqueeHits, nextInStack } from '../lib/canvas-hit';
@@ -30,7 +42,7 @@ import { pxToMm } from '../lib/canvas-view';
 /** 拖动的位移取整到 0.1mm（和方向键一步一样），数字框里不会出现 12.37；吸附上的位置以参考线为准。 */
 const DRAG_STEP_MM = 0.1;
 
-export type { GestureView };
+export type { GestureStore, GestureView };
 
 /** 挂在覆盖层上的指针事件：按在哪个元素、哪个控制点上，看 data-element-id、data-handle。 */
 export interface GestureHandlers {
@@ -74,35 +86,36 @@ const NO_HIDDEN: ReadonlySet<string> = new Set();
  * 没有手势时才按原来的逻辑清空选中。
  */
 export function useCanvasGesture(options: GestureOptions): {
-  view: GestureView;
   handlers: GestureHandlers;
+  /** 手势和悬停：拖动中每挪一下都变，交给覆盖层用 useGestureState 订阅，设计器本身不跟着重新渲染。 */
+  store: GestureStore;
+  /** 有手势按着（哪怕还没拖）：这时键盘上会改模板的命令一律跳过。 */
   isActive: boolean;
-  /** 指针下面（没按着时）的元素：覆盖层给它画浅色框。 */
-  hoverId: string | null;
+  /** 真的拖起来了（过了拖动阈值）：浮动工具条这时才藏起来。 */
+  isDragging: boolean;
   cancel: () => void;
 } {
   const { template, selection, zoom, snap, overlayRef, onSelect, onCommit, hidden = NO_HIDDEN } = options;
-  const [gesture, setGesture] = useState<Gesture | null>(null);
-  const [hoverId, setHoverId] = useState<string | null>(null);
+  // 手势的「现成事实」放在仓库里，指针事件之间同步读写，不依赖 state 在下一次渲染才更新：
+  // 很快的一次「按下-挪动-松开」有可能在 React 重新渲染之前就把三个事件都派发完，
+  // 只看渲染闭包里的值的话，读到的还是按下那一刻的（hasMoved: false），会把拖动误判成点击。
+  const [store] = useState(createGestureStore);
+  // 设计器只在 idle / pressed / dragging 之间切换时重新渲染（同一个值 React 不重新渲染）。
+  const [phase, setPhase] = useState<GesturePhase>('idle');
   // 设计器里隐藏的元素看不见，也就不该点得中。
   const hittable = template.elements.filter((element) => !hidden.has(element.id));
-  // 手势的「现成事实」：指针事件之间同步读写这份 ref，不依赖 state 在下一次渲染才更新。
-  // 很快的一次「按下-挪动-松开」有可能在 React 重新渲染之前就把三个事件都派发完，
-  // 这时 onPointerUp 如果只看 state 闭包里的 gesture，读到的还是按下那一刻的值（hasMoved: false），
-  // 会把已经挪动过的一次拖动误判成点击，什么都不提交。state 仍然保留，只用来触发覆盖层重新渲染。
-  const gestureRef = useRef<Gesture | null>(null);
   const { paper } = template;
   const threshold = snapThresholdMm(zoom);
 
   const setBoth = (next: Gesture | null) => {
-    gestureRef.current = next;
-    setGesture(next);
+    store.setGesture(next);
+    setPhase(gesturePhase(next));
   };
 
   /** 取消当前手势：不提交，覆盖层上的临时框和参考线一起消失。指针捕获不用手动释放：
    * 要么是浏览器自己刚释放的（onLostPointerCapture 调用这里），要么等真正的 pointerup 来了自然释放。 */
   const cancel = () => {
-    if (gestureRef.current !== null) {
+    if (store.get().gesture !== null) {
       setBoth(null);
     }
   };
@@ -238,13 +251,10 @@ export function useCanvasGesture(options: GestureOptions): {
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const current = gestureRef.current;
+    const current = store.get().gesture;
     if (current === null) {
-      // 没按着：只更新悬停的元素（覆盖层画浅色框、指针变成「移动」）。
-      const hovered = hitTest(hittable, toPaper({ x: event.clientX, y: event.clientY }), zoom);
-      if (hovered !== hoverId) {
-        setHoverId(hovered);
-      }
+      // 没按着：只更新悬停的元素（覆盖层画浅色框、指针变成「移动」）；没变时仓库不通知。
+      store.setHover(hitTest(hittable, toPaper({ x: event.clientX, y: event.clientY }), zoom));
       return;
     }
     // 按钮已经松开却没收到 pointerup（指针捕获被别的什么抢走、系统手势吞掉了松开事件……）：
@@ -263,7 +273,11 @@ export function useCanvasGesture(options: GestureOptions): {
       setBoth({ ...current, hasMoved: true, current: point });
       // 框选和点选一样不碰锁定、隐藏的元素（它们只能在图层列表里选）；只有边框的矩形要框到边框才算。
       const touched = marqueeHits(hittable, rectFromPoints(current.origin, point));
-      onSelect([...new Set([...current.base, ...touched])]);
+      const next = [...new Set([...current.base, ...touched])];
+      // 框到的没变就不改选中：不然每挪一下整个设计器（检查器、图层列表）都要重新渲染一次。
+      if (!sameIds(next, selection)) {
+        onSelect(next);
+      }
       return;
     }
     const pointer = toPaper({ x: event.clientX, y: event.clientY });
@@ -297,7 +311,7 @@ export function useCanvasGesture(options: GestureOptions): {
   };
 
   const onPointerUp = () => {
-    const current = gestureRef.current;
+    const current = store.get().gesture;
     if (current === null) {
       return;
     }
@@ -318,20 +332,31 @@ export function useCanvasGesture(options: GestureOptions): {
   };
 
   return {
-    view: viewOf(gesture, template),
     handlers: {
       onPointerDown,
       onPointerMove,
       onPointerUp,
       onPointerCancel: cancel,
       onLostPointerCapture: cancel,
-      onPointerLeave: () => setHoverId(null),
+      onPointerLeave: () => store.setHover(null),
     },
-    isActive: gesture !== null,
-    // 拖动中不显示悬停：拖着的元素已经有选框了。
-    hoverId: gesture === null ? hoverId : null,
+    store,
+    isActive: phase !== 'idle',
+    isDragging: phase === 'dragging',
     cancel,
   };
+}
+
+/**
+ * 覆盖层订阅手势仓库：拖动中的临时框、参考线、间距、尺寸标签，和悬停的元素。
+ * 拖动中不显示悬停：拖着的元素已经有选框了。
+ */
+export function useGestureState(
+  store: GestureStore,
+  template: CanvasTemplate,
+): { view: GestureView; hoverId: string | null } {
+  const { gesture, hoverId } = useSyncExternalStore(store.subscribe, store.get);
+  return { view: viewOf(gesture, template), hoverId: gesture === null ? hoverId : null };
 }
 
 /**

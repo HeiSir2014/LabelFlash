@@ -525,9 +525,8 @@ export function CanvasDesigner({
           showGrid={designer.showGrid}
           undoShortcut={undoShortcutLabel(platform)}
           selection={designer.selection}
-          hoverId={gesture.hoverId}
           warnings={warnings.elements}
-          gesture={gesture.view}
+          gestureStore={gesture.store}
           handlers={handlers}
           panMode={pan.isPanning ? 'grabbing' : pan.isSpaceHeld ? 'grab' : null}
           onKeyUp={(event) => {
@@ -550,7 +549,7 @@ export function CanvasDesigner({
                 onCommit={(text) => endInlineEdit(text)}
                 onCancel={() => endInlineEdit(null)}
               />
-            ) : selectionBox !== null && !gesture.isActive ? (
+            ) : selectionBox !== null && !gesture.isDragging ? (
               <FloatingToolbar
                 elements={selectedElements}
                 box={selectionBox}

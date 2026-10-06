@@ -88,6 +88,64 @@ export interface RotateGesture extends Pressed {
 
 export type Gesture = MoveGesture | ResizeGesture | MarqueeGesture | RotateGesture;
 
+/**
+ * 手势进行到哪一步：idle 没按着；pressed 按下了但还没挪过拖动阈值（可能只是一次点选）；dragging 真的在拖。
+ * 设计器只在这三步之间切换时重新渲染（键盘命令要知道是不是按着，浮动工具条拖起来才藏），拖动中的每一下只重画覆盖层。
+ */
+export type GesturePhase = 'idle' | 'pressed' | 'dragging';
+
+export function gesturePhase(gesture: Gesture | null): GesturePhase {
+  if (gesture === null) {
+    return 'idle';
+  }
+  return gesture.hasMoved ? 'dragging' : 'pressed';
+}
+
+/** 拖动中的手势和悬停的元素：每挪一下都会变，只有覆盖层订阅它（见 createGestureStore）。 */
+export interface GestureState {
+  gesture: Gesture | null;
+  hoverId: string | null;
+}
+
+/**
+ * 放手势和悬停的小仓库（配 useSyncExternalStore）：它们随指针每挪一下都变，放在设计器的 state 里会让
+ * 检查器、图层列表、打印前检查跟着整页重新渲染；放在这里只有订阅它的覆盖层重画。值没变不通知。
+ */
+export interface GestureStore {
+  get: () => GestureState;
+  subscribe: (listener: () => void) => () => void;
+  setGesture: (gesture: Gesture | null) => void;
+  setHover: (hoverId: string | null) => void;
+}
+
+export function createGestureStore(): GestureStore {
+  let state: GestureState = { gesture: null, hoverId: null };
+  const listeners = new Set<() => void>();
+  const update = (next: GestureState) => {
+    if (next.gesture === state.gesture && next.hoverId === state.hoverId) {
+      return;
+    }
+    state = next;
+    for (const listener of listeners) {
+      listener();
+    }
+  };
+  return {
+    get: () => state,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    setGesture: (gesture) => update({ ...state, gesture }),
+    setHover: (hoverId) => update({ ...state, hoverId }),
+  };
+}
+
+/** 两组选中是不是同一些元素（不管顺序）。 */
+export function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id) => b.includes(id));
+}
+
 /** 天生要保持比例的元素：图片拉变形就失真，二维码本来就是方的。按住 Shift 时反过来。 */
 const RATIO_KINDS: ReadonlySet<CanvasElementKind> = new Set(['image', 'qr']);
 

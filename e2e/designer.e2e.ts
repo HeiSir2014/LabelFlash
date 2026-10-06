@@ -343,3 +343,23 @@ test('asks about an unsaved template when quitting, and saves it when asked', as
   const saved = (await callApi(second.page, 'listTemplates')).find((template) => template.name === TEMPLATE_NAME);
   expect(saved?.kind === 'canvas' && saved.elements.map((element) => element.kind)).toEqual(['text', 'line']);
 });
+
+test('hides the floating toolbar only once a press turns into a drag', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  const d = await openDesigner(page, [PRICE]);
+  const toolbar = page.getByRole('toolbar', { name: '选中元素的工具条' });
+  await clickAt(page, d, 10, 19);
+  await expect(toolbar).toBeVisible();
+
+  // 按下没挪（点选、笔尖落下的抖动）：工具条不闪。
+  const from = await d.at(10, 19);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await expect(toolbar).toBeVisible();
+  // 拖起来才藏，松手再出来。
+  const to = await d.at(20, 22);
+  await page.mouse.move(to.x, to.y, { steps: 5 });
+  await expect(toolbar).toHaveCount(0);
+  await page.mouse.up();
+  await expect(toolbar).toBeVisible();
+});

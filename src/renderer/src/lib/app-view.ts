@@ -10,6 +10,7 @@ export const CONFIG_PAGES = [
   'secrets',
   'webhooks',
   'localApi',
+  'sharing',
   'voice',
   'general',
   'about',
@@ -43,6 +44,7 @@ export const CONFIG_NAV: readonly NavGroup[] = [
     pages: [
       { page: 'webhooks', label: '打印结果通知' },
       { page: 'localApi', label: '本机接口' },
+      { page: 'sharing', label: '局域网共享' },
     ],
   },
   {

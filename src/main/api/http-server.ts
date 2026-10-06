@@ -1,13 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import {
-  createServer,
-  request as httpRequest,
-  type IncomingMessage,
-  type Server,
-  type ServerResponse,
-} from 'node:http';
-import { SerialQueue } from '../../core/serial-queue';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { type ApiServerStatus, isWebOrigin } from '../../shared/local-api';
+import { HttpListener, type ListenStatus } from '../net/http-listener';
 import { ApiError, errorBody } from './api-error';
 import type { Authenticator, Caller } from './authenticator';
 import { corsHeaders } from './cors';
@@ -26,16 +19,6 @@ export const DEFAULT_PORTS: readonly number[] = Array.from({ length: 10 }, (_, i
 const REQUEST_TIMEOUT_MS = 30_000;
 /** 同时最多这么多条连接：正常使用（几个程序、几个网页）远用不到，挡住开几百条连接耗内存。 */
 const MAX_CONNECTIONS = 256;
-/** 重启服务时，正在处理的请求最多再等这么久：收下的批量要把回应发出去，不然调用方重试会重复打印。 */
-const DRAIN_GRACE_MS = 5_000;
-/** 这些错误按「端口不能用」处理，换下一个端口：EACCES 是 Windows 上 Hyper-V 等保留的端口段。 */
-const PORT_UNAVAILABLE_CODES: ReadonlySet<string> = new Set(['EADDRINUSE', 'EACCES']);
-/** 这些错误说明这台电脑没有 IPv6：只用 IPv4 就行。 */
-const NO_IPV6_CODES: ReadonlySet<string> = new Set(['EADDRNOTAVAIL', 'EAFNOSUPPORT']);
-/** 自检请求带的请求头：值是这个服务自己的随机口令，只有自己认得。 */
-const PROBE_HEADER = 'x-labelflash-probe';
-/** 自检最多等这么久：本机回环地址上的请求通常几毫秒就回来。 */
-const PROBE_TIMEOUT_MS = 2_000;
 const NO_CONTENT = 204;
 /** 授权相关的错误：没授权的网站也要能读到它们，才知道该去电脑上点「允许」，或者知道已被拒绝。 */
 const AUTHORIZATION_REASONS: ReadonlySet<string> = new Set(['ORIGIN_NOT_AUTHORIZED', 'ORIGIN_DENIED']);
@@ -65,178 +48,42 @@ export interface ApiHttpServerDeps {
 
 type Headers = Record<string, string | undefined>;
 
-class PortUnavailableError extends Error {}
-
-interface Listening {
-  servers: Server[];
-  /** 在 IPv6 回环地址 ::1 上也能收到请求（监听了 :: 或 ::1）：自检时两个回环地址都要查。 */
-  hasIpv6: boolean;
-}
-
 /**
  * 本机接口的 HTTP 服务（node:http，不加依赖）。
  * 局域网开启时监听所有网卡（::，同时收 IPv4 和 IPv6）；关闭时只监听 127.0.0.1 和 ::1。
- * 启动、停止一次只做一件：两次启动交错时，先起来的那组服务会被后一次覆盖掉，再也关不掉。
+ * 端口回退、回环自检、启停排队都在共用的 HttpListener 里。
  */
 export class ApiHttpServer {
-  private servers: Server[] = [];
-  private current: ApiServerStatus = { state: 'off' };
-  private readonly lifecycle = new SerialQueue();
-  /** 自检口令：每个服务一个，别的程序不可能回应它。 */
-  private readonly probeToken = randomUUID();
+  private readonly listener: HttpListener;
 
-  constructor(private readonly deps: ApiHttpServerDeps) {}
+  constructor(private readonly deps: ApiHttpServerDeps) {
+    this.listener = new HttpListener({
+      logTag: '[api]',
+      requestTimeoutMs: REQUEST_TIMEOUT_MS,
+      maxConnections: MAX_CONNECTIONS,
+      onRequest: (request, response) => void this.serve(request, response),
+    });
+  }
 
   get status(): ApiServerStatus {
-    return this.current;
+    return toApiStatus(this.listener.status);
   }
 
   /** 正在监听的端口；没有监听时为 null。 */
   port(): number | null {
-    return this.current.state === 'listening' ? this.current.port : null;
+    return this.listener.port();
   }
 
-  start(options: StartOptions): Promise<ApiServerStatus> {
-    return this.lifecycle.run(() => this.startNow(options));
+  async start(options: StartOptions): Promise<ApiServerStatus> {
+    return toApiStatus(await this.listener.start(options.lanEnabled ? 'all' : 'loopback', options.ports));
   }
 
   stop(): Promise<void> {
-    return this.lifecycle.run(async () => {
-      this.current = { state: 'off' };
-      await drain(this.take());
-    });
-  }
-
-  private async startNow(options: StartOptions): Promise<ApiServerStatus> {
-    this.current = { state: 'off' };
-    await drain(this.take());
-    const skippedPorts: number[] = [];
-    for (const port of options.ports) {
-      try {
-        // 新起的服务先放在局部变量里，自检通过才交给 this.servers。
-        const listening = await this.listen(port, options.lanEnabled);
-        const bound = addressPort(listening.servers[0]);
-        if (!(await this.answersOnLoopback(bound, listening.hasIpv6))) {
-          await drain(listening.servers);
-          throw new PortUnavailableError(`port ${bound} is answered by another program on a loopback address`);
-        }
-        this.servers = listening.servers;
-        this.current = { state: 'listening', port: bound, lanEnabled: options.lanEnabled, skippedPorts };
-        return this.current;
-      } catch (error) {
-        if (!(error instanceof PortUnavailableError)) {
-          throw error;
-        }
-        console.warn(`[api] port ${port} is unavailable`, error.message);
-        skippedPorts.push(port);
-      }
-    }
-    this.current = { state: 'failed', reason: 'PORT_IN_USE', ports: [...options.ports] };
-    return this.current;
-  }
-
-  private take(): Server[] {
-    const servers = this.servers;
-    this.servers = [];
-    return servers;
-  }
-
-  private async listen(port: number, lanEnabled: boolean): Promise<Listening & { servers: [Server, ...Server[]] }> {
-    if (lanEnabled) {
-      try {
-        return { servers: [await this.listenOn(port, '::')], hasIpv6: true };
-      } catch (error) {
-        if (!isNoIpv6(error)) {
-          throw error;
-        }
-        console.warn('[api] no IPv6, listening on 0.0.0.0', error);
-        return { servers: [await this.listenOn(port, '0.0.0.0')], hasIpv6: false };
-      }
-    }
-    const primary = await this.listenOn(port, '127.0.0.1');
-    const bound = addressPort(primary);
-    try {
-      return { servers: [primary, await this.listenOn(bound, '::1')], hasIpv6: true };
-    } catch (error) {
-      if (!isNoIpv6(error)) {
-        // ::1 上这个端口被别的程序占着：用 localhost 访问的调用方会连到那个程序，这个端口不能用。
-        await drain([primary]);
-        throw error;
-      }
-      console.warn(`[api] no IPv6 loopback, listening on 127.0.0.1:${bound} only`);
-      return { servers: [primary], hasIpv6: false };
-    }
-  }
-
-  private listenOn(port: number, host: string): Promise<Server> {
-    const server = createServer((request, response) => void this.serve(request, response));
-    server.requestTimeout = REQUEST_TIMEOUT_MS;
-    server.maxConnections = MAX_CONNECTIONS;
-    return new Promise((resolve, reject) => {
-      const onError = (error: NodeJS.ErrnoException) => {
-        server.close();
-        reject(
-          error.code !== undefined && PORT_UNAVAILABLE_CODES.has(error.code)
-            ? new PortUnavailableError(`${host}:${port} ${error.code}`)
-            : error,
-        );
-      };
-      server.once('error', onError);
-      server.listen(port, host, () => {
-        server.off('error', onError);
-        server.on('error', (error) => console.error('[api] server error', error));
-        resolve(server);
-      });
-    });
-  }
-
-  /**
-   * Windows 上别的程序占着 127.0.0.1（或 ::1）的这个端口时，监听 :: 照样成功，本机的请求却会到那个程序：
-   * 从两个回环地址各请求自己一次，回应不是自己的就当作端口不能用。
-   */
-  private async answersOnLoopback(port: number, hasIpv6: boolean): Promise<boolean> {
-    const hosts = hasIpv6 ? ['127.0.0.1', '::1'] : ['127.0.0.1'];
-    for (const host of hosts) {
-      if (!(await this.answersOn(host, port))) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  private answersOn(host: string, port: number): Promise<boolean> {
-    return new Promise((resolve) => {
-      const probe = httpRequest(
-        {
-          host,
-          port,
-          path: '/',
-          headers: { [PROBE_HEADER]: this.probeToken },
-          timeout: PROBE_TIMEOUT_MS,
-          // 每次都开新连接：默认的连接池会复用上一次自检的连接，重启后那条连接已经被关掉了。
-          agent: false,
-        },
-        (response) => {
-          response.resume();
-          resolve(response.statusCode === NO_CONTENT && response.headers[PROBE_HEADER] === this.probeToken);
-        },
-      );
-      probe.on('timeout', () => probe.destroy(new Error('probe timed out')));
-      probe.on('error', (error) => {
-        console.warn(`[api] self-check on ${host}:${port} failed: ${error.message}`);
-        resolve(false);
-      });
-      probe.end();
-    });
+    return this.listener.stop();
   }
 
   private async serve(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const headers = flattenHeaders(request);
-    if (headers[PROBE_HEADER] === this.probeToken) {
-      response.writeHead(NO_CONTENT, { [PROBE_HEADER]: this.probeToken });
-      response.end();
-      return;
-    }
     const method = request.method ?? 'GET';
     const url = request.url ?? '/';
     const localPort = request.socket.localPort ?? 0;
@@ -342,29 +189,16 @@ export class ApiHttpServer {
   }
 }
 
-/**
- * 关掉服务：先关空闲的保持连接，正在处理的请求给一点时间把回应发出去，到时间还没完就强行断开。
- * 收下的批量必须让调用方收到回应，不然它重试时（没带 requestId）会重复打印。
- */
-function drain(servers: readonly Server[]): Promise<void> {
-  return Promise.all(
-    servers.map(
-      (server) =>
-        new Promise<void>((resolve) => {
-          const timer = setTimeout(() => server.closeAllConnections(), DRAIN_GRACE_MS);
-          server.close(() => {
-            clearTimeout(timer);
-            resolve();
-          });
-          server.closeIdleConnections();
-        }),
-    ),
-  ).then(() => undefined);
-}
-
-function isNoIpv6(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return code !== undefined && NO_IPV6_CODES.has(code);
+/** 共用监听的状态 → 本机接口的状态（界面按 lanEnabled 显示地址）。 */
+function toApiStatus(status: ListenStatus): ApiServerStatus {
+  return status.state === 'listening'
+    ? {
+        state: 'listening',
+        port: status.port,
+        lanEnabled: status.scope !== 'loopback',
+        skippedPorts: status.skippedPorts,
+      }
+    : status;
 }
 
 function internalError(error: unknown, method: string, url: string): ApiError {
@@ -396,12 +230,4 @@ function flattenHeaders(request: IncomingMessage): Headers {
     headers[name] = Array.isArray(value) ? value[0] : value;
   }
   return headers;
-}
-
-function addressPort(server: Server | undefined): number {
-  const address = server?.address();
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error('Server has no TCP address');
-  }
-  return address.port;
 }

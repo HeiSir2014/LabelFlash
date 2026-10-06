@@ -300,6 +300,21 @@ describe('describeJobMeta', () => {
     expect(describeJobMeta(pdfJob)).toContain('PDF（第 2 页第 1 张）');
   });
 
+  test('shows the computer and user of a LAN share job', () => {
+    const shared = {
+      ...job,
+      source: 'ipp' as const,
+      printerName: 'P',
+      forced: false,
+      ipp: { client: '192.168.1.23', user: 'zhang' },
+    };
+    expect(describeJobMeta(shared)).toContain('局域网共享（192.168.1.23 zhang）');
+    expect(describeJobMeta({ ...shared, ipp: { client: '192.168.1.23', user: '' } })).toContain(
+      '局域网共享（192.168.1.23）',
+    );
+    expect(describeJobMeta({ ...shared, source: 'history' })).toContain('（原提交：192.168.1.23 zhang）');
+  });
+
   test('names who submitted a job through the local api', () => {
     expect(
       describeJobMeta({ ...job, source: 'api', printerName: '标签机A', forced: false, paper: '60x40' }, 'ERP'),

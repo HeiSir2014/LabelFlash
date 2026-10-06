@@ -12,6 +12,7 @@ import { ConfigCenter } from './components/config/ConfigCenter';
 import { ConfigPages } from './components/config/ConfigPages';
 import { ConfirmDialog } from './components/config/ConfirmDialog';
 import { DriverSection } from './components/DriverSection';
+import { IppClientRequests } from './components/IppClientRequests';
 import { JobLog } from './components/JobLog';
 import { MOBILE_QR_SIZE_PX, MobileOverlay } from './components/MobileOverlay';
 import { NoticeBar } from './components/NoticeBar';
@@ -50,6 +51,7 @@ import { useDrivers } from './view-models/use-drivers';
 import { useFeedback } from './view-models/use-feedback';
 import { useFileDrop } from './view-models/use-file-drop';
 import { useHotkey } from './view-models/use-hotkey';
+import { useIppSharing } from './view-models/use-ipp-sharing';
 import { useJobLog } from './view-models/use-job-log';
 import { useLocalApi } from './view-models/use-local-api';
 import { useMediaQuery } from './view-models/use-media-query';
@@ -77,6 +79,7 @@ export function App() {
   const printers = usePrinters();
   const jobLog = useJobLog();
   const localApi = useLocalApi();
+  const ippSharing = useIppSharing();
   const appInfo = useAppInfo();
   const { notices, dismiss } = useNotices();
   const updates = useUpdateStatus();
@@ -522,6 +525,7 @@ export function App() {
               />
             }
             localApi={localApi}
+            sharing={ippSharing}
             general={{
               jobTotal: jobLog.total,
               canReadImageText: appInfo?.canReadImageText ?? true,
@@ -577,10 +581,16 @@ export function App() {
           onCancel={appView.leaveConfirm.onContinue}
         />
       )}
-      <OriginRequests
-        origins={localApi.status?.pendingOrigins ?? []}
-        onDecide={(origin, allow) => void localApi.decideOrigin(origin, allow)}
-      />
+      <div className="request-bar">
+        <OriginRequests
+          origins={localApi.status?.pendingOrigins ?? []}
+          onDecide={(origin, allow) => void localApi.decideOrigin(origin, allow)}
+        />
+        <IppClientRequests
+          clients={ippSharing.status?.pendingClients ?? []}
+          onDecide={(address, allow) => void ippSharing.decideClient(address, allow)}
+        />
+      </div>
       <NoticeBar notices={notices} onDismiss={dismiss} />
     </div>
   );

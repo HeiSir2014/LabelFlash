@@ -13,7 +13,8 @@ const JOB_COLUMNS = `
   jobs.template_id AS templateId, jobs.fields, jobs.caller,
   jobs.batch_id AS batchId, jobs.batch_row AS batchRow, jobs.batch_copy AS batchCopy,
   jobs.template_fingerprint AS templateFingerprint,
-  jobs.pdf_file AS pdfFile, jobs.pdf_page AS pdfPage, jobs.pdf_piece AS pdfPiece, jobs.pdf_bitmap AS pdfBitmap`;
+  jobs.pdf_file AS pdfFile, jobs.pdf_page AS pdfPage, jobs.pdf_piece AS pdfPiece, jobs.pdf_bitmap AS pdfBitmap,
+  jobs.ipp_client AS ippClient, jobs.ipp_user AS ippUser`;
 /** trigram 索引至少需要 3 个字符；更短的搜索词退回 LIKE（LIMIT 保证找够一页就停）。 */
 const FTS_MIN_QUERY_LENGTH = 3;
 /** 调小容量时每批删除的行数；批与批之间让出主线程，避免卡住打印。 */
@@ -45,9 +46,11 @@ export class SqliteJobStore implements JobStore {
     this.capacity = assertCapacity(capacity);
     this.insertJob = db.prepare(`
       INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced, failure_reason, paper, template_id, fields, caller,
-        batch_id, batch_row, batch_copy, template_fingerprint, pdf_file, pdf_page, pdf_piece, pdf_bitmap)
+        batch_id, batch_row, batch_copy, template_fingerprint, pdf_file, pdf_page, pdf_piece, pdf_bitmap,
+        ipp_client, ipp_user)
       VALUES (:id, :createdAt, :raw, :printerName, :source, :status, :forced, :failureReason, :paper, :templateId, :fields, :caller,
-        :batchId, :batchRow, :batchCopy, :templateFingerprint, :pdfFile, :pdfPage, :pdfPiece, :pdfBitmap)`);
+        :batchId, :batchRow, :batchCopy, :templateFingerprint, :pdfFile, :pdfPage, :pdfPiece, :pdfBitmap,
+        :ippClient, :ippUser)`);
     // 插入后使用：只保留 seq 落在最新 capacity 个序号内的记录，走主键，开销与容量无关。
     this.trimBehind = db.prepare('DELETE FROM jobs WHERE seq <= :lastSeq - :capacity');
     this.trimOldestBatch = db.prepare(`
@@ -118,6 +121,8 @@ export class SqliteJobStore implements JobStore {
         pdfPage: job.pdf?.page ?? null,
         pdfPiece: job.pdf?.piece ?? null,
         pdfBitmap: job.pdf?.bitmap ?? null,
+        ippClient: job.ipp?.client ?? null,
+        ippUser: job.ipp?.user ?? null,
       });
       return Number(this.trimBehind.run({ lastSeq: lastInsertRowid, capacity: this.capacity }).changes);
     });
@@ -256,6 +261,10 @@ function toJobRecord(row: Row): JobRecord {
       piece: readInteger(row, 'pdfPiece'),
       bitmap: readString(row, 'pdfBitmap'),
     };
+  }
+  // 有电脑地址就必须有用户名（可以是空字符串）：readString 遇到 NULL 抛错，坏行不当成合法记录。
+  if (row['ippClient'] !== null) {
+    job.ipp = { client: readString(row, 'ippClient'), user: readString(row, 'ippUser') };
   }
   return job;
 }

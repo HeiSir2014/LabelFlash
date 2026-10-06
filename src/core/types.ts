@@ -27,6 +27,12 @@ export interface PdfRef {
   bitmap: string;
 }
 
+/** 局域网共享（IPP）打来的一张：对方电脑的 IPv4 地址，和它报的用户名（requesting-user-name，可能为空）。 */
+export interface IppRef {
+  client: string;
+  user: string;
+}
+
 /** 打印请求不带打印机：主进程按模板决定（见 printing/resolve-printer.ts）。 */
 export interface PrintRequest {
   raw: string;
@@ -43,6 +49,8 @@ export interface PrintRequest {
   batch?: BatchRef;
   /** PDF 打印的一块（含从打印记录重打的）；其他入口没有。 */
   pdf?: PdfRef;
+  /** 局域网共享打来的（含从打印记录重打的）；其他入口没有。 */
+  ipp?: IppRef;
 }
 
 export const PRINT_FAILURE_REASONS = [
@@ -143,6 +151,8 @@ export interface JobRecord {
   templateFingerprint?: string;
   /** PDF 打印的一块：文件、页码、第几张、位图编号；其他来源没有。 */
   pdf?: PdfRef;
+  /** 局域网共享打来的：对方电脑的地址和用户名；其他来源没有。 */
+  ipp?: IppRef;
 }
 
 export interface Clock {

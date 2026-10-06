@@ -1,6 +1,17 @@
 import { APP_HOST, APP_SCHEME } from '../bundle-path';
 
 /**
+ * 渲染页用的会话：都在内存里（名字不带 persist:），不和主窗口共用存储、缓存、同源数据，程序退出就没了。
+ * 局域网共享单独一个：别的电脑交来的文档和操作员自己选的 PDF 不在同一个会话、同一个渲染进程里，
+ * 一边被攻破也碰不到另一边的文档。
+ */
+export const RENDER_PARTITIONS = {
+  pdf: 'labelflash-pdf-render',
+  ipp: 'labelflash-ipp-render',
+} as const;
+export type RenderPartition = keyof typeof RENDER_PARTITIONS;
+
+/**
  * PDF 渲染页的内容安全策略：src/renderer/pdf-render.html 的 meta 写的是同一句（测试核对一字不差）。
  * 这一份由渲染页会话的 app:// 协议随每个响应头发出：pdf.js 的 worker 是单独的脚本，不继承页面的 meta，
  * 不加响应头它就没有任何限制。wasm-unsafe-eval 只许编译 WebAssembly（图像解码器），不许 eval 脚本。

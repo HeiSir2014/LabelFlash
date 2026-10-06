@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { PDF_LIMITS } from '../core/pdf/pdf-model';
-import { readRenderReply, renderedSize, renderScale, rgbaToGray } from './pdf-render-protocol';
+import { RENDER_IMAGE_TYPES, readRenderReply, renderedSize, renderScale, rgbaToGray } from './pdf-render-protocol';
 
 const A4 = { width: 595, height: 842 };
 
@@ -58,6 +58,20 @@ describe('readRenderReply', () => {
     expect(readRenderReply(opening(-1, []), opened)).toBeNull();
   });
 
+  // 光栅在渲染页里解码：回来的每页大小、分辨率在主进程这边再核对一遍。
+  test('accepts the pages of an opened raster and refuses impossible ones', () => {
+    const rasterOpened = { id: 3, kind: 'raster-opened', maxPages: 200 } as const;
+    const page = { width: 480, height: 320, dpi: 203 };
+    const reply = (pages: unknown) => ({ id: 3, kind: 'raster-opened', pages });
+    expect(readRenderReply(reply([page]), rasterOpened)).toEqual({ id: 3, kind: 'raster-opened', pages: [page] });
+    expect(readRenderReply(reply([]), rasterOpened)).toBeNull();
+    expect(readRenderReply(reply([{ ...page, width: 0 }]), rasterOpened)).toBeNull();
+    expect(readRenderReply(reply([{ ...page, width: 9_000 }]), rasterOpened)).toBeNull();
+    expect(readRenderReply(reply([{ ...page, dpi: 1 }]), rasterOpened)).toBeNull();
+    expect(readRenderReply(reply([{ ...page, height: 1.5 }]), rasterOpened)).toBeNull();
+    expect(readRenderReply(reply(Array.from({ length: 201 }, () => page)), rasterOpened)).toBeNull();
+  });
+
   test('accepts a bitmap of exactly the size the main process expects', () => {
     const gray = new Uint8Array(2);
     expect(readRenderReply({ id: 2, kind: 'rendered', width: 2, height: 1, gray }, rendered)).toEqual({
@@ -90,5 +104,11 @@ describe('readRenderReply', () => {
     const reply = { id: 3, kind: 'rendered', width: 2, height: 1, gray: new Uint8Array(2) };
     expect(readRenderReply(reply, rendered)).toBeNull();
     expect(readRenderReply('x', rendered)).toBeNull();
+  });
+});
+
+describe('RENDER_IMAGE_TYPES', () => {
+  test('lists only the image types the render page decodes', () => {
+    expect([...RENDER_IMAGE_TYPES]).toEqual(['image/jpeg', 'image/png']);
   });
 });

@@ -72,6 +72,10 @@ describe('sanitizeSettings', () => {
           dpi: null,
         },
       },
+      ippSharingEnabled: true,
+      ippPort: 8700,
+      ippLastPort: 8632,
+      ippInstanceId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
     };
     expect(sanitizeSettings(settings)).toEqual(settings);
   });
@@ -198,6 +202,19 @@ describe('paperPrinters', () => {
   // 只有设置里完全没有纸张分配（1.0.x 升级上来）才迁移；分配表坏了不能把旧打印机请回来。
   test('only migrates when there is no paper assignment at all', () => {
     expect(sanitizeSettings({ selectedPrinter: '旧打印机', paperPrinters: null }).paperPrinters).toEqual({});
+  });
+});
+
+describe('LAN sharing settings', () => {
+  test('keeps LAN sharing off by default and drops invalid ports and ids', () => {
+    expect(DEFAULT_SETTINGS.ippSharingEnabled).toBe(false);
+    const settings = sanitizeSettings({
+      ippSharingEnabled: true,
+      ippPort: 8700,
+      ippLastPort: 80,
+      ippInstanceId: 'not-a-uuid',
+    });
+    expect(settings).toMatchObject({ ippSharingEnabled: true, ippPort: 8700, ippLastPort: null, ippInstanceId: null });
   });
 });
 

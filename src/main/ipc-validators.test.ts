@@ -16,6 +16,7 @@ import {
   requireDiagnosisFixRequest,
   requireDriverDeviceKey,
   requireIndex,
+  requireIPv4Address,
   requireJobQuery,
   requireLibraryTemplateId,
   requireLookupTableId,
@@ -35,6 +36,7 @@ import {
   requireRunId,
   requireSecretName,
   requireSettingsPatch,
+  requireSharePassword,
   requireString,
   requireTemplateId,
   requireUnsavedTemplateName,
@@ -258,6 +260,21 @@ describe('ipc validators', () => {
       apiLastPort: 17631,
     };
     expect(requireSettingsPatch(patch)).toEqual({ apiPort: 17700 });
+  });
+
+  // 局域网共享的实例编号、上次的端口是主进程自己记的：界面改不到（实例编号决定打印机的 UUID 和广播的主机名）。
+  test('requireSettingsPatch keeps the LAN sharing switch and port but not its own records', () => {
+    const patch = { ippSharingEnabled: true, ippPort: 8700, ippLastPort: 9000, ippInstanceId: 'x' };
+    expect(requireSettingsPatch(patch)).toEqual({ ippSharingEnabled: true, ippPort: 8700 });
+  });
+
+  test('LAN sharing passwords and computer addresses are checked', () => {
+    expect(requireSharePassword('前台1234')).toBe('前台1234');
+    expect(() => requireSharePassword('12')).toThrow('Invalid share password');
+    expect(() => requireSharePassword(1234)).toThrow('Invalid share password');
+    expect(requireIPv4Address('192.168.1.23')).toBe('192.168.1.23');
+    expect(() => requireIPv4Address('::1')).toThrow('Invalid IPv4 address');
+    expect(() => requireIPv4Address('192.168.1.256')).toThrow('Invalid IPv4 address');
   });
 });
 

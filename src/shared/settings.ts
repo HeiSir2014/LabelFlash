@@ -74,6 +74,14 @@ export interface AppSettings {
    * 只在操作员点「保存并发送」时经 printer:commands-apply 写入并发给打印机一次，打印前不再发。
    */
   printerCommands: Record<string, PrinterCommandConfig>;
+  /** 局域网共享（IPP）：打开后局域网里的电脑能把这台电脑的热敏标签机当打印机用。默认关（最小权限：网络监听由用户明确打开）。 */
+  ippSharingEnabled: boolean;
+  /** 操作员指定的共享端口；null = 不指定（默认 8631，被占用时自动换）。 */
+  ippPort: number | null;
+  /** 共享上次用成功的端口（程序自己记）：重启后端口不变，按地址添加过的电脑不会忽然连不上。 */
+  ippLastPort: number | null;
+  /** 共享的实例编号（第一次打开共享时生成）：每台共享打印机的 UUID 和 mDNS 主机名由它算，重启不变。 */
+  ippInstanceId: string | null;
 }
 
 export const MS_PER_SECOND = 1_000;
@@ -117,6 +125,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   apiLanEnabled: true,
   apiAuthorizedOrigins: [],
   printerCommands: {},
+  ippSharingEnabled: false,
+  ippPort: null,
+  ippLastPort: null,
+  ippInstanceId: null,
 };
 
 export function sanitizeSettings(value: unknown): AppSettings {
@@ -160,6 +172,11 @@ export function sanitizeSettings(value: unknown): AppSettings {
     apiLanEnabled: sanitizeBoolean(input['apiLanEnabled'], DEFAULT_SETTINGS.apiLanEnabled),
     apiAuthorizedOrigins: sanitizeOrigins(input['apiAuthorizedOrigins']),
     printerCommands: sanitizePrinterCommands(input['printerCommands']),
+    ippSharingEnabled: sanitizeBoolean(input['ippSharingEnabled'], DEFAULT_SETTINGS.ippSharingEnabled),
+    // 端口规则和本机接口一样：1024–65535，不合法回到「不指定」。
+    ippPort: sanitizeApiPort(input['ippPort']),
+    ippLastPort: sanitizeApiPort(input['ippLastPort']),
+    ippInstanceId: sanitizeInstanceId(input['ippInstanceId']),
   };
 }
 

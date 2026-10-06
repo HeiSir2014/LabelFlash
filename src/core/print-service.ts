@@ -14,6 +14,7 @@ import { type LabelTemplate, withPaper } from './templates/template-model';
 import type {
   BatchRef,
   Clock,
+  IppRef,
   JobRecord,
   LabelJob,
   PdfRef,
@@ -98,8 +99,17 @@ export const BATCH_RULE = { id: 'batch', name: '批量打印' } as const;
 /** PDF 打印的「规则」：备注变量 {规则} 和打印结果通知里显示为「PDF 打印」。 */
 export const PDF_RULE = { id: 'pdf', name: 'PDF 打印' } as const;
 
-/** 不经过识别规则的一张算在哪条「规则」名下：批量、PDF 各有名字，其余（本机接口和它的重打）是本机接口。 */
-export function fieldsRuleFor(origin: { batch?: unknown; pdf?: unknown }): FieldsRule {
+/** 局域网共享的「规则」：备注变量 {规则} 和打印结果通知里显示为「局域网共享」。 */
+export const IPP_RULE = { id: 'ipp', name: '局域网共享' } as const;
+
+/**
+ * 不经过识别规则的一张算在哪条「规则」名下：批量、PDF、局域网共享各有名字，其余（本机接口和它的重打）是本机接口。
+ * 局域网共享打来的也带着 PDF 的位图编号，所以先认它。
+ */
+export function fieldsRuleFor(origin: { batch?: unknown; pdf?: unknown; ipp?: unknown }): FieldsRule {
+  if (origin.ipp !== undefined) {
+    return IPP_RULE;
+  }
   if (origin.batch !== undefined) {
     return BATCH_RULE;
   }
@@ -133,6 +143,8 @@ export interface FieldsPrint {
   batch?: BatchRef;
   /** PDF 打印的一块（含从打印记录重打的）：写进打印记录；规则名记为「PDF 打印」。 */
   pdf?: PdfRef;
+  /** 局域网共享打来的（含从打印记录重打的）：写进打印记录；规则名记为「局域网共享」。 */
+  ipp?: IppRef;
 }
 
 type Recognition = { ok: true; scan: ScanResult } | { ok: false; result: Extract<PrintResult, { status: 'invalid' }> };
@@ -193,6 +205,9 @@ export class PrintService {
     }
     if (input.pdf !== undefined) {
       request.pdf = input.pdf;
+    }
+    if (input.ipp !== undefined) {
+      request.ipp = input.ipp;
     }
     return this.printLabel(this.deps.createId(), request, scan, () => input.template, {
       dedup: false,
@@ -482,6 +497,9 @@ export class PrintService {
     }
     if (request.pdf !== undefined) {
       job.pdf = request.pdf;
+    }
+    if (request.ipp !== undefined) {
+      job.ipp = request.ipp;
     }
     try {
       this.deps.store.append(job);

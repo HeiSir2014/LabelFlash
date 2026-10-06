@@ -9,7 +9,7 @@
 - **布局用逻辑像素**：所有坐标写在 `LAYOUT` 里，按 100% 缩放的逻辑像素写，生成时按比例换算。插件本身不会随系统缩放放大界面（`EnableDpi` 在这个版本里无效），所以每种缩放各生成一份皮肤，安装时按系统 DPI 挑最接近的那份。
 - **`skin-ui.nsh` 要自给自足**：自己 include 用到的头文件（`LogicLib`、`FileFunc`、`WinMessages`），不依赖 `installer.nsi` 的 include 顺序。这样换个简单的脚本也能引用它来预览界面。
 - **插件 DLL 必须和登记的一致**：哈希登记在 `NOTICE.md` 和 `scripts/installer/plugin.ts`。构建时逐字节校验，`.gitattributes` 把 `*.dll` 标为 binary。
-- **防火墙规则**：安装和卸载都经 `firewall.nsh` 运行 `firewall.ps1`（由 `build-skin.ts` 从 `src/shared/firewall-rule.ts` 生成，和程序里的按钮同一份脚本），只动本程序路径下的规则。PowerShell 写系统目录的绝对路径，用 `-Command` 把脚本当作代码块运行（组策略规定了执行策略时 `-File` 会被拦下）；路径按 PowerShell 单引号字符串转义（用户名里可以有单引号）。
+- **防火墙规则**：安装和卸载都经 `firewall.nsh` 运行 `firewall.ps1`（由 `build-skin.ts` 从 `src/shared/firewall-rule.ts` 生成，和程序里的按钮同一份脚本），只动本程序路径下的规则。PowerShell 写系统目录的绝对路径，用 `-Command` 把脚本当作代码块运行（组策略规定了执行策略时 `-File` 会被拦下）；路径按 PowerShell 单引号字符串转义（用户名里可以有单引号）。安装包只加 TCP 那条（`$Discovery = $false`）；局域网共享的 UDP 5353 那条（只限 LocalSubnet）由程序在打开共享后加，卸载时按名字一起删掉。改了以后要实际装一次、覆盖装一次、卸载一次，用 `Get-NetFirewallRule -DisplayName 'CDL-LabelFlash local API' | Get-NetFirewallPortFilter` 核对。
 - **本地 OCR 的文件**：`scripts/ocr/stage-resources.ts` 在两段构建之前把扩展、small 模型和 ONNX Runtime 的许可声明放到 `dist/.ocr`，`electron-builder.yml` 的 `win.extraResources` 装进 `resources/ocr/`。
   - 扩展静态链接从源码编的 ONNX Runtime（/MT，`scripts/ocr/build-onnxruntime.ts`），只依赖系统 DLL：放好后用 dumpbin 核对依赖、用样张识别一次，不通过就不打包。
   - ONNX Runtime 的静态库从本仓库的预发布版本（`onnxruntime-v<版本>-<指纹>`，由 `.github/workflows/onnxruntime.yml` 用 Visual Studio 2022 编）下载，按 `ONNXRUNTIME_PREBUILT` 的 SHA-256 核对，放在 `native/ocr/target/onnxruntime/`。构建机只要 Rust 和 Visual Studio 的 C++ 工具（2022 或更新）。要在本机从源码编时设置 `LABELFLASH_ORT_FROM_SOURCE=1`（另需 Python 3.10+，约半小时）。

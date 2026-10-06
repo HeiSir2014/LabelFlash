@@ -12,6 +12,7 @@ import type { BatchCheckResult, BatchPreviewResult, BatchStartResult, BatchStatu
 import type { CheckVerdict, DiagnosisCheckId, FixOutcome, FixRequest } from './diagnosis';
 import type { PaperCheck } from './driver-paper';
 import type { DriverStatus } from './drivers';
+import type { IppSharingStatus } from './ipp-sharing';
 import type { JobPage, JobQuery } from './job-history';
 import type { ApiKeyInfo, CreatedApiKey, FirewallStatus, LocalApiStatus } from './local-api';
 import type { MobileStatus } from './mobile-status';
@@ -118,6 +119,13 @@ export const IpcChannel = {
   DecideApiOrigin: 'api:origins:decide',
   FirewallStatus: 'api:firewall:status',
   AddFirewallRule: 'api:firewall:add',
+  IppStatus: 'ipp:status',
+  IppStatusChanged: 'ipp:status-changed',
+  IppSetPassword: 'ipp:password:set',
+  IppClearPassword: 'ipp:password:clear',
+  IppDecideClient: 'ipp:clients:decide',
+  IppForgetClient: 'ipp:clients:forget',
+  IppAddFirewallRule: 'ipp:firewall:add',
   BatchOpenFile: 'batch:open-file',
   BatchReadDropped: 'batch:read-dropped',
   BatchPaste: 'batch:paste',
@@ -335,6 +343,18 @@ export interface LabelFlashApi {
   getFirewallStatus(): Promise<FirewallStatus>;
   /** 弹管理员确认，添加防火墙规则；返回之后查到的状态（操作员拒绝时仍是 missing）。 */
   addFirewallRule(): Promise<FirewallStatus>;
+  /** 局域网共享的状态（共享的打印机、等确认的电脑、记住的电脑……）。 */
+  getIppSharingStatus(): Promise<IppSharingStatus>;
+  onIppSharingStatus(listener: (status: IppSharingStatus) => void): () => void;
+  /** 设共享密码（原文只经过这一次，主进程只存摘要）。 */
+  setSharePassword(password: string): Promise<void>;
+  clearSharePassword(): Promise<void>;
+  /** 操作员对等确认的电脑点了「允许」或「拒绝」。 */
+  decideIppClient(address: string, allow: boolean): Promise<void>;
+  /** 撤销对一台电脑的决定：它下次打印时重新问。 */
+  forgetIppClient(address: string): Promise<void>;
+  /** 弹管理员确认，加防火墙规则（TCP 和 UDP 5353）；返回之后查到的状态。 */
+  addIppFirewallRule(): Promise<FirewallStatus>;
   /** 主进程弹出打开对话框选 .xlsx / .csv，在隔离的子进程里读；.xls 给出另存为的提示。 */
   openBatchFile(): Promise<BatchTableResult>;
   /** 拖进窗口的文件：界面读成字节交来（不传路径），主进程认类型、在子进程里读。 */

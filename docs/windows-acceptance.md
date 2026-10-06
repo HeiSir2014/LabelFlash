@@ -203,6 +203,30 @@
 - `detectWindowsDevices()`：在没有接驱动不全的 USB 打印设备时跑通，返回 `[]`，脚本本身能运行、输出能解析（2026-10-05）。
 - `checkWindowsSignature()` / `driver-catalog:describe`：在这台开发机上读 `notepad.exe` 的大小和 SHA-256 成功。最初读 Authenticode 签名失败，原因是这台机器的 `PSModulePath` 里手工装的 PowerShell 7 的模块路径排在 Windows PowerShell 5.1 自己的模块路径之前，`Get-AuthenticodeSignature` 所在的 `Microsoft.PowerShell.Security` 模块加载到不兼容的版本而失败（`query failed (exit 1)`）。代码审查后在 `run-command.ts` 的 `runPowerShell`（所有调用它的脚本共用）里去掉了子进程环境里的 `PSModulePath`，重新验证：`checkWindowsSignature(notepad.exe 的路径)` 现在返回 `{ status: 'valid', signer: 'CN=Microsoft Windows, …' }`，问题已解决。
 
+## 局域网共享（子项目 6a，待真机）
+
+完整清单和每项的预期见 `docs/lan-sharing.md`「真机验证清单」；结果记在这里。每项记下系统版本和程序日志里 `[ipp] job … format …` 那一行。
+
+| 项 | 怎么验 | 结果 / 日期 |
+|---|---|---|
+| 自动发现（Windows 11 24H2） | 「添加设备」里出现「60×40 标签 @ 电脑名」，驱动是 Microsoft IPP Class Driver | |
+| 按地址添加（Windows 10 22H2、11） | 填 `http://…/printers/60x40`，测试页出纸 | |
+| 记事本、Edge 的 PDF、文字处理软件各打一张 | 出纸正确；记下对方发来的格式 | |
+| 文字处理软件打 2 份 | 出 2 张、按份排序 | |
+| 受保护的打印模式（24H2） | 打开后仍能添加、打印 | |
+| 共享密码 | 弹凭据框，输对能打、输错被拒 | |
+| 缺纸 | 对方打印队列显示错误 | |
+| 新电脑询问 | 顶部询问和系统通知；拒绝后对方任务中止；撤销后重新询问 | |
+| 有虚拟网卡的电脑开共享 | 广播的地址只有真实网卡的 | |
+| 安装包：新装、覆盖装、卸载 | 安装只加 TCP 一条；打开共享后按钮加 UDP 5353（LocalSubnet）；卸载都删掉 | |
+| 别的网段 | 经路由器的另一网段电脑连共享端口被断开 | |
+
+以下是本次开发中在这台开发机上做过的验证，不算真机验收：
+
+- 单元测试、E2E（`e2e/ipp.e2e.ts`，共享只监听 127.0.0.1、不开 mDNS）、视觉验收 V90–V93 通过（2026-10-06）。
+- 互通冒烟（2026-10-06，Windows 11，构建版 + 假打印机，只在 127.0.0.1 上）：一个不用本项目代码、手写 IPP 字节的 Node 脚本发 Get-Printer-Attributes（69 个属性，`ipp-features-supported = ipp-everywhere`，格式含 `image/pwg-raster`、`image/urf`）；带 `Expect: 100-continue`、分块传输的 Print-Job（手写的 60×40 PDF）先停在 pending-held，点「允许」后 completed；PWG 光栅 2 份打出 2 张；乱码正文回 400。打印记录 3 条，来源 ipp、电脑 127.0.0.1、用户 smoke。这台机器上没有 ipptool，CUPS 的一致性测试没做。
+- 没有在这台机器上改过防火墙规则、没有往局域网发过 mDNS 组播：防火墙脚本只核对了文字，mDNS 的测试只在 127.0.0.1 上单播。
+
 ## 已知限制
 
 - 安装包未做代码签名，首次运行会被 SmartScreen 拦一次。

@@ -11,11 +11,15 @@ import type { UpdateStatus } from '../../src/shared/update-status';
 export interface Size {
   width: number;
   height: number;
+  /** 页面缩放（模拟系统缩放，例如 150%）；不写是 1。 */
+  zoom?: number;
 }
 /** 设计文档 §8.1 的三种窗口尺寸：常用笔记本、最小支持宽度、常用台式显示器。 */
 export const SIZE_1280: Size = { width: 1280, height: 800 };
 export const SIZE_1024: Size = { width: 1024, height: 680 };
 export const SIZE_1920: Size = { width: 1920, height: 1080 };
+/** 店里常见的 1366×768 笔记本开 150% 缩放：设计器要在这么小的地方放得下画布、检查器和浮动工具条。 */
+export const SIZE_1366_150: Size = { width: 1366, height: 768, zoom: 1.5 };
 export const ALL_SIZES: readonly Size[] = [SIZE_1280, SIZE_1024, SIZE_1920];
 
 /** 用不存在的打印机提交打印：主进程记一条「找不到打印机」的记录，不会出纸。 */
@@ -30,8 +34,8 @@ const STABLE_BOUNDS_READS = 4;
 /** 主窗口：由 ElectronApplication.browserWindow(page) 取得，不会拿成隐藏的打印窗口。 */
 export type WindowHandle = JSHandle<BrowserWindow>;
 
-export function sizeLabel({ width, height }: Size): string {
-  return `${width}×${height}`;
+export function sizeLabel({ width, height, zoom }: Size): string {
+  return zoom === undefined || zoom === 1 ? `${width}×${height}` : `${width}×${height} @${zoom * 100}%`;
 }
 
 export function formatBounds({ x, y, width, height }: Rectangle): string {

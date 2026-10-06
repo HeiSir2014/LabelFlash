@@ -237,7 +237,8 @@ export function snapBorderDots(borderMm: number, dotMm: number): number {
 /** 新元素的默认大小（mm）：放在纸的左上角安全区内，编辑器再挪到中间。 */
 const NEW_ELEMENT_SIZE_MM: Readonly<Record<CanvasElementKind, { width: number; height: number }>> = {
   text: { width: 30, height: 6 },
-  barcode: { width: 40, height: 12 },
+  // 50mm：一个十来位的编码（Code 128）在 203dpi 上至少要近 40mm，宽一些才不一放上来就「只比最小宽度宽一点」。
+  barcode: { width: 50, height: 12 },
   qr: { width: 15, height: 15 },
   image: { width: 15, height: 15 },
   line: { width: 30, height: CANVAS_LIMITS.minSizeMm },
@@ -284,7 +285,8 @@ export function newCanvasElement(kind: CanvasElementKind, id: string, paper: Pap
         inverse: false,
       };
     case 'barcode':
-      return { ...base, kind, symbology: 'code128', value: '{完整内容}', showText: true, textSizeMm: 2.5 };
+      // 默认印 {编码}：{完整内容} 常带中文，一维码编不了，新加的条码一上来就是「不印」。
+      return { ...base, kind, symbology: 'code128', value: '{编码}', showText: true, textSizeMm: 2.5 };
     case 'qr':
       return { ...base, kind, value: '{完整内容}', errorCorrection: 'M' };
     case 'image':

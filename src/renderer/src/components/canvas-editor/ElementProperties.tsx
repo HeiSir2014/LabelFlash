@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { useId, useRef } from 'react';
 import {
   barcodeGroups,
   barcodeType,
@@ -15,7 +15,9 @@ import {
   type Rotation,
 } from '../../../../core/templates/canvas-model';
 import type { PaperSize } from '../../../../shared/paper-sizes';
+import type { ElementWarning } from '../../../../shared/render-warnings';
 import { maxExtentMm } from '../../lib/canvas-edit';
+import type { SelectOption } from '../../lib/insert-field-options';
 import { NumberField, Segmented, TextInput, Toggle } from '../form-controls';
 import { InsertField } from './InsertField';
 import {
@@ -46,10 +48,7 @@ type ElementChange = (next: CanvasElement, field: string | null) => void;
 export interface ElementPropertiesProps {
   element: CanvasElement;
   paper: PaperSize;
-  fieldNames: readonly string[];
-  /** 双击了哪个文字元素：它的「内容」框拿到焦点后调用 onTextEditStarted 清掉。 */
-  editTextId: string | null;
-  onTextEditStarted: () => void;
+  fieldOptions: readonly SelectOption[];
   onChange: ElementChange;
   onRotate: (rotation: Rotation) => void;
   /** 属性栏的文字 / 数字框失焦时调用：结束撤销历史的合并，不然焦点挪回来接着改会并进上一步。 */
@@ -60,21 +59,36 @@ export interface ElementPropertiesProps {
   isImportingImage: boolean;
 }
 
-/** 选中一个元素时右栏的属性：通用的位置、大小、旋转、锁定，再加这一类自己的设置。 */
-export function ElementProperties(props: ElementPropertiesProps) {
-  const { element, paper, onChange, onRotate, onEndMerge } = props;
+/** 检查器第一个标签页：这一类元素自己的设置（文字的内容和字号、条码的码制和内容……），最上面是名称。 */
+export function ElementContent(props: ElementPropertiesProps) {
+  const { element, onChange, onEndMerge } = props;
+  return (
+    <section className="inspector-section" aria-label={CANVAS_ELEMENT_LABELS[element.kind]}>
+      <TextInput
+        label="名称"
+        value={element.name}
+        maxLength={CANVAS_LIMITS.nameLength}
+        onChange={(name) => onChange({ ...element, name }, 'name')}
+        onBlur={onEndMerge}
+      />
+      <KindProperties {...props} />
+    </section>
+  );
+}
+
+/** 检查器「排列」页的位置、大小、旋转、锁定（数字是毫米，带步进）。对齐和叠放按钮由调用方接在后面。 */
+export function ElementGeometry({
+  element,
+  paper,
+  onChange,
+  onRotate,
+  onEndMerge,
+}: Pick<ElementPropertiesProps, 'element' | 'paper' | 'onChange' | 'onRotate' | 'onEndMerge'>) {
   const min = CANVAS_LIMITS.minSizeMm;
   return (
     <>
-      <section className="form-section">
-        <h2 className="form-section__title">{CANVAS_ELEMENT_LABELS[element.kind]}</h2>
-        <TextInput
-          label="名称"
-          value={element.name}
-          maxLength={CANVAS_LIMITS.nameLength}
-          onChange={(name) => onChange({ ...element, name }, 'name')}
-          onBlur={onEndMerge}
-        />
+      <h3 className="inspector-heading">位置和大小</h3>
+      <div className="inspector-pair">
         <NumberField
           label="X"
           value={element.x}
@@ -111,28 +125,66 @@ export function ElementProperties(props: ElementPropertiesProps) {
           onChange={(height) => onChange({ ...element, height }, 'height')}
           onBlur={onEndMerge}
         />
-        <Segmented
-          label="旋转"
-          value={String(element.rotation)}
-          options={ROTATION_OPTIONS}
-          onChange={(value) => onRotate(ROTATIONS.find((rotation) => String(rotation) === value) ?? 0)}
-        />
-        <Toggle label="锁定" checked={element.locked} onChange={(locked) => onChange({ ...element, locked }, null)} />
-        {element.locked && <p className="form-hint">锁定后在画布上不能拖动、缩放和删除；这里的数字照样能改。</p>}
-      </section>
-      <section className="form-section">
-        <h2 className="form-section__title">设置</h2>
-        <KindProperties {...props} />
-      </section>
+      </div>
+      <Segmented
+        label="旋转"
+        value={String(element.rotation)}
+        options={ROTATION_OPTIONS}
+        onChange={(value) => onRotate(ROTATIONS.find((rotation) => String(rotation) === value) ?? 0)}
+      />
+      <Toggle label="锁定" checked={element.locked} onChange={(locked) => onChange({ ...element, locked }, null)} />
+      {element.locked && (
+        <p className="form-hint">锁定后在画布上点不中、拖不动、删不掉（在图层里选它）；这里的数字照样能改。</p>
+      )}
     </>
+  );
+}
+
+/**
+ * 选中元素的问题，写在属性最上面：不印的（红）带「放大到能印」（条码有最小尺寸时）；
+ * 最小尺寸比纸还大时按钮不可用，并说明要换短一点的内容或换码制。
+ */
+export function ElementWarnings({
+  warnings,
+  paper,
+  onGrowToPrint,
+}: {
+  warnings: readonly ElementWarning[];
+  paper: PaperSize;
+  onGrowToPrint: (warning: ElementWarning) => void;
+}) {
+  return (
+    <ul className="element-warnings" aria-label="这个元素的问题">
+      {warnings.map((warning) => {
+        const canGrow = warning.level === 'omitted' && (warning.minWidthMm !== null || warning.minHeightMm !== null);
+        const isPaperTooSmall =
+          (warning.minWidthMm ?? 0) > paper.widthMm || (warning.minHeightMm ?? 0) > paper.heightMm;
+        return (
+          <li key={warning.text} className={`element-warnings__item element-warnings__item--${warning.level}`}>
+            <span>{warning.text}</span>
+            {canGrow && (
+              <button
+                type="button"
+                className="button button--small"
+                disabled={isPaperTooSmall}
+                onClick={() => onGrowToPrint(warning)}
+              >
+                放大到能印
+              </button>
+            )}
+            {canGrow && isPaperTooSmall && (
+              <span className="form-hint">纸放不下这么大的条码：换短一点的内容，或换一种码制。</span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
 function KindProperties({
   element,
-  fieldNames,
-  editTextId,
-  onTextEditStarted,
+  fieldOptions,
   onChange,
   onEndMerge,
   onImportImage,
@@ -141,21 +193,14 @@ function KindProperties({
   switch (element.kind) {
     case 'text':
       return (
-        <TextProperties
-          element={element}
-          fieldNames={fieldNames}
-          editTextId={editTextId}
-          onTextEditStarted={onTextEditStarted}
-          onChange={onChange}
-          onEndMerge={onEndMerge}
-        />
+        <TextProperties element={element} fieldOptions={fieldOptions} onChange={onChange} onEndMerge={onEndMerge} />
       );
     case 'barcode':
       return (
-        <BarcodeProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />
+        <BarcodeProperties element={element} fieldOptions={fieldOptions} onChange={onChange} onEndMerge={onEndMerge} />
       );
     case 'qr':
-      return <QrProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />;
+      return <QrProperties element={element} fieldOptions={fieldOptions} onChange={onChange} onEndMerge={onEndMerge} />;
     case 'image':
       return (
         <ImageProperties
@@ -171,35 +216,24 @@ function KindProperties({
     case 'rect':
       return <RectProperties element={element} onChange={onChange} onEndMerge={onEndMerge} />;
     case 'table':
-      return <TableProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />;
+      return (
+        <TableProperties element={element} fieldOptions={fieldOptions} onChange={onChange} onEndMerge={onEndMerge} />
+      );
   }
 }
 
 function TextProperties({
   element,
-  fieldNames,
-  editTextId,
-  onTextEditStarted,
+  fieldOptions,
   onChange,
   onEndMerge,
 }: {
   element: CanvasText;
-  fieldNames: readonly string[];
-  editTextId: string | null;
-  onTextEditStarted: () => void;
+  fieldOptions: readonly SelectOption[];
   onChange: ElementChange;
   onEndMerge: () => void;
 }) {
   const id = useId();
-  const textRef = useRef<HTMLTextAreaElement>(null);
-  // 双击了画布上的这个文字：直接在这里改内容（整段选中，打字即替换）。
-  useEffect(() => {
-    if (editTextId === element.id) {
-      textRef.current?.focus();
-      textRef.current?.select();
-      onTextEditStarted();
-    }
-  }, [editTextId, element.id, onTextEditStarted]);
   const setText = (text: string) => onChange({ ...element, text: text.slice(0, CANVAS_LIMITS.textLength) }, 'text');
   const { fontSizeMm } = CANVAS_LIMITS;
   return (
@@ -209,7 +243,6 @@ function TextProperties({
           内容
         </label>
         <textarea
-          ref={textRef}
           id={id}
           className="text-field text-area"
           rows={3}
@@ -220,7 +253,7 @@ function TextProperties({
           onBlur={onEndMerge}
         />
       </div>
-      <InsertField fieldNames={fieldNames} onInsert={(variable) => setText(`${element.text}${variable}`)} />
+      <InsertField fieldOptions={fieldOptions} onInsert={(variable) => setText(`${element.text}${variable}`)} />
       <p className="form-hint">用 {'{字段名}'} 印扫码识别出的字段；一行里的字段全是空的，这一行不印。</p>
       <NumberField
         label="字号"
@@ -257,12 +290,12 @@ function TextProperties({
 
 function BarcodeProperties({
   element,
-  fieldNames,
+  fieldOptions,
   onChange,
   onEndMerge,
 }: {
   element: CanvasBarcode;
-  fieldNames: readonly string[];
+  fieldOptions: readonly SelectOption[];
   onChange: ElementChange;
   onEndMerge: () => void;
 }) {
@@ -301,7 +334,7 @@ function BarcodeProperties({
         onBlur={onEndMerge}
       />
       <InsertField
-        fieldNames={fieldNames}
+        fieldOptions={fieldOptions}
         onInsert={(variable) =>
           onChange({ ...element, value: `${element.value}${variable}`.slice(0, valueLength) }, 'value')
         }
@@ -333,12 +366,12 @@ function BarcodeProperties({
 
 function QrProperties({
   element,
-  fieldNames,
+  fieldOptions,
   onChange,
   onEndMerge,
 }: {
   element: CanvasQr;
-  fieldNames: readonly string[];
+  fieldOptions: readonly SelectOption[];
   onChange: ElementChange;
   onEndMerge: () => void;
 }) {
@@ -354,7 +387,7 @@ function QrProperties({
         onBlur={onEndMerge}
       />
       <InsertField
-        fieldNames={fieldNames}
+        fieldOptions={fieldOptions}
         onInsert={(variable) =>
           onChange({ ...element, value: `${element.value}${variable}`.slice(0, valueLength) }, 'value')
         }

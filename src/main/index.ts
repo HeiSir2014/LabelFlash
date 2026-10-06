@@ -111,6 +111,15 @@ import { SqliteSettingsStore } from './storage/sqlite-settings-store';
 import { SqliteTemplateRepository } from './storage/sqlite-template-repository';
 import { SqliteWebhookStore } from './storage/sqlite-webhook-store';
 import { SqliteWindowStateStore } from './storage/sqlite-window-state-store';
+import {
+  SAVE_FOR_QUIT_TIMEOUT_MS,
+  TEMPLATE_QUIT_BUTTONS,
+  TemplateQuitGuard,
+  templateQuitChoice,
+  templateQuitDialogText,
+  templateSaveFailedText,
+  UNSAVED_TEMPLATE_FALLBACK_NAME,
+} from './template-quit';
 import { type AppTray, createTray } from './tray';
 import { AppUpdater } from './updater';
 import { synthesizeWithEdge } from './voice/edge-synthesizer';
@@ -600,6 +609,8 @@ async function bootstrap(): Promise<void> {
   const updater = new AppUpdater({
     onStatus: (status) => sendToMainWindow(IpcChannel.UpdateStatusChanged, status),
     onBeforeInstall: (window) => {
+      // 要问的（没保存的模板、批量打印）都在装之前问过或挡下了：安装引起的退出不再问第二遍。
+      readyToQuit = true;
       isQuitting = true;
       relaunch.write(window);
     },
@@ -698,7 +709,101 @@ async function bootstrap(): Promise<void> {
   // 才做：都归到这一个 before-quit 处理器里，不能分散在几个各管各的处理器里——那样的话，批量打印的
   // 确认框选了「取消」之后，其他处理器仍然会在同一次 before-quit 里各自跑一遍，副作用照样发生，
   // 退出明明被取消了，托盘行为却已经坏掉。
+  // 模板页有没保存的修改：界面经 IPC 报告，退出时据此确认（template-quit.ts）。
+  const templateQuit = new TemplateQuitGuard();
   let readyToQuit = false;
+  // 确认框开着时又来一次 before-quit（托盘连点两次「退出」）：不再弹第二个，等第一个的结果。
+  let isConfirmingQuit = false;
+  // 用异步版本：确认框开着的这段时间，打印和 IPC 照常响应（同步版本会冻住整个主进程）。
+  const showQuitDialog = (options: Electron.MessageBoxOptions) =>
+    mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options);
+
+  /**
+   * 模板页有没保存的修改：问「保存并退出 / 不保存退出 / 取消」。保存经界面平常的保存流程往返一次
+   * （template-quit.ts）；没存上就不退出，并说明。返回 true 表示可以接着退出。
+   */
+  const confirmTemplateQuit = async (): Promise<boolean> => {
+    const name = templateQuit.unsaved || UNSAVED_TEMPLATE_FALLBACK_NAME;
+    const { message, detail } = templateQuitDialogText(name);
+    const { response } = await showQuitDialog({
+      type: 'warning',
+      buttons: [...TEMPLATE_QUIT_BUTTONS],
+      defaultId: TEMPLATE_QUIT_BUTTONS.indexOf('保存并退出'),
+      cancelId: TEMPLATE_QUIT_BUTTONS.indexOf('取消'),
+      message,
+      detail,
+    });
+    const choice = templateQuitChoice(response);
+    if (choice !== 'save') {
+      return choice === 'discard';
+    }
+    const isSaved = await templateQuit.requestSave(
+      () => sendToMainWindow(IpcChannel.TemplateSaveForQuit, null),
+      SAVE_FOR_QUIT_TIMEOUT_MS,
+    );
+    if (!isSaved) {
+      console.warn('[quit] the unsaved template was not saved, staying open');
+      await showQuitDialog({ type: 'warning', buttons: ['好'], ...templateSaveFailedText(name) });
+    }
+    return isSaved;
+  };
+
+  /**
+   * 「重启更新」之前：有没保存的模板就先问。和退出确认共用 isConfirmingQuit，免得两个确认框叠在一起。
+   * 选了取消就不装，也不动 isQuitting（它只在 onBeforeInstall 里、真的要装时才设）。
+   */
+  const confirmBeforeInstall = async (): Promise<boolean> => {
+    if (isConfirmingQuit) {
+      return false;
+    }
+    isConfirmingQuit = true;
+    showMainWindow();
+    try {
+      return await templateQuit.confirmBeforeInstall(confirmTemplateQuit);
+    } finally {
+      isConfirmingQuit = false;
+    }
+  };
+
+  /** 批量打印还有没打的：问要不要退出；退出就取消这一批、把没打的记成「退出时未打」。返回 true 表示可以接着退出。 */
+  const confirmBatchQuit = async (): Promise<boolean> => {
+    const pending = batch.pendingQuit();
+    if (pending === null) {
+      return true;
+    }
+    const { message, detail } = batchQuitDialogText(pending.labels.length);
+    const { response } = await showQuitDialog({
+      type: 'warning',
+      buttons: ['取消', '仍要退出'],
+      defaultId: 0,
+      cancelId: 0,
+      message,
+      detail,
+    });
+    if (response !== 1) {
+      return false;
+    }
+    // 弹确认框的这段时间批次可能还在打：重新查一遍，只记下这一刻真的还没轮到的——
+    // 不能用弹框之前的旧名单，那时候「没打」的几张可能这期间已经打完或者失败了。
+    const stillPending = batch.pendingQuit();
+    if (stillPending !== null) {
+      // 先取消、等正在打的那一张真的结束（它自己的打印结果已经有记录了），再记 CANCELED、
+      // 最后才退出：不然要么这一张会在被标成「没打」之后又打出来，要么退出时它还没打完。
+      batch.cancel();
+      await waitForBatchIdle(() => batch.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS);
+      for (const record of canceledJobRecords(
+        stillPending.batchId,
+        stillPending.template,
+        stillPending.labels,
+        randomUUID,
+        Date.now,
+      )) {
+        jobs.append(record);
+      }
+    }
+    return true;
+  };
+
   app.on('before-quit', (event) => {
     if (readyToQuit) {
       isQuitting = true;
@@ -706,53 +811,40 @@ async function bootstrap(): Promise<void> {
       return;
     }
     const pending = batch.pendingQuit();
-    if (pending === null || !shouldConfirmBatchQuit(pending.labels.length, isSystemShutdown)) {
+    const needsBatch = pending !== null && shouldConfirmBatchQuit(pending.labels.length, isSystemShutdown);
+    const needsTemplate = templateQuit.shouldConfirm(isSystemShutdown);
+    if (!needsBatch && !needsTemplate) {
       readyToQuit = true;
       isQuitting = true;
       mobile.quit();
       return;
     }
     event.preventDefault();
+    if (isConfirmingQuit) {
+      return;
+    }
+    isConfirmingQuit = true;
     showMainWindow();
-    const { message, detail } = batchQuitDialogText(pending.labels.length);
-    const options = {
-      type: 'warning' as const,
-      buttons: ['取消', '仍要退出'],
-      defaultId: 0,
-      cancelId: 0,
-      message,
-      detail,
-    };
-    // 用异步版本：确认框开着的这段时间，打印和 IPC 照常响应（同步版本会冻住整个主进程）。
-    void (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options)).then(
-      async ({ response }) => {
-        if (response !== 1) {
+    // 先问模板（选「取消」没有任何副作用），再问批量打印（选「仍要退出」会取消这一批）：
+    // 反过来的话，批次已经取消了，模板那一步再选「取消」也回不去了。
+    void (async () => {
+      try {
+        if (needsTemplate && !(await confirmTemplateQuit())) {
           return;
         }
-        // 弹确认框的这段时间批次可能还在打：重新查一遍，只记下这一刻真的还没轮到的——
-        // 不能用弹框之前的旧名单，那时候「没打」的几张可能这期间已经打完或者失败了。
-        const stillPending = batch.pendingQuit();
-        if (stillPending !== null) {
-          // 先取消、等正在打的那一张真的结束（它自己的打印结果已经有记录了），再记 CANCELED、
-          // 最后才退出：不然要么这一张会在被标成「没打」之后又打出来，要么退出时它还没打完。
-          batch.cancel();
-          await waitForBatchIdle(() => batch.whenIdle(), BATCH_CANCEL_SETTLE_TIMEOUT_MS);
-          for (const record of canceledJobRecords(
-            stillPending.batchId,
-            stillPending.template,
-            stillPending.labels,
-            randomUUID,
-            Date.now,
-          )) {
-            jobs.append(record);
-          }
+        if (needsBatch && !(await confirmBatchQuit())) {
+          return;
         }
         readyToQuit = true;
         isQuitting = true;
         mobile.quit();
         app.quit();
-      },
-    );
+      } catch (error) {
+        console.error('[quit] the quit confirmation failed, staying open', error);
+      } finally {
+        isConfirmingQuit = false;
+      }
+    })();
   });
 
   // 驱动安装（打印机页的「驱动」一节）。E2E 换掉设备检测、安装包下载、签名核对和提权安装（见 drivers/fake-drivers.ts），
@@ -800,6 +892,8 @@ async function bootstrap(): Promise<void> {
   });
 
   registerIpc({
+    templateQuit,
+    confirmBeforeInstall,
     service,
     adapter,
     batch,
@@ -910,6 +1004,8 @@ async function bootstrap(): Promise<void> {
   mainWindow.on('show', () => {
     hiddenSince = null;
   });
+  // 界面进程崩了：没保存的模板修改随它没了，别再拿它挡退出和静默更新（重新加载后界面会重新报告）。
+  mainWindow.webContents.on('render-process-gone', () => templateQuit.rendererGone());
   // 必须先于下面的 session-end 处理注册：关机时先保存窗口位置，再关闭数据库。
   trackWindowPlacement(mainWindow, windowStates, placement.bounds);
   // 读打印机列表要用主窗口：窗口建好后立即检测一次状态、预读驱动资料，不等下一轮轮询。
@@ -941,6 +1037,7 @@ async function bootstrap(): Promise<void> {
       // 正在装驱动也算有事没做完：静默更新会结束本程序，装到一半的提权安装就没人等了。
       pendingPrints: printQueue.pending + localApi.pendingJobs + batch.pendingLabels + (drivers.isInstalling ? 1 : 0),
       isMobileOn: mobile.status().state !== 'off',
+      hasUnsavedTemplate: templateQuit.unsaved !== null,
       now: Date.now(),
     };
     if (canUpdateInBackground(state)) {

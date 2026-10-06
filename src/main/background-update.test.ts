@@ -7,6 +7,7 @@ const IDLE: BackgroundUpdateState = {
   hiddenSince: NOW - HIDDEN_BEFORE_UPDATE_MS,
   pendingPrints: 0,
   isMobileOn: false,
+  hasUnsavedTemplate: false,
   now: NOW,
 };
 
@@ -34,5 +35,10 @@ describe('canUpdateInBackground', () => {
   // 重启会结束手机扫码的会话，所有手机都得重新扫电脑上的二维码。
   test('waits while phone scanning is on', () => {
     expect(canUpdateInBackground({ ...IDLE, isMobileOn: true })).toBe(false);
+  });
+
+  // 静默更新由安装程序直接结束本程序，退出时的「模板没保存」确认来不及弹：改了一半的模板会悄悄丢掉。
+  test('waits while a template has unsaved changes', () => {
+    expect(canUpdateInBackground({ ...IDLE, hasUnsavedTemplate: true })).toBe(false);
   });
 });

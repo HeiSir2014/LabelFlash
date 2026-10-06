@@ -37,6 +37,7 @@ import {
   resize,
   SIZE_1024,
   SIZE_1280,
+  SIZE_1366_150,
   SIZE_1920,
   type Size,
   setFullScreen,
@@ -48,8 +49,8 @@ import {
 import { type Issue, pageChecks } from './checks';
 
 /**
- * 视觉验收（设计文档 §8.2 的验收项，V01 起；模板库是 V50–V55，批量打印是 V60–V63，标签机指令是 V80–V83，
- * 诊断是 V84–V86，驱动安装是 V87–V89）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
+ * 视觉验收（设计文档 §8.2 的验收项，V01 起；自由设计的设计器是 V44–V49、V56–V59、V64–V66，模板库是 V50–V55，
+ * 批量打印是 V60–V63，标签机指令是 V80–V83，诊断是 V84–V86，驱动安装是 V87–V89）：每项在三种窗口尺寸下截图，每张跑 §8.3 的自动检查，
  * 结果写进 manifest.json，供验收页面逐项展示和确认。
  */
 
@@ -59,6 +60,8 @@ const OUT_DIR = join(APP_ROOT, 'test-results', 'visual-acceptance');
  * 多留一倍左右，截到的是动画结束后的样子。
  */
 const SETTLE_MS = 350;
+/** V49、V56–V59、V64–V66 设计器：常用笔记本、最小支持宽度，和 1366×768 开 150% 缩放（店里常见的小屏笔记本）。 */
+const DESIGNER_SIZES: readonly Size[] = [SIZE_1280, SIZE_1024, SIZE_1366_150];
 /** V01：扫码栏在 100% / 150% / 200% 缩放下截图。 */
 const ZOOM_FACTORS: readonly number[] = [1, 1.5, 2];
 /** V01：「扫码」标签与输入文字的中线最多差 1px（设计文档 §8.2）。 */
@@ -1204,7 +1207,7 @@ const ITEMS: Item[] = [
           const form = page.locator('.template-form');
           await form
             .getByLabel('纸张尺寸')
-            .selectOption({ label: '100×180 二联面单（申通、极兔、中通、圆通、韵达、顺丰、EMS）' });
+            .selectOption({ label: '100×180 二联面单 · 申通、极兔、中通、圆通、韵达、顺丰、EMS' });
           await expect(form.getByLabel('打印机').locator('option:checked')).toHaveText(
             '旧电脑上的打印机（这台电脑上没有）',
           );
@@ -1412,7 +1415,7 @@ const ITEMS: Item[] = [
     id: 'V45',
     title: '模板 · 自由设计 · 设计器（1280px）',
     points:
-      '三栏：左边 7 种元素、中间画布、右边属性和图层；工具条按组排开，放不下时整组换行、按钮文字不裁；画布有毫米标尺、1mm 网格、1.5mm 安全区虚线；选中的条码有蓝色选框和 8 个控制点；画布就是打印的样子（Code128、二维码、表格格线）；底部打印前检查写「没有发现问题」，操作条有「打印一张试试」',
+      '画布优先：左边竖排 7 个元素图标（图标下两三个字）、中间画布、右边检查器（「条码 / 排列 / 图层」分段标签）；上面一条窄栏（预览内容、网格、吸附、?）；画布左上角撤销重做、右下角缩放胶囊；画布安静：纸色底、淡墨刻度的毫米标尺（不是黄色），网格默认关，1.5mm 安全区是很淡的虚线，没选中的元素不画框；选中的条码有蓝色选框、圆角控制点和下方淡淡的旋转手柄，上方浮动工具条；画布就是打印的样子（Code128、二维码、表格格线）；底部一条「没有发现问题」，操作条有「打印一张试试」',
     sizes: [SIZE_1280],
     setup: async ({ page }) => {
       await openCanvasDesigner(page);
@@ -1423,7 +1426,7 @@ const ITEMS: Item[] = [
     id: 'V46',
     title: '模板 · 自由设计 · 设计器（1024px）',
     points:
-      '没有横向滚动；属性栏收窄到 260px 仍放得下标签和数字框；工具条换成两三行；画布缩到放得下整张标签；选中的文字属性栏里「内容」框完整',
+      '没有横向滚动；检查器收窄到 260px 仍放得下标签和数字框、分段标签不换行；窄栏一行放下；画布缩到放得下整张标签；浮动工具条不出画布区；选中的文字检查器里「内容」框完整',
     sizes: [SIZE_1024],
     setup: async ({ page }) => {
       await openCanvasDesigner(page);
@@ -1434,14 +1437,17 @@ const ITEMS: Item[] = [
     id: 'V47',
     title: '模板 · 自由设计 · 多选和放大（1920px）',
     points:
-      'Shift 多选三个文字：每个都有选框、没有控制点，属性栏写「已选 3 个元素」，等距按钮可用；放大一档后画布出现滚动条，标尺和网格跟着放大、不糊',
+      'Shift 多选三个文字：每个都有选框、没有控制点，外面一圈合起来的虚线框；检查器「排列」写「已选 3 个元素」，等距按钮可用；浮动工具条是对齐、复制一份、删除、⋯；打开网格（「网格」按下）、放大一档后画布出现滚动条，标尺和很淡的 1mm 网格跟着放大、不糊',
     sizes: [SIZE_1920],
     setup: async ({ page }) => {
       await openCanvasDesigner(page);
       await selectLayer(page, '编码（文字）');
+      await inspectorOf(page).getByRole('tab', { name: '图层' }).click();
       const layers = page.getByRole('list', { name: '图层' });
       await layers.getByRole('button', { name: '货架号（文字）' }).click({ modifiers: ['Shift'] });
       await layers.getByRole('button', { name: '日期（文字）' }).click({ modifiers: ['Shift'] });
+      await inspectorOf(page).getByRole('tab').first().click();
+      await page.getByRole('button', { name: '网格' }).click();
       await page.getByRole('button', { name: '放大' }).click();
     },
   },
@@ -1467,11 +1473,171 @@ const ITEMS: Item[] = [
           await expect(page.getByRole('region', { name: '打印前检查' })).toContainText('条码「编码条码」');
         },
       },
-      { label: '二维码', prepare: ({ page }) => selectLayer(page, '二维码（二维码）') },
+      { label: '二维码', prepare: ({ page }) => selectLayer(page, '二维码 {完整内容}（二维码）') },
       { label: '图片', prepare: ({ page }) => selectLayer(page, '图片（图片）') },
       { label: '线', prepare: ({ page }) => selectLayer(page, '分隔线（线）') },
       { label: '矩形', prepare: ({ page }) => selectLayer(page, '矩形（矩形）') },
       { label: '表格', prepare: ({ page }) => selectLayer(page, '颜色尺码（表格）') },
+    ],
+  },
+  {
+    id: 'V49',
+    title: '模板 · 设计器 · 画布优先的布局',
+    points:
+      '没选中时：左边竖排元素图标，画布在平静的灰底上、纸是带阴影的卡片；画布左上角撤销重做、右下角缩放胶囊；检查器「模板 / 图层」两页，纸张下拉写「60×40 标签 · 样衣标签」；底部一条「没有发现问题」；画布上只看到标签本身（没有网格、没有元素框，标尺是纸色），指针移到元素上才出现它的框；1024 宽和 1366 @150% 时没有横向滚动、标签整张可见、检查器不被裁',
+    sizes: DESIGNER_SIZES,
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+    },
+  },
+  {
+    id: 'V56',
+    title: '模板 · 设计器 · 选中文字：浮动工具条和检查器',
+    points:
+      '选中的文字上方一条圆角浮动工具条，一行不折（字号 −/数字 mm/+、加粗、一个对齐按钮、改字、复制一份、删除、⋯），1024 宽和 1366 @150% 时也是一行，不盖住控制点、旋转手柄和撤销按钮；检查器「文字」页：名称、内容、插入字段、字号；「排列」页 X/Y、宽/高两两一行、旋转、锁定、对齐到安全区和叠放图标；标尺上标出选中范围',
+    sizes: DESIGNER_SIZES,
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+    },
+    shots: [
+      { label: '文字页', prepare: ({ page }) => selectLayer(page, '编码（文字）') },
+      {
+        label: '排列页',
+        prepare: async ({ page }) => {
+          await selectLayer(page, '编码（文字）');
+          await inspectorOf(page).getByRole('tab', { name: '排列' }).click();
+        },
+      },
+    ],
+  },
+  {
+    id: 'V57',
+    title: '模板 · 设计器 · 条码太窄：不印的标记和「放大到能印」',
+    points:
+      '条码框浅红底，框里写「条码不印：框不够宽」；浮动工具条有「绑定字段」下拉（「编码 — CL5640-TK」）和红色「放大到能印」；检查器最上面红色一条「条码「编码条码」不印：内容 CL5640-TK 至少要 …mm 宽（现在 20mm）」和按钮；底部一条「⚠ 1 项」加这一条',
+    sizes: DESIGNER_SIZES,
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+    },
+    shots: [{ label: '条码太窄', prepare: ({ page }) => narrowTagBarcode(page) }],
+  },
+  {
+    id: 'V58',
+    title: '模板 · 设计器 · 多选：合起来的外框和对齐',
+    points:
+      'Ctrl+A 全选：每个元素蓝框，外面一圈合起来的虚线框；浮动工具条一行：六个对齐、复制一份、删除、⋯（等距、锁定、叠放在⋯里）；检查器「排列」写「已选 N 个元素」和对齐、等距、叠放图标；标尺上标出整组的范围',
+    sizes: DESIGNER_SIZES,
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+    },
+    shots: [
+      {
+        label: '全选',
+        prepare: async ({ page }) => {
+          await page.locator('.canvas-overlay').focus();
+          await page.keyboard.press('Control+a');
+        },
+      },
+    ],
+  },
+  {
+    id: 'V59',
+    title: '模板 · 设计器 · 右键菜单',
+    points:
+      '右键选中的元素：页面里的圆角菜单（不是系统菜单），复制、粘贴（灰）、复制一份、删除，分隔线，置顶、上移一层、下移一层、置底，分隔线，锁定，多选时还有「对齐 ›」；右边一列快捷键按平台写；靠窗口边时菜单往回挪、不出窗口；第一项有焦点底色',
+    sizes: DESIGNER_SIZES,
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+    },
+    shots: [
+      {
+        label: '多选的右键菜单',
+        prepare: async ({ page }) => {
+          await page.locator('.canvas-overlay').focus();
+          await page.keyboard.press('Control+a');
+          const point = await canvasPoint(page, 20, 5);
+          await page.mouse.click(point.x, point.y, { button: 'right' });
+          await expect(page.getByRole('menu', { name: '元素菜单' })).toBeVisible();
+        },
+      },
+    ],
+  },
+  {
+    id: 'V64',
+    title: '模板 · 设计器 · 图层和打印前检查',
+    points:
+      '「图层」页：每行种类图标、名字（没改过名的写内容摘要，例如「二维码 {完整内容}」）、隐藏和锁定按钮（开着的常亮，没开的淡）；隐藏的一行变淡、画布上看不到它；锁定的一行锁图标亮；底部打印前检查展开成清单，红的在前，点一项选中那个元素',
+    sizes: DESIGNER_SIZES,
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+      await narrowTagBarcode(page);
+      await inspectorOf(page).getByRole('tab', { name: '图层' }).click();
+      const layers = page.getByRole('list', { name: '图层' });
+      await layers.getByRole('button', { name: '隐藏「日期」' }).click();
+      await layers.getByRole('button', { name: '锁定「分隔线」' }).click();
+      await page.getByRole('region', { name: '打印前检查' }).getByRole('button', { expanded: false }).click();
+    },
+  },
+  {
+    id: 'V65',
+    title: '模板 · 设计器 · 就地改字和快捷键表',
+    points:
+      '双击文字：同字体、同字号、同对齐的白底输入框盖在文字上，蓝框，整段选中；快捷键表（F1）：编辑、选择、移动和叠放、视图四组，快捷键按平台写（Windows「Ctrl+Shift+]」），写着方向键 0.1mm、Shift 1mm，最下面说明画布不用字母数字做快捷键',
+    sizes: DESIGNER_SIZES,
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+    },
+    shots: [
+      {
+        label: '就地改字',
+        prepare: async ({ page }) => {
+          // 上一种尺寸留下的快捷键表盖在画布上：先关掉（焦点在它的「关闭」上，Esc 只关它）。
+          if (await page.getByRole('dialog', { name: '快捷键' }).isVisible()) {
+            await page.keyboard.press('Escape');
+          }
+          await selectLayer(page, '编码（文字）');
+          const point = await canvasPoint(page, 10, 5);
+          await page.mouse.dblclick(point.x, point.y);
+          await expect(page.getByRole('textbox', { name: /就地改文字/ })).toBeFocused();
+        },
+      },
+      {
+        label: '快捷键表',
+        prepare: async ({ page }) => {
+          // 焦点在就地改字的输入框里：Esc 只放弃这次改字，不离开设计器。
+          await page.keyboard.press('Escape');
+          await page.locator('.canvas-overlay').focus();
+          await page.keyboard.press('F1');
+          await expect(page.getByRole('dialog', { name: '快捷键' })).toBeVisible();
+        },
+      },
+    ],
+  },
+  {
+    id: 'V66',
+    title: '模板 · 设计器 · 拖动中：参考线、间距和尺寸标签',
+    points:
+      '按住二维码往左拖（吸附开着）：洋红参考线，和左边、上边邻居之间的间距线写着毫米数，两边相等时数字前有「=」；指针右下方深色小标签「X … Y … mm」；浮动工具条拖动时藏起来；标尺上一条指针细线和选中范围',
+    sizes: DESIGNER_SIZES,
+    setup: async ({ page }) => {
+      await openCanvasDesigner(page);
+    },
+    shots: [
+      {
+        label: '拖动中',
+        prepare: async ({ page }) => {
+          // 上一种尺寸留下的拖动还按着：Esc 取消（不提交），再松开。没有拖动时不按 Esc——没选中时 Esc 会回到模板列表。
+          if ((await page.locator('.canvas-overlay__badge').count()) > 0) {
+            await page.keyboard.press('Escape');
+          }
+          await page.mouse.up();
+          const from = await canvasPoint(page, 51, 9);
+          const to = await canvasPoint(page, 47, 10);
+          await page.mouse.move(from.x, from.y);
+          await page.mouse.down();
+          await page.mouse.move(to.x, to.y, { steps: 6 });
+        },
+      },
     ],
   },
   {
@@ -1752,9 +1918,38 @@ async function useLibraryTemplate(page: Page, name: string): Promise<void> {
   await expect(page.getByRole('region', { name: '打印前检查' })).toContainText('没有发现问题');
 }
 
-/** 在图层列表里点选一个元素（名字形如「编码条码（条码）」）。 */
+/** 设计器右边的检查器。 */
+function inspectorOf(page: Page): Locator {
+  return page.getByRole('complementary', { name: '检查器' });
+}
+
+/** 在图层列表里点选一个元素（名字形如「编码条码（条码）」），再翻回检查器第一页（这个元素自己的设置）。 */
 async function selectLayer(page: Page, name: string): Promise<void> {
-  await page.getByRole('list', { name: '图层' }).getByRole('button', { name }).click();
+  const inspector = inspectorOf(page);
+  await inspector.getByRole('tab', { name: '图层' }).click();
+  await page.getByRole('list', { name: '图层' }).getByRole('button', { name, exact: true }).click();
+  await inspector.getByRole('tab').first().click();
+}
+
+/** 设计器画布上纸上 (x, y) mm 在窗口里的位置（吊牌示例是 60×40）。 */
+async function canvasPoint(page: Page, xMm: number, yMm: number): Promise<{ x: number; y: number }> {
+  const box = await page.locator('.canvas-overlay').boundingBox();
+  if (box === null) {
+    throw new Error('the canvas is not visible');
+  }
+  return { x: box.x + (xMm * box.width) / 60, y: box.y + (yMm * box.height) / 40 };
+}
+
+/** V57：把吊牌的条码改窄到印不出（排列页的宽度），回到条码页。 */
+async function narrowTagBarcode(page: Page): Promise<void> {
+  await selectLayer(page, '编码条码（条码）');
+  const inspector = inspectorOf(page);
+  await inspector.getByRole('tab', { name: '排列' }).click();
+  const width = inspector.getByLabel('宽', { exact: true });
+  await width.fill('20');
+  await width.blur();
+  await inspector.getByRole('tab').first().click();
+  await expect(page.getByRole('region', { name: '打印前检查' })).toContainText('至少要');
 }
 
 /** V32：本机中转服务和一部测试手机（每种尺寸共用，只连一次）。 */
@@ -1796,7 +1991,7 @@ for (const item of ITEMS) {
         await item.custom(ctx, save);
       } else {
         for (const size of item.sizes ?? ALL_SIZES) {
-          await resize(window, size);
+          await resize(window, size, size.zoom ?? 1);
           await page.waitForTimeout(SETTLE_MS);
           for (const shot of item.shots ?? [{ label: item.title }]) {
             await shot.prepare?.(ctx);

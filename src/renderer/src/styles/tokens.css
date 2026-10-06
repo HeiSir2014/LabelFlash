@@ -17,6 +17,8 @@
   --color-warning-wash: #fbe6d7;
   --color-error: #c8372d;
   --color-error-wash: #f8dedb;
+  /* 比 --color-error 深：放在浅红底上当文字颜色（设计器里「条码不印」的短原因、检查条的「N 项」）才够 4.5:1，做法同 --color-warning-text。 */
+  --color-error-text: #9e2219;
   /* 设计器的选框、控制点和吸附参考线：标签只有黑白，选框用蓝、参考线用洋红才分得清（热敏纸上不会出现这两种颜色） */
   --color-selection: #2563eb;
   --color-guide: #d6336c;
@@ -32,6 +34,8 @@
   --font-display: var(--font-body);
   --font-display-weight: 700;
   --font-data: "Cascadia Mono", Consolas, "SF Mono", monospace;
+  /* 标签上的字（和 main/printing/canvas-html 打印用的同一串字体）：设计器就地改字时输入框用它，改的时候和打出来一样宽 */
+  --font-label: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -61,13 +65,21 @@
   --template-library-nav-width: 184px;
   /* 识别规则页右侧「试一试」的宽度 */
   --tester-width: 360px;
-  /* 设计器：左边元素栏放得下「二维码」三个字的按钮；右边属性栏放得下标签列和一个数字框 */
-  --designer-palette-width: 88px;
+  /* 设计器：左边竖排的元素图标栏（图标下面两三个字，「二维码」放得下）；右边检查器放得下标签列和一个数字框 */
+  --designer-rail-width: 64px;
   --designer-panel-width: 300px;
-  /* 设计器属性栏的标签列：放得下四个字的标签（「放不下时」「号码字号」） */
+  /* 设计器检查器的标签列：放得下四个字的标签（「放不下时」「号码字号」） */
   --designer-label-width: 64px;
-  /* 选中元素的控制点：鼠标好抓，又不至于盖住小元素 */
-  --designer-handle-size: 8px;
+  /* 选中元素的控制点：看到的 10px（鼠标、数位板的笔好抓），可点范围 24px */
+  --designer-handle-size: 10px;
+  --designer-handle-hit: 24px;
+  /* 浮在画布上的界面（撤销重做、缩放胶囊、浮动工具条、菜单）：圆角、柔和阴影，和纸、面板分得开 */
+  --radius-float: 10px;
+  --shadow-float: 0 6px 20px rgb(24 33 30 / 0.14), 0 1px 3px rgb(24 33 30 / 0.12);
+  /* 稍稍浮起的小东西（控制点、选中的分段标签）：一点点阴影，在白纸、浅底上都看得出边 */
+  --shadow-raised: 0 1px 3px rgb(24 33 30 / 0.18);
+  /* 面板、工具条出现和收起的过渡：短到不拖手，又看得出是从哪里来的 */
+  --ui-duration: 150ms;
   /* 确认框：两个按钮和两行说明不换行的宽度 */
   --dialog-width: 400px;
   /* 叠放层级：配置中心盖住工作台，提示条在配置中心之上；确认框是原生模态，浏览器放在最上层 */
@@ -96,5 +108,6 @@
   :root {
     --feed-duration: 0ms;
     --config-duration: 0ms;
+    --ui-duration: 0ms;
   }
 }

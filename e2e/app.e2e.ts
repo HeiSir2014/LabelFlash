@@ -628,7 +628,9 @@ test('designs a canvas template from scratch and uses it for scans', async ({ el
   await designer.getByLabel('内容', { exact: true }).fill('品名 {编码}');
   await expect(label.locator('.line', { hasText: '品名 CL5640-TK' })).toBeVisible();
 
-  // 拖到右边：位置跟着变。
+  // 拖到右边：位置跟着变（位置在检查器的「排列」页）。
+  const inspector = designer.getByRole('complementary', { name: '检查器' });
+  await inspector.getByRole('tab', { name: '排列' }).click();
   const x = designer.getByLabel('X', { exact: true });
   const before = Number(await x.inputValue());
   const box = await page.locator('.canvas-overlay__box[data-element-id="e1"]').boundingBox();
@@ -642,6 +644,7 @@ test('designs a canvas template from scratch and uses it for scans', async ({ el
   await expect.poll(async () => Number(await x.inputValue())).toBeGreaterThan(before);
 
   // 改字号，再在画布上用键盘撤销、重做。
+  await inspector.getByRole('tab', { name: '文字' }).click();
   const fontSize = designer.getByLabel('字号', { exact: true });
   await fontSize.fill('5');
   await page.locator('.canvas-overlay').focus();
@@ -650,12 +653,16 @@ test('designs a canvas template from scratch and uses it for scans', async ({ el
   await page.keyboard.press('Control+Y');
   await expect(fontSize).toHaveValue('5');
 
-  // 加一个条码：默认内容 {完整内容} 里有中文，Code 128 印不了，底部写明原因；改成 {编码} 就印出来。
+  // 加一个条码：默认绑 {编码}，直接印得出；改成 {完整内容}（有中文）Code 128 印不了，底部写明原因；改回来又印出来。
   await designer.getByRole('button', { name: '添加条码' }).click();
   await expect(designer.getByLabel('码制')).toHaveValue('code128');
+  const content = designer.getByLabel('内容', { exact: true });
+  await expect(content).toHaveValue('{编码}');
   const checks = designer.getByRole('region', { name: '打印前检查' });
+  await expect(label.locator('svg[shape-rendering="crispEdges"]')).toHaveCount(1);
+  await content.fill('{完整内容}');
   await expect(checks).toContainText('条码「条码」');
-  await designer.getByLabel('内容', { exact: true }).fill('{编码}');
+  await content.fill('{编码}');
   await expect(label.locator('svg[shape-rendering="crispEdges"]')).toHaveCount(1);
   await expect(checks).toContainText('没有发现问题');
 
@@ -691,7 +698,8 @@ test('keeps the scanner working while the canvas has focus', async ({ electronAp
   await expect(page.getByLabel('预览内容')).toHaveValue('CL5640-TK-图片色-XL');
   const label = page.getByRole('main', { name: '模板' }).frameLocator('.label-frame');
   await expect(label.locator('.line', { hasText: 'CL5640-TK' })).toBeVisible();
-  await expect(designer.getByRole('list', { name: '图层' }).getByRole('button')).toHaveCount(1);
+  await designer.getByRole('tab', { name: '图层' }).click();
+  await expect(designer.getByRole('list', { name: '图层' }).getByRole('listitem')).toHaveCount(1);
 });
 
 // 「打印一张试试」：按预览内容把没保存的草稿打到装着这种纸的打印机上；不写打印记录。
@@ -733,11 +741,15 @@ test('covers the rest of the designer toolbox: drag-add, resize, copy, align, st
   await designer.getByRole('button', { name: '添加条码' }).dispatchEvent('dragstart', { dataTransfer });
   await overlay.dispatchEvent('dragover', { dataTransfer });
   await overlay.dispatchEvent('drop', { dataTransfer });
+  const inspector = designer.getByRole('complementary', { name: '检查器' });
+  const showTab = (name: string) => inspector.getByRole('tab', { name }).click();
+  await showTab('图层');
   const layerList = designer.getByRole('list', { name: '图层' });
-  await expect(layerList.getByRole('button')).toHaveCount(2);
+  await expect(layerList.getByRole('listitem')).toHaveCount(2);
 
-  // 选中文字（e1），方向键微调：右移一步是 0.1mm。
+  // 选中文字（e1），方向键微调：右移一步是 0.1mm（位置在「排列」页）。
   await layerList.getByRole('button', { name: '文字（文字）' }).click();
+  await showTab('排列');
   const x = designer.getByLabel('X', { exact: true });
   const beforeArrow = Number(await x.inputValue());
   await overlay.focus();
@@ -773,28 +785,40 @@ test('covers the rest of the designer toolbox: drag-add, resize, copy, align, st
   await page.mouse.up();
   await expect.poll(async () => Number(await x.inputValue())).toBe(beforeCancel);
 
-  // 双击文字：焦点直接落进右栏的「内容」框。
-  await page.locator('.canvas-overlay__box[data-element-id="e1"]').dblclick();
-  await expect(designer.getByLabel('内容', { exact: true })).toBeFocused();
+  // 双击文字：就地改字的输入框盖在文字上、拿到焦点；Esc 放弃。
+  const boxToEdit = await page.locator('.canvas-overlay__box[data-element-id="e1"]').boundingBox();
+  if (boxToEdit === null) {
+    throw new Error('the text box is not on the canvas');
+  }
+  await page.mouse.dblclick(boxToEdit.x + boxToEdit.width / 2, boxToEdit.y + boxToEdit.height / 2);
+  await expect(page.getByRole('textbox', { name: /就地改文字/ })).toBeFocused();
+  await page.keyboard.press('Escape');
 
-  // 复制粘贴：图层多一个，新名字自动编号。
+  // 复制粘贴：图层多一个，新元素选中、名字自动编号。
   await overlay.focus();
   await page.keyboard.press('Control+c');
   await page.keyboard.press('Control+v');
-  await expect(layerList.getByRole('button')).toHaveCount(3);
-  await expect(layerList.getByRole('button', { name: '文字 2（文字）' })).toBeVisible();
+  await showTab('图层');
+  await expect(layerList.getByRole('listitem')).toHaveCount(3);
+  await showTab('文字');
+  await expect(designer.getByLabel('名称', { exact: true })).toHaveValue('文字 2');
 
   // 对齐：单选时对齐到安全区（左对齐落在安全边距 1.5mm）。
-  await page.getByRole('button', { name: '左对齐' }).click();
+  await showTab('排列');
+  await inspector.getByRole('button', { name: '左对齐到安全区' }).click();
   await expect.poll(async () => Number(await x.inputValue())).toBe(1.5);
 
   // 叠放：置底之后，这个元素在图层列表（上层在前）里排到最后一个。
-  await page.getByRole('button', { name: '置底' }).click();
-  await expect(layerList.getByRole('button').last()).toHaveAttribute('aria-pressed', 'true');
+  await inspector.getByRole('button', { name: '置底' }).click();
+  await showTab('图层');
+  await expect(layerList.getByRole('listitem').last().locator('.layer-row__select')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 
-  // 加一个表格（e4），加一行、再删掉。
+  // 加一个表格（e4），加一行、再删掉（新加的元素选中；刚才在看「图层」，检查器留在那一页，切到「表格」）。
   await designer.getByRole('button', { name: '添加表格' }).click();
-  await layerList.getByRole('button', { name: '表格（表格）' }).click();
+  await showTab('表格');
   const rowCountBefore = await designer.getByLabel(/第 \d+ 行高$/).count();
   await designer.getByRole('button', { name: '加一行' }).click();
   await expect(designer.getByLabel(/第 \d+ 行高$/)).toHaveCount(rowCountBefore + 1);
@@ -803,7 +827,6 @@ test('covers the rest of the designer toolbox: drag-add, resize, copy, align, st
 
   // 加一张图片（e5），选一张很小的 PNG：读完之后属性栏写出像素尺寸。
   await designer.getByRole('button', { name: '添加图片' }).click();
-  await layerList.getByRole('button', { name: '图片（图片）' }).click();
   const fixture = join(tmpdir(), `canvas-designer-e2e-${process.pid}.png`);
   await sharp({ create: { width: 4, height: 3, channels: 3, background: { r: 10, g: 20, b: 30 } } })
     .png()
@@ -824,7 +847,7 @@ test('lays out every built-in waybill so that no line is clipped with the system
     // 排版自己报的问题（格子装不下、条码或二维码放不下）也不能有：下面只量横向有没有被裁。
     expect({ template: template.name, warnings }).toEqual({
       template: template.name,
-      warnings: { qrOmitted: false, barcodeOmitted: false, overflowCells: 0, issues: [] },
+      warnings: { qrOmitted: false, barcodeOmitted: false, overflowCells: 0, issues: [], elements: [] },
     });
     const clipped = await clippedLines(app, html);
     expect({ template: template.name, clipped }).toEqual({ template: template.name, clipped: [] });

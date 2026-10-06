@@ -111,7 +111,8 @@ export function Toggle({ label, checked, onChange }: ToggleProps) {
 interface SegmentedProps<T extends string> {
   label: string;
   value: T;
-  options: ReadonlyArray<{ value: T; label: string }>;
+  /** hint：悬停提示，选项上写不下的说明（例如二维码容错「低」能恢复约 7%）。 */
+  options: ReadonlyArray<{ value: T; label: string; hint?: string }>;
   onChange: (value: T) => void;
   /** 只要选项本身（放在 SettingRow 里，标签由它显示），不要表单行和标签。 */
   isBare?: boolean;
@@ -125,6 +126,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, i
           key={option.value}
           type="button"
           className="segmented__option"
+          title={option.hint}
           aria-pressed={option.value === value}
           onClick={() => onChange(option.value)}
         >

@@ -158,8 +158,22 @@ export const RESIZE_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as co
 /** `RESIZE_HANDLES` 里的一个：两个字母是角，一个字母是边的中点。 */
 export type ResizeHandle = (typeof RESIZE_HANDLES)[number];
 
-/** 拖控制点改框：只动这个控制点所在的边，对边不动；不小于最小尺寸、不出纸。 */
-export function resizeBox(start: Box, handle: ResizeHandle, dx: number, dy: number, paper: PaperSize): Box {
+/**
+ * 拖控制点改框：只动这个控制点所在的边，对边不动；不小于最小尺寸、不出纸。
+ * keepRatio 时保持宽高比（Shift；图片、二维码默认）：拖角时按变化大的那一边等比缩放、对角不动；
+ * 拖边时另一边跟着等比变、以中线为准两头一起长。碰到纸边或最小尺寸时整体按比例停下。
+ */
+export function resizeBox(
+  start: Box,
+  handle: ResizeHandle,
+  dx: number,
+  dy: number,
+  paper: PaperSize,
+  keepRatio = false,
+): Box {
+  if (keepRatio && start.width > 0 && start.height > 0) {
+    return resizeKeepingRatio(start, handle, dx, dy, paper);
+  }
   const min = CANVAS_LIMITS.minSizeMm;
   let left = start.x;
   let top = start.y;
@@ -178,6 +192,53 @@ export function resizeBox(start: Box, handle: ResizeHandle, dx: number, dy: numb
     bottom = Math.max(top + min, Math.min(paper.heightMm, bottom + dy));
   }
   return { x: roundMm(left), y: roundMm(top), width: roundMm(right - left), height: roundMm(bottom - top) };
+}
+
+/** 一个方向上等比缩放时的「锚」：拖的是哪一头（另一头不动），或者两头都动（以中线为准）。 */
+type RatioAnchor = 'start' | 'end' | 'centre';
+
+/** 等比缩放：倍数 s 先按拖动算，再收在「不小于最小尺寸、不出纸」之间，最后按锚摆好框。 */
+function resizeKeepingRatio(start: Box, handle: ResizeHandle, dx: number, dy: number, paper: PaperSize): Box {
+  // x 方向：拖西边时东边不动（锚在 end），拖东边时西边不动（锚在 start），拖南北边时左右以中线为准。
+  const xAnchor: RatioAnchor = handle.includes('w') ? 'end' : handle.includes('e') ? 'start' : 'centre';
+  const yAnchor: RatioAnchor = handle.includes('n') ? 'end' : handle.includes('s') ? 'start' : 'centre';
+  const scaleX = (start.width + (xAnchor === 'end' ? -dx : dx)) / start.width;
+  const scaleY = (start.height + (yAnchor === 'end' ? -dy : dy)) / start.height;
+  const wanted =
+    xAnchor === 'centre'
+      ? scaleY
+      : yAnchor === 'centre'
+        ? scaleX
+        : Math.abs(scaleX - 1) >= Math.abs(scaleY - 1)
+          ? scaleX
+          : scaleY;
+  // 每个方向上最多能放大多少：锚定的那一头到纸边的距离，或者以中线为准到两边纸边较近的那个。
+  const room = (anchor: RatioAnchor, from: number, size: number, total: number) => {
+    switch (anchor) {
+      case 'start':
+        return (total - from) / size;
+      case 'end':
+        return (from + size) / size;
+      case 'centre':
+        return (2 * Math.min(from + size / 2, total - from - size / 2)) / size;
+    }
+  };
+  const maxScale = Math.min(
+    room(xAnchor, start.x, start.width, paper.widthMm),
+    room(yAnchor, start.y, start.height, paper.heightMm),
+  );
+  const minScale = CANVAS_LIMITS.minSizeMm / Math.min(start.width, start.height);
+  const scale = Math.max(minScale, Math.min(maxScale, wanted));
+  const width = start.width * scale;
+  const height = start.height * scale;
+  const place = (anchor: RatioAnchor, from: number, oldSize: number, newSize: number) =>
+    anchor === 'start' ? from : anchor === 'end' ? from + oldSize - newSize : from + (oldSize - newSize) / 2;
+  return {
+    x: roundMm(place(xAnchor, start.x, start.width, width)),
+    y: roundMm(place(yAnchor, start.y, start.height, height)),
+    width: roundMm(width),
+    height: roundMm(height),
+  };
 }
 
 /**
@@ -255,12 +316,38 @@ export function addElement(template: CanvasTemplate, kind: CanvasElementKind, ce
   const id = newElementId(template.elements);
   const created = newCanvasElement(kind, id, template.paper);
   const at = center ?? { x: template.paper.widthMm / 2, y: template.paper.heightMm / 2 };
-  const box = clampBox(
-    { ...boxOf(created), x: at.x - created.width / 2, y: at.y - created.height / 2 },
-    template.paper,
+  const box = clearOfStack(
+    clampBox({ ...boxOf(created), x: at.x - created.width / 2, y: at.y - created.height / 2 }, template.paper),
+    template,
   );
   const element = withBox({ ...created, name: uniqueName(created.name, template.elements) }, box);
   return { template: { ...template, elements: [...template.elements, element] }, ids: [id], skippedImages: 0 };
+}
+
+/** 和已有元素的左上角重合（差不到这么多毫米）就算叠在一起：比数字框能显示的 0.01mm 还细。 */
+const SAME_SPOT_MM = 0.005;
+
+/**
+ * 新元素正好落在已有元素上（连点几下「文字」，全落在纸中间）时，像粘贴一样往右下错开 2mm，直到不再重合；
+ * 收进纸内后位置不再变（已经顶到纸边）就停下，宁可重合也不死循环。
+ */
+function clearOfStack(box: Box, template: CanvasTemplate): Box {
+  const isTaken = (candidate: Box) =>
+    template.elements.some(
+      (element) => Math.abs(element.x - candidate.x) < SAME_SPOT_MM && Math.abs(element.y - candidate.y) < SAME_SPOT_MM,
+    );
+  let current = box;
+  while (isTaken(current)) {
+    const next = clampBox(
+      { ...current, x: current.x + PASTE_OFFSET_MM, y: current.y + PASTE_OFFSET_MM },
+      template.paper,
+    );
+    if (next.x === current.x && next.y === current.y) {
+      break;
+    }
+    current = next;
+  }
+  return current;
 }
 
 /** 删掉选中的（锁定的留着）；没有能删的原样返回。 */
@@ -382,6 +469,74 @@ export function sendToBack(template: CanvasTemplate, ids: readonly string[]): Ca
   return { ...template, elements: [...picked, ...rest] };
 }
 
+/**
+ * 上移一层：每个选中的元素和它上面紧挨着的一个没选中的元素换位置（一次只挪一层，选中的几个相对顺序不变）。
+ * 已经在最上面、没有可换的时原样返回。
+ */
+export function bringForward(template: CanvasTemplate, ids: readonly string[]): CanvasTemplate {
+  const elements = [...template.elements];
+  let changed = false;
+  // 从上往下扫：上面的先挪，下面的选中元素才不会被刚挪上来的同伴挡住。
+  for (let index = elements.length - 2; index >= 0; index -= 1) {
+    const current = elements[index];
+    const above = elements[index + 1];
+    if (current && above && ids.includes(current.id) && !ids.includes(above.id)) {
+      elements[index] = above;
+      elements[index + 1] = current;
+      changed = true;
+    }
+  }
+  return changed ? { ...template, elements } : template;
+}
+
+/** 下移一层：和上移一层对称。已经在最下面时原样返回。 */
+export function sendBackward(template: CanvasTemplate, ids: readonly string[]): CanvasTemplate {
+  const elements = [...template.elements];
+  let changed = false;
+  for (let index = 1; index < elements.length; index += 1) {
+    const current = elements[index];
+    const below = elements[index - 1];
+    if (current && below && ids.includes(current.id) && !ids.includes(below.id)) {
+      elements[index] = below;
+      elements[index - 1] = current;
+      changed = true;
+    }
+  }
+  return changed ? { ...template, elements } : template;
+}
+
+/** 把一个元素挪到数组里的 index（0 是最下层）：图层列表拖动排序用。没有这个元素或位置没变时原样返回。 */
+export function moveLayer(template: CanvasTemplate, id: string, index: number): CanvasTemplate {
+  const from = template.elements.findIndex((element) => element.id === id);
+  const to = Math.max(0, Math.min(template.elements.length - 1, index));
+  const moving = template.elements[from];
+  if (moving === undefined || from === to) {
+    return template;
+  }
+  const rest = template.elements.filter((element) => element.id !== id);
+  return { ...template, elements: [...rest.slice(0, to), moving, ...rest.slice(to)] };
+}
+
+/**
+ * 图层列表里拖到某一行的上半（above）或下半（below）松手：算出交给 moveLayer 的数组下标。
+ * 列表上层在前（和数组反着），所以「放在这一行上面」就是叠在它前面。拖到自己身上时下标不变。
+ */
+export function layerIndexForDrop(
+  elements: readonly CanvasElement[],
+  draggedId: string,
+  targetId: string,
+  position: 'above' | 'below',
+): number {
+  const listed = [...elements].reverse().map((element) => element.id);
+  if (draggedId === targetId) {
+    return elements.length - 1 - listed.indexOf(draggedId);
+  }
+  const rest = listed.filter((id) => id !== draggedId);
+  const at = rest.indexOf(targetId) + (position === 'below' ? 1 : 0);
+  // 拿掉拖动的那一个之后插到列表的第 at 位，数组里就是倒过来数的那一位。
+  return rest.length - at;
+}
+
 /** 粘贴往右下错开 2mm：和原来的叠在一起时看不出粘贴成功了。 */
 export const PASTE_OFFSET_MM = 2;
 
@@ -440,6 +595,11 @@ export function pasteElements(
     ids.push(id);
   }
   return { template: { ...template, elements }, ids, skippedImages };
+}
+
+/** 复制一份（Ctrl+D）：等于复制再粘贴，但不动设计器的剪贴板。 */
+export function duplicateElements(template: CanvasTemplate, ids: readonly string[]): Added {
+  return pasteElements(template, copyElements(template, ids));
 }
 
 /** 两个角（任意顺序）围成的框：框选用。 */

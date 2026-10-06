@@ -150,9 +150,10 @@ export function useTemplates({
     [templates],
   );
 
-  const saveDraft = useCallback(async () => {
+  /** 保存草稿：成功返回 true（退出前的「保存并退出」要知道存没存上）；失败照常提示，返回 false。 */
+  const saveDraft = useCallback(async (): Promise<boolean> => {
     if (!draft) {
-      return;
+      return true;
     }
     try {
       const saved = await window.api.saveTemplate(draft);
@@ -162,10 +163,30 @@ export function useTemplates({
       if (saved.id === activeTemplateId) {
         onActiveTemplateChanged();
       }
+      return true;
     } catch (error) {
       reportError('保存模板', error);
+      return false;
     }
   }, [draft, load, activeTemplateId, onActiveTemplateChanged]);
+
+  // 退出程序时（托盘「退出」、系统退出）主进程要知道有没有没保存的模板：名字变了、存了、放弃了都报一次。
+  const unsavedName = isDirty ? (draft?.name ?? '') : null;
+  useEffect(() => {
+    window.api.reportUnsavedTemplate(unsavedName);
+  }, [unsavedName]);
+  // 退出确认框里选了「保存并退出」：按平常的保存流程存一次，把结果告诉主进程（没存上主进程就不退出）。
+  const saveDraftRef = useRef(saveDraft);
+  useEffect(() => {
+    saveDraftRef.current = saveDraft;
+  });
+  useEffect(
+    () =>
+      window.api.onSaveTemplateForQuit(() => {
+        void saveDraftRef.current().then((saved) => window.api.replySaveForQuit(saved));
+      }),
+    [],
+  );
 
   /**
    * 「打印一张试试」：按预览内容打印草稿，结果用提示条说。

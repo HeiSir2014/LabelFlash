@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { describePaperCheck } from './paper-text';
+import { describePaperCheck, paperOptionLabel } from './paper-text';
 
 const LABEL = { widthMm: 60, heightMm: 40 };
+
+describe('paperOptionLabel', () => {
+  test('joins the size and the use with a dot, without nested brackets', () => {
+    expect(paperOptionLabel({ name: '60×40 标签', usage: '样衣标签（内置模板）' })).toBe('60×40 标签 · 样衣标签');
+    expect(paperOptionLabel({ name: '100×150 二联面单', usage: '顺丰、申通、EMS' })).toBe(
+      '100×150 二联面单 · 顺丰、申通、EMS',
+    );
+  });
+});
 
 describe('describePaperCheck', () => {
   test('shows nothing until the driver paper is known', () => {

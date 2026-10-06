@@ -248,6 +248,7 @@ function EditView({
   onCancel,
   onPrintSample,
   isPrintingSample,
+  onOpenLibrary,
   printers,
   paperPrinters,
 }: TemplatesPageProps & { draft: LabelTemplate }) {
@@ -264,6 +265,14 @@ function EditView({
           printers={printers}
           paperPrinters={paperPrinters}
           onChange={onDraftChange}
+          onOpenLibrary={
+            isDirty
+              ? null
+              : () => {
+                  onCancel();
+                  onOpenLibrary();
+                }
+          }
         />
         <EditActions
           isDirty={isDirty}

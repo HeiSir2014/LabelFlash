@@ -10,7 +10,7 @@ import { isValidSecretName, LOOKUP_TABLE_ID_PATTERN } from '../core/scan/enrich-
 import { MAX_RAW_LENGTH } from '../core/scan/normalize-raw';
 import { isRuleKind, RULE_ID_PATTERN, type RuleKind } from '../core/scan/rule-model';
 import { LIBRARY_TEMPLATE_ID_PATTERN } from '../core/templates/library/library-model';
-import { TEMPLATE_ID_PATTERN } from '../core/templates/template-model';
+import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
 import { type DiagnosisCheckId, isDiagnosisCheckId, isDiagnosisFixId } from '../shared/diagnosis';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
@@ -19,6 +19,7 @@ import { isRandomId } from '../shared/mobile-protocol';
 import { paperKey, parsePaperKey } from '../shared/paper-sizes';
 import { isRecord } from '../shared/settings';
 import { isVoiceCue, type VoiceCue } from '../shared/voice';
+import { UNSAVED_TEMPLATE_FALLBACK_NAME } from './template-quit';
 
 /** 渲染进程不可信：IPC 参数在进入业务层之前逐一校验，不合法直接抛错（fail loudly）。 */
 export const MAX_IPC_STRING_LENGTH = 1_024;
@@ -273,6 +274,23 @@ export function requireDiagnosisCheck(value: unknown): DiagnosisCheckId {
     throw new TypeError('Invalid diagnosis check');
   }
   return value;
+}
+
+/**
+ * 有没保存的修改的模板名：null 表示没有。名字只拿来写进退出确认框，按模板名的长度上限收，
+ * 空名字也收下（新建的模板还没起名），换成「未命名」由调用方决定。
+ * 其他值（不是字符串、超长）不抛异常，当作「有没保存的修改」、名字换成 UNSAVED_TEMPLATE_FALLBACK_NAME：
+ * 抛了的话这次报告就被丢掉，退出时不问，改了的模板会悄悄丢掉；多问一次的代价小得多。
+ */
+export function requireUnsavedTemplateName(value: unknown): string | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value === 'string' && value.length <= TEMPLATE_LIMITS.nameLength) {
+    return value;
+  }
+  console.warn('[ipc] unexpected unsaved template name, asking under a fallback name');
+  return UNSAVED_TEMPLATE_FALLBACK_NAME;
 }
 
 /** 打印机名可以为 null（只查、只修后台打印服务时）。 */

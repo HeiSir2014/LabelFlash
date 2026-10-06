@@ -1,3 +1,21 @@
+import type { CanvasElementIssue } from '../core/templates/canvas-layout';
+
+/**
+ * 条码宽度不到最小宽度的这么多倍就提前提醒（黄）：内容（例如编码）再长几位就印不出了。
+ * 主进程画条码时按它提醒，设计器的「放大到能印」也放大到这么多，放大完不会马上又冒出一条提醒。
+ */
+export const BARCODE_TIGHT_RATIO = 1.1;
+
+/**
+ * 自由设计模板里一个元素的问题（见 core 的 CanvasElementIssue），再加上「放大到能印」要用的最小尺寸：
+ * 条码按这次排版用的打印机分辨率、和画条码同一套取整到点的规则算出，已经留够元素框取整到点的余量，
+ * 宽高填成这么多就一定印得出。按元素的框（转过之后）给，不是条码自己的方向。用不上时为 null。
+ */
+export interface ElementWarning extends CanvasElementIssue {
+  minWidthMm: number | null;
+  minHeightMm: number | null;
+}
+
 /**
  * 生成标签时发现的问题：预览上贴在标签底边提示，打印照常进行（只是少印了这一部分）。
  * 主进程排版时得出，界面按 renderWarningTexts 显示。
@@ -11,6 +29,11 @@ export interface RenderWarnings {
   overflowCells: number;
   /** 自由设计模板的打印前检查：每条写清楚是哪个元素、怎么了。标签和面单是空的。 */
   issues: readonly string[];
+  /**
+   * 自由设计模板：每个元素的问题（issues 的每一条都在这里，带元素 id），另有只在设计器里提醒的
+   * （例如条码宽度离印不出只差一点）——那些不算打印问题，不进 issues、不写打印日志。标签和面单是空的。
+   */
+  elements: readonly ElementWarning[];
 }
 
 export const NO_RENDER_WARNINGS: RenderWarnings = {
@@ -18,6 +41,7 @@ export const NO_RENDER_WARNINGS: RenderWarnings = {
   barcodeOmitted: false,
   overflowCells: 0,
   issues: [],
+  elements: [],
 };
 
 /**

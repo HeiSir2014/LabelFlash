@@ -20,13 +20,14 @@ import {
   setRowMm,
   updateTableCell,
 } from '../../lib/canvas-table';
+import type { SelectOption } from '../../lib/insert-field-options';
 import { NumberField, Segmented, SelectField, TextInput, Toggle } from '../form-controls';
 import { InsertField } from './InsertField';
 import { ALIGN_OPTIONS, BORDER_STEP_MM, FONT_STEP_MM, POSITION_STEP_MM } from './options';
 
 interface TablePropertiesProps {
   element: CanvasTable;
-  fieldNames: readonly string[];
+  fieldOptions: readonly SelectOption[];
   /** field 非空时（连续输入）撤销历史和上一步合并；按钮、开关、分段选择一次点一下就改完，传 null。 */
   onChange: (next: CanvasElement, field: string | null) => void;
   /** 属性栏的文字 / 数字框失焦时调用：结束撤销历史的合并，不然焦点挪回来接着改会并进上一步。 */
@@ -76,7 +77,7 @@ function SizeList({
 }
 
 /** 表格：边框、行高和列宽、加减行列，再选一格改文字。 */
-export function TableProperties({ element, fieldNames, onChange, onEndMerge }: TablePropertiesProps) {
+export function TableProperties({ element, fieldOptions, onChange, onEndMerge }: TablePropertiesProps) {
   const [picked, setPicked] = useState({ row: 0, column: 0 });
   const row = Math.min(picked.row, element.rowsMm.length - 1);
   const column = Math.min(picked.column, element.columnsMm.length - 1);
@@ -172,7 +173,7 @@ export function TableProperties({ element, fieldNames, onChange, onEndMerge }: T
         onBlur={onEndMerge}
       />
       <InsertField
-        fieldNames={fieldNames}
+        fieldOptions={fieldOptions}
         onInsert={(variable) => setCell({ text: `${cell.text}${variable}`.slice(0, CANVAS_LIMITS.textLength) }, 'text')}
       />
       <NumberField

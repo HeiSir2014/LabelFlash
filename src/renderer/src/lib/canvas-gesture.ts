@@ -16,10 +16,13 @@ import {
 } from './canvas-edit';
 import { type Guide, type Snapped, type SnapTargets, snapMove, snapResize } from './canvas-snap';
 
-/** 按下后挪动不到 3 个屏幕像素算点击，不算拖动：手抖不该把元素挪走半毫米。 */
+/**
+ * 按下后挪动不到 3 个屏幕像素算点击，不算拖动：手抖、数位板的笔尖落下时的抖动不该把元素挪走半毫米。
+ * 鼠标和笔（pointerType 'pen'）用同一个阈值，不分设备。
+ */
 export const DRAG_START_PX = 3;
 
-/** 按下之后挪了这么远（屏幕像素）算真的拖动了，不是手抖。 */
+/** 按下之后挪了这么远（屏幕像素，从按下的位置直线量）算真的拖动了，不是手抖。 */
 export function hasPassedDragThreshold(dxPx: number, dyPx: number): boolean {
   return Math.hypot(dxPx, dyPx) >= DRAG_START_PX;
 }

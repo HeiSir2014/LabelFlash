@@ -22,8 +22,13 @@
   「⋯」打开完整的菜单。拖动时藏起来，松手再出现；画布有焦点时 Tab 能走到它；不盖住控制点。
 - **检查器**：右栏按元素类型分段标签（文字「文字 / 排列」，条码「内容 / 排列」……）另加「图层」；数字是毫米，带步进；
   分组标题用小号标签，行高一致。没选中时是「模板 / 图层」，多选时是「排列 / 图层」。
+- **输入设备**（用户 2026-10-06）：支持鼠标、键盘、触控板和数位板（Wacom 一类）；不支持触摸屏，不写触摸专用的代码。
+  数位板的笔是 `pointerType: 'pen'` 的指针事件，和鼠标走同一条路：选中、拖动、缩放、旋转、框选都一样，用指针捕获，
+  任何地方都不按 `pointerType === 'mouse'` 过滤；笔悬停（没按下的 pointermove）照样高亮；不用压感和倾斜；
+  按下后挪动不到 3 个屏幕像素不算拖动（笔尖落下时的抖动不会挪动元素，`lib/canvas-gesture.ts` 的 `hasPassedDragThreshold`）；
+  笔杆上的按键（button 2）和长按由系统发成 `contextmenu`，和右键一样打开菜单。
 - **直接操作**：触控板捏合缩放（Chromium 里是带 ctrlKey 的 wheel）以指针为中心；两指滚动平移；画布有焦点、不在输入框里时
-  空格 + 拖动平移；中键拖动平移；触屏一指拖元素、两指捏合缩放。控制点更大（看到的至少 10px，可点范围 24px，角上是圆点），
+  空格 + 拖动平移；中键拖动平移。控制点更大（看到的至少 10px，可点范围 24px，角上是圆点），
   另有一个旋转手柄（只转直角）。悬停高亮。面板和工具条 120–180ms 的过渡，`prefers-reduced-motion` 时不动。
 - **智能参考线**：参考线、间距（mm）、等距标记，拖动、缩放时指针旁显示「32.0 × 8.0 mm」这类尺寸 / 位置。
 - **撤销重做**：画布区左上角两个图标按钮；缩放比例是右下角的小胶囊，点开是「适合窗口 / 100% / 200%」。
@@ -46,7 +51,7 @@
 | 9 | **浮动工具条**：选中时出现在选框上方（放不下在下方），按类型放常用操作，「⋯」开完整菜单；拖动时隐藏；Tab 可达；不盖控制点 | `FloatingToolbar.tsx`、`lib/canvas-float.ts`（位置） | `canvas-float.test.ts` |
 | 10 | **右键菜单**：页面内菜单（键盘上下、Enter、Esc），复制、粘贴、复制一份、删除、四个叠放、锁定 / 解锁，选 2 个以上时有「对齐」子菜单；画布上不弹系统的输入框菜单；浮动工具条的「⋯」打开同一个菜单 | `ContextMenu.tsx`、`lib/canvas-menu.ts` | `canvas-menu.test.ts` |
 | 11 | **就地改字**：双击文字（表格双击某一格）盖一个同字体、字号、对齐的 textarea；Enter 换行，Ctrl/⌘+Enter 或点外面提交，Esc 取消；整段编辑一步撤销 | `InlineTextEditor.tsx`、`lib/canvas-inline.ts`、`lib/canvas-table.ts`（`tableCellAt`） | `canvas-inline.test.ts`、`canvas-table.test.ts` |
-| 12 | **缩放和平移**：Ctrl+滚轮 / 捏合以指针为中心连续缩放；两指滚动、空格 + 拖动、中键拖动平移；触屏两指捏合缩放 | `lib/canvas-view.ts`（`zoomAt`、`scrollForZoom`）、`use-canvas-gesture.ts` | `canvas-view.test.ts` |
+| 12 | **缩放和平移**：Ctrl+滚轮 / 触控板捏合以指针为中心连续缩放；两指滚动、空格 + 拖动、中键拖动平移；数位板的笔和鼠标同一条路（拖动阈值、笔杆按键开菜单） | `lib/canvas-view.ts`（`zoomAt`、`scrollForZoom`）、`use-canvas-gesture.ts` | `canvas-view.test.ts`、`canvas-gesture.test.ts` |
 | 13 | **控制点**：看到 10px、可点 24px，角上圆点；旋转手柄（拖动吸到直角）；缩放时 Shift 等比，图片、二维码默认等比（Shift 放开）；多选时一个合起来的外框，整体拖动 | `lib/canvas-edit.ts`（`resizeBox` 的 `keepRatio`）、`lib/canvas-gesture.ts`（`rotationFromPointer`）、`CanvasStage.tsx` | `canvas-edit.test.ts`、`canvas-gesture.test.ts` |
 | 14 | **标尺和智能参考线**：指针位置细线、选中范围；吸到邻居时写间距（mm），间距相等时标等距；拖动、缩放时指针旁显示尺寸 / 位置 | `lib/canvas-snap.ts`（`snapGaps`）、`CanvasStage.tsx` | `canvas-snap.test.ts` |
 | 15 | **退出时没保存的模板**：界面经校验过的 IPC 报告「有没保存的模板」；托盘退出、系统退出时问「保存并退出 / 不保存退出 / 取消」（保存经界面现有的保存流程往返一次，超时或失败就不退出并说明）；系统关机不问 | `shared/ipc-contract.ts`、`main/template-quit.ts`、`main/ipc.ts`、`main/ipc-validators.ts`、`main/index.ts`、`preload/index.ts`、`view-models/use-templates.ts`、`App.tsx` | `template-quit.test.ts`、`ipc-validators.test.ts` |

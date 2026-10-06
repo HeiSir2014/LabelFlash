@@ -60,6 +60,26 @@ describe('hasPassedDragThreshold', () => {
     expect(hasPassedDragThreshold(DRAG_START_PX, 0)).toBe(true);
     expect(hasPassedDragThreshold(DRAG_START_PX + 10, 0)).toBe(true);
   });
+
+  test('measures the straight-line distance, so a small diagonal wobble stays a click', () => {
+    expect(hasPassedDragThreshold(2, 2)).toBe(false);
+    expect(hasPassedDragThreshold(-2, 2)).toBe(false);
+    expect(hasPassedDragThreshold(3, 3)).toBe(true);
+  });
+
+  // 数位板的笔落下时笔尖会在按下的位置附近抖几下：每次都从按下的位置量，不累加走过的路，
+  // 抖得再多也不会变成拖动，点一下只选中、不挪动元素。
+  test('measures from the press point, so a pen tip wobbling around it never starts a drag', () => {
+    const wobble = [
+      [1, 0],
+      [2, 1],
+      [1, -1],
+      [-1, -2],
+      [0, 2],
+      [2, -2],
+    ] as const;
+    expect(wobble.some(([dx, dy]) => hasPassedDragThreshold(dx, dy))).toBe(false);
+  });
 });
 
 describe('viewOf', () => {

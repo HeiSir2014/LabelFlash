@@ -59,10 +59,16 @@ const PRINTER_PATH = /^\/printers\/(\d{1,3}(?:\.\d)?x\d{1,3}(?:\.\d)?)(?:\/jobs\
 const HOST_PATTERN = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
 const HOST_WITH_PORT = /:\d{1,5}$/;
 const IPP_CONTENT_TYPE = 'application/ipp';
+/**
+ * 设了共享密码时要密码的操作：除了查打印机本身（添加打印机时还没输密码），全都要。
+ * 查任务也要：任务名、自称用户会泄露谁在打什么；而「只看自己交的任务」按地址分，NAT 后面的几台电脑地址相同。
+ */
 const OPERATIONS_NEEDING_PASSWORD: ReadonlySet<number> = new Set([
   OPERATIONS.printJob,
   OPERATIONS.validateJob,
   OPERATIONS.cancelJob,
+  OPERATIONS.getJobs,
+  OPERATIONS.getJobAttributes,
 ]);
 const HTTP = {
   ok: 200,

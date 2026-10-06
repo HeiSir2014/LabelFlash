@@ -187,6 +187,18 @@ describe('IppHttpServer', () => {
     expect(accepted).toHaveLength(1);
   });
 
+  // 任务名、自称用户也是信息：设了密码，没密码的人连查任务都不行（只能看打印机本身）。
+  test('asks for the share password before listing jobs or reading one', async () => {
+    const { server } = createServer({ password: '1234' });
+    const { url } = await start(server);
+    const jobAttributes = ippRequest(OPERATIONS.getJobAttributes, { operation: [integerAttr('job-id', 1)] });
+    expect((await sendIpp(url, ippRequest(OPERATIONS.getJobs))).httpStatus).toBe(401);
+    expect((await sendIpp(url, jobAttributes)).httpStatus).toBe(401);
+    expect(
+      (await sendIpp(url, ippRequest(OPERATIONS.getJobs), new Uint8Array(), basicAuth('zhang', '1234'))).message?.code,
+    ).toBe(STATUS.ok);
+  });
+
   test('remembers a good password for a while instead of deriving it on every request', async () => {
     const { server, verified } = createServer({ password: '1234' });
     const { url } = await start(server);

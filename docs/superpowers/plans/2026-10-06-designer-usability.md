@@ -60,7 +60,7 @@
 | 18 | **纸张下拉**：「60×40 标签 · 样衣标签」，不套括号 | `lib/paper-text.ts`、`TemplateBasics.tsx` | `paper-text.test.ts` |
 | 19 | **空画布引导**：「从左边点一个元素加进来，或 从模板库新建」 | `CanvasStage.tsx`、`TemplatesPage.tsx` | — |
 | 20 | **E2E**：边框矩形点穿、Ctrl+A、就地改字和撤销、右键菜单、图层锁定 / 隐藏 / 改名 / 排序、「放大到能印」、退出时没保存的模板（换掉确认框） | `e2e/designer.e2e.ts`、`e2e/app.e2e.ts` | — |
-| 21 | **视觉验收**：新界面的验收项 V70–V77（1280、1024、1366 @150%），V44–V48 跟着新布局改 | `e2e/visual/acceptance.visual.ts` | — |
+| 21 | **视觉验收**：新界面的验收项 V49、V56–V59、V64–V66（1280、1024、1366 @150%），V44–V48 跟着新布局改 | `e2e/visual/acceptance.visual.ts` | — |
 | 22 | **文档**：`src/renderer/CLAUDE.md` 设计器一节、设计文档第 3.3 节 | — | — |
 
 ## 验收

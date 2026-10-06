@@ -476,6 +476,13 @@ export class IppSharing {
   }
 
   private publish(): void {
-    this.deps.onStatus(this.status());
+    // 退出的最后关头数据库可能已经关了（读不到密码、记住的电脑）：推不出状态只写日志，不打断停共享。
+    try {
+      this.deps.onStatus(this.status());
+    } catch (error) {
+      this.deps.log(
+        `[ipp] cannot publish the sharing status: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

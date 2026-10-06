@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import type { BatchPlan } from '../core/batch/batch-model';
 import { BATCH_ID_PATTERN } from '../core/batch/batch-model';
 import { parseBatchPlan } from '../core/batch/parse-batch-plan';
@@ -15,6 +16,7 @@ import { LIBRARY_TEMPLATE_ID_PATTERN } from '../core/templates/library/library-m
 import { TEMPLATE_ID_PATTERN, TEMPLATE_LIMITS } from '../core/templates/template-model';
 import { type DiagnosisCheckId, isDiagnosisCheckId, isDiagnosisFixId } from '../shared/diagnosis';
 import type { PrintOptions, RendererPrintSource } from '../shared/ipc-contract';
+import { isValidSharePassword } from '../shared/ipp-sharing';
 import { type JobQuery, MAX_JOB_PAGE_SIZE } from '../shared/job-history';
 import { isWebOrigin, normalizeApiKeyName } from '../shared/local-api';
 import { isRandomId } from '../shared/mobile-protocol';
@@ -25,6 +27,8 @@ import { UNSAVED_TEMPLATE_FALLBACK_NAME } from './template-quit';
 
 /** 渲染进程不可信：IPC 参数在进入业务层之前逐一校验，不合法直接抛错（fail loudly）。 */
 export const MAX_IPC_STRING_LENGTH = 1_024;
+/** node:net 的 isIP 对 IPv4 地址返回 4。 */
+const IPV4 = 4;
 const RENDERER_PRINT_SOURCES: ReadonlySet<string> = new Set<RendererPrintSource>(['desktop', 'history']);
 
 /**
@@ -293,8 +297,25 @@ export function requirePieceId(value: unknown): string {
  */
 export function requireSettingsPatch(value: unknown): Record<string, unknown> {
   const patch = requireRecord(value, 'settings patch');
-  const { printerCommands: _ignored, ...rest } = patch;
+  // 局域网共享的上次端口、实例编号是主进程自己记的（实例编号决定共享打印机的 UUID 和广播的主机名）：界面改不到。
+  const { printerCommands: _commands, ippLastPort: _ippLastPort, ippInstanceId: _ippInstanceId, ...rest } = patch;
   return rest;
+}
+
+/** 共享密码：规则和界面一致（shared/ipp-sharing.ts）。错误信息里不带密码本身。 */
+export function requireSharePassword(value: unknown): string {
+  if (!isValidSharePassword(value)) {
+    throw new TypeError('Invalid share password');
+  }
+  return value;
+}
+
+/** 局域网里一台电脑的 IPv4 地址（等确认、记住的电脑都按它）。 */
+export function requireIPv4Address(value: unknown): string {
+  if (typeof value !== 'string' || isIP(value) !== IPV4) {
+    throw new TypeError('Invalid IPv4 address');
+  }
+  return value;
 }
 
 /** 设备编号来自主进程的检测结果（usb-厂商号-产品号-摘要）；界面传不进地址或路径。 */

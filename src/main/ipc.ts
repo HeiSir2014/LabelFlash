@@ -56,6 +56,7 @@ import {
   requireDiagnosisFixRequest,
   requireDriverDeviceKey,
   requireIndex,
+  requireIPv4Address,
   requireJobQuery,
   requireLibraryTemplateId,
   requireLookupTableId,
@@ -74,6 +75,7 @@ import {
   requireRunId,
   requireSecretName,
   requireSettingsPatch,
+  requireSharePassword,
   requireString,
   requireTemplateId,
   requireUnsavedTemplateName,
@@ -81,6 +83,8 @@ import {
   requireWebhookId,
   requireWebOrigin,
 } from './ipc-validators';
+import { ippBlocksUpdate } from './ipp/ipp-quit';
+import type { IppSharing } from './ipp/ipp-sharing';
 import type { LookupTables } from './lookup/lookup-tables';
 import type { MobileStation } from './mobile/mobile-station';
 import type { WebhookOutbox } from './notify/webhook-outbox';
@@ -140,6 +144,8 @@ export interface IpcDeps {
   voice: VoiceClips;
   mobile: MobileStation;
   localApi: LocalApi;
+  /** 局域网共享（IPP）。 */
+  ippSharing: IppSharing;
   /** 驱动安装（打印机页的「驱动」一节）。 */
   drivers: DriverStation;
   /** 打印机的驱动名（按驱动名查清单）。 */
@@ -475,6 +481,11 @@ export function registerIpc(deps: IpcDeps): void {
     if (deps.pdf.pendingQuit() !== null) {
       return { status: 'refused', issue: PDF_BLOCKS_UPDATE_ISSUE } as const;
     }
+    // 局域网共享还有别的电脑交来、没打完的任务：重启会丢掉它们，同样先拒绝。
+    const ippIssue = ippBlocksUpdate(deps.ippSharing.pendingJobs);
+    if (ippIssue !== null) {
+      return { status: 'refused', issue: ippIssue } as const;
+    }
     // 没保存的模板：同样因为安装程序先于退出确认，得在装之前问；选了取消就什么也不做，程序照常用。
     if (!(await deps.confirmBeforeInstall())) {
       return { status: 'canceled' } as const;
@@ -513,6 +524,15 @@ export function registerIpc(deps: IpcDeps): void {
   );
   handle(IpcChannel.FirewallStatus, () => deps.localApi.checkFirewall());
   handle(IpcChannel.AddFirewallRule, () => deps.localApi.addFirewallRule());
+  // 局域网共享：只给状态、共享密码、允许 / 拒绝、撤销和防火墙按钮（最小能力）；密码原文不写日志（logFailures 只记错误）。
+  handle(IpcChannel.IppStatus, () => deps.ippSharing.status());
+  handle(IpcChannel.IppSetPassword, (password) => deps.ippSharing.setPassword(requireSharePassword(password)));
+  handle(IpcChannel.IppClearPassword, () => deps.ippSharing.clearPassword());
+  handle(IpcChannel.IppDecideClient, (address, allow) =>
+    deps.ippSharing.decideClient(requireIPv4Address(address), requireBoolean(allow, 'allow')),
+  );
+  handle(IpcChannel.IppForgetClient, (address) => deps.ippSharing.forgetClient(requireIPv4Address(address)));
+  handle(IpcChannel.IppAddFirewallRule, () => deps.ippSharing.addFirewallRule());
   handle(IpcChannel.GetDriverStatus, () => deps.drivers.status());
   handle(IpcChannel.DetectDrivers, (force) => deps.drivers.detect(requireBoolean(force, 'force')));
   handle(IpcChannel.InstallDriver, (deviceKey) => deps.drivers.install(requireDriverDeviceKey(deviceKey)));

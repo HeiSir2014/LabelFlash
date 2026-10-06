@@ -8,6 +8,7 @@ import {
   FAKE_DRIVERS_ENV,
   type FakeDriverSpec,
 } from '../../src/main/drivers/fake-drivers';
+import { IPP_DISCOVERY_ENV, IPP_LOOPBACK_ENV, IPP_PORT_ENV } from '../../src/main/ipp/ipp-sharing';
 import { FAKE_OCR_ENV } from '../../src/main/ocr/fake-ocr';
 import { FAKE_PRINTERS_ENV, type FakePrinterSpec } from '../../src/main/printing/fake-printers';
 
@@ -116,6 +117,10 @@ export async function launchApp(userData?: string, options: LaunchOptions = {}):
   }
   // 本机接口用系统随便给的端口：并行的用例之间、和本机上跑着的安装版之间都不抢 17631。
   env[API_PORT_ENV] = '0';
+  // 局域网共享同样用系统随便给的端口，只在本机回环上监听，不往局域网广播（并行的用例、CI 机器上不开端口、不发 mDNS）。
+  env[IPP_PORT_ENV] = '0';
+  env[IPP_LOOPBACK_ENV] = '1';
+  env[IPP_DISCOVERY_ENV] = '0';
   const platformArgs = process.platform === 'darwin' ? MAC_TEST_ARGS : [];
   const app = await electron.launch({ args: [APP_ROOT, ...platformArgs], env });
   let page: Page;

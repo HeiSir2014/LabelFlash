@@ -2,7 +2,7 @@ import { type DragEvent, useRef, useState } from 'react';
 import { CANVAS_ELEMENT_LABELS, CANVAS_LIMITS, type CanvasElement } from '../../../../core/templates/canvas-model';
 import type { Platform } from '../../lib/app-view';
 import { layerIndexForDrop, toggleId } from '../../lib/canvas-edit';
-import { displayName } from '../../lib/canvas-names';
+import { displayName, renameKeyAction } from '../../lib/canvas-names';
 import { shortcutLabel } from '../../lib/designer-shortcuts';
 import { IconButton } from './IconButton';
 import { ICONS } from './icons';
@@ -178,10 +178,11 @@ function RenameField({ name, onDone }: { name: string; onDone: (next: string | n
       onChange={(event) => setValue(event.target.value)}
       onBlur={finish}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') {
+        const action = renameKeyAction(event.key, event.nativeEvent.isComposing);
+        if (action === 'save') {
           event.preventDefault();
           finish();
-        } else if (event.key === 'Escape') {
+        } else if (action === 'cancel') {
           // 只取消改名，不让 Esc 冒泡到配置中心（那会返回模板列表）。
           event.preventDefault();
           event.stopPropagation();

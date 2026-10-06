@@ -60,3 +60,17 @@ export function displayName(element: CanvasElement): string {
   }
   return clip(summary);
 }
+
+/**
+ * 图层就地改名时一个按键做什么：回车保存、Esc 不改。输入法正在选字（isComposing）时都不算：
+ * 那时的回车是确认候选词、Esc 是取消候选，当成结束改名的话打中文名字会被打断、半截存下来。
+ */
+export function renameKeyAction(key: string, isComposing: boolean): 'save' | 'cancel' | null {
+  if (isComposing) {
+    return null;
+  }
+  if (key === 'Enter') {
+    return 'save';
+  }
+  return key === 'Escape' ? 'cancel' : null;
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { type CanvasElement, newCanvasElement } from '../../../core/templates/canvas-model';
-import { DISPLAY_NAME_LENGTH, displayName } from './canvas-names';
+import { DISPLAY_NAME_LENGTH, displayName, renameKeyAction } from './canvas-names';
 
 const PAPER = { widthMm: 60, heightMm: 40 };
 
@@ -53,5 +53,19 @@ describe('displayName', () => {
   test('falls back to the kind when an unnamed text or code is empty', () => {
     expect(displayName(element('text', { text: '  ' }))).toBe('文字');
     expect(displayName(element('barcode', { value: '' }))).toBe('条码');
+  });
+});
+
+describe('renameKeyAction', () => {
+  test('saves on Enter and cancels on Escape', () => {
+    expect(renameKeyAction('Enter', false)).toBe('save');
+    expect(renameKeyAction('Escape', false)).toBe('cancel');
+    expect(renameKeyAction('a', false)).toBeNull();
+  });
+
+  // 中文输入法选字时的回车是确认候选词、Esc 是取消候选，不是结束改名。
+  test('leaves Enter and Escape to the input method while composing', () => {
+    expect(renameKeyAction('Enter', true)).toBeNull();
+    expect(renameKeyAction('Escape', true)).toBeNull();
   });
 });

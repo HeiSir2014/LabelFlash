@@ -652,7 +652,7 @@ async function bootstrap(): Promise<void> {
     })
     .catch((error: unknown) => console.error('[pdf] failed to prune the piece cache', error));
   const pdfRenderer = new PdfRenderHost({
-    openPort: () => openRenderWindow(join(__dirname, '../renderer')),
+    openPort: () => openRenderWindow(join(__dirname, '../renderer'), 'pdf'),
     openTimeoutMs: PDF_OPEN_TIMEOUT_MS,
     pageTimeoutMs: PDF_PAGE_TIMEOUT_MS,
     schedule: (run, delayMs) => {
@@ -791,9 +791,9 @@ async function bootstrap(): Promise<void> {
     onStatus: (apiStatus) => sendToMainWindow(IpcChannel.LocalApiStatusChanged, apiStatus),
     onJobsChanged: () => sendToMainWindow(IpcChannel.JobsChanged, null),
   });
-  // 局域网共享：IPP 专用一个渲染窗口（和「打印 PDF」页互不干扰），收到的 PDF、图片只在它里面解析。
+  // 局域网共享：IPP 专用一个渲染窗口和会话（和「打印 PDF」页互不干扰、不同进程），收到的文档只在它里面解析。
   const ippRenderer = new PdfRenderHost({
-    openPort: () => openRenderWindow(join(__dirname, '../renderer')),
+    openPort: () => openRenderWindow(join(__dirname, '../renderer'), 'ipp'),
     openTimeoutMs: PDF_OPEN_TIMEOUT_MS,
     pageTimeoutMs: PDF_PAGE_TIMEOUT_MS,
     schedule: (run, delayMs) => {

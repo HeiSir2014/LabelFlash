@@ -4,22 +4,26 @@ import { PDF_RENDER_CHANNELS } from '../../shared/pdf-render-protocol';
 import { handleAppScheme } from '../app-protocol';
 import { APP_HOST, APP_SCHEME } from '../bundle-path';
 import type { RenderPort } from './pdf-render-host';
-import { isAllowedRenderRequest, PDF_RENDER_CSP } from './render-session-policy';
+import {
+  isAllowedRenderRequest,
+  PDF_RENDER_CSP,
+  RENDER_PARTITIONS,
+  type RenderPartition,
+} from './render-session-policy';
 
-/** 内存里的独立会话（名字不带 persist:）：不和主窗口共用存储、缓存、同源数据，程序退出就没了。 */
-const PDF_RENDER_PARTITION = 'labelflash-pdf-render';
 const PDF_RENDER_PAGE = 'pdf-render.html';
 /** 日志里记下被拦的地址时最多 200 个字：data: 地址可能很长。 */
 const MAX_LOGGED_URL_LENGTH = 200;
 
-let renderSession: Session | null = null;
+const renderSessions = new Map<RenderPartition, Session>();
 
 /** 第一次用到时准备会话：只服务本程序的文件、拒绝一切权限、拦下所有对外请求。 */
-function prepareSession(rendererDir: string, devServerUrl: string | null): Session {
-  if (renderSession !== null) {
-    return renderSession;
+function prepareSession(partition: RenderPartition, rendererDir: string, devServerUrl: string | null): Session {
+  const existing = renderSessions.get(partition);
+  if (existing !== undefined) {
+    return existing;
   }
-  const prepared = session.fromPartition(PDF_RENDER_PARTITION);
+  const prepared = session.fromPartition(RENDER_PARTITIONS[partition]);
   handleAppScheme(rendererDir, prepared.protocol, PDF_RENDER_CSP);
   prepared.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   prepared.setPermissionCheckHandler(() => false);
@@ -30,20 +34,21 @@ function prepareSession(rendererDir: string, devServerUrl: string | null): Sessi
     }
     callback({ cancel: !isAllowed });
   });
-  renderSession = prepared;
+  renderSessions.set(partition, prepared);
   return prepared;
 }
 
 /**
  * 开一个隐藏的 PDF 渲染窗口（sandbox、contextIsolation、没有 Node；只有这个窗口开 JS，pdf.js 要用）。
  * 窗口导航、新窗口由 security.ts 对所有 webContents 统一拒绝。只收这个窗口主 frame 发来的回复。
+ * partition 选会话：「打印 PDF」和局域网共享各用各的（见 RENDER_PARTITIONS）。
  */
-export async function openRenderWindow(rendererDir: string): Promise<RenderPort> {
+export async function openRenderWindow(rendererDir: string, partition: RenderPartition): Promise<RenderPort> {
   const devServerUrl = app.isPackaged ? null : (process.env['ELECTRON_RENDERER_URL'] ?? null);
   const window = new BrowserWindow({
     show: false,
     webPreferences: {
-      session: prepareSession(rendererDir, devServerUrl),
+      session: prepareSession(partition, rendererDir, devServerUrl),
       preload: join(__dirname, '../preload/pdf-render.js'),
       sandbox: true,
       contextIsolation: true,

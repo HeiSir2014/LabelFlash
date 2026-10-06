@@ -190,6 +190,9 @@ export function CanvasDesigner({
   // 按 templateId 核对，不是这份草稿的结果就当还没有，不然会闪一下上一个模板的标签和检查结果。
   const currentPreview = preview?.templateId === draft.id ? preview : null;
   const warnings = currentPreview?.warnings ?? NO_RENDER_WARNINGS;
+  // 「插入字段」「绑定字段」的选项：写出这段预览内容识别出的值（「编码 — CL5640-TK」）。
+  const sampleScan = currentPreview?.result.status === 'ok' ? currentPreview.result.scan : null;
+  const fieldOptions = insertFieldOptions(fieldNames, sampleScan);
 
   // 检查器的标签页：选中的东西变了就回到第一页（看「图层」时除外：在图层里点选不该被弹回去）。
   const selectionKey = designer.selection.join(',');
@@ -378,7 +381,7 @@ export function CanvasDesigner({
             key={selected.id}
             element={selected}
             paper={draft.paper}
-            fieldNames={fieldNames}
+            fieldOptions={fieldOptions}
             onChange={onElementChange}
             onRotate={onRotate}
             onEndMerge={designer.endMerge}
@@ -492,7 +495,7 @@ export function CanvasDesigner({
                 stageRef={stageRef}
                 overlayRef={overlayRef}
                 warnings={selectedWarnings}
-                fieldOptions={insertFieldOptions(fieldNames)}
+                fieldOptions={fieldOptions}
                 canDistribute={designer.canDistribute}
                 onChange={(next) => designer.commit(replaceElement(draft, next))}
                 onEditText={() => startInlineEdit(null)}

@@ -17,6 +17,7 @@ import {
 import type { PaperSize } from '../../../../shared/paper-sizes';
 import type { ElementWarning } from '../../../../shared/render-warnings';
 import { maxExtentMm } from '../../lib/canvas-edit';
+import type { SelectOption } from '../../lib/insert-field-options';
 import { NumberField, Segmented, TextInput, Toggle } from '../form-controls';
 import { InsertField } from './InsertField';
 import {
@@ -47,7 +48,7 @@ type ElementChange = (next: CanvasElement, field: string | null) => void;
 export interface ElementPropertiesProps {
   element: CanvasElement;
   paper: PaperSize;
-  fieldNames: readonly string[];
+  fieldOptions: readonly SelectOption[];
   onChange: ElementChange;
   onRotate: (rotation: Rotation) => void;
   /** 属性栏的文字 / 数字框失焦时调用：结束撤销历史的合并，不然焦点挪回来接着改会并进上一步。 */
@@ -183,7 +184,7 @@ export function ElementWarnings({
 
 function KindProperties({
   element,
-  fieldNames,
+  fieldOptions,
   onChange,
   onEndMerge,
   onImportImage,
@@ -191,13 +192,15 @@ function KindProperties({
 }: ElementPropertiesProps) {
   switch (element.kind) {
     case 'text':
-      return <TextProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />;
+      return (
+        <TextProperties element={element} fieldOptions={fieldOptions} onChange={onChange} onEndMerge={onEndMerge} />
+      );
     case 'barcode':
       return (
-        <BarcodeProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />
+        <BarcodeProperties element={element} fieldOptions={fieldOptions} onChange={onChange} onEndMerge={onEndMerge} />
       );
     case 'qr':
-      return <QrProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />;
+      return <QrProperties element={element} fieldOptions={fieldOptions} onChange={onChange} onEndMerge={onEndMerge} />;
     case 'image':
       return (
         <ImageProperties
@@ -213,18 +216,20 @@ function KindProperties({
     case 'rect':
       return <RectProperties element={element} onChange={onChange} onEndMerge={onEndMerge} />;
     case 'table':
-      return <TableProperties element={element} fieldNames={fieldNames} onChange={onChange} onEndMerge={onEndMerge} />;
+      return (
+        <TableProperties element={element} fieldOptions={fieldOptions} onChange={onChange} onEndMerge={onEndMerge} />
+      );
   }
 }
 
 function TextProperties({
   element,
-  fieldNames,
+  fieldOptions,
   onChange,
   onEndMerge,
 }: {
   element: CanvasText;
-  fieldNames: readonly string[];
+  fieldOptions: readonly SelectOption[];
   onChange: ElementChange;
   onEndMerge: () => void;
 }) {
@@ -248,7 +253,7 @@ function TextProperties({
           onBlur={onEndMerge}
         />
       </div>
-      <InsertField fieldNames={fieldNames} onInsert={(variable) => setText(`${element.text}${variable}`)} />
+      <InsertField fieldOptions={fieldOptions} onInsert={(variable) => setText(`${element.text}${variable}`)} />
       <p className="form-hint">用 {'{字段名}'} 印扫码识别出的字段；一行里的字段全是空的，这一行不印。</p>
       <NumberField
         label="字号"
@@ -285,12 +290,12 @@ function TextProperties({
 
 function BarcodeProperties({
   element,
-  fieldNames,
+  fieldOptions,
   onChange,
   onEndMerge,
 }: {
   element: CanvasBarcode;
-  fieldNames: readonly string[];
+  fieldOptions: readonly SelectOption[];
   onChange: ElementChange;
   onEndMerge: () => void;
 }) {
@@ -329,7 +334,7 @@ function BarcodeProperties({
         onBlur={onEndMerge}
       />
       <InsertField
-        fieldNames={fieldNames}
+        fieldOptions={fieldOptions}
         onInsert={(variable) =>
           onChange({ ...element, value: `${element.value}${variable}`.slice(0, valueLength) }, 'value')
         }
@@ -361,12 +366,12 @@ function BarcodeProperties({
 
 function QrProperties({
   element,
-  fieldNames,
+  fieldOptions,
   onChange,
   onEndMerge,
 }: {
   element: CanvasQr;
-  fieldNames: readonly string[];
+  fieldOptions: readonly SelectOption[];
   onChange: ElementChange;
   onEndMerge: () => void;
 }) {
@@ -382,7 +387,7 @@ function QrProperties({
         onBlur={onEndMerge}
       />
       <InsertField
-        fieldNames={fieldNames}
+        fieldOptions={fieldOptions}
         onInsert={(variable) =>
           onChange({ ...element, value: `${element.value}${variable}`.slice(0, valueLength) }, 'value')
         }

@@ -5093,6 +5093,11 @@ button.designer-checks__item:hover {
   min-height: 0;
 }
 
+/* .text-field 默认 flex: 1（在横排里分宽度）；放在这一列里会被拉高或压扁，搜索框保持自己的高度。 */
+.batch-preview__list > .text-field {
+  flex: none;
+}
+
 /* 数据表自己滚动（纵向、横向），页面不跟着变宽 */
 .batch-rows {
   flex: 1;

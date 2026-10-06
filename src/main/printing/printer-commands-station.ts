@@ -1,3 +1,4 @@
+import type { SubmittedJobs } from '../../core/diagnosis/submitted-jobs';
 import type { DriverHints } from '../../core/drivers/driver-hints';
 import {
   type CommandSet,
@@ -9,6 +10,7 @@ import {
 } from '../../core/printer-commands/command-model';
 import { detectCommandSet, effectiveCommandSet } from '../../core/printer-commands/command-set';
 import { buildAction, buildSetup } from '../../core/printer-commands/printer-commands';
+import type { Clock } from '../../core/types';
 import {
   DEFAULT_PRINTER_DPI,
   type NotSentReason,
@@ -36,6 +38,9 @@ export interface PrinterCommandsDeps {
   hasPrinter(printerName: string): Promise<boolean>;
   log(message: string): void;
   warn(message: string): void;
+  clock: Clock;
+  /** 交给打印队列的任务的账本：诊断时据此认出队列里哪些是本程序发的（RAW 指令也进系统队列）。 */
+  submitted: SubmittedJobs;
 }
 
 type Target = { commandSet: CommandSet; dpi: number } | { commandSet: null; reason: NotSentReason };
@@ -143,6 +148,7 @@ export class PrinterCommands {
     if (data.length > RAW_COMMAND_MAX_BYTES) {
       throw new Error(`Generated ${what} for ${commandSet} is ${data.length} bytes, over ${RAW_COMMAND_MAX_BYTES}`);
     }
+    const startedAt = this.deps.clock.now();
     const result = await this.deps.sender.send(printerName, data);
     if (!result.ok) {
       this.deps.warn(
@@ -150,6 +156,8 @@ export class PrinterCommands {
       );
       return { status: 'failed', reason: result.failure.kind, detail: result.failure.detail };
     }
+    // 发送成功 = 任务进了系统的打印队列：记下这个时间段，诊断据此认出哪些卡住的任务是本程序发的。
+    this.deps.submitted.record(printerName, startedAt);
     this.deps.log(`[printer-commands] sent ${what} (${commandSet}, ${data.length} bytes) to "${printerName}"`);
     return { status: 'sent', commandSet };
   }

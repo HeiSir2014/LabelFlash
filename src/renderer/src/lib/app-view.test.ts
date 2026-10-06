@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  BATCH_VIEW,
   backStep,
   CONFIG_NAV,
   CONFIG_PAGES,
@@ -52,6 +53,7 @@ describe('backStep', () => {
     expect(backStep({ kind: 'config', page: 'rules' }, true)).toBe('close-editor');
     expect(backStep({ kind: 'config', page: 'rules' }, false)).toBe('close-config');
     expect(backStep(WORKBENCH, false)).toBe('none');
+    expect(backStep(BATCH_VIEW, false)).toBe('close-batch');
   });
 });
 

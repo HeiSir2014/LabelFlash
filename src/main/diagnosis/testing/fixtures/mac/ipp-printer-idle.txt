@@ -1,0 +1,7 @@
+        printer-make-and-model (textWithoutLanguage) = Label Printer 203dpi
+        printer-state (enum) = idle
+        printer-state-reasons (keyword) = none
+        printer-is-accepting-jobs (boolean) = true
+        media-default (keyword) = om_60x40mm_60x40mm
+        media-supported (1setOf keyword) = om_60x40mm_60x40mm
+        media-col-default (collection) = {media-size={x-dimension=6000 y-dimension=4000} media-top-margin=0}

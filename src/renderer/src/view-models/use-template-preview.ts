@@ -19,6 +19,8 @@ export function useTemplatePreview(
   template: LabelTemplate | null,
   /** 打印机设置（纸张分配、本机打印机）：变了就重新生成，预览里的「打印机：…」跟着变。 */
   printerSetup = '',
+  /** 模板库编号：有时按那个模板的示例数据预览，不识别 raw（见 lib/template-library.ts 的 librarySampleIdFor）。 */
+  librarySampleId: string | null = null,
 ): TemplatePreview | null {
   const [preview, setPreview] = useState<TemplatePreview | null>(null);
 
@@ -31,7 +33,7 @@ export function useTemplatePreview(
     let isActive = true;
     const timer = window.setTimeout(async () => {
       try {
-        const next = await window.api.previewTemplate(raw, template);
+        const next = await window.api.previewTemplate(raw, template, librarySampleId);
         if (isActive) {
           setPreview({ ...next, templateId: template.id });
         }
@@ -43,7 +45,7 @@ export function useTemplatePreview(
       isActive = false;
       window.clearTimeout(timer);
     };
-  }, [raw, template, printerSetup]);
+  }, [raw, template, printerSetup, librarySampleId]);
 
   return preview;
 }

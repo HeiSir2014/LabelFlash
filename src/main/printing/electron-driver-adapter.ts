@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron';
+import type { SubmittedJobs } from '../../core/diagnosis/submitted-jobs';
 import { PrintError } from '../../core/errors';
 import type { Clock, LabelJob, PrinterInfo } from '../../core/types';
 import { renderWarningTexts } from '../../shared/render-warnings';
@@ -29,6 +30,8 @@ export class ElectronDriverAdapter implements PrinterDriver {
     private readonly readinessOf: (printerName: string) => PrinterReadiness | null,
     private readonly clock: Clock,
     private readonly profiles: PrinterProfiles,
+    /** 交给打印队列的任务的账本：诊断时据此认出队列里哪些是本程序发的。 */
+    private readonly submitted: SubmittedJobs,
   ) {}
 
   async listPrinters(): Promise<PrinterInfo[]> {
@@ -65,10 +68,13 @@ export class ElectronDriverAdapter implements PrinterDriver {
         `[ElectronDriverAdapter] "${job.scan.raw}" on ${printerName} with template "${job.template.name}" diagnostics: ${diagnostics.join('；')}`,
       );
     }
+    const startedAt = this.clock.now();
     // 超时（PrintQueue 触发 abort）时立刻销毁打印窗口，避免隐藏窗口堆积。
     await withLabelWindow(html, signal, (contents) =>
       printSilently(contents, printerName, pageSizeMicrons(job.template.paper)),
     );
+    // 驱动回调成功 = 任务进了系统的打印队列：记下这个时间段。
+    this.submitted.record(printerName, startedAt);
   }
 
   /** 渲染进程传来的打印机名在交给系统命令之前，必须是系统里真实存在的打印机。 */

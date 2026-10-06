@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { type AppView, backStep, type ConfigPage, isConfigShortcut, type Platform, WORKBENCH } from '../lib/app-view';
+import {
+  type AppView,
+  BATCH_VIEW,
+  backStep,
+  type ConfigPage,
+  isConfigShortcut,
+  type Platform,
+  WORKBENCH,
+} from '../lib/app-view';
 import { parseCssTime } from '../lib/css-time';
 import { type EditorGuard, planLeave } from '../lib/editor-guard';
 
@@ -33,7 +41,7 @@ interface AppViewOptions {
 }
 
 /**
- * 整个窗口的视图：工作台，或配置中心的某一页。
+ * 整个窗口的视图：工作台、配置中心的某一页，或批量打印页。
  * - 任何离开编辑器的动作（切换页面、返回、关闭、快捷键、Esc、跳转链接）都经过 requestLeave：
  *   有未保存的修改时先确认，放弃修改后才执行。
  * - 再次打开时回到上次的页面（本次运行内记住）。
@@ -98,19 +106,46 @@ export function useAppView({ platform, canOpen, editor, onClosed }: AppViewOptio
     [canOpen, requestLeave, showPage],
   );
 
+  const isConfigShown = view.kind === 'config';
+  /** 离开配置中心：它在上面淡出，淡出期间 leavingPage 仍是那一页。不在配置中心时只清掉上一次的淡出。 */
+  const fadeOutConfig = useCallback(() => {
+    cancelLeaving();
+    if (!isConfigShown) {
+      return;
+    }
+    setLeavingPage(lastPage.current);
+    leaveTimer.current = window.setTimeout(() => {
+      leaveTimer.current = null;
+      setLeavingPage(null);
+    }, transitionMs());
+  }, [cancelLeaving, isConfigShown]);
+
   const close = useCallback(
     () =>
       requestLeave(() => {
-        cancelLeaving();
-        setLeavingPage(lastPage.current);
+        fadeOutConfig();
         setView(WORKBENCH);
-        leaveTimer.current = window.setTimeout(() => {
-          leaveTimer.current = null;
-          setLeavingPage(null);
-        }, transitionMs());
         onClosedRef.current();
       }),
-    [requestLeave, cancelLeaving],
+    [requestLeave, fadeOutConfig],
+  );
+
+  /**
+   * 打开批量打印页（标题栏按钮、拖进文件、打印记录里重打一批）；配置中心里有未保存的修改时先确认。
+   * onOpened 在页面真的切过去之后才调用（确认框还没答、或者 canOpen 是 false 时都不会调用）：
+   * 拖进来的文件要读、要重打的那一批要开始，都不能在操作员还没决定要不要离开当前页面时就先做了。
+   */
+  const openBatch = useCallback(
+    (onOpened?: () => void) => {
+      if (canOpen) {
+        requestLeave(() => {
+          fadeOutConfig();
+          setView(BATCH_VIEW);
+          onOpened?.();
+        });
+      }
+    },
+    [canOpen, requestLeave, fadeOutConfig],
   );
 
   const isOpen = view.kind === 'config';
@@ -122,6 +157,7 @@ export function useAppView({ platform, canOpen, editor, onClosed }: AppViewOptio
         requestLeave(() => undefined);
         break;
       case 'close-config':
+      case 'close-batch':
         close();
         break;
       case 'none':
@@ -142,7 +178,7 @@ export function useAppView({ platform, canOpen, editor, onClosed }: AppViewOptio
         return;
       }
       const isEscape = event.key === 'Escape' && !event.isComposing;
-      if (isEscape && isOpen && !isDropdown(event.target)) {
+      if (isEscape && view.kind !== 'workbench' && !isDropdown(event.target)) {
         event.preventDefault();
         back();
       }
@@ -162,5 +198,5 @@ export function useAppView({ platform, canOpen, editor, onClosed }: AppViewOptio
     onContinue: () => setPendingLeave(null),
   };
 
-  return { view, leavingPage, open, close, toggle, requestLeave, leaveConfirm };
+  return { view, leavingPage, open, close, toggle, requestLeave, leaveConfirm, openBatch };
 }

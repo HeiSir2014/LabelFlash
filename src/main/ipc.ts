@@ -8,16 +8,20 @@ import {
   type OpenDialogOptions,
   shell,
 } from 'electron';
-import { fieldsScan, type PrintService } from '../core/print-service';
+import { BATCH_LIMITS } from '../core/batch/batch-model';
+import { API_RULE, BATCH_RULE, fieldsScan, type PrintService } from '../core/print-service';
 import type { PrinterChoice } from '../core/printing/resolve-printer';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import type { ScanResult } from '../core/scan/scan-result';
 import { DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE } from '../core/templates/builtin-templates';
 import { WAYBILL_SAMPLE_FIELDS } from '../core/templates/builtin-waybills';
+import { type LibrarySample, librarySampleScan } from '../core/templates/library/library-model';
+import { findLibraryEntry, TEMPLATE_LIBRARY } from '../core/templates/library/template-library';
 import { sanitizeTemplate } from '../core/templates/sanitize-template';
 import type { TemplateCatalog } from '../core/templates/template-catalog';
 import { CUSTOM_TEMPLATE_PREFIX, type LabelTemplate } from '../core/templates/template-model';
 import type { PreviewResult } from '../core/types';
+import type { BatchTableResult } from '../shared/batch';
 import { BRAND } from '../shared/brand';
 import { checkDriverPaper } from '../shared/driver-paper';
 import {
@@ -32,17 +36,28 @@ import { type PaperSize, parsePaperKey } from '../shared/paper-sizes';
 import { NO_RENDER_WARNINGS } from '../shared/render-warnings';
 import type { AppSettings } from '../shared/settings';
 import type { LocalApi } from './api/local-api';
+import { BATCH_BLOCKS_UPDATE_ISSUE } from './batch/batch-quit';
+import type { BatchStation } from './batch/batch-station';
+import type { DiagnosisStation } from './diagnosis/diagnosis-station';
 import type { DriverStation } from './drivers/driver-station';
 import { logFailures } from './ipc-errors';
 import {
-  guardInstallUpdate,
+  driverInstallBlocksUpdate,
   requireApiKeyId,
   requireApiKeyName,
+  requireBatchId,
+  requireBatchPlan,
   requireBoolean,
+  requireBytes,
+  requireDiagnosisCheck,
+  requireDiagnosisFixRequest,
   requireDriverDeviceKey,
+  requireIndex,
   requireJobQuery,
+  requireLibraryTemplateId,
   requireLookupTableId,
   requireMobilePhoneId,
+  requireNullablePrinterName,
   requirePaperKey,
   requirePositiveInteger,
   requirePrinterAction,
@@ -64,6 +79,7 @@ import type { WebhookOutbox } from './notify/webhook-outbox';
 import { type PrintTemplate, resolvePrintTemplate } from './print-template';
 import { openPrinterPreferences } from './printing/driver-paper';
 import { renderLabelHtml } from './printing/label-html';
+import { renderLibraryPreviews } from './printing/library-previews';
 import type { PrinterCommands } from './printing/printer-commands-station';
 import type { PrinterDriver } from './printing/printer-driver';
 import type { PrinterProfiles } from './printing/printer-profiles';
@@ -85,6 +101,8 @@ function waybillSampleScan(): ScanResult {
 }
 /** 打印记录编号是 UUID（36 个字符）；留出余量，挡住异常长的参数。 */
 const MAX_JOB_ID_LENGTH = 64;
+/** 拖进来的文件名：Windows 的路径上限是 260，文件名只会更短。 */
+const MAX_FILE_NAME_LENGTH = 260;
 
 /** 已校验的纸张键 → 纸张（requirePaperKey 保证能解析，兜底只为类型）。 */
 function paperOf(key: string): PaperSize {
@@ -94,6 +112,8 @@ function paperOf(key: string): PaperSize {
 export interface IpcDeps {
   service: PrintService;
   adapter: PrinterDriver;
+  /** 批量打印：读表格、预览、检查、开打。 */
+  batch: BatchStation;
   jobs: SqliteJobStore;
   settings: SqliteSettingsStore;
   templates: TemplateCatalog;
@@ -113,6 +133,8 @@ export interface IpcDeps {
   driverNameOf: (printerName: string) => Promise<string | null>;
   /** 每台打印机的驱动纸张和分辨率（短时缓存）。 */
   profiles: PrinterProfiles;
+  /** 打印机页的「诊断」。 */
+  diagnosis: DiagnosisStation;
   /** 标签机指令（printing/printer-commands-station.ts）。 */
   printerCommands: PrinterCommands;
   getWindow: () => BrowserWindow | null;
@@ -199,17 +221,33 @@ export function registerIpc(deps: IpcDeps): void {
     const result = await deps.service.preview(requireRaw(raw));
     return renderPreview(result, printTemplateFor(result), await dpiFor(result));
   });
-  handle(IpcChannel.PreviewTemplate, async (raw, template) => {
+  /**
+   * 预览、试打用模板库的示例数据：页面只交模板库的编号（不能交任意字段），示例数据由主进程按编号取。
+   * 没交（null / undefined）就按预览内容识别；编号不对就报错。
+   */
+  const librarySampleOf = (value: unknown): LibrarySample | null => {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const id = requireLibraryTemplateId(value);
+    const entry = findLibraryEntry(id);
+    if (entry === null) {
+      throw new Error(`Library template not found: ${id}`);
+    }
+    return entry.sample;
+  };
+  handle(IpcChannel.PreviewTemplate, async (raw, template, librarySampleId) => {
     const content = requireRaw(raw);
     const input = requireRecord(template, 'template');
-    // 面单设计时看的是排版：用示例面单数据预览，不识别、不加工预览内容（加工步骤可能要发 HTTP 查询，结果也用不上）。
-    // 模板页指定了要看的模板，不是规则选的；打印机也按这个模板重新决定。
-    if (input['kind'] === 'waybill') {
+    const librarySample = librarySampleOf(librarySampleId);
+    // 面单设计时看的是排版：用示例面单数据预览，不识别、不加工预览内容（加工步骤可能要发 HTTP 查询，结果也用不上）；
+    // 从模板库复制出的模板同理，先看它自己的示例数据。模板页指定了要看的模板，不是规则选的；打印机也按这个模板重新决定。
+    if (input['kind'] === 'waybill' || librarySample !== null) {
       const draft = sanitizeTemplate(input, DRAFT_TEMPLATE_ID, GENERIC_TEMPLATE);
       const printer = await deps.choosePrinter(draft);
       const sample: PreviewResult = {
         status: 'ok',
-        scan: waybillSampleScan(),
+        scan: librarySample === null ? waybillSampleScan() : librarySampleScan(librarySample),
         recent: null,
         lookupFailure: null,
         printer,
@@ -226,12 +264,12 @@ export function registerIpc(deps: IpcDeps): void {
     deps.service.submit({ raw: requireRaw(raw), ...requirePrintOptions(options) }),
   );
   // 「打印一张试试」：草稿和预览一样先校验（不可信的输入）；按钮只在设计器里有，只接受自由设计模板（最小权限）。
-  handle(IpcChannel.PrintSample, (raw, template) => {
+  handle(IpcChannel.PrintSample, (raw, template, librarySampleId) => {
     const draft = sanitizeTemplate(requireRecord(template, 'template'), DRAFT_TEMPLATE_ID, GENERIC_TEMPLATE);
     if (draft.kind !== 'canvas') {
       throw new Error(`label:print-sample only accepts canvas templates, got kind "${draft.kind}"`);
     }
-    return deps.service.printSample(requireRaw(raw), draft);
+    return deps.service.printSample(requireRaw(raw), draft, librarySampleOf(librarySampleId));
   });
   // 打印机名不在这里核对：找不到时由适配器返回 PRINTER_NOT_FOUND，和正式打印一样显示在界面上。
   handle(IpcChannel.PrintTest, (printerName, key) =>
@@ -250,6 +288,11 @@ export function registerIpc(deps: IpcDeps): void {
     // 操作员可能刚改了纸张：界面随后重新检查时要读到新的设置。
     deps.profiles.forget(name);
   });
+  // 打印机名在 DiagnosisStation 里核对（不在系统列表里的不交给系统命令）；这里只核对形状。
+  handle(IpcChannel.DiagnosisCheck, (printerName, check) =>
+    deps.diagnosis.check(requireNullablePrinterName(printerName), requireDiagnosisCheck(check)),
+  );
+  handle(IpcChannel.DiagnosisFix, (request) => deps.diagnosis.fix(requireDiagnosisFixRequest(request)));
   // 先做不用等系统的校验，再核对打印机在系统列表里（只发给系统里有的打印机）。
   handle(IpcChannel.PrinterCommands, async (printerName) =>
     deps.printerCommands.describe(await requireKnownPrinter(printerName)),
@@ -267,7 +310,7 @@ export function registerIpc(deps: IpcDeps): void {
     const { job, template, fields } = storedLabelOf(jobId);
     const result: PreviewResult = {
       status: 'ok',
-      scan: fieldsScan(job.raw, fields),
+      scan: fieldsScan(job.raw, fields, job.batch === undefined ? API_RULE : BATCH_RULE),
       recent: null,
       lookupFailure: null,
       printer: await deps.choosePrinter(template),
@@ -283,6 +326,8 @@ export function registerIpc(deps: IpcDeps): void {
       source: 'history',
       caller: job.caller ?? null,
       printerName: null,
+      // 批量打的重打后还算这一批的这一行这一份：整批重打失败的时，重打成功的不再算失败。
+      ...(job.batch === undefined ? {} : { batch: job.batch }),
     });
   });
   handle(IpcChannel.GetSettings, () => deps.settings.current);
@@ -291,6 +336,12 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.DuplicateTemplate, (sourceId) => deps.templates.duplicate(requireTemplateId(sourceId)));
   // 没有参数：主进程自己建空白模板，页面传不进任何内容（新通道只给最小能力）。
   handle(IpcChannel.CreateCanvasTemplate, () => deps.templates.createCanvas());
+  // 模板库的缩略图：主进程按示例数据现排（和打印同一份 HTML），页面只拿到结果。
+  handle(IpcChannel.ListTemplateLibrary, () => renderLibraryPreviews(TEMPLATE_LIBRARY, Date.now()));
+  // 只收模板库的编号：复制什么由主进程决定，页面交不进模板内容（新通道只给最小能力）。
+  handle(IpcChannel.CreateTemplateFromLibrary, (libraryId) =>
+    deps.templates.createFromLibrary(requireLibraryTemplateId(libraryId)),
+  );
   handle(IpcChannel.SaveTemplate, (template) => {
     const record = requireRecord(template, 'template');
     const saved = deps.templates.save(requireTemplateId(record['id']), record);
@@ -363,8 +414,17 @@ export function registerIpc(deps: IpcDeps): void {
   handle(IpcChannel.GetUpdateStatus, () => deps.updater.current);
   handle(IpcChannel.CheckForUpdates, () => deps.updater.check());
   handle(IpcChannel.InstallUpdate, () => {
-    guardInstallUpdate(deps.drivers.isInstalling);
-    return deps.updater.install('front');
+    // quitAndInstall 会在任何确认之前就把安装程序拉起来：不像正常退出能先弹确认框，批量打印还在打或
+    // 暂停中、或者正在装驱动时只能直接拒绝，让操作员自己先打完 / 取消这一批，或者等驱动装完。
+    const driverIssue = driverInstallBlocksUpdate(deps.drivers.isInstalling);
+    if (driverIssue !== null) {
+      return { status: 'refused', issue: driverIssue } as const;
+    }
+    if (deps.batch.pendingQuit() !== null) {
+      return { status: 'refused', issue: BATCH_BLOCKS_UPDATE_ISSUE } as const;
+    }
+    deps.updater.install('front');
+    return { status: 'ok' } as const;
   });
   handle(IpcChannel.VoiceClip, (cue) => {
     // 音色和语速取主进程当前设置，不信任页面传入。
@@ -412,6 +472,45 @@ export function registerIpc(deps: IpcDeps): void {
     }
     return deps.drivers.installForDriverName(driverName);
   });
+
+  handle(IpcChannel.BatchOpenFile, async (): Promise<BatchTableResult> => {
+    const window = deps.getWindow();
+    const options: OpenDialogOptions = {
+      title: '导入要批量打印的表格',
+      // 列出 .xls：选了它会得到「另存为 .xlsx 或 CSV」的提示，比在对话框里找不到文件更好懂。
+      filters: [{ name: 'Excel 或 CSV 表格', extensions: ['xlsx', 'csv', 'xls'] }],
+      properties: ['openFile'],
+    };
+    const { canceled, filePaths } = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options);
+    const [path] = filePaths;
+    if (canceled || path === undefined) {
+      return { status: 'canceled' };
+    }
+    return deps.batch.loadPath(path);
+  });
+  handle(IpcChannel.BatchReadDropped, (name, bytes) =>
+    deps.batch.loadBytes(
+      requireString(name, 'file name', MAX_FILE_NAME_LENGTH),
+      requireBytes(bytes, 'file', BATCH_LIMITS.fileBytes),
+    ),
+  );
+  handle(IpcChannel.BatchPaste, (text) =>
+    deps.batch.paste(requireString(text, 'pasted table', BATCH_LIMITS.pasteChars)),
+  );
+  handle(IpcChannel.BatchPreview, (plan, rowIndex) =>
+    deps.batch.preview(requireBatchPlan(plan), requireIndex(rowIndex, 'row index')),
+  );
+  handle(IpcChannel.BatchCheck, (plan) => deps.batch.check(requireBatchPlan(plan)));
+  handle(IpcChannel.BatchStart, (plan) => deps.batch.start(requireBatchPlan(plan)));
+  handle(IpcChannel.BatchPause, () => deps.batch.pause());
+  handle(IpcChannel.BatchResume, () => deps.batch.resume());
+  handle(IpcChannel.BatchCancel, () => deps.batch.cancel());
+  handle(IpcChannel.BatchRetryFailed, (batchId, row) =>
+    deps.batch.retryFailed(requireBatchId(batchId), row === null ? null : requirePositiveInteger(row, 'row')),
+  );
+  handle(IpcChannel.BatchStatus, () => deps.batch.status());
 
   on(IpcChannel.WindowMinimize, () => deps.getWindow()?.minimize());
   on(IpcChannel.WindowToggleMaximize, () => {

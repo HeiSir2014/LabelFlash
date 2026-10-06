@@ -10,9 +10,18 @@ export const FIREWALL_RULE_NAME = `${BRAND.productNameAscii} local API`;
 
 export type FirewallAction = 'add' | 'remove' | 'check';
 
-/** PowerShell 单引号字符串：里面只有单引号需要转义（写两个）。 */
+/**
+ * PowerShell 的分词器除了 ASCII 单引号（U+0027）还把几种 Unicode 「智能引号」当单引号用
+ * （从 Word 粘贴命令时常见），每一种都能提前结束字符串字面量：U+2018 ‘、U+2019 ’、U+201A ‚、U+201B ‛。
+ * 打印机名这类外部文字可能带着这些字符（WSD/IPP 自动发现的名字、复制粘贴的驱动名），
+ * 这里和 ASCII 单引号一样挨个转义（写两个），不只转义拼接脚本时用的那一种。
+ */
+const SINGLE_QUOTE_VARIANTS = ["'", '‘', '’', '‚', '‛'];
+
+/** PowerShell 单引号字符串：转义里面每一种会被当成单引号的字符。 */
 export function powerShellLiteral(text: string): string {
-  return `'${text.replaceAll("'", "''")}'`;
+  const escaped = SINGLE_QUOTE_VARIANTS.reduce((value, quote) => value.replaceAll(quote, quote + quote), text);
+  return `'${escaped}'`;
 }
 
 /**

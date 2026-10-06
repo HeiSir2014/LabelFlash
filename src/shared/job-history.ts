@@ -9,6 +9,8 @@ export interface JobQuery {
   search?: string;
   /** 分页游标：上一页返回的 nextCursor。 */
   before?: number;
+  /** 只看这一批（批量打印的批次号）。 */
+  batchId?: string;
 }
 
 export interface JobPage {

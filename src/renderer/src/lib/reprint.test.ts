@@ -42,4 +42,15 @@ describe('reprintMode', () => {
   test('cannot reprint content no rule recognised', () => {
     expect(reprintMode({ ...BASE, status: 'invalid' }, allTemplates)).toBe('unavailable');
   });
+
+  // 批量打的记录没有识别规则可用，和本机接口一样按当时的模板和字段。
+  test('uses the stored template and fields for batch jobs', () => {
+    const batchJob: JobRecord = {
+      ...API_JOB,
+      source: 'batch',
+      batch: { id: '20261002-143501-a1b2', row: 1, copy: 1 },
+    };
+    expect(reprintMode(batchJob, allTemplates)).toBe('stored');
+    expect(reprintMode({ ...batchJob, source: 'history' }, allTemplates)).toBe('stored');
+  });
 });

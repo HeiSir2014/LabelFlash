@@ -505,6 +505,19 @@ describe('PrintService.printSample', () => {
     expect((await service.printSample(RAW, draft)).status).toBe('printed');
     expect(adapter.printed[0]?.printerName).toBe('A');
   });
+
+  // 模板库复制出的模板：按它的示例数据打，不识别预览内容（这里的预览内容是空白，识别的话会是「无法识别」）。
+  test('prints the library sample instead of recognising the preview content', async () => {
+    const { service, adapter, store } = createHarness();
+    const sample = { content: '6901234567892', fields: [{ name: '品名', value: '纯棉袜子' }] };
+    expect((await service.printSample('   ', draft, sample)).status).toBe('printed');
+    expect(adapter.printed[0]).toMatchObject({
+      raw: '6901234567892',
+      templateId: 'custom:draft',
+      fields: [{ name: '品名', value: '纯棉袜子' }],
+    });
+    expect(store.listRecent(10)).toEqual([]);
+  });
 });
 
 describe('PrintService printer choice', () => {
@@ -697,5 +710,33 @@ describe('PrintService.printFields', () => {
     adapter.failNext(new PrintError('PRINTER_NOT_READY'));
     expect(await service.printFields(input)).toMatchObject({ status: 'failed', reason: 'PRINTER_NOT_READY' });
     expect(store.listRecent(1)[0]).toMatchObject({ status: 'failed', source: 'api' });
+  });
+});
+
+describe('PrintService.printFields for a batch', () => {
+  const fields = [{ name: '编码', value: 'CL1' }];
+  const batchInput = {
+    template: PICK_TEMPLATE,
+    fields,
+    content: RAW,
+    source: 'batch',
+    caller: null,
+    printerName: null,
+    batch: { id: '20261002-143501-a1b2', row: 3, copy: 2 },
+  } as const;
+
+  test('records the batch, row and copy and names batch printing as the rule', async () => {
+    const { service, store, recorded } = createHarness();
+    expect((await service.printFields(batchInput)).status).toBe('printed');
+    expect(store.listRecent(1)[0]).toMatchObject({ source: 'batch', batch: batchInput.batch, fields });
+    expect(recorded.at(-1)?.scan).toMatchObject({ ruleId: 'batch', ruleName: '批量打印' });
+  });
+
+  // 批量打的内容和扫码一样时，重启后扫码不能被当成重复。
+  test('stays out of the scan dedup window after a restart', async () => {
+    const { service } = createHarness();
+    await service.printFields(batchInput);
+    service.restore();
+    expect((await service.submit(request())).status).toBe('printed');
   });
 });

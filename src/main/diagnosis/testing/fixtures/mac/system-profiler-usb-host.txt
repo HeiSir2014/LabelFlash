@@ -1,0 +1,16 @@
+{
+  "SPUSBDataType" : [],
+  "SPUSBHostDataType" : [
+    {
+      "_items" : [
+        {
+          "_name" : "Label Printer 203",
+          "USBDeviceKeyProductName" : "Label Printer 203",
+          "USBDeviceKeySerialNumber" : "LBL0001",
+          "USBDeviceKeyVendorName" : "Label Maker"
+        }
+      ],
+      "_name" : "USB30Bus"
+    }
+  ]
+}

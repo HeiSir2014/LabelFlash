@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { SubmittedJobs } from '../../core/diagnosis/submitted-jobs';
 import { type DriverHints, NO_DRIVER_HINTS } from '../../core/drivers/driver-hints';
 import {
   DEFAULT_COMMAND_CONFIG,
   type MediaSetup,
   type PrinterCommandConfig,
 } from '../../core/printer-commands/command-model';
+import { FakeClock } from '../../core/testing/fake-clock';
 import { MAX_PRINTER_COMMAND_ENTRIES } from '../../shared/settings';
 import { PrinterCommands } from './printer-commands-station';
 import type { RawSendResult } from './raw-sender';
@@ -31,6 +33,8 @@ function harness(options: HarnessOptions = {}) {
   const state: { configs: Record<string, PrinterCommandConfig> } = { configs: {} };
   const sent: { printerName: string; text: string }[] = [];
   const logs: string[] = [];
+  const clock = new FakeClock();
+  const submitted = new SubmittedJobs(clock);
   const station = new PrinterCommands({
     configs: () => state.configs,
     saveConfigs: (next) => {
@@ -54,8 +58,10 @@ function harness(options: HarnessOptions = {}) {
     hasPrinter: async (name) => DRIVER_NAMES.has(name),
     log: (message) => logs.push(message),
     warn: (message) => logs.push(message),
+    clock,
+    submitted,
   });
-  return { station, state, sent, logs };
+  return { station, state, sent, logs, submitted };
 }
 
 describe('PrinterCommands.describe', () => {
@@ -198,10 +204,20 @@ describe('PrinterCommands.apply', () => {
 
 describe('PrinterCommands.run', () => {
   test('calibrates with the saved paper type', async () => {
-    const { station, state, sent } = harness();
+    const { station, state, sent, submitted } = harness();
     state.configs = { [LABEL_PRINTER]: { ...DEFAULT_COMMAND_CONFIG, media: { ...MEDIA, sensing: 'mark' } } };
     expect(await station.run(LABEL_PRINTER, 'calibrate')).toEqual({ status: 'sent', commandSet: 'tspl' });
     expect(sent).toEqual([{ printerName: LABEL_PRINTER, text: 'BLINEDETECT\r\n' }]);
+    // 成功发送后账本里有这台打印机的一个时间段：诊断据此认出队列里哪些是本程序发的。
+    expect(submitted.windowsFor(LABEL_PRINTER)).toHaveLength(1);
+  });
+
+  test('does not record a failed send in the ledger', async () => {
+    const { station, submitted } = harness({
+      sendResult: { ok: false, failure: { kind: 'error', detail: 'boom' } },
+    });
+    await station.run(LABEL_PRINTER, 'feed');
+    expect(submitted.windowsFor(LABEL_PRINTER)).toEqual([]);
   });
 
   test('sends nothing when 自动 cannot tell the command set', async () => {

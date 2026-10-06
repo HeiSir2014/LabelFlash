@@ -7,6 +7,7 @@ import { describePrintersSummary } from '../../shared/printer-summary';
 import { NO_RENDER_WARNINGS } from '../../shared/render-warnings';
 import { SAMPLE_LABEL_RAW } from '../../shared/sample-label';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/settings';
+import { BatchPage } from './components/batch/BatchPage';
 import { ConfigCenter } from './components/config/ConfigCenter';
 import { ConfigPages } from './components/config/ConfigPages';
 import { ConfirmDialog } from './components/config/ConfirmDialog';
@@ -21,6 +22,7 @@ import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
+import { batchButtonProgress } from './lib/batch-view';
 import { describeCaller } from './lib/local-api-text';
 import { describeMobileButton, describeMobileOverlay } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
@@ -39,9 +41,12 @@ import { isWorkbenchActive } from './lib/scan-routing';
 import { describeScan } from './lib/status-text';
 import { describeUpdate } from './lib/update-text';
 import { useAppInfo } from './view-models/use-app-info';
+import { useBatch } from './view-models/use-batch';
 import { useConfigCenter } from './view-models/use-config-center';
+import { useDiagnosis } from './view-models/use-diagnosis';
 import { useDrivers } from './view-models/use-drivers';
 import { useFeedback } from './view-models/use-feedback';
+import { useFileDrop } from './view-models/use-file-drop';
 import { useHotkey } from './view-models/use-hotkey';
 import { useJobLog } from './view-models/use-job-log';
 import { useLocalApi } from './view-models/use-local-api';
@@ -129,6 +134,7 @@ export function App() {
     [installedNames, responsibilitiesByName],
   );
   const printerProfiles = usePrinterProfiles(installedNames, assignedNames, expectedPapers);
+  const diagnosis = useDiagnosis();
   /** 这台打印机负责的纸：标签机指令的纸张按它预填；没负责纸张时按 60×40。 */
   const paperForPrinter = useCallback(
     (name: string) => parsePaperKey(expectedPapers[name] ?? '') ?? DEFAULT_PAPER,
@@ -194,6 +200,17 @@ export function App() {
   // 打印机页打开时检测缺驱动的设备；装好之后立即刷新打印机列表（新打印机出现、驱动纸张的「建议」跟着出现）。
   const refreshPrinters = useCallback(() => void printers.refresh(), [printers.refresh]);
   const drivers = useDrivers(appView.view.kind === 'config' && appView.view.page === 'printers', refreshPrinters);
+  // 批量打印：设置留在这里（关掉页面再打开都还在），批次本身在主进程里跑。
+  const isBatchOpen = appView.view.kind === 'batch';
+  const batch = useBatch({
+    templates: templates.templates,
+    activeTemplateId: settings?.activeTemplateId ?? null,
+    isOpen: isBatchOpen,
+    historyLimit,
+  });
+  // 把 .xlsx / .csv 拖进窗口：打开批量打印页并读这个文件（.xls 等由主进程说明为什么不行）。
+  // 读文件放进 openBatch 的回调里：操作员在编辑器里取消了「离开」，或者设置还没读到，就不读这个文件。
+  useFileDrop((file) => appView.openBatch(() => batch.dropFile(file)), settings !== null);
 
   // 手机扫码：浮层只在工作台上显示；在配置中心里点按钮会先回到工作台（经过未保存修改的确认）。
   const mobile = useMobileStation({ onJobsChanged: () => void jobLog.refresh() });
@@ -288,9 +305,14 @@ export function App() {
         onOpenPrinters={() => appView.open('printers')}
         readyUpdateVersion={updates.status.state === 'ready' ? updates.status.version : null}
         config={{
-          isOpen: !isWorkbench,
+          isOpen: appView.view.kind === 'config',
           shortcutLabel: configShortcutLabel(platform),
           onToggle: appView.toggle,
+        }}
+        batch={{
+          isOpen: isBatchOpen,
+          progress: batchButtonProgress(batch.status),
+          onToggle: isBatchOpen ? appView.close : appView.openBatch,
         }}
         mobile={{ view: describeMobileButton(mobile.status), isOpen: isMobileOverlayShown, onToggle: toggleMobile }}
         onInstallUpdate={updates.install}
@@ -351,6 +373,13 @@ export function App() {
               reprintModeOf={reprintModeOf}
               onReview={(job) => station.review(historyTarget(job))}
               onReprint={(job) => station.reprint(historyTarget(job))}
+              batchFilter={jobLog.batchId}
+              onFilterBatch={jobLog.setBatchId}
+              onRetryBatch={(batchId) => {
+                // 打开批量打印页：进度、失败的原因（例如模板删了不能重打）都在那里看。重打放进回调里：
+                // 和拖文件一样，操作员取消了「离开」就不重打。
+                appView.openBatch(() => void batch.retryFailed(batchId, null));
+              }}
             />
           }
         />
@@ -386,7 +415,21 @@ export function App() {
               onCancel: templates.cancelEdit,
               onCreateCanvas: () => void templates.createCanvas(),
               isCreatingCanvas: templates.isCreatingCanvas,
-              onPrintSample: () => void templates.printSample(config.templatePage.sample.value),
+              library: templates.isLibraryOpen
+                ? {
+                    items: config.templateLibrary.items,
+                    hasError: config.templateLibrary.hasError,
+                    view: config.templateLibrary.view,
+                    category: config.templateLibrary.category,
+                    onCategory: config.templateLibrary.selectCategory,
+                    onPaper: config.templateLibrary.selectPaper,
+                    onUse: (item) => void config.templateLibrary.createFromLibrary(item),
+                    isCreating: templates.isCreatingFromLibrary,
+                    onClose: templates.closeLibrary,
+                  }
+                : null,
+              onOpenLibrary: templates.openLibrary,
+              onPrintSample: () => void templates.printSample(config.templatePage.sample.value, config.librarySampleId),
               isPrintingSample: templates.isPrintingSample,
               printers: printers.printers,
               paperPrinters,
@@ -435,6 +478,7 @@ export function App() {
                 onRefresh={() => void printers.refresh()}
                 onTestPrint={printTest}
                 commands={printerCommands}
+                diagnosis={diagnosis}
               />
             }
             drivers={
@@ -468,6 +512,9 @@ export function App() {
             onOpenPage={appView.open}
           />
         </ConfigCenter>
+      )}
+      {settings !== null && isBatchOpen && (
+        <BatchPage batch={batch} templates={templates.templates} onClose={appView.close} />
       )}
       {isMobileOverlayShown && (
         <MobileOverlay

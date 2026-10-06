@@ -137,6 +137,12 @@ textarea {
   .title-bar:has(.update-pill) .title-bar__shop {
     display: none;
   }
+
+  /* 「批量打印」按钮一直都在（不是只在批量打印页才有），标题栏更挤：1024 宽时先让出店铺名，
+   * 保留店铺图标和其余按钮。不用 :has(.batch-button) 判断——这个按钮不是有条件渲染的，判断是多余的。 */
+  .title-bar__shop-name {
+    display: none;
+  }
 }
 
 /* 新版本已下载：标题栏里的可点击提示（必须排除在拖拽区域之外才能点击） */
@@ -279,6 +285,11 @@ textarea {
   border-color: var(--color-tape);
   background: var(--color-tape);
   color: var(--color-ink);
+}
+
+.batch-button__progress {
+  font-family: var(--font-data);
+  font-weight: 400;
 }
 
 .mobile-button__dot {
@@ -1242,6 +1253,96 @@ textarea {
   font-size: 12px;
 }
 
+.printer-empty-actions {
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+/* 诊断面板：打印机行下面展开，占满两列 */
+.diagnosis {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--space-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+}
+
+.diagnosis__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-housing);
+}
+
+.diagnosis__summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--color-ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.diagnosis__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diagnosis-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-housing);
+}
+
+.diagnosis-item:last-child {
+  border-bottom: none;
+}
+
+.diagnosis-item__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.diagnosis-item__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.diagnosis-item__detail,
+.diagnosis-item__next,
+.diagnosis-item__outcome {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.diagnosis-item__next {
+  color: var(--color-ink-soft);
+}
+
+.diagnosis-item__fixes,
+.diagnosis-item__question {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 12px;
+}
+
+.diagnosis-item__outcome--error {
+  color: var(--color-error);
+}
+
 /* 驱动默认纸张和这台负责的纸对不上：贴在那一台下面，附处理按钮 */
 .paper-warning {
   display: flex;
@@ -1340,6 +1441,17 @@ textarea {
   color: var(--color-paper);
 }
 
+/* 诊断：通过 / 要注意 */
+.badge--ok {
+  background: var(--color-success);
+  color: var(--color-paper);
+}
+
+.badge--warning {
+  background: var(--color-warning-wash);
+  color: var(--color-ink);
+}
+
 /* 打印记录 */
 .job-log__more {
   padding: var(--space-3);
@@ -1349,6 +1461,24 @@ textarea {
 /* 翻到后面几页时接口打了新标签：列表上方的一条提示，点了回到最新。 */
 .job-log__new {
   margin: 0 var(--space-3) var(--space-2);
+}
+
+/* 按批次筛选时的提示行：批次号（等宽）、重打失败的、显示全部 */
+.job-log__batch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 var(--space-3) var(--space-2);
+  font-size: 12px;
+}
+
+.job-log__batch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-data);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .job-log__count {
@@ -2741,11 +2871,13 @@ textarea {
   list-style: none;
 }
 
-/* 「新建自由设计模板」：跟在自定义模板下面，左对齐，和列表文字同一条边。
-   flex-shrink: 0——不然列表内容把这一列挤得超出可视高度时，这个按钮会被压扁到点击区域不够 28px。 */
+/* 「新建自由设计模板」「从模板库新建」：跟在自定义模板下面，和列表文字同一条边，放不下时换行。
+   flex-shrink: 0——不然列表内容把这一列挤得超出可视高度时，这一行会被压扁到点击区域不够 28px。 */
 .template-list__create {
+  display: flex;
   flex-shrink: 0;
-  align-self: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   margin: var(--space-2) var(--space-4) 0;
 }
 
@@ -2827,6 +2959,118 @@ textarea {
   margin: 0;
   color: var(--color-ink-soft);
   font-size: 13px;
+}
+
+/* 模板库：左边分类（和模板列表同样的条目），右边筛选和缩略图网格，底部操作条 */
+.template-library {
+  display: grid;
+  flex: 1;
+  grid-template-areas:
+    "nav main"
+    "actions actions";
+  grid-template-columns: var(--template-library-nav-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.template-library__categories {
+  grid-area: nav;
+  padding: var(--space-4) 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--color-rule);
+  background: var(--color-paper);
+}
+
+.template-library__count {
+  margin-left: auto;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.template-library__main {
+  display: flex;
+  grid-area: main;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.template-library__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* 卡片最窄 = 缩略图框 + 两边内边距：窗口变窄时少放几列，不出横向滚动条 */
+.template-library__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--thumb-box-w) + 2 * var(--space-3)), 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.library-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+}
+
+/* 缩略图框：固定高度，纸居中；各张卡片的名字和按钮因此对齐 */
+.library-card__thumb {
+  display: grid;
+  place-items: center;
+  height: var(--thumb-box-h);
+  background: var(--color-housing);
+}
+
+/* 缩小后的纸：外框是缩小后的大小，里面的 iframe 按实物大小排版再整体缩小（和预览同一种做法） */
+.library-card__paper {
+  width: calc(var(--paper-w) * 1mm * var(--thumb-scale));
+  height: calc(var(--paper-h) * 1mm * var(--thumb-scale));
+  overflow: hidden;
+  background: var(--color-field);
+  box-shadow: 0 0 0 1px var(--color-rule);
+}
+
+.library-card__frame {
+  display: block;
+  width: calc(var(--paper-w) * 1mm);
+  height: calc(var(--paper-h) * 1mm);
+  border: 0;
+  background: var(--color-field);
+  pointer-events: none;
+  transform: scale(var(--thumb-scale));
+  transform-origin: 0 0;
+}
+
+.library-card__name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.library-card__meta {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+/* 按钮贴在卡片底部：说明长短不一时按钮仍在同一条线上 */
+.library-card__use {
+  align-self: flex-start;
+  margin-top: auto;
 }
 
 /* 模板页 · 编辑视图：表单滚动，预览固定，操作条在底部 */
@@ -3770,4 +4014,242 @@ textarea {
 
 .template-routes__add {
   align-self: flex-start;
+}
+
+/* ── 批量打印页：和配置中心同级，铺满标题栏以下；页头、内容、底部操作条，复用配置中心的这几块 ── */
+.batch-page {
+  position: absolute;
+  z-index: var(--layer-config);
+  inset: var(--title-bar-height) 0 0 0;
+  display: grid;
+  grid-template-areas:
+    "back header"
+    "content content"
+    "actions actions";
+  grid-template-columns: var(--config-nav-width) minmax(0, 1fr);
+  grid-template-rows: var(--config-header-height) minmax(0, 1fr) var(--config-actions-height);
+  background: var(--color-housing);
+  animation: config-enter var(--config-duration) ease-out;
+}
+
+/* 提示条抬到底部操作条上方：不盖住「打印」「暂停」 */
+.batch-page ~ .notice-bar {
+  bottom: calc(var(--config-actions-height) + var(--space-5));
+}
+
+.batch-page__inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.batch-data__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.batch-data__paste {
+  margin-top: var(--space-3);
+}
+
+.batch-data__status {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-data);
+  font-size: 13px;
+}
+
+.batch-data__issue {
+  margin: var(--space-2) 0 0;
+  color: var(--color-error);
+  font-size: 13px;
+}
+
+.batch-mapping {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.batch-mapping th,
+.batch-mapping td {
+  padding: var(--space-1) var(--space-3);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.batch-mapping__row--missing th,
+.batch-mapping__hint {
+  color: var(--color-error);
+}
+
+.batch-mapping thead th {
+  color: var(--color-ink-soft);
+  font-weight: 600;
+}
+
+.batch-mapping tbody th {
+  font-family: var(--font-data);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.batch-mapping td {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.batch-mapping__hint {
+  font-size: 12px;
+}
+
+.batch-preview__summary {
+  margin: 0 0 var(--space-3);
+  font-size: 13px;
+}
+
+/* 一批的张数比打印记录保留的条数还多：非阻塞提醒，仍能打印，只是说明后果。 */
+.batch-preview__history-warning {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-3);
+  color: var(--color-warning);
+  font-size: 12px;
+}
+
+.batch-preview__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--batch-label-pane-width);
+  gap: var(--space-4);
+  height: var(--batch-preview-height);
+}
+
+.batch-preview__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 数据表自己滚动（纵向、横向），页面不跟着变宽 */
+.batch-rows {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-field);
+  font-size: 12px;
+}
+
+/* 勾选 32px、行号 56px、每列至少 120px、结果 160px */
+.batch-rows__row {
+  display: grid;
+  grid-template-columns: 32px 56px repeat(var(--batch-columns), minmax(120px, 1fr)) 160px;
+  align-items: center;
+  min-width: calc(248px + var(--batch-columns) * 120px);
+  height: var(--batch-row-height);
+  border-bottom: 1px solid var(--color-housing);
+}
+
+.batch-rows__row > * {
+  overflow: hidden;
+  padding: 0 var(--space-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-rows__row--head {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: var(--color-paper);
+  color: var(--color-ink-soft);
+  font-weight: 600;
+}
+
+.batch-rows__body {
+  position: relative;
+  min-width: calc(248px + var(--batch-columns) * 120px);
+}
+
+.batch-rows__body > .batch-rows__row {
+  position: absolute;
+  right: 0;
+  left: 0;
+}
+
+.batch-rows__cell {
+  font-family: var(--font-data);
+  user-select: text;
+}
+
+.batch-rows__row--problem {
+  background: var(--color-warning-wash);
+}
+
+/* 当前预览的这一行：左侧 4px 胶带色竖条，和配置中心当前页的标记一致 */
+.batch-rows__row--current {
+  box-shadow: inset 4px 0 0 var(--color-tape);
+}
+
+.batch-rows__row--skipped {
+  color: var(--color-ink-soft);
+}
+
+.batch-rows__failed {
+  display: inline-flex;
+  gap: var(--space-2);
+  color: var(--color-error);
+}
+
+.batch-preview__label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+}
+
+.batch-preview__label .label-preview {
+  flex: 1;
+  min-height: 0;
+}
+
+.batch-preview__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+
+.batch-preview__problems {
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--color-warning);
+  font-size: 12px;
+}
+
+.batch-progress {
+  flex: none;
+  width: 200px;
+  accent-color: var(--color-tape);
+}
+
+/* 窄窗口（1024）：预览区改成上下排列，数据表固定高度 */
+@media (max-width: 1099px) {
+  .batch-preview__body {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  .batch-rows {
+    flex: none;
+    height: var(--batch-preview-height);
+  }
+
+  .batch-preview__label {
+    height: var(--batch-preview-height);
+  }
 }

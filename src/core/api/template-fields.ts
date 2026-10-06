@@ -23,6 +23,15 @@ export function templateFields(template: LabelTemplate): TemplateFields {
   return labelFields(template);
 }
 
+/**
+ * 判断「这个模板和当初用的是不是同一回事」：批量打印重打失败的标签时用，字段或纸张变了
+ * （哪怕模板编号没变）就不能按旧样子重打，要能查出来。只看会影响印出来的东西的部分，
+ * 不比较名字、备注这类不影响批量打印结果的设置。
+ */
+export function templateFingerprint(template: LabelTemplate): string {
+  return JSON.stringify({ fields: templateFields(template), paper: template.paper });
+}
+
 function labelFields(template: QrLabelTemplate): TemplateFields {
   const names: string[] = [];
   if (template.fieldsArea.mode === 'pick') {

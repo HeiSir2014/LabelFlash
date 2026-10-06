@@ -1,4 +1,5 @@
 import { createSocket, type RemoteInfo, type Socket } from 'node:dgram';
+import { AnswerThrottle } from '../../core/mdns/answer-throttle';
 import {
   type DnsMessage,
   type DnsName,
@@ -8,7 +9,9 @@ import {
 } from '../../core/mdns/dns-message';
 import type { MdnsZone } from '../../core/mdns/dns-sd';
 import { announcement, answerQuery, conflictingNames, goodbye, probeQuery } from '../../core/mdns/mdns-responder';
-import { isLanClientAddress, isSameSubnet, type LanInterface } from '../api/network';
+import type { Clock } from '../../core/types';
+import { isSameSubnet, type LanInterface } from '../api/network';
+import { RateLimiter } from '../api/rate-limiter';
 
 /** mDNS 的端口和 IPv4 组播地址（RFC 6762 §3）。 */
 export const MDNS_PORT = 5353;
@@ -22,6 +25,13 @@ const ANNOUNCE_INTERVAL_MS = 1_000;
 const MULTICAST_TTL = 255;
 /** 默认绑所有 IPv4 网卡：每块局域网网卡都要收到查询。 */
 const ALL_IPV4 = '0.0.0.0';
+/** 每个来源每秒最多 5 个单播回答、突发 10 个：正常的客户端几秒才问一次，挡住拿我们当放大器的。 */
+export const MDNS_UNICAST_LIMITS = { perSecond: 5, burst: 10 } as const;
+/**
+ * 宣告之后又看到撞名，回去重新探测核实（RFC 6762 §9）：两次核实至少隔 10 秒，
+ * 别的设备一直发同样的回答时不会让我们一直探测（RFC 6762 §8.1 的「10 秒内 15 次冲突要等 5 秒」同一个意思）。
+ */
+const REPROBE_INTERVAL_MS = 10_000;
 
 /** 宣告、组播回答发到哪里。 */
 export interface MdnsDestination {
@@ -34,8 +44,9 @@ export interface MdnsAdvertiserDeps {
   interfaces: () => LanInterface[];
   /** 一块网卡上要回答的区域（用那块网卡的地址）。 */
   zoneFor: (iface: LanInterface) => MdnsZone;
-  /** 别的设备在用我们的名字：IppSharing 换个名字重新广播。 */
+  /** 探测时发现别的设备在用我们的名字：IppSharing 换个名字重新广播。 */
   onConflict: (names: DnsName[]) => void;
+  clock: Clock;
   /** 绑定的端口；测试里用 0（系统随便给），默认 5353。 */
   bindPort?: number | undefined;
   /** 绑定的地址；测试里用 127.0.0.1，默认 0.0.0.0。 */
@@ -64,7 +75,7 @@ function describe(error: unknown): string {
 /**
  * mDNS 的收发（node:dgram）。报文的内容都由 core 的 mdns-responder 决定，这里只管套接字、网卡和时机。
  * 绑定 0.0.0.0:5353 时带 reuseAddr：Windows 的 DNS 客户端服务、macOS 的 mDNSResponder 都占着这个端口，大家共用。
- * 只回答局域网地址发来的查询，只回答本程序自己的记录。
+ * 只理选中网卡所在网段来的包，只回答本程序自己的记录；组播回答每条记录每秒最多一次，单播回答按来源限速。
  */
 export class MdnsAdvertiser {
   private socket: Socket | null = null;
@@ -74,8 +85,14 @@ export class MdnsAdvertiser {
   private isProbing = false;
   /** 每次启动、刷新加一：上一轮还没宣告完就又刷新了，旧的那一轮停下。 */
   private round = 0;
+  private readonly throttle = new AnswerThrottle();
+  private readonly unicastLimiter: RateLimiter;
+  /** 上次因为撞名回去重新探测的时刻。 */
+  private lastReprobeAt: number | null = null;
 
-  constructor(private readonly deps: MdnsAdvertiserDeps) {}
+  constructor(private readonly deps: MdnsAdvertiserDeps) {
+    this.unicastLimiter = new RateLimiter(deps.clock, MDNS_UNICAST_LIMITS);
+  }
 
   private get isMulticast(): boolean {
     return this.deps.destination === undefined;
@@ -214,21 +231,18 @@ export class MdnsAdvertiser {
   }
 
   private receive(bytes: Buffer, remote: RemoteInfo): void {
-    // 只理局域网里的设备：不给别处来的包当放大器。自己发出又回环收到的也不理。
-    if (!isLanClientAddress(remote.address)) {
+    // 只理选中网卡所在网段来的包：不给别处来的包当放大器，也不理别的网段的冲突。
+    const iface = this.interfaces.find((item) => isSameSubnet(item.address, remote.address, item.netmask));
+    if (iface === undefined) {
       return;
     }
+    // 自己发出又回环收到的不理。
     const ownPort = this.boundPort();
-    if (remote.port === ownPort && this.interfaces.some((iface) => iface.address === remote.address)) {
+    if (remote.port === ownPort && this.interfaces.some((item) => item.address === remote.address)) {
       return;
     }
     const message = decodeDnsMessage(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
     if (message === null) {
-      return;
-    }
-    const iface =
-      this.interfaces.find((item) => isSameSubnet(item.address, remote.address, item.netmask)) ?? this.interfaces[0];
-    if (iface === undefined) {
       return;
     }
     const zone = this.deps.zoneFor(iface);
@@ -236,8 +250,7 @@ export class MdnsAdvertiser {
     if (message.isResponse || (this.isProbing && message.authorities.length > 0)) {
       const names = conflictingNames(message, zone);
       if (names.length > 0) {
-        this.deps.log(`[ipp] mDNS name conflict: ${names.map(nameText).join(', ')}`);
-        this.deps.onConflict(names);
+        this.handleConflict(names);
       }
       if (message.isResponse) {
         return;
@@ -249,9 +262,32 @@ export class MdnsAdvertiser {
       return;
     }
     if (isLegacy || message.questions.some((question) => question.unicastResponse)) {
-      this.socket?.send(encodeDnsMessage(reply), remote.port, remote.address);
-    } else {
-      void this.multicast(iface, reply);
+      if (this.unicastLimiter.take(remote.address)) {
+        this.socket?.send(encodeDnsMessage(reply), remote.port, remote.address);
+      }
+      return;
     }
+    const answers = this.throttle.take(iface.address, reply.answers, this.deps.clock.now());
+    if (answers.length > 0) {
+      void this.multicast(iface, { ...reply, answers });
+    }
+  }
+
+  /**
+   * RFC 6762 §9：探测时撞名，名字归别人，改名；已经宣告过了再撞名，先回去重新探测核实
+   * （可能只是别的设备缓存里的旧记录），核实时还撞才改名。核实最多 10 秒一次。
+   */
+  private handleConflict(names: DnsName[]): void {
+    this.deps.log(`[ipp] mDNS name conflict: ${names.map(nameText).join(', ')}`);
+    if (this.isProbing) {
+      this.deps.onConflict(names);
+      return;
+    }
+    const now = this.deps.clock.now();
+    if (this.lastReprobeAt !== null && now - this.lastReprobeAt < REPROBE_INTERVAL_MS) {
+      return;
+    }
+    this.lastReprobeAt = now;
+    void this.probeAndAnnounce();
   }
 }

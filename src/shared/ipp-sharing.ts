@@ -29,7 +29,7 @@ export type IppServerState =
   /** 不是端口的问题：详情在日志里。 */
   | { state: 'failed'; reason: 'START_ERROR' };
 
-/** 自动发现（mDNS）：on = 正在广播；off = 没开（共享没开，或开发版关掉了）；blocked = 防火墙没放行 UDP 5353；failed = 绑不上端口或名字冲突太多。 */
+/** 自动发现（mDNS）：on = 正在广播；off = 没开（共享没开，或开发版关掉了）；blocked = 防火墙没放行 UDP 5353；failed = 绑不上端口或名字冲突太多（稍后自动重试）。 */
 export type DiscoveryState = 'off' | 'on' | 'blocked' | 'failed';
 
 /** 一台共享打印机（一种纸）。 */

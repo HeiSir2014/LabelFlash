@@ -18,6 +18,7 @@ import { ClientApprovals, type PendingClient } from './client-approvals';
 import { DEFAULT_IPP_PORTS, IppHttpServer } from './ipp-http-server';
 import { IppJobProcessor, type IppJobProcessorDeps } from './ipp-job-processor';
 import { MdnsAdvertiser } from './mdns-advertiser';
+import { discoveryRetryDelayMs, FIRST_NAMES, hostLabelFor, type MdnsNames, renamedAfterConflict } from './mdns-naming';
 import { SharePassword } from './share-password';
 
 /** 仅开发 / E2E：共享用这个端口（0 = 系统随便给一个），不和本机上跑着的安装版抢 8631。安装版忽略它。 */
@@ -28,12 +29,9 @@ export const IPP_DISCOVERY_ENV = 'CDL_LABELFLASH_IPP_DISCOVERY';
 export const IPP_LOOPBACK_ENV = 'CDL_LABELFLASH_IPP_LOOPBACK';
 const LOOPBACK_HOST = '127.0.0.1';
 const MAX_PORT = 65_535;
-/** mDNS 主机名：labelflash-<实例编号前 8 位>.local。和电脑自己的名字分开，不和系统的响应器抢名字。 */
-const HOST_PREFIX = 'labelflash-';
+/** mDNS 主机名里取实例编号的前 8 位（见 mdns-naming.ts 的 hostLabelFor）。 */
 const HOST_ID_CHARS = 8;
 const MDNS_DOMAIN = 'local';
-/** 名字冲突时最多换到「 (9)」：再冲突就不广播了，按地址添加照样能用。 */
-const MAX_NAME_SERIAL = 9;
 /** 打印机资料读不到分辨率时按 203dpi：热敏标签机最常见的分辨率（和打印时的兜底一致）。 */
 const FALLBACK_DPI = 203;
 /** UUID 第 13 位写版本号 5（按名字算出来的），第 17 位的高两位写 10（RFC 4122 变体）。 */
@@ -139,7 +137,11 @@ export class IppSharing {
   /** 每次启动加一：查占用程序是后台做的，查到时如果已经又重启过，结果就作废。 */
   private generation = 0;
   /** 名字冲突后加在实例名后面的序号。 */
-  private nameSerial = 1;
+  private names: MdnsNames = FIRST_NAMES;
+  /** 自动发现连续失败了几次（决定下次重试等多久）。 */
+  private discoveryAttempts = 0;
+  /** 等着的那次重试；没有为 null。 */
+  private cancelRetry: (() => void) | null = null;
 
   constructor(private readonly deps: IppSharingDeps) {
     this.book = new IppJobBook(deps.clock);
@@ -182,6 +184,7 @@ export class IppSharing {
       interfaces: deps.lanInterfaces,
       zoneFor: (iface) => this.zoneFor(iface),
       onConflict: (names) => void this.renameAfterConflict(names),
+      clock: deps.clock,
       sleep: deps.sleep,
       log: deps.log,
     });
@@ -364,10 +367,18 @@ export class IppSharing {
       this.discovery = 'blocked';
       return;
     }
-    this.discovery = (await this.advertiser.start()) ? 'on' : 'failed';
+    if (await this.advertiser.start()) {
+      this.discovery = 'on';
+      this.discoveryAttempts = 0;
+      return;
+    }
+    // 绑不上 5353（被别的程序独占）：稍后再试，不永久放弃。
+    this.discovery = 'failed';
+    this.scheduleDiscoveryRetry();
   }
 
   private async shutDown(): Promise<void> {
+    this.cancelDiscoveryRetry();
     await this.advertiser.stop();
     await this.server.stop();
     // 收下还没处理的任务都中止（对方会看到原因）；还在等确认的按超时处理。
@@ -445,7 +456,7 @@ export class IppSharing {
 
   private hostLabel(): string {
     const id = (this.deps.settings().ippInstanceId ?? '').replaceAll('-', '').slice(0, HOST_ID_CHARS);
-    return `${HOST_PREFIX}${id}`;
+    return hostLabelFor(id, this.names.hostSerial);
   }
 
   private zoneFor(iface: LanInterface): MdnsZone {
@@ -456,7 +467,7 @@ export class IppSharing {
       computerName: this.deps.computerName(),
       productNameAscii: this.deps.productNameAscii,
       authentication: this.password.isSet() ? ('basic' as const) : ('none' as const),
-      serial: this.nameSerial,
+      serial: this.names.instanceSerial,
     };
     return {
       host: [host, MDNS_DOMAIN],
@@ -465,17 +476,47 @@ export class IppSharing {
     };
   }
 
-  /** 别的设备在用我们的名字：实例名后面加个序号重新探测、宣告；换到 9 还冲突就不广播了。 */
-  private async renameAfterConflict(names: DnsName[]): Promise<void> {
-    this.deps.log(`[ipp] renaming after a conflict on ${names.map((name) => name.join('.')).join(', ')}`);
-    if (this.nameSerial >= MAX_NAME_SERIAL) {
+  /**
+   * 探测时别的设备在用我们的名字：主机名撞了换主机名，实例名撞了换实例名，再探测、宣告；
+   * 一轮里换太多次就先停广播，过一会儿从头再试（不永久放弃，按地址添加一直能用）。
+   */
+  private async renameAfterConflict(conflicting: DnsName[]): Promise<void> {
+    this.deps.log(`[ipp] renaming after a conflict on ${conflicting.map((name) => name.join('.')).join(', ')}`);
+    const next = renamedAfterConflict(this.names, conflicting, [this.hostLabel(), MDNS_DOMAIN]);
+    if (next === null) {
       await this.restarts.run(() => this.advertiser.stop());
       this.discovery = 'failed';
       this.publish();
+      this.scheduleDiscoveryRetry();
       return;
     }
-    this.nameSerial += 1;
+    this.names = next;
     await this.restarts.run(() => this.advertiser.refresh());
+  }
+
+  /** 自动发现失败后稍后重试：名字从头来，等的时间越来越长（最多 15 分钟）。 */
+  private scheduleDiscoveryRetry(): void {
+    this.cancelDiscoveryRetry();
+    const generation = this.generation;
+    const delayMs = discoveryRetryDelayMs(this.discoveryAttempts);
+    this.discoveryAttempts += 1;
+    this.deps.log(`[ipp] retrying discovery in ${delayMs}ms`);
+    this.cancelRetry = this.deps.schedule(() => {
+      this.cancelRetry = null;
+      void this.restarts.run(async () => {
+        if (generation !== this.generation || this.serverState.state !== 'listening') {
+          return;
+        }
+        this.names = FIRST_NAMES;
+        await this.startDiscovery();
+        this.publish();
+      });
+    }, delayMs);
+  }
+
+  private cancelDiscoveryRetry(): void {
+    this.cancelRetry?.();
+    this.cancelRetry = null;
   }
 
   private publish(): void {

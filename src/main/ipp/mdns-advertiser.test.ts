@@ -8,8 +8,9 @@ import {
   encodeDnsMessage,
 } from '../../core/mdns/dns-message';
 import type { MdnsZone } from '../../core/mdns/dns-sd';
+import { FakeClock } from '../../core/testing/fake-clock';
 import type { LanInterface } from '../api/network';
-import { MdnsAdvertiser } from './mdns-advertiser';
+import { MDNS_UNICAST_LIMITS, MdnsAdvertiser } from './mdns-advertiser';
 
 const LOOPBACK: LanInterface = { name: 'lo', address: '127.0.0.1', netmask: '255.0.0.0' };
 const INSTANCE = ['60×40 标签 @ 前台', '_ipp', '_tcp', 'local'];
@@ -58,17 +59,33 @@ async function sink(): Promise<{ port: number; received: DnsMessage[] }> {
   return { port: socket.address().port, received };
 }
 
-async function startAdvertiser() {
+/** 别的设备用我们的实例名、不同的内容回答。 */
+const THEIRS: DnsMessage = {
+  id: 0,
+  isResponse: true,
+  questions: [],
+  answers: [{ type: 'SRV', name: INSTANCE, ttl: 120, cacheFlush: true, port: 631, target: ['other', 'local'] }],
+  authorities: [],
+  additionals: [],
+};
+
+interface AdvertiserOptions {
+  interfaces?: LanInterface[];
+  sleep?: (ms: number) => Promise<void>;
+}
+
+async function startAdvertiser(options: AdvertiserOptions = {}) {
   const conflicts: DnsName[] = [];
   const announced = await sink();
   const advertiser = new MdnsAdvertiser({
-    interfaces: () => [LOOPBACK],
+    interfaces: () => options.interfaces ?? [LOOPBACK],
     zoneFor,
     onConflict: (names) => conflicts.push(...names),
     bindPort: 0,
     bindAddress: '127.0.0.1',
     destination: { address: '127.0.0.1', port: announced.port },
-    sleep: async () => undefined,
+    clock: new FakeClock(),
+    sleep: options.sleep ?? (async () => undefined),
     log: () => undefined,
   });
   expect(await advertiser.start()).toBe(true);
@@ -130,19 +147,47 @@ describe('MdnsAdvertiser', () => {
     expect(await ask(port, query(['_http', '_tcp', 'local'], DNS_TYPES.PTR))).toBeNull();
   });
 
-  test('reports another device answering with its name', async () => {
-    const { port, conflicts } = await startAdvertiser();
-    const theirs: DnsMessage = {
-      id: 0,
-      isResponse: true,
-      questions: [],
-      answers: [{ type: 'SRV', name: INSTANCE, ttl: 120, cacheFlush: true, port: 631, target: ['other', 'local'] }],
-      authorities: [],
-      additionals: [],
-    };
-    clientSocket().send(encodeDnsMessage(theirs), port, '127.0.0.1');
+  // RFC 6762 §9：探测时撞名才改名。
+  test('renames when another device answers with its name while it probes', async () => {
+    // sleep 不返回：一直停在第一次探测之后。
+    const { port, conflicts } = await startAdvertiser({ sleep: () => new Promise(() => undefined) });
+    clientSocket().send(encodeDnsMessage(THEIRS), port, '127.0.0.1');
     await waitUntil(() => conflicts.length > 0);
     expect(conflicts).toEqual([INSTANCE]);
+  });
+
+  // 宣告之后再撞名：先回去重新探测核实，不直接改名（别的设备缓存里的旧记录也会这样出现）。
+  test('probes again instead of renaming when a conflict arrives after announcing', async () => {
+    const { port, conflicts, announced } = await startAdvertiser();
+    const probes = () => announced.received.filter((message) => !message.isResponse).length;
+    await waitUntil(() => announced.received.filter((message) => message.isResponse).length >= 2);
+    clientSocket().send(encodeDnsMessage(THEIRS), port, '127.0.0.1');
+    await waitUntil(() => probes() >= 6);
+    expect(probes()).toBe(6);
+    expect(conflicts).toEqual([]);
+  });
+
+  // 只理选中网卡所在网段来的包：别处来的查询不答（不给人当放大器）。
+  test('ignores packets from outside the selected subnets', async () => {
+    const { port } = await startAdvertiser({
+      interfaces: [{ name: 'lo', address: '127.0.0.2', netmask: '255.255.255.255' }],
+    });
+    expect(await ask(port, query(['_ipp', '_tcp', 'local'], DNS_TYPES.PTR))).toBeNull();
+  });
+
+  test('limits how many unicast answers one source gets', async () => {
+    const { port } = await startAdvertiser();
+    const socket = clientSocket();
+    let replies = 0;
+    socket.on('message', () => {
+      replies += 1;
+    });
+    for (let index = 0; index < 40; index += 1) {
+      socket.send(encodeDnsMessage(query(['_ipp', '_tcp', 'local'], DNS_TYPES.PTR)), port, '127.0.0.1');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(replies).toBeGreaterThan(0);
+    expect(replies).toBeLessThanOrEqual(MDNS_UNICAST_LIMITS.burst);
   });
 
   test('says goodbye with a zero TTL when it stops', async () => {

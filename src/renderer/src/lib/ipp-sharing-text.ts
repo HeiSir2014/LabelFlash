@@ -101,7 +101,7 @@ export function describeDiscovery(status: IppSharingStatus): string | null {
     case 'blocked':
       return 'Windows 防火墙还没放行自动发现（UDP 5353）：点「添加防火墙规则」后别的电脑才能自动找到；按地址添加不受影响。';
     case 'failed':
-      return '自动发现没能开启（端口 5353 被占用，或局域网里重名太多）：按地址添加不受影响，详情见日志。';
+      return '自动发现暂时没能开启（端口 5353 被占用，或局域网里重名太多），稍后自动重试：按地址添加不受影响，详情见日志。';
   }
 }
 

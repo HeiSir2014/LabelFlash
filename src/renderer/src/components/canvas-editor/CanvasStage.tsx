@@ -5,6 +5,7 @@ import {
   type CanvasElementKind,
   type CanvasTemplate,
 } from '../../../../core/templates/canvas-model';
+import type { ElementWarning } from '../../../../shared/render-warnings';
 import { type Box, RESIZE_HANDLES } from '../../lib/canvas-edit';
 import { ELEMENT_DRAG_TYPE, pxToMm } from '../../lib/canvas-view';
 import type { GestureHandlers, GestureView } from '../../view-models/use-canvas-gesture';
@@ -22,6 +23,8 @@ interface CanvasStageProps {
   selection: readonly string[];
   /** 指针下面的元素（点中测试的结果）：画浅色框，指针变成「移动」。 */
   hoverId: string | null;
+  /** 这次排版每个元素的问题：不印的浅红底、框里写短原因；条码宽度快不够的黄框。 */
+  warnings: readonly ElementWarning[];
   gesture: GestureView;
   handlers: GestureHandlers;
   /** 外层滚动区：量「适合窗口」的大小、挂 Ctrl+滚轮。 */
@@ -60,6 +63,7 @@ export function CanvasStage({
   undoShortcut,
   selection,
   hoverId,
+  warnings,
   gesture,
   handlers,
   stageRef,
@@ -142,11 +146,20 @@ export function CanvasStage({
               style={{ inset: `calc(${CANVAS_LIMITS.safeMarginMm} * var(--mm))` }}
             />
             {template.elements.map((element) => {
+              const mine = warnings.filter((warning) => warning.elementId === element.id);
+              const omitted = mine.find((warning) => warning.level === 'omitted') ?? null;
+              // 宽度只比最小宽度多一点的条码（带着最小尺寸的提醒）：黄框提前提醒。
+              const isTight = mine.some(
+                (warning) =>
+                  warning.level === 'warning' && (warning.minWidthMm !== null || warning.minHeightMm !== null),
+              );
               const classes = [
                 'canvas-overlay__box',
                 selection.includes(element.id) ? 'canvas-overlay__box--selected' : null,
                 hoverId === element.id ? 'canvas-overlay__box--hover' : null,
                 element.locked ? 'canvas-overlay__box--locked' : null,
+                omitted !== null ? 'canvas-overlay__box--omitted' : null,
+                isTight ? 'canvas-overlay__box--tight' : null,
               ]
                 .filter(Boolean)
                 .join(' ');
@@ -158,6 +171,7 @@ export function CanvasStage({
                   aria-hidden="true"
                   style={boxStyle(gesture.boxes.get(element.id) ?? element)}
                 >
+                  {omitted?.short && <span className="canvas-overlay__reason">{omitted.short}</span>}
                   {single?.id === element.id &&
                     !element.locked &&
                     RESIZE_HANDLES.map((handle) => (

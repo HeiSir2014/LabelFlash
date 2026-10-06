@@ -1,8 +1,9 @@
 import { type KeyboardEvent, useRef, useState } from 'react';
 import type { CanvasTemplate } from '../../../../core/templates/canvas-model';
-import { NO_RENDER_WARNINGS, renderWarningTexts } from '../../../../shared/render-warnings';
+import { type ElementWarning, NO_RENDER_WARNINGS, renderWarningTexts } from '../../../../shared/render-warnings';
 import type { Platform } from '../../lib/app-view';
 import { clampAll, replaceElement, rotateElement } from '../../lib/canvas-edit';
+import { growToPrint } from '../../lib/canvas-fix';
 import { basicsMergeKey, historyMergeKey } from '../../lib/canvas-history';
 import { designerCommand, undoShortcutLabel, zoomIn, zoomOut } from '../../lib/canvas-view';
 import { useCanvasDesigner } from '../../view-models/use-canvas-designer';
@@ -81,7 +82,15 @@ export function CanvasDesigner({
   // 切换模板那一刻，preview 还是上一个草稿的结果（生成新的要等 150ms 防抖 + 一次主进程往返）：
   // 按 templateId 核对，不是这份草稿的结果就当还没有，不然会闪一下上一个模板的标签和检查结果。
   const currentPreview = preview?.templateId === draft.id ? preview : null;
-  const checks = renderWarningTexts(currentPreview?.warnings ?? NO_RENDER_WARNINGS);
+  const warnings = currentPreview?.warnings ?? NO_RENDER_WARNINGS;
+  const checks = renderWarningTexts(warnings);
+
+  const growToPrintOf = (warning: ElementWarning) => {
+    const grown = growToPrint(draft, warning);
+    if (grown.status === 'grown') {
+      designer.commit(grown.template);
+    }
+  };
 
   /**
    * 「模板」里的名称、纸张、打印机：名称是要连续打字的输入框，纸张和打印机是下拉框、一次选择就改完，
@@ -130,6 +139,7 @@ export function CanvasDesigner({
         undoShortcut={undoShortcutLabel(platform)}
         selection={designer.selection}
         hoverId={gesture.hoverId}
+        warnings={warnings.elements}
         gesture={gesture.view}
         handlers={gesture.handlers}
         stageRef={stageRef}
@@ -152,6 +162,8 @@ export function CanvasDesigner({
             onEndMerge={designer.endMerge}
             onImportImage={(file) => designer.importImage(selected.id, file)}
             isImportingImage={designer.isImportingImage(selected.id)}
+            warnings={warnings.elements.filter((warning) => warning.elementId === selected.id)}
+            onGrowToPrint={growToPrintOf}
           />
         ) : designer.selection.length > 1 ? (
           <p className="form-hint">{`已选 ${designer.selection.length} 个元素：用上面的按钮对齐、等距、置顶置底，方向键一起移动。`}</p>

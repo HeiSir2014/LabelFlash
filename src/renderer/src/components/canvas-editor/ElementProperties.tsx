@@ -15,6 +15,7 @@ import {
   type Rotation,
 } from '../../../../core/templates/canvas-model';
 import type { PaperSize } from '../../../../shared/paper-sizes';
+import type { ElementWarning } from '../../../../shared/render-warnings';
 import { maxExtentMm } from '../../lib/canvas-edit';
 import { NumberField, Segmented, TextInput, Toggle } from '../form-controls';
 import { InsertField } from './InsertField';
@@ -58,14 +59,19 @@ export interface ElementPropertiesProps {
   onImportImage: (file: File) => void;
   /** 这个图片元素是不是正在读取（由调用方按 element.id 查 `designer.isImportingImage` 得出）。 */
   isImportingImage: boolean;
+  /** 这次排版里这个元素的问题（打印前检查里的那几条）。 */
+  warnings: readonly ElementWarning[];
+  /** 「放大到能印」：按这条问题带的最小尺寸放大。 */
+  onGrowToPrint: (warning: ElementWarning) => void;
 }
 
 /** 选中一个元素时右栏的属性：通用的位置、大小、旋转、锁定，再加这一类自己的设置。 */
 export function ElementProperties(props: ElementPropertiesProps) {
-  const { element, paper, onChange, onRotate, onEndMerge } = props;
+  const { element, paper, onChange, onRotate, onEndMerge, warnings, onGrowToPrint } = props;
   const min = CANVAS_LIMITS.minSizeMm;
   return (
     <>
+      {warnings.length > 0 && <ElementWarnings warnings={warnings} paper={paper} onGrowToPrint={onGrowToPrint} />}
       <section className="form-section">
         <h2 className="form-section__title">{CANVAS_ELEMENT_LABELS[element.kind]}</h2>
         <TextInput
@@ -125,6 +131,48 @@ export function ElementProperties(props: ElementPropertiesProps) {
         <KindProperties {...props} />
       </section>
     </>
+  );
+}
+
+/**
+ * 选中元素的问题，写在属性最上面：不印的（红）带「放大到能印」（条码有最小尺寸时）；
+ * 最小尺寸比纸还大时按钮不可用，并说明要换短一点的内容或换码制。
+ */
+function ElementWarnings({
+  warnings,
+  paper,
+  onGrowToPrint,
+}: {
+  warnings: readonly ElementWarning[];
+  paper: PaperSize;
+  onGrowToPrint: (warning: ElementWarning) => void;
+}) {
+  return (
+    <ul className="element-warnings" aria-label="这个元素的问题">
+      {warnings.map((warning) => {
+        const canGrow = warning.level === 'omitted' && (warning.minWidthMm !== null || warning.minHeightMm !== null);
+        const isPaperTooSmall =
+          (warning.minWidthMm ?? 0) > paper.widthMm || (warning.minHeightMm ?? 0) > paper.heightMm;
+        return (
+          <li key={warning.text} className={`element-warnings__item element-warnings__item--${warning.level}`}>
+            <span>{warning.text}</span>
+            {canGrow && (
+              <button
+                type="button"
+                className="button button--small"
+                disabled={isPaperTooSmall}
+                onClick={() => onGrowToPrint(warning)}
+              >
+                放大到能印
+              </button>
+            )}
+            {canGrow && isPaperTooSmall && (
+              <span className="form-hint">纸放不下这么大的条码：换短一点的内容，或换一种码制。</span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

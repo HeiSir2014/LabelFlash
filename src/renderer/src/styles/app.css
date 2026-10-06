@@ -3310,18 +3310,46 @@ textarea {
   cursor: move;
 }
 
-/* 元素框不接指针：按在哪个元素上按位置算（只有边框的矩形不挡住下面的元素），只有控制点接指针 */
+/* 元素框不接指针：按在哪个元素上按位置算（只有边框的矩形不挡住下面的元素），只有控制点接指针。
+   每个元素一圈浅色虚线（只在屏幕上，不打印）：空的文字框、没内容的条码也看得见在哪 */
 .canvas-overlay__box {
   position: absolute;
-  outline: 1px solid transparent;
+  outline: 1px dashed color-mix(in srgb, var(--color-ink-soft) 35%, transparent);
   pointer-events: none;
 }
 
 .canvas-overlay__box.canvas-overlay__box--hover {
+  outline-style: solid;
   outline-color: color-mix(in srgb, var(--color-selection) 50%, transparent);
 }
 
+/* 这一张不印的元素：浅红底，框里写短原因（「条码不印：框不够宽」） */
+.canvas-overlay__box.canvas-overlay__box--omitted {
+  outline-color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error-wash) 70%, transparent);
+}
+
+/* 条码宽度只比最小宽度多一点：黄框提前提醒 */
+.canvas-overlay__box.canvas-overlay__box--tight {
+  outline-color: var(--color-warning);
+}
+
+.canvas-overlay__reason {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
+  overflow: hidden;
+  color: var(--color-error);
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+}
+
 .canvas-overlay__box.canvas-overlay__box--selected {
+  outline-style: solid;
   outline-color: var(--color-selection);
 }
 
@@ -3466,6 +3494,33 @@ textarea {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* 选中元素的问题：属性最上面，红是这一张不印，黄是照常印但要留意 */
+.element-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.element-warnings__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-left: 4px solid var(--color-warning);
+  border-radius: var(--radius);
+  background: var(--color-warning-wash);
+  font-size: 13px;
+}
+
+.element-warnings__item--omitted {
+  border-left-color: var(--color-error);
+  background: var(--color-error-wash);
 }
 
 .layer-list {

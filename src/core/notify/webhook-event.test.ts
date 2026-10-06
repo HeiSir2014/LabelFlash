@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ScanResult } from '../scan/scan-result';
 import type { JobRecord } from '../types';
 import { payloadOf, testPayload } from './webhook-event';
-import { sanitizeWebhooks } from './webhook-model';
+import { DEFAULT_WEBHOOK_SOURCES, sanitizeWebhooks } from './webhook-model';
 
 const STATION = { name: '样衣间-1', app: '1.0.1' };
 const AT = Date.UTC(2026, 8, 28, 1, 5);
@@ -82,7 +82,9 @@ describe('sanitizeWebhooks', () => {
   };
 
   test('keeps valid endpoints and unknown events are dropped', () => {
-    expect(sanitizeWebhooks([endpoint])).toEqual([{ ...endpoint, events: ['printed', 'failed'] }]);
+    expect(sanitizeWebhooks([endpoint])).toEqual([
+      { ...endpoint, events: ['printed', 'failed'], sources: [...DEFAULT_WEBHOOK_SOURCES] },
+    ]);
   });
 
   test('drops endpoints with a bad url, id or secret name, duplicates, and anything past five', () => {

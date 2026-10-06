@@ -4,9 +4,11 @@ import {
   isWebhookUrl,
   WEBHOOK_EVENTS,
   WEBHOOK_LIMITS,
+  WEBHOOK_SOURCES,
   type WebhookEndpoint,
   type WebhookEvent,
   type WebhookEventType,
+  type WebhookSource,
 } from '../../../../../core/notify/webhook-model';
 import { RECENT_DELIVERY_COUNT } from '../../../../../shared/ipc-contract';
 import type { ConfigPage } from '../../../lib/app-view';
@@ -23,6 +25,15 @@ const EVENT_LABELS: Record<WebhookEventType, string> = {
   duplicate: '重复被拦截',
   invalid: '无法识别',
   test: '测试',
+};
+
+const SOURCE_LABELS: Record<WebhookSource, string> = {
+  scan: '扫码',
+  mobile: '手机扫码',
+  api: '本机接口',
+  ipp: '局域网共享',
+  batch: '批量打印',
+  pdf: '打印 PDF',
 };
 
 const STATE_LABELS: Record<DeliveryState, string> = {
@@ -87,6 +98,8 @@ export function WebhooksPage({
                 <span className="webhook-card__url">{endpoint.url}</span>
                 <span className="webhook-card__events">
                   {endpoint.events.map((event) => EVENT_LABELS[event]).join('、') || '没有勾选事件'}
+                  {' · '}
+                  {endpoint.sources.map((source) => SOURCE_LABELS[source]).join('、') || '没有勾选来源'}
                 </span>
               </div>
               <Switch
@@ -180,6 +193,11 @@ function EndpointEditor({
       ...draft,
       events: WEBHOOK_EVENTS.filter((item) => (item === event ? isOn : draft.events.includes(item))),
     });
+  const toggleSource = (source: WebhookSource, isOn: boolean) =>
+    setDraft({
+      ...draft,
+      sources: WEBHOOK_SOURCES.filter((item) => (item === source ? isOn : draft.sources.includes(item))),
+    });
   const issue = endpointIssue(draft);
   return (
     <section className="config-card form-section" aria-labelledby={titleId}>
@@ -227,6 +245,18 @@ function EndpointEditor({
           onChange={(isOn) => toggleEvent(event, isOn)}
         />
       ))}
+      <fieldset className="webhook-editor__sources">
+        <legend className="form-hint">发哪些来源的打印结果</legend>
+        {WEBHOOK_SOURCES.map((source) => (
+          <Toggle
+            key={source}
+            label={SOURCE_LABELS[source]}
+            checked={draft.sources.includes(source)}
+            onChange={(isOn) => toggleSource(source, isOn)}
+          />
+        ))}
+        <p className="form-hint">批量打印、打印 PDF 一次几千张，每张一条通知；接收方要逐张记录时才勾上。</p>
+      </fieldset>
       <Toggle label="启用" checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} />
       <div className="webhook-editor__actions">
         {issue && isDirty ? (

@@ -5,6 +5,8 @@ import { runInTransaction } from './database';
 import { readEnum, readInteger, readString } from './row-readers';
 
 const EVENT_TYPES: readonly WebhookEventType[] = [...WEBHOOK_EVENTS, 'test'];
+/** 等待队列里被放弃的那些在发送记录里写的原因。 */
+const PENDING_GIVEN_UP_ERROR = '排队太久或太多，已放弃';
 const COLUMNS = `id, endpoint_id, event_id, event, payload, state, attempts, last_status, last_error,
   created_at, next_attempt_at, updated_at`;
 
@@ -23,8 +25,16 @@ export class SqliteWebhookStore {
   private readonly selectOne: StatementSync;
   private readonly update: StatementSync;
   private readonly prune: StatementSync;
+  private readonly giveUpPending: StatementSync;
 
   constructor(private readonly db: DatabaseSync) {
+    // 待发送的队列也要有上限：接收方长时间不通、接口停用后留着的，不能让这张表无限长（WEBHOOK_LIMITS）。
+    this.giveUpPending = db.prepare(`
+      UPDATE webhook_deliveries
+      SET state = 'failed', last_error = :error, next_attempt_at = NULL, updated_at = :now
+      WHERE state = 'pending' AND (created_at < :olderThan OR id NOT IN (
+        SELECT id FROM webhook_deliveries WHERE state = 'pending' ORDER BY id DESC LIMIT :keep
+      ))`);
     this.insert = db.prepare(`
       INSERT INTO webhook_deliveries
         (endpoint_id, event_id, event, payload, state, attempts, created_at, next_attempt_at, updated_at)
@@ -46,6 +56,18 @@ export class SqliteWebhookStore {
       DELETE FROM webhook_deliveries WHERE state != 'pending' AND id NOT IN (
         SELECT id FROM webhook_deliveries WHERE state != 'pending' ORDER BY id DESC LIMIT :keep
       )`);
+  }
+
+  /**
+   * 放弃等太久（created_at 早于 olderThan）或排在最新 keep 条之外的待发送记录，标成失败（发送记录里看得到原因），
+   * 再按已完成的条数上限清理。返回放弃了几条。
+   */
+  prunePending({ olderThan, keep }: { olderThan: number; keep: number }, now: number): number {
+    const { changes } = this.giveUpPending.run({ olderThan, keep, now, error: PENDING_GIVEN_UP_ERROR });
+    if (changes > 0) {
+      this.prune.run({ keep: WEBHOOK_LIMITS.keptDeliveries });
+    }
+    return Number(changes);
   }
 
   enqueue(deliveries: readonly NewDelivery[], now: number): void {

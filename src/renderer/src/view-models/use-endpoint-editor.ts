@@ -1,5 +1,9 @@
 import { useCallback, useState } from 'react';
-import { DEFAULT_WEBHOOK_EVENTS, type WebhookEndpoint } from '../../../core/notify/webhook-model';
+import {
+  DEFAULT_WEBHOOK_EVENTS,
+  DEFAULT_WEBHOOK_SOURCES,
+  type WebhookEndpoint,
+} from '../../../core/notify/webhook-model';
 import { deepEqual } from '../lib/deep-equal';
 
 /**
@@ -23,6 +27,7 @@ export function useEndpointEditor() {
         url: 'https://',
         secretName: null,
         events: [...DEFAULT_WEBHOOK_EVENTS],
+        sources: [...DEFAULT_WEBHOOK_SOURCES],
         enabled: true,
       }),
     [start],

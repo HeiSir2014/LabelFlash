@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Delivery } from '../../core/notify/delivery';
-import type { WebhookEndpoint } from '../../core/notify/webhook-model';
+import { WEBHOOK_LIMITS, WEBHOOK_SOURCES, type WebhookEndpoint } from '../../core/notify/webhook-model';
 import { FakeClock } from '../../core/testing/fake-clock';
 import type { JobRecord } from '../../core/types';
 import { openDatabase } from '../storage/database';
@@ -17,6 +17,7 @@ const ENDPOINT: WebhookEndpoint = {
   url: 'https://erp.example.com/hooks',
   secretName: null,
   events: ['printed', 'failed'],
+  sources: ['scan', 'mobile', 'api', 'ipp'],
   enabled: true,
 };
 
@@ -173,5 +174,44 @@ describe('WebhookOutbox', () => {
       schedule: () => () => {},
     });
     expect(() => broken.enqueueResult(job('j1'), null)).not.toThrow();
+  });
+
+  test('queues batch and PDF results only for endpoints that chose those sources', async () => {
+    const everything = { ...ENDPOINT, id: 'all', sources: [...WEBHOOK_SOURCES] };
+    const { outbox, sent } = createOutbox([ENDPOINT, everything]);
+    outbox.enqueueResult({ ...job('b1'), source: 'batch', batch: { id: 'b', row: 1, copy: 1 } }, null);
+    outbox.enqueueResult(job('s1'), null);
+    await outbox.processDue();
+    expect(sent).toEqual([
+      { endpointId: 'all', eventId: 'b1' },
+      { endpointId: 'erp', eventId: 's1' },
+      { endpointId: 'all', eventId: 's1' },
+    ]);
+  });
+
+  test('gives up on deliveries that waited too long or overflow the queue', () => {
+    const { outbox, store, clock } = createOutbox([{ ...ENDPOINT, enabled: true }]);
+    store.enqueue(
+      [{ endpointId: 'erp', eventId: 'old', event: 'printed', payload: '{}' }],
+      clock.now() - WEBHOOK_LIMITS.pendingMaxAgeMs - 1,
+    );
+    clock.advance(WEBHOOK_LIMITS.pendingPruneIntervalMs);
+    outbox.enqueueResult(job('new'), null);
+    const states = new Map(store.recent(10).map((delivery) => [delivery.eventId, delivery.state]));
+    expect(states.get('old')).toBe('failed');
+    expect(states.get('new')).toBe('pending');
+  });
+});
+
+describe('SqliteWebhookStore.prunePending', () => {
+  test('keeps only the newest pending deliveries up to the limit', () => {
+    const store = new SqliteWebhookStore(openDatabase(':memory:'));
+    store.enqueue(
+      ['a', 'b', 'c'].map((eventId) => ({ endpointId: 'erp', eventId, event: 'printed' as const, payload: '{}' })),
+      1_000,
+    );
+    expect(store.prunePending({ olderThan: 0, keep: 2 }, 2_000)).toBe(1);
+    expect(store.pendingHeads().map((delivery) => delivery.eventId)).toEqual(['b']);
+    expect(store.recent(10).find((delivery) => delivery.eventId === 'a')?.lastError).toBe('排队太久或太多，已放弃');
   });
 });

@@ -1,7 +1,7 @@
 import type { Delivery } from '../../core/notify/delivery';
 import { judgeResponse, nextAttemptAt } from '../../core/notify/delivery-schedule';
 import { eventOf, payloadOf, type Station, testPayload } from '../../core/notify/webhook-event';
-import type { WebhookEndpoint } from '../../core/notify/webhook-model';
+import { WEBHOOK_LIMITS, type WebhookEndpoint, webhookSourceOf } from '../../core/notify/webhook-model';
 import type { ScanResult } from '../../core/scan/scan-result';
 import type { Clock, JobRecord } from '../../core/types';
 import type { NewDelivery, SqliteWebhookStore } from '../storage/sqlite-webhook-store';
@@ -30,6 +30,7 @@ export class WebhookOutbox {
   private cancelTimer: (() => void) | null = null;
   private isRunning = false;
   private isRerunNeeded = false;
+  private lastPendingPruneAt = Number.NEGATIVE_INFINITY;
 
   constructor(private readonly deps: WebhookOutboxDeps) {}
 
@@ -42,15 +43,25 @@ export class WebhookOutbox {
     this.cancelTimer = null;
   }
 
-  /** 打印记录写入后调用：为订阅了这个事件的接口入队。出任何错都只记日志，不影响打印。 */
+  /** 打印记录写入后调用：为订阅了这个事件、这个来源的接口入队。出任何错都只记日志，不影响打印。 */
   enqueueResult(job: JobRecord, scan: ScanResult | null): void {
     try {
       const event = eventOf(job.status);
-      const payload = JSON.stringify(payloadOf(job, scan, this.deps.station));
-      const deliveries: NewDelivery[] = this.deps
+      const source = webhookSourceOf(job);
+      const endpoints = this.deps
         .endpoints()
-        .filter((endpoint) => endpoint.enabled && endpoint.events.includes(event))
-        .map((endpoint) => ({ endpointId: endpoint.id, eventId: job.id, event, payload }));
+        .filter((endpoint) => endpoint.enabled && endpoint.events.includes(event) && endpoint.sources.includes(source));
+      if (endpoints.length === 0) {
+        return;
+      }
+      const payload = JSON.stringify(payloadOf(job, scan, this.deps.station));
+      const deliveries: NewDelivery[] = endpoints.map((endpoint) => ({
+        endpointId: endpoint.id,
+        eventId: job.id,
+        event,
+        payload,
+      }));
+      this.prunePendingNow();
       this.deps.store.enqueue(deliveries, this.deps.clock.now());
       if (deliveries.length > 0) {
         this.kick();
@@ -175,6 +186,22 @@ export class WebhookOutbox {
       },
       this.deps.clock.now(),
     );
+  }
+
+  /** 等待队列的上限（WEBHOOK_LIMITS）：最多每 pendingPruneIntervalMs 查一次，不是每张都查。 */
+  private prunePendingNow(): void {
+    const now = this.deps.clock.now();
+    if (now - this.lastPendingPruneAt < WEBHOOK_LIMITS.pendingPruneIntervalMs) {
+      return;
+    }
+    this.lastPendingPruneAt = now;
+    const givenUp = this.deps.store.prunePending(
+      { olderThan: now - WEBHOOK_LIMITS.pendingMaxAgeMs, keep: WEBHOOK_LIMITS.maxPendingDeliveries },
+      now,
+    );
+    if (givenUp > 0) {
+      console.warn(`[WebhookOutbox] gave up ${givenUp} deliveries that waited too long or overflowed the queue`);
+    }
   }
 
   private kick(): void {

@@ -65,7 +65,47 @@ describe('designerCommand', () => {
     expect(designerCommand(key('y', { ctrlKey: true }))).toEqual({ kind: 'redo' });
     expect(designerCommand(key('c', { metaKey: true }))).toEqual({ kind: 'copy' });
     expect(designerCommand(key('v', { ctrlKey: true }))).toEqual({ kind: 'paste' });
-    expect(designerCommand(key('a', { ctrlKey: true }))).toBeNull();
+    expect(designerCommand(key('b', { ctrlKey: true }))).toBeNull();
+  });
+
+  test('selects all with Ctrl+A or Command+A', () => {
+    expect(designerCommand(key('a', { ctrlKey: true }))).toEqual({ kind: 'selectAll' });
+    expect(designerCommand(key('a', { metaKey: true }))).toEqual({ kind: 'selectAll' });
+    expect(designerCommand(key('ф', { code: 'KeyA', ctrlKey: true }))).toEqual({ kind: 'selectAll' });
+  });
+
+  test('duplicates with Ctrl+D', () => {
+    expect(designerCommand(key('d', { ctrlKey: true }))).toEqual({ kind: 'duplicate' });
+  });
+
+  test('moves layers with Ctrl+] and Ctrl+[, and to the front or back with Shift', () => {
+    expect(designerCommand(key(']', { code: 'BracketRight', ctrlKey: true }))).toEqual({
+      kind: 'layer',
+      move: 'forward',
+    });
+    expect(designerCommand(key('[', { code: 'BracketLeft', ctrlKey: true }))).toEqual({
+      kind: 'layer',
+      move: 'backward',
+    });
+    // Shift 按着时 key 变成「}」「{」：按物理键位认。
+    expect(designerCommand(key('}', { code: 'BracketRight', ctrlKey: true, shiftKey: true }))).toEqual({
+      kind: 'layer',
+      move: 'front',
+    });
+    expect(designerCommand(key('{', { code: 'BracketLeft', ctrlKey: true, shiftKey: true }))).toEqual({
+      kind: 'layer',
+      move: 'back',
+    });
+  });
+
+  test('fits the window with Ctrl+0 and shows actual size with Ctrl+1', () => {
+    expect(designerCommand(key('0', { code: 'Digit0', ctrlKey: true }))).toEqual({ kind: 'zoom', to: 'fit' });
+    expect(designerCommand(key('1', { code: 'Digit1', metaKey: true }))).toEqual({ kind: 'zoom', to: 'actual' });
+    expect(designerCommand(key('0', { code: 'Numpad0', ctrlKey: true }))).toEqual({ kind: 'zoom', to: 'fit' });
+  });
+
+  test('opens the shortcut sheet with F1, which a scanner never types', () => {
+    expect(designerCommand(key('F1'))).toEqual({ kind: 'help' });
   });
 
   test('deletes with Delete or Backspace and clears the selection with Escape', () => {

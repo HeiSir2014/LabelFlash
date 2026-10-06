@@ -69,6 +69,7 @@ export function CanvasDesigner({
     zoom,
     snap: designer.snap,
     overlayRef,
+    hidden: designer.hidden,
     onSelect: designer.select,
     onCommit: designer.commit,
   });

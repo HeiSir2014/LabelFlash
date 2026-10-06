@@ -9,15 +9,18 @@ import {
   type Alignment,
   addElement,
   alignElements,
+  bringForward,
   bringToFront,
   clampAll,
   clampBox,
   copyElements,
   deleteElements,
   distributeElements,
+  duplicateElements,
   elementsInRect,
   maxExtentMm,
   moveBy,
+  moveLayer,
   newElementId,
   pasteElements,
   rectFromPoints,
@@ -26,6 +29,7 @@ import {
   rotateElement,
   roundMm,
   roundTo,
+  sendBackward,
   sendToBack,
   setBox,
   toggleId,
@@ -291,6 +295,38 @@ describe('layer order', () => {
 
   test('sends the selection to the back keeping its own order', () => {
     expect(order(sendToBack(template, ['d', 'c']))).toEqual(['c', 'd', 'a', 'b']);
+  });
+
+  test('brings the selection forward by one layer', () => {
+    expect(order(bringForward(template, ['b']))).toEqual(['a', 'c', 'b', 'd']);
+    expect(order(bringForward(template, ['a', 'b']))).toEqual(['c', 'a', 'b', 'd']);
+  });
+
+  test('sends the selection backward by one layer', () => {
+    expect(order(sendBackward(template, ['c']))).toEqual(['a', 'c', 'b', 'd']);
+    expect(order(sendBackward(template, ['c', 'd']))).toEqual(['a', 'c', 'd', 'b']);
+  });
+
+  test('leaves the order alone when the selection is already at that end', () => {
+    expect(bringForward(template, ['d'])).toBe(template);
+    expect(sendBackward(template, ['a'])).toBe(template);
+  });
+
+  test('moves one layer to an index in the element array (0 is the back)', () => {
+    // 把 a（最下层）放到下标 3，就是放到最上层。
+    expect(order(moveLayer(template, 'a', 3))).toEqual(['b', 'c', 'd', 'a']);
+    expect(order(moveLayer(template, 'd', 0))).toEqual(['d', 'a', 'b', 'c']);
+    expect(moveLayer(template, 'b', 1)).toBe(template);
+    expect(moveLayer(template, 'missing', 0)).toBe(template);
+  });
+});
+
+describe('duplicateElements', () => {
+  test('copies the selection in one step, offset and selected', () => {
+    const template = canvas(rect('a', 10, 10, 10, 5));
+    const duplicated = duplicateElements(template, ['a']);
+    expect(duplicated.ids).toEqual(['e1']);
+    expect(duplicated.template.elements[1]).toMatchObject({ x: 12, y: 12, name: '矩形 2' });
   });
 });
 

@@ -382,6 +382,54 @@ export function sendToBack(template: CanvasTemplate, ids: readonly string[]): Ca
   return { ...template, elements: [...picked, ...rest] };
 }
 
+/**
+ * 上移一层：每个选中的元素和它上面紧挨着的一个没选中的元素换位置（一次只挪一层，选中的几个相对顺序不变）。
+ * 已经在最上面、没有可换的时原样返回。
+ */
+export function bringForward(template: CanvasTemplate, ids: readonly string[]): CanvasTemplate {
+  const elements = [...template.elements];
+  let changed = false;
+  // 从上往下扫：上面的先挪，下面的选中元素才不会被刚挪上来的同伴挡住。
+  for (let index = elements.length - 2; index >= 0; index -= 1) {
+    const current = elements[index];
+    const above = elements[index + 1];
+    if (current && above && ids.includes(current.id) && !ids.includes(above.id)) {
+      elements[index] = above;
+      elements[index + 1] = current;
+      changed = true;
+    }
+  }
+  return changed ? { ...template, elements } : template;
+}
+
+/** 下移一层：和上移一层对称。已经在最下面时原样返回。 */
+export function sendBackward(template: CanvasTemplate, ids: readonly string[]): CanvasTemplate {
+  const elements = [...template.elements];
+  let changed = false;
+  for (let index = 1; index < elements.length; index += 1) {
+    const current = elements[index];
+    const below = elements[index - 1];
+    if (current && below && ids.includes(current.id) && !ids.includes(below.id)) {
+      elements[index] = below;
+      elements[index - 1] = current;
+      changed = true;
+    }
+  }
+  return changed ? { ...template, elements } : template;
+}
+
+/** 把一个元素挪到数组里的 index（0 是最下层）：图层列表拖动排序用。没有这个元素或位置没变时原样返回。 */
+export function moveLayer(template: CanvasTemplate, id: string, index: number): CanvasTemplate {
+  const from = template.elements.findIndex((element) => element.id === id);
+  const to = Math.max(0, Math.min(template.elements.length - 1, index));
+  const moving = template.elements[from];
+  if (moving === undefined || from === to) {
+    return template;
+  }
+  const rest = template.elements.filter((element) => element.id !== id);
+  return { ...template, elements: [...rest.slice(0, to), moving, ...rest.slice(to)] };
+}
+
 /** 粘贴往右下错开 2mm：和原来的叠在一起时看不出粘贴成功了。 */
 export const PASTE_OFFSET_MM = 2;
 
@@ -440,6 +488,11 @@ export function pasteElements(
     ids.push(id);
   }
   return { template: { ...template, elements }, ids, skippedImages };
+}
+
+/** 复制一份（Ctrl+D）：等于复制再粘贴，但不动设计器的剪贴板。 */
+export function duplicateElements(template: CanvasTemplate, ids: readonly string[]): Added {
+  return pasteElements(template, copyElements(template, ids));
 }
 
 /** 两个角（任意顺序）围成的框：框选用。 */

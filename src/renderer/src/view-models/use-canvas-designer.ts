@@ -9,16 +9,19 @@ import {
   type Alignment,
   addElement,
   alignElements,
+  bringForward,
   bringToFront,
   copyElements,
   type DistributeAxis,
   deleteElements,
   distributeElements,
+  duplicateElements,
   MIN_DISTRIBUTE_COUNT,
   moveBy,
   type Point,
   pasteElements,
   replaceElement,
+  sendBackward,
   sendToBack,
 } from '../lib/canvas-edit';
 import {
@@ -30,7 +33,7 @@ import {
   type Stepped,
   undo as undoStep,
 } from '../lib/canvas-history';
-import type { DesignerCommand } from '../lib/canvas-view';
+import type { DesignerCommand, LayerMove } from '../lib/canvas-view';
 import { deepEqual } from '../lib/deep-equal';
 import { megabytes } from '../lib/gray-image';
 import { notices } from '../lib/notices';
@@ -44,6 +47,11 @@ interface CanvasDesignerOptions {
   draft: CanvasTemplate;
   onChange: (next: CanvasTemplate) => void;
 }
+
+/** Ctrl+1：实物大小（1 倍 = 屏幕上的毫米和纸上一样大）。 */
+const ACTUAL_SIZE_ZOOM = 1;
+
+const NO_IDS: ReadonlySet<string> = new Set();
 
 /** 元素到上限时的提示：说清上限和下一步。 */
 const ELEMENT_LIMIT_NOTICE = `一个模板最多 ${CANVAS_LIMITS.elements} 个元素：先删掉不用的再加`;
@@ -66,6 +74,9 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
   const [showGrid, setShowGrid] = useState(true);
   const [snap, setSnap] = useState(true);
   const [importingImageIds, setImportingImageIds] = useState<ReadonlySet<string>>(new Set());
+  // 只在设计器里隐藏的元素（照常打印）：不存进模板，换模板（设计器重新挂载）就清空。
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(NO_IDS);
+  const [isShortcutSheetOpen, setIsShortcutSheetOpen] = useState(false);
   const importImagePixels = useImageImport();
 
   // 撤销、删除之后，选中的元素可能已经不在了：只留还在的。
@@ -181,6 +192,46 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
       setClipboard(pasted.template.elements.filter((element) => pasted.ids.includes(element.id)));
     }
   };
+  /** 复制一份（Ctrl+D）：不经剪贴板，剪贴板里原来的东西还在。 */
+  const duplicate = () => {
+    if (liveSelection.length === 0) {
+      return;
+    }
+    const duplicated = duplicateElements(draft, liveSelection);
+    if (duplicated.skippedImages > 0) {
+      notices.push('warning', imageLimitNotice(duplicated.skippedImages));
+    }
+    if (duplicated.ids.length + duplicated.skippedImages < liveSelection.length) {
+      notices.push('warning', ELEMENT_LIMIT_NOTICE);
+    }
+    if (duplicated.ids.length > 0) {
+      commit(duplicated.template);
+      setSelection(duplicated.ids);
+    }
+  };
+  /** 全选（Ctrl+A）：和框选一样不选锁定、隐藏的元素——它们只能在图层列表里选。 */
+  const selectAll = () =>
+    setSelection(
+      draft.elements.filter((element) => !element.locked && !hidden.has(element.id)).map((element) => element.id),
+    );
+  const moveLayers = (move: LayerMove) => {
+    const moved = {
+      forward: bringForward,
+      backward: sendBackward,
+      front: bringToFront,
+      back: sendToBack,
+    }[move](draft, liveSelection);
+    commit(moved);
+  };
+  /** 图层的「隐藏」：只在设计器里看不见、点不中（照常打印），不进模板、不进撤销历史。 */
+  const toggleHidden = (id: string) =>
+    setHidden((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) {
+        next.add(id);
+      }
+      return next;
+    });
   const remove = () => commit(deleteElements(draft, liveSelection));
   // 连续按方向键挪同一组元素算一步撤销。
   const nudge = (dx: number, dy: number) =>
@@ -250,6 +301,22 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
       case 'deselect':
         setSelection([]);
         return hasSelection;
+      case 'duplicate':
+        duplicate();
+        return hasSelection;
+      case 'selectAll':
+        // 没有元素也拦下：不然 Ctrl+A 会把整页文字选中。
+        selectAll();
+        return true;
+      case 'layer':
+        moveLayers(command.move);
+        return hasSelection;
+      case 'zoom':
+        setZoom(command.to === 'fit' ? 'fit' : ACTUAL_SIZE_ZOOM);
+        return true;
+      case 'help':
+        setIsShortcutSheetOpen(true);
+        return true;
     }
   };
 
@@ -271,11 +338,16 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
     remove,
     importImage,
     isImportingImage,
+    duplicate,
+    selectAll,
     align: (alignment: Alignment) => commit(alignElements(draft, liveSelection, alignment)),
     distribute: (axis: DistributeAxis) => commit(distributeElements(draft, liveSelection, axis)),
-    toFront: () => commit(bringToFront(draft, liveSelection)),
-    toBack: () => commit(sendToBack(draft, liveSelection)),
+    moveLayers,
     runCommand,
+    hidden,
+    toggleHidden,
+    isShortcutSheetOpen,
+    setIsShortcutSheetOpen,
     zoom,
     setZoom,
     showGrid,

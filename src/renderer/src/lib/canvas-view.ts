@@ -73,9 +73,17 @@ export type DesignerCommand =
   | { kind: 'delete' }
   | { kind: 'copy' }
   | { kind: 'paste' }
+  | { kind: 'duplicate' }
   | { kind: 'undo' }
   | { kind: 'redo' }
-  | { kind: 'deselect' };
+  | { kind: 'deselect' }
+  | { kind: 'selectAll' }
+  | { kind: 'layer'; move: LayerMove }
+  | { kind: 'zoom'; to: 'fit' | 'actual' }
+  | { kind: 'help' };
+
+/** 叠放：上移一层、下移一层、置顶、置底。 */
+export type LayerMove = 'forward' | 'backward' | 'front' | 'back';
 
 /** 按键里判断要用的几项（React 和 DOM 的键盘事件本身就满足这个形状）。 */
 export interface DesignerKey {
@@ -109,13 +117,38 @@ const CTRL_SHORTCUT_CODES: Readonly<Record<string, string>> = {
   KeyY: 'y',
   KeyC: 'c',
   KeyV: 'v',
+  KeyA: 'a',
+  KeyD: 'd',
+};
+
+/**
+ * 不随布局、Shift 变的组合键按物理键位认：Ctrl+Shift+] 的 key 是「}」，Ctrl+0 在法语键盘上的 key 是「à」。
+ * 这几个键不是字母，没有上面那种「拉丁布局里键位和字母对不上」的问题。
+ */
+const CTRL_CODE_COMMANDS: Readonly<Record<string, (shift: boolean) => DesignerCommand>> = {
+  BracketRight: (shift) => ({ kind: 'layer', move: shift ? 'front' : 'forward' }),
+  BracketLeft: (shift) => ({ kind: 'layer', move: shift ? 'back' : 'backward' }),
+  Digit0: () => ({ kind: 'zoom', to: 'fit' }),
+  Numpad0: () => ({ kind: 'zoom', to: 'fit' }),
+  Digit1: () => ({ kind: 'zoom', to: 'actual' }),
+  Numpad1: () => ({ kind: 'zoom', to: 'actual' }),
+};
+
+/** 测试或调用方没给 code 时按 key 兜底（美式键盘上的字符）。 */
+const CTRL_KEY_CODES: Readonly<Record<string, string>> = {
+  ']': 'BracketRight',
+  '}': 'BracketRight',
+  '[': 'BracketLeft',
+  '{': 'BracketLeft',
+  '0': 'Digit0',
+  '1': 'Digit1',
 };
 
 /** 拉丁小写字母：`key` 落在这个范围内时就是可信的，不需要再查 `code`。 */
 const LATIN_LETTER = /^[a-z]$/;
 
 /**
- * 画布上的按键 → 设计器命令。只认方向键、Delete / Backspace、Esc 和 Ctrl（macOS 上 ⌘）组合键；
+ * 画布上的按键 → 设计器命令。只认方向键、Delete / Backspace、Esc、F1 和 Ctrl（macOS 上 ⌘）组合键；
  * 字母、数字这类可打印字符一律返回 null，不拦：配置中心把它们当作扫码枪的输入送进「预览内容」。
  * AltGr（在不少非美式键盘上用来打特殊符号）在浏览器里等同 Ctrl+Alt：altKey 一起按下时一律放行，
  * 不然这些键盘上打字会被当成撤销、复制一类的快捷键。
@@ -125,6 +158,10 @@ export function designerCommand(event: DesignerKey): DesignerCommand | null {
     return null;
   }
   if (event.ctrlKey || event.metaKey) {
+    const byCode = CTRL_CODE_COMMANDS[event.code || (CTRL_KEY_CODES[event.key] ?? '')];
+    if (byCode) {
+      return byCode(event.shiftKey);
+    }
     const letter = event.key.toLowerCase();
     const name = LATIN_LETTER.test(letter) ? letter : (CTRL_SHORTCUT_CODES[event.code ?? ''] ?? letter);
     switch (name) {
@@ -136,9 +173,17 @@ export function designerCommand(event: DesignerKey): DesignerCommand | null {
         return { kind: 'copy' };
       case 'v':
         return { kind: 'paste' };
+      case 'd':
+        return { kind: 'duplicate' };
+      case 'a':
+        return { kind: 'selectAll' };
       default:
         return null;
     }
+  }
+  // F1 不是可打印字符，扫码枪不会发出它。
+  if (event.key === 'F1') {
+    return { kind: 'help' };
   }
   const arrow = ARROWS[event.key];
   if (arrow) {

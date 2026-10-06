@@ -113,8 +113,8 @@ export function DesignerToolbar({ designer, zoom, sample }: DesignerToolbarProps
         />
       </ToolGroup>
       <ToolGroup label="叠放">
-        <ToolButton label="置顶" name="置顶" disabled={!hasSelection} onClick={designer.toFront} />
-        <ToolButton label="置底" name="置底" disabled={!hasSelection} onClick={designer.toBack} />
+        <ToolButton label="置顶" name="置顶" disabled={!hasSelection} onClick={() => designer.moveLayers('front')} />
+        <ToolButton label="置底" name="置底" disabled={!hasSelection} onClick={() => designer.moveLayers('back')} />
       </ToolGroup>
       <ToolGroup label="辅助">
         <ToolButton

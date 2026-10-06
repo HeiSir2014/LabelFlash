@@ -4,10 +4,7 @@ import { type BatchTable, DEFAULT_COPIES, DEFAULT_SERIAL } from '../../../core/b
 import type { BatchStatus } from '../../../shared/batch';
 import {
   BATCH_ROW_HEIGHT_PX,
-  batchButtonProgress,
   buildPlan,
-  describePauseReason,
-  describeProgress,
   describeSummary,
   describeTable,
   failuresByRow,
@@ -151,34 +148,6 @@ describe('texts', () => {
       '共 120 行 · 选中 118 行 · 打 236 张 · 3 行有问题（标黄）',
     );
     expect(describeSummary({ rowCount: 3, selectedCount: 3, labelCount: 3, problemRows: 0 })).toBe('共 3 行 · 打 3 张');
-  });
-
-  test('describes the progress of a batch in every state', () => {
-    expect(describeProgress(status())).toEqual({ text: '正在打印 · 已发送 35 / 120 张', percent: 29 });
-    expect(describeProgress(status({ state: 'paused', pauseReason: 'PRINTER_NOT_READY' })).text).toBe(
-      '已暂停（打印机现在不能打印：缺纸、离线或卡纸，处理好后点继续）· 已发送 35 / 120 张',
-    );
-    expect(describeProgress(status({ state: 'canceled', failed: 2 })).text).toBe(
-      '已取消 · 已发送 35 / 120 张 · 失败 2 张',
-    );
-    expect(describeProgress(status({ state: 'done', sent: 120 })).text).toBe('全部已发送 · 已发送 120 / 120 张');
-    expect(describeProgress(status({ state: 'done', sent: 118, failed: 2 })).text).toBe(
-      '已结束 · 已发送 118 / 120 张 · 失败 2 张',
-    );
-  });
-
-  // 连续失败自动暂停的两种原因：措辞不一样，超时那种要提醒操作员自己确认有没有出纸，不能直接当成没打。
-  test('explains the two consecutive-failure pause reasons differently', () => {
-    expect(describePauseReason('consecutive-failures')).toBe('连续几张都没打印成功：检查打印机后点继续');
-    expect(describePauseReason('consecutive-failures-after-timeout')).toBe(
-      '最后一张可能已经打出来了：看一眼打印机，确认后点继续',
-    );
-  });
-
-  test('shows progress on the title bar button only while a batch runs or waits', () => {
-    expect(batchButtonProgress(status({ failed: 1 }))).toBe('36/120');
-    expect(batchButtonProgress(status({ state: 'done' }))).toBeNull();
-    expect(batchButtonProgress(null)).toBeNull();
   });
 
   test('shows the first serials as an example', () => {

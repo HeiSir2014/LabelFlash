@@ -2,7 +2,8 @@ import { useCallback, useId } from 'react';
 import type { LabelTemplate } from '../../../../core/templates/template-model';
 import { DEFAULT_PAPER } from '../../../../shared/label-paper';
 import { NO_RENDER_WARNINGS } from '../../../../shared/render-warnings';
-import { describeProgress, describeSummary } from '../../lib/batch-view';
+import { describeSummary } from '../../lib/batch-view';
+import { describeRunProgress } from '../../lib/print-run-text';
 import type { BatchViewModel } from '../../view-models/use-batch';
 import { LabelPreview } from '../LabelPreview';
 import { type PageScanSink, PrintPageScanSink } from '../ScanSinkField';
@@ -25,7 +26,7 @@ export function BatchPage({ batch, templates, scan, onClose }: BatchPageProps) {
   // 打开时焦点落到标题：读屏软件读出所在位置，Tab 从页面内容开始（和配置中心一样）。
   const focusTitle = useCallback((title: HTMLHeadingElement | null) => title?.focus(), []);
   const { status, preview } = batch;
-  const progress = status === null ? null : describeProgress(status);
+  const progress = status === null ? null : describeRunProgress(status);
   const isButtonDisabled = batch.labelCount === 0;
   // 按钮点不了（没有要打的标签）时，不管之前有没有别的批打过，都该说清楚为什么点不了——
   // 不能一直显示上一批的旧进度，让操作员以为「打印 0 张」是因为上一批还没完。

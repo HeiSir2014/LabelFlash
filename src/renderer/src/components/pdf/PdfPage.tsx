@@ -1,13 +1,8 @@
 import { useCallback, useId } from 'react';
 import { PDF_LIMITS } from '../../../../core/pdf/pdf-model';
 import { NO_RENDER_WARNINGS } from '../../../../shared/render-warnings';
-import {
-  describePdfPrint,
-  describePieces,
-  describeProcessing,
-  type PaperOption,
-  parseCopies,
-} from '../../lib/pdf-view';
+import { describePieces, describeProcessing, type PaperOption, parseCopies } from '../../lib/pdf-view';
+import { describeRunProgress } from '../../lib/print-run-text';
 import type { PdfViewModel } from '../../view-models/use-pdf';
 import { LabelPreview } from '../LabelPreview';
 import { type PageScanSink, PrintPageScanSink } from '../ScanSinkField';
@@ -33,7 +28,7 @@ export function PdfPage({ pdf, paperOptions, scan, onClose }: PdfPageProps) {
   // 打开时焦点落到标题：读屏软件读出所在位置，Tab 从页面内容开始（和配置中心一样）。
   const focusTitle = useCallback((title: HTMLHeadingElement | null) => title?.focus(), []);
   const { pdfFile, result, status } = pdf;
-  const progress = status?.print ? describePdfPrint(status.print) : null;
+  const progress = status?.print ? describeRunProgress(status.print) : null;
   const statusText = status?.processing ? describeProcessing(status.processing) : (progress?.text ?? '');
 
   return (

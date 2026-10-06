@@ -23,13 +23,13 @@ import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
-import { batchButtonProgress } from './lib/batch-view';
 import { describeCaller } from './lib/local-api-text';
 import { describeMobileButton, describeMobileOverlay } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
-import { isPdfFileName, paperOptions, pdfButtonProgress } from './lib/pdf-view';
+import { isPdfFileName, paperOptions } from './lib/pdf-view';
 import { describePreviewUsage } from './lib/preview-usage';
+import { runButtonProgress } from './lib/print-run-text';
 import {
   expectedPaperKey,
   paperRows,
@@ -334,12 +334,12 @@ export function App() {
         }}
         batch={{
           isOpen: isBatchOpen,
-          progress: batchButtonProgress(batch.status),
+          progress: runButtonProgress(batch.status),
           onToggle: isBatchOpen ? appView.close : appView.openBatch,
         }}
         pdf={{
           isOpen: isPdfOpen,
-          progress: pdfButtonProgress(pdf.status),
+          progress: runButtonProgress(pdf.status?.print ?? null),
           onToggle: isPdfOpen ? appView.close : appView.openPdf,
         }}
         mobile={{ view: describeMobileButton(mobile.status), isOpen: isMobileOverlayShown, onToggle: toggleMobile }}

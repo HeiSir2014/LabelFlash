@@ -54,7 +54,12 @@ export function PdfPage({ pdf, paperOptions, scan, onClose }: PdfPageProps) {
               选一个 PDF，或者直接把 PDF 拖进窗口。最多 {PDF_LIMITS.pages} 页；PDF 在隔离的进程里打开，不连网。
             </p>
             <div className="pdf-file__actions">
-              <button type="button" className="button" disabled={pdf.isPrinting} onClick={() => void pdf.openFile()}>
+              <button
+                type="button"
+                className="button"
+                disabled={pdf.isPrinting || pdf.isOpening}
+                onClick={() => void pdf.openFile()}
+              >
                 选择 PDF…
               </button>
               {pdfFile !== null && !pdf.isPrinting && (

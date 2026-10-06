@@ -26,7 +26,7 @@ import {
   type PdfStatus,
 } from '../../shared/pdf';
 import type { PageSize } from '../../shared/pdf-render-protocol';
-import { type OpenedPdf, PdfRenderError, type RenderedPage } from './pdf-render-host';
+import { type OpenedPdf, PdfOpenSupersededError, PdfRenderError, type RenderedPage } from './pdf-render-host';
 
 /** 第一页按 96dpi 渲染来识别裁切方式、当手动框选的底图：4mm 的缝有 15 个像素，够判断；A4 只有 79 万像素，打开很快。 */
 const ANALYSIS_DPI = 96;
@@ -170,7 +170,13 @@ export class PdfStation {
       return invalid(PDF_STATION_ISSUES.notPdf);
     }
     this.generation += 1;
+    const generation = this.generation;
+    // 每次 await 之后都要看一眼：这期间又打开了别的文件、关了文件，这一次就作废，不能再动渲染页和 document。
+    const isCurrent = () => generation === this.generation;
     await this.discardRun();
+    if (!isCurrent()) {
+      return { status: 'superseded' };
+    }
     this.document = null;
     this.printJob = null;
     this.progress = null;
@@ -178,6 +184,9 @@ export class PdfStation {
     let first: RenderedPage;
     try {
       opened = await this.deps.renderer.open(bytes);
+      if (!isCurrent()) {
+        return { status: 'superseded' };
+      }
       if (opened.pageCount > PDF_LIMITS.pages) {
         this.deps.renderer.close();
         return invalid(tooManyPagesIssue(opened.pageCount));
@@ -189,7 +198,14 @@ export class PdfStation {
       }
       first = await this.deps.renderer.render(1, firstSize, ANALYSIS_DPI);
     } catch (error) {
+      // 渲染页那边被更新的打开、关闭超过（PdfOpenSupersededError），或者失败时已经不是这一次了：都按作废处理。
+      if (error instanceof PdfOpenSupersededError || !isCurrent()) {
+        return { status: 'superseded' };
+      }
       return invalid(this.issueOf(error));
+    }
+    if (!isCurrent()) {
+      return { status: 'superseded' };
     }
     const mask = inkMask(first.image);
     const document: OpenDocument = { name: shortFileName(name), pages: opened.pages };

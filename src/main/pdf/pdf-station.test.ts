@@ -6,7 +6,13 @@ import type { FieldsPrint } from '../../core/print-service';
 import type { PrintResult } from '../../core/types';
 import type { PdfStatus } from '../../shared/pdf';
 import type { PageSize } from '../../shared/pdf-render-protocol';
-import { type OpenedPdf, PDF_ISSUES, PdfRenderError, type RenderedPage } from './pdf-render-host';
+import {
+  type OpenedPdf,
+  PDF_ISSUES,
+  PdfOpenSupersededError,
+  PdfRenderError,
+  type RenderedPage,
+} from './pdf-render-host';
 import {
   PDF_STATION_ISSUES,
   type PdfDocumentRenderer,
@@ -205,6 +211,28 @@ describe('PdfStation files', () => {
     const { station, renderer } = createStation();
     renderer.failure = new PdfRenderError(PDF_ISSUES.password, 'PasswordException');
     expect(await station.loadBytes('a.pdf', PDF_BYTES)).toEqual({ status: 'invalid', issue: PDF_ISSUES.password });
+  });
+});
+
+describe('PdfStation opening two files quickly', () => {
+  test('treats an open superseded in the render host as benign', async () => {
+    const { station, renderer } = createStation();
+    renderer.failure = new PdfOpenSupersededError();
+    expect(await station.loadBytes('面单.pdf', PDF_BYTES)).toEqual({ status: 'superseded' });
+  });
+
+  test('the newer file wins when the first one is still rendering its first page', async () => {
+    const { station, renderer } = createStation();
+    renderer.gate = [];
+    const first = station.loadBytes('第一个.pdf', PDF_BYTES);
+    await waitUntil(() => renderer.gate?.length === 1);
+    const second = station.loadBytes('第二个.pdf', PDF_BYTES);
+    await waitUntil(() => renderer.gate?.length === 2);
+    for (const release of renderer.gate ?? []) {
+      release();
+    }
+    expect(await first).toEqual({ status: 'superseded' });
+    expect(await second).toMatchObject({ status: 'loaded', document: { name: '第二个.pdf' } });
   });
 });
 

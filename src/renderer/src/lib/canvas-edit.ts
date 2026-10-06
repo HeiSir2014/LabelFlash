@@ -456,6 +456,26 @@ export function moveLayer(template: CanvasTemplate, id: string, index: number): 
   return { ...template, elements: [...rest.slice(0, to), moving, ...rest.slice(to)] };
 }
 
+/**
+ * 图层列表里拖到某一行的上半（above）或下半（below）松手：算出交给 moveLayer 的数组下标。
+ * 列表上层在前（和数组反着），所以「放在这一行上面」就是叠在它前面。拖到自己身上时下标不变。
+ */
+export function layerIndexForDrop(
+  elements: readonly CanvasElement[],
+  draggedId: string,
+  targetId: string,
+  position: 'above' | 'below',
+): number {
+  const listed = [...elements].reverse().map((element) => element.id);
+  if (draggedId === targetId) {
+    return elements.length - 1 - listed.indexOf(draggedId);
+  }
+  const rest = listed.filter((id) => id !== draggedId);
+  const at = rest.indexOf(targetId) + (position === 'below' ? 1 : 0);
+  // 拿掉拖动的那一个之后插到列表的第 at 位，数组里就是倒过来数的那一位。
+  return rest.length - at;
+}
+
 /** 粘贴往右下错开 2mm：和原来的叠在一起时看不出粘贴成功了。 */
 export const PASTE_OFFSET_MM = 2;
 

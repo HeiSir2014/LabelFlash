@@ -18,6 +18,7 @@ import {
   distributeElements,
   duplicateElements,
   elementsInRect,
+  layerIndexForDrop,
   maxExtentMm,
   moveBy,
   moveLayer,
@@ -341,6 +342,36 @@ describe('layer order', () => {
     expect(order(moveLayer(template, 'd', 0))).toEqual(['d', 'a', 'b', 'c']);
     expect(moveLayer(template, 'b', 1)).toBe(template);
     expect(moveLayer(template, 'missing', 0)).toBe(template);
+  });
+});
+
+describe('layerIndexForDrop', () => {
+  // 图层列表上层在前：d c b a。
+  const elements = canvas(
+    rect('a', 0, 0, 1, 1),
+    rect('b', 0, 0, 1, 1),
+    rect('c', 0, 0, 1, 1),
+    rect('d', 0, 0, 1, 1),
+  ).elements;
+  const dropped = (id: string, target: string, position: 'above' | 'below') => {
+    const template = canvas(...elements);
+    return moveLayer(template, id, layerIndexForDrop(elements, id, target, position)).elements.map(
+      (element) => element.id,
+    );
+  };
+
+  test('drops above a row: the dragged layer ends up just in front of it', () => {
+    expect(dropped('a', 'c', 'above')).toEqual(['b', 'c', 'a', 'd']);
+    expect(dropped('a', 'd', 'above')).toEqual(['b', 'c', 'd', 'a']);
+  });
+
+  test('drops below a row: the dragged layer ends up just behind it', () => {
+    expect(dropped('d', 'b', 'below')).toEqual(['a', 'd', 'b', 'c']);
+    expect(dropped('d', 'a', 'below')).toEqual(['d', 'a', 'b', 'c']);
+  });
+
+  test('dropping a layer on itself keeps the order', () => {
+    expect(dropped('b', 'b', 'above')).toEqual(['a', 'b', 'c', 'd']);
   });
 });
 

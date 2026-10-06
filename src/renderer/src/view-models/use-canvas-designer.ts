@@ -18,6 +18,7 @@ import {
   duplicateElements,
   MIN_DISTRIBUTE_COUNT,
   moveBy,
+  moveLayer,
   type Point,
   pasteElements,
   replaceElement,
@@ -223,6 +224,16 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
     }[move](draft, liveSelection);
     commit(moved);
   };
+  /** 改一个元素的一项（图层的锁定、改名）：一次点击、一次改名各是一步撤销。 */
+  const updateElement = (id: string, patch: (element: CanvasElement) => CanvasElement) => {
+    const element = draft.elements.find((candidate) => candidate.id === id);
+    if (element !== undefined) {
+      commit(replaceElement(draft, patch(element)));
+    }
+  };
+  const toggleLock = (id: string) => updateElement(id, (element) => ({ ...element, locked: !element.locked }));
+  const rename = (id: string, name: string) => updateElement(id, (element) => ({ ...element, name }));
+  const reorder = (id: string, index: number) => commit(moveLayer(draft, id, index));
   /** 图层的「隐藏」：只在设计器里看不见、点不中（照常打印），不进模板、不进撤销历史。 */
   const toggleHidden = (id: string) =>
     setHidden((current) => {
@@ -346,6 +357,9 @@ export function useCanvasDesigner({ draft, onChange }: CanvasDesignerOptions) {
     runCommand,
     hidden,
     toggleHidden,
+    toggleLock,
+    rename,
+    reorder,
     isShortcutSheetOpen,
     setIsShortcutSheetOpen,
     zoom,

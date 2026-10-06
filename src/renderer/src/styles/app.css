@@ -3734,60 +3734,111 @@ fieldset.designer-zoom__menu {
 .layer-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-}
-
-.layer-list__items {
+  gap: 2px;
   margin: 0;
   padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius);
   list-style: none;
 }
 
-.layer-list__items > li + li {
-  border-top: 1px solid var(--color-rule);
+/* 一行：种类图标、名字（点选，双击改名）、隐藏、锁定；整行可以拖动排序 */
+.layer-row {
+  display: flex;
+  position: relative;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 36px;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: 8px;
+  transition: background-color var(--ui-duration) ease-out;
 }
 
-.layer-list__item {
+.layer-row:hover {
+  background: var(--color-housing);
+}
+
+/* 选中的图层：和模板列表的选中项一样，软尺黄底 */
+.layer-row--selected,
+.layer-row--selected:hover {
+  background: var(--color-tape-wash);
+  box-shadow: inset 3px 0 0 var(--color-tape);
+}
+
+.layer-row--hidden .layer-row__name,
+.layer-row--hidden .layer-row__kind {
+  opacity: 0.45;
+}
+
+/* 拖动排序时落点上的一条线：放在这一行的上面或下面 */
+.layer-row--drop-above::before,
+.layer-row--drop-below::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-selection);
+  content: "";
+}
+
+.layer-row--drop-above::before {
+  top: -2px;
+}
+
+.layer-row--drop-below::after {
+  bottom: -2px;
+}
+
+.layer-row__kind {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  width: 100%;
+  flex: none;
+  color: var(--color-ink-soft);
+}
+
+.layer-row__select {
+  flex: 1;
+  min-width: 0;
   height: 32px;
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-1);
   border: 0;
   color: inherit;
-  background: var(--color-field);
+  background: transparent;
   font: inherit;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
 
-.layer-list__item:hover {
-  background: var(--color-tape-wash);
+.layer-row__select:focus-visible {
+  outline: 2px solid var(--color-selection);
+  outline-offset: -2px;
 }
 
-/* 选中的图层：和模板列表的选中项一样，左边 4px 竖条 */
-.layer-list__item[aria-pressed="true"] {
-  background: var(--color-tape-wash);
-  box-shadow: inset 4px 0 0 var(--color-tape);
-}
-
-.layer-list__name {
-  min-width: 0;
+.layer-row__name {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.layer-list__kind {
-  flex: none;
-  color: var(--color-ink-soft);
-  font-size: 12px;
+.layer-row__rename {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+}
+
+/* 隐藏、锁定：没开的平时淡一些，悬停这一行时才清楚；开着的一直看得见 */
+.layer-row__toggle:not([aria-pressed="true"]) {
+  opacity: 0.35;
+}
+
+.layer-row:hover .layer-row__toggle,
+.layer-row__toggle:focus-visible {
+  opacity: 1;
+}
+
+.layer-row .layer-row__toggle[aria-pressed="true"] {
+  box-shadow: none;
+  background: transparent;
 }
 
 /* 下：打印前检查收成一条；点开时清单往上展开，最多五六行高，多了在里面滚动 */

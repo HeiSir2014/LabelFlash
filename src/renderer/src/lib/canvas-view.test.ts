@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   type DesignerKey,
   designerCommand,
+  hideElementsInHtml,
   NUDGE_LARGE_MM,
   NUDGE_MM,
   PX_PER_MM,
@@ -43,6 +44,23 @@ describe('zoom', () => {
 
   test('converts screen pixels to millimetres at a zoom', () => {
     expect(pxToMm(PX_PER_MM * 2, 2)).toBe(1);
+  });
+});
+
+describe('hideElementsInHtml', () => {
+  const html = '<html><head><style>.el{}</style></head><body><div class="el" data-element-id="e1"></div></body></html>';
+
+  test('adds a style that hides the given elements of the label HTML', () => {
+    const hidden = hideElementsInHtml(html, new Set(['e1', 'e-2']));
+    expect(hidden).toContain('[data-element-id="e1"],[data-element-id="e-2"]{visibility:hidden}</style></head>');
+  });
+
+  test('leaves the HTML untouched when nothing is hidden', () => {
+    expect(hideElementsInHtml(html, new Set())).toBe(html);
+  });
+
+  test('ignores ids that are not plain element ids, so nothing can break out of the selector', () => {
+    expect(hideElementsInHtml(html, new Set(['x"]{} body{display:none']))).toBe(html);
   });
 });
 

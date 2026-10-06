@@ -157,7 +157,8 @@ function elementHtml(element: LaidCanvasElement, dot: number, dpi: number, findi
     return '';
   }
   const { rect, frame } = element;
-  return `<div class="el" style="left:${mm(rect.x)};top:${mm(rect.y)};width:${mm(rect.width)};height:${mm(rect.height)}"><div class="frame" style="width:${mm(frame.width)};height:${mm(frame.height)}${rotationCss(element)}">${inner}</div></div>`;
+  // data-element-id：设计器的「隐藏（只在设计器里隐藏）」按它给画布上的预览加样式，打印不受影响。
+  return `<div class="el" data-element-id="${escapeHtml(element.id)}" style="left:${mm(rect.x)};top:${mm(rect.y)};width:${mm(rect.width)};height:${mm(rect.height)}"><div class="frame" style="width:${mm(frame.width)};height:${mm(frame.height)}${rotationCss(element)}">${inner}</div></div>`;
 }
 
 /**

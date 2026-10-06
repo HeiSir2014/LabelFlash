@@ -25,6 +25,8 @@ interface CanvasStageProps {
   hoverId: string | null;
   /** 这次排版每个元素的问题：不印的浅红底、框里写短原因；条码宽度快不够的黄框。 */
   warnings: readonly ElementWarning[];
+  /** 只在设计器里隐藏的元素：不画框（标签上的内容由调用方从 HTML 里藏起来）。 */
+  hidden: ReadonlySet<string>;
   gesture: GestureView;
   handlers: GestureHandlers;
   /** 外层滚动区：量「适合窗口」的大小、挂 Ctrl+滚轮。 */
@@ -64,6 +66,7 @@ export function CanvasStage({
   selection,
   hoverId,
   warnings,
+  hidden,
   gesture,
   handlers,
   stageRef,
@@ -146,6 +149,9 @@ export function CanvasStage({
               style={{ inset: `calc(${CANVAS_LIMITS.safeMarginMm} * var(--mm))` }}
             />
             {template.elements.map((element) => {
+              if (hidden.has(element.id)) {
+                return null;
+              }
               const mine = warnings.filter((warning) => warning.elementId === element.id);
               const omitted = mine.find((warning) => warning.level === 'omitted') ?? null;
               // 宽度只比最小宽度多一点的条码（带着最小尺寸的提醒）：黄框提前提醒。

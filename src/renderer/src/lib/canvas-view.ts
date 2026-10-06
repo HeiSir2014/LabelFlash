@@ -59,6 +59,21 @@ export const NUDGE_MM = 0.1;
 /** 按住 Shift 时，方向键一次挪 1mm：需要粗调位置时不用按几十次。 */
 export const NUDGE_LARGE_MM = 1;
 
+/** 元素 id 的规则（和 core 的 sanitize-canvas 一致）：只有字母、数字、连字符，放进 CSS 选择器不用转义。 */
+const ELEMENT_ID_PATTERN = /^[A-Za-z0-9-]+$/;
+
+/**
+ * 「隐藏（只在设计器里隐藏）」：画布上的标签是打印同一份 HTML，每个元素带着 data-element-id；
+ * 在 head 末尾加一段样式把这些元素藏起来（sandbox 的 iframe 不跑脚本，样式照样生效）。打印不经过这里。
+ * 不合元素 id 规则的值直接跳过：不能让它拼出别的选择器。
+ */
+export function hideElementsInHtml(html: string, hidden: ReadonlySet<string>): string {
+  const selectors = [...hidden].filter((id) => ELEMENT_ID_PATTERN.test(id)).map((id) => `[data-element-id="${id}"]`);
+  return selectors.length === 0
+    ? html
+    : html.replace('</head>', `<style>${selectors.join(',')}{visibility:hidden}</style></head>`);
+}
+
 /** 从元素栏拖到画布上时，拖动数据里放元素类型用的格式名（只在这个页面内部用）。 */
 export const ELEMENT_DRAG_TYPE = 'application/x-labelflash-element';
 

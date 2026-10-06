@@ -48,6 +48,10 @@ describe('renderCanvasHtml', () => {
     expect(render([]).html).toContain('@page { size: 60mm 40mm; margin: 0; }');
   });
 
+  test('marks each element with its id, so the designer can hide it on the canvas only', () => {
+    expect(render([element('text', { text: 'A' })]).html).toContain('<div class="el" data-element-id="text1"');
+  });
+
   test('escapes text from the scan', () => {
     const { html } = render([element('text', { text: '{品名}' })]);
     expect(html).toContain('&lt;棉T恤&gt;');

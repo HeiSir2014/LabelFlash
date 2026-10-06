@@ -5,7 +5,7 @@ import type { Platform } from '../../lib/app-view';
 import { clampAll, replaceElement, rotateElement } from '../../lib/canvas-edit';
 import { growToPrint } from '../../lib/canvas-fix';
 import { basicsMergeKey, historyMergeKey } from '../../lib/canvas-history';
-import { designerCommand, undoShortcutLabel, zoomIn, zoomOut } from '../../lib/canvas-view';
+import { designerCommand, hideElementsInHtml, undoShortcutLabel, zoomIn, zoomOut } from '../../lib/canvas-view';
 import { useCanvasDesigner } from '../../view-models/use-canvas-designer';
 import { useCanvasGesture, useCtrlWheelZoom } from '../../view-models/use-canvas-gesture';
 import { useFitScale } from '../../view-models/use-fit-scale';
@@ -157,7 +157,19 @@ export function CanvasDesigner({
     }
   };
 
-  const layers = <LayerList elements={draft.elements} selection={designer.selection} onSelect={designer.select} />;
+  const layers = (
+    <LayerList
+      elements={draft.elements}
+      selection={designer.selection}
+      hidden={designer.hidden}
+      platform={platform}
+      onSelect={designer.select}
+      onToggleLock={designer.toggleLock}
+      onToggleHidden={designer.toggleHidden}
+      onRename={designer.rename}
+      onReorder={designer.reorder}
+    />
+  );
   const layerTab: InspectorTab<InspectorTabId> = { id: 'layers', label: '图层', content: layers };
   const arrangeButtons = (isSingle: boolean) => (
     <>
@@ -264,7 +276,8 @@ export function CanvasDesigner({
       <div className="designer-stage-area">
         <CanvasStage
           template={draft}
-          html={currentPreview?.html ?? null}
+          html={currentPreview?.html == null ? null : hideElementsInHtml(currentPreview.html, designer.hidden)}
+          hidden={designer.hidden}
           placeholder={placeholderOf(currentPreview)}
           zoom={zoom}
           showGrid={designer.showGrid}

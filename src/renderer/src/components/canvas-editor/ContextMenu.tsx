@@ -38,10 +38,18 @@ export function ContextMenu({ items, at, onAction, onClose }: ContextMenuProps) 
       }
     };
     // 窗口失去焦点（Alt+Tab）、滚动画布：菜单的位置已经对不上了，收起。
+    // scroll 不冒泡：在捕获阶段听，画布滚动区、检查器这些元素自己的滚动也收得到；菜单自己里面的滚动不算。
+    const onScroll = (event: Event) => {
+      if (!(event.target instanceof Node && rootRef.current?.contains(event.target))) {
+        onClose();
+      }
+    };
     window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('blur', onClose);
     return () => {
       window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('blur', onClose);
     };
   }, [onClose]);

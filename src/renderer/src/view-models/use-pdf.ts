@@ -43,6 +43,8 @@ export interface PdfViewModel {
   status: PdfStatus | null;
   /** 正在打或暂停中：不能换文件、改设置。 */
   isPrinting: boolean;
+  /** 正在打开一个文件：再选、再拖进来的不发出去。 */
+  isOpening: boolean;
   openFile: () => Promise<void>;
   dropFile: (file: File) => void;
   changeLayout: (patch: Partial<PdfLayout>) => void;
@@ -183,7 +185,7 @@ export function usePdf({ paperPrinters }: { paperPrinters: Readonly<Record<strin
 
   const opened = useCallback(
     (outcome: PdfOpenResult) => {
-      if (outcome.status === 'canceled') {
+      if (outcome.status === 'canceled' || outcome.status === 'superseded') {
         return;
       }
       if (outcome.status === 'invalid') {
@@ -199,13 +201,35 @@ export function usePdf({ paperPrinters }: { paperPrinters: Readonly<Record<strin
     [applyLayout, clearPieces],
   );
 
-  const openFile = useCallback(async () => {
-    try {
-      opened(await window.api.openPdfFile());
-    } catch (error) {
-      reportError('打开 PDF', error);
+  // 同一时间只打开一个文件：连着点两次「选择 PDF…」、连着拖进两个文件时，后来的那次不发出去
+  // （主进程那边也会把被超过的一次作废，这里先挡住，免得白建一个渲染页）。
+  const openingRef = useRef(false);
+  const [isOpening, setIsOpening] = useState(false);
+  const whileOpening = useCallback(async (open: () => Promise<void>) => {
+    if (openingRef.current) {
+      return;
     }
-  }, [opened]);
+    openingRef.current = true;
+    setIsOpening(true);
+    try {
+      await open();
+    } finally {
+      openingRef.current = false;
+      setIsOpening(false);
+    }
+  }, []);
+
+  const openFile = useCallback(
+    () =>
+      whileOpening(async () => {
+        try {
+          opened(await window.api.openPdfFile());
+        } catch (error) {
+          reportError('打开 PDF', error);
+        }
+      }),
+    [opened, whileOpening],
+  );
 
   const dropFile = useCallback(
     (file: File) => {
@@ -214,15 +238,15 @@ export function usePdf({ paperPrinters }: { paperPrinters: Readonly<Record<strin
         setIssue(PDF_TOO_LARGE_ISSUE);
         return;
       }
-      void (async () => {
+      void whileOpening(async () => {
         try {
           opened(await window.api.readDroppedPdf(file.name, new Uint8Array(await file.arrayBuffer())));
         } catch (error) {
           reportError('打开拖进来的 PDF', error);
         }
-      })();
+      });
     },
-    [opened],
+    [opened, whileOpening],
   );
 
   const changeLayout = useCallback(
@@ -330,6 +354,7 @@ export function usePdf({ paperPrinters }: { paperPrinters: Readonly<Record<strin
     preview,
     status,
     isPrinting: isPdfPrinting(status),
+    isOpening,
     openFile,
     dropFile,
     changeLayout,

@@ -32,6 +32,20 @@ export function templateFingerprint(template: LabelTemplate): string {
   return JSON.stringify({ fields: templateFields(template), paper: template.paper });
 }
 
+/** 按记录原样重打时模板对不上：界面和主进程说同一句。 */
+export const TEMPLATE_CHANGED_ISSUE = '模板改过：字段或纸张和打这一张时不一样，不能按原样重打';
+
+/**
+ * 按记录原样重打（本机接口、批量打印的记录）之前核对模板：指纹对不上就是改过，返回给用户看的原因。
+ * 没有指纹的记录（2.0.0 之前写的）核对不了，照旧放行。
+ */
+export function storedTemplateIssue(template: LabelTemplate, fingerprint: string | undefined): string | null {
+  if (fingerprint === undefined || templateFingerprint(template) === fingerprint) {
+    return null;
+  }
+  return TEMPLATE_CHANGED_ISSUE;
+}
+
 function labelFields(template: QrLabelTemplate): TemplateFields {
   const names: string[] = [];
   if (template.fieldsArea.mode === 'pick') {

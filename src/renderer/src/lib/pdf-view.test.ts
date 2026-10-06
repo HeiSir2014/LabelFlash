@@ -1,11 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import type { BatchProgress } from '../../../core/batch/batch-runner';
 import { PDF_PRINTING_ISSUE } from '../../../shared/pdf';
 import {
   boxFromDrag,
   cropLabel,
   defaultPaperKey,
-  describePdfPrint,
   describePieces,
   describeProcessing,
   isPdfFileName,
@@ -14,7 +12,7 @@ import {
   movePiece,
   paperOptions,
   parseCopies,
-  pdfButtonProgress,
+  pieceCaption,
   printCount,
   visibleOrder,
 } from './pdf-view';
@@ -48,6 +46,12 @@ describe('papers', () => {
     expect(defaultPaperKey(assigned)).toBe('100x150');
     expect(defaultPaperKey({ '60x40': '标签机A' })).toBe('60x40');
     expect(defaultPaperKey({})).toBe('100x150');
+  });
+});
+
+describe('pieceCaption', () => {
+  test('names the page and the piece as two parts', () => {
+    expect(pieceCaption({ page: 1, piece: 2 })).toBe('第 1 页 · 第 2 张');
   });
 });
 
@@ -100,48 +104,9 @@ describe('order and counts', () => {
 });
 
 describe('progress', () => {
-  const running: BatchProgress = {
-    batchId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
-    state: 'running',
-    total: 8,
-    sent: 3,
-    failed: 0,
-    pauseReason: null,
-  };
-
   test('describes processing pages', () => {
     expect(describeProcessing({ done: 2, total: 200 })).toBe('正在处理第 3 / 200 页…');
     expect(describeProcessing({ done: 200, total: 200 })).toBe('正在处理第 200 / 200 页…');
-  });
-
-  test('describes printing, pausing and the end', () => {
-    expect(describePdfPrint(running)).toEqual({ text: '正在打印 · 已发送 3 / 8 张', percent: 38, isActive: true });
-    expect(describePdfPrint({ ...running, state: 'paused', pauseReason: 'operator' }).text).toBe(
-      '已暂停（点继续接着打） · 已发送 3 / 8 张',
-    );
-    expect(describePdfPrint({ ...running, state: 'paused', pauseReason: 'PRINTER_NOT_READY' }).text).toContain(
-      '打印机不能用',
-    );
-    expect(describePdfPrint({ ...running, state: 'paused', pauseReason: 'no-printer' }).text).toContain(
-      '没有分配打印机',
-    );
-    expect(describePdfPrint({ ...running, state: 'done', sent: 8 })).toEqual({
-      text: '全部已发送 · 已发送 8 / 8 张',
-      percent: 100,
-      isActive: false,
-    });
-    expect(describePdfPrint({ ...running, state: 'done', sent: 7, failed: 1 }).text).toBe(
-      '打完了 · 已发送 7 / 8 张，1 张失败：在打印记录里重打',
-    );
-    expect(describePdfPrint({ ...running, state: 'canceled' }).text).toBe('已取消 · 已发送 3 / 8 张');
-  });
-
-  test('puts the progress on the title bar button only while printing', () => {
-    expect(pdfButtonProgress({ fileName: 'a.pdf', processing: null, print: running, isActive: true })).toBe('3/8');
-    expect(
-      pdfButtonProgress({ fileName: 'a.pdf', processing: null, print: { ...running, state: 'done' }, isActive: false }),
-    ).toBeNull();
-    expect(pdfButtonProgress(null)).toBeNull();
   });
 });
 

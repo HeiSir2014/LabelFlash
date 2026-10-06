@@ -34,6 +34,8 @@ export interface PdfDocumentView {
 export type PdfOpenResult =
   | { status: 'loaded'; document: PdfDocumentView }
   | { status: 'canceled' }
+  /** 打开期间又选了别的文件、关了文件：这一次作废，界面等新的那次。 */
+  | { status: 'superseded' }
   | { status: 'invalid'; issue: string };
 
 export interface PdfPieceView {

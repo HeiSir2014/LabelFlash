@@ -115,7 +115,7 @@ describe('CatalogClient', () => {
     expect(load).toMatchObject({
       kind: 'ready',
       source: 'cache',
-      staleIssue: '连不上驱动清单地址：检查网络后点「重新检测」',
+      staleIssue: '连不上驱动清单地址：检查网络后点「重新检查」',
     });
   });
 

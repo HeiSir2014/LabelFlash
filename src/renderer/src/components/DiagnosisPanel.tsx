@@ -17,8 +17,6 @@ interface DiagnosisPanelProps {
   onClose: () => void;
   onFix: (check: DiagnosisCheckId, offer: FixOffer) => void;
   onAnswerFeed: (works: boolean) => void;
-  /** 「打测试页」；只查后台打印服务时没有打印机，为 null。 */
-  onTestPrint: (() => void) | null;
   /** 「改指令集」时显示的指令集下拉（5a 的控件）；没有时为 null。 */
   commandSetPicker: ReactNode;
 }
@@ -31,7 +29,6 @@ export function DiagnosisPanel({
   onClose,
   onFix,
   onAnswerFeed,
-  onTestPrint,
   commandSetPicker,
 }: DiagnosisPanelProps) {
   return (
@@ -43,11 +40,7 @@ export function DiagnosisPanel({
         <button type="button" className="button button--small" onClick={onRerun} disabled={view.busyFix !== null}>
           重新检查
         </button>
-        {onTestPrint && (
-          <button type="button" className="button button--small" onClick={onTestPrint}>
-            打测试页
-          </button>
-        )}
+        {/* 不再放「打测试页」：打印机行上已经有「测试页」，就在面板正上方（一件事只在一处说）。 */}
         <button type="button" className="button button--small button--quiet" onClick={onClose}>
           收起
         </button>

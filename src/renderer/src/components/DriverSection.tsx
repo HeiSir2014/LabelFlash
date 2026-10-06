@@ -46,7 +46,8 @@ export function DriverSection({
         <h3 className="driver-section__title">驱动</h3>
         {platform !== 'unsupported' && (
           <button type="button" className="button button--small" onClick={onDetect} disabled={isBusy}>
-            {status?.isDetecting ? '检测中…' : '重新检测'}
+            {/* 和诊断面板用同一个动词：「重新检查」。 */}
+            {status?.isDetecting ? '正在检查…' : '重新检查'}
           </button>
         )}
       </header>

@@ -178,7 +178,8 @@ test('chooses the paper and printer of a template in the editor', async ({ elect
   await form.getByLabel('纸张尺寸').selectOption({ label: '100×100 标签 · 标签、箱唛' });
   await expect(page.locator('.template-editing .ruler--horizontal')).toHaveAttribute('viewBox', /^0 0 100 /);
   await expect(form.getByLabel('打印机')).toHaveValue('');
-  await expect(form.getByLabel('打印机').locator('option:checked')).toHaveText('按纸张分配（当前是 还没有）');
+  await expect(form.getByLabel('打印机').locator('option:checked')).toHaveText('按纸张分配');
+  await expect(form.getByText('这种纸现在分配给：还没有打印机。')).toBeVisible();
 
   // 自定义尺寸：出现宽、高两个输入框。
   await form.getByLabel('纸张尺寸').selectOption({ label: '自定义…' });

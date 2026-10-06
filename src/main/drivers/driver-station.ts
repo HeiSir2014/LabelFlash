@@ -204,7 +204,7 @@ export class DriverStation {
       this.detectIssue = null;
     } catch (error) {
       this.deps.log(`[drivers] USB device detection failed: ${error instanceof Error ? error.message : String(error)}`);
-      this.detectIssue = '检测 USB 设备失败，详情见日志：稍后点「重新检测」';
+      this.detectIssue = '检查 USB 设备失败，详情见日志：稍后点「重新检查」';
     }
     return this.status();
   }

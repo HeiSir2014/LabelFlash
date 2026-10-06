@@ -24,13 +24,14 @@ import { TitleBar } from './components/TitleBar';
 import { PreviewToolbar } from './components/workbench/PreviewToolbar';
 import { Workbench } from './components/workbench/Workbench';
 import { configShortcutLabel, platformForChrome } from './lib/app-view';
-import { batchButtonProgress } from './lib/batch-view';
+import { describeBatchFilter } from './lib/batch-view';
 import { describeCaller } from './lib/local-api-text';
 import { describeMobileButton, describeMobileOverlay } from './lib/mobile-text';
 import { buildNoteOptions, resolveNoteSelection } from './lib/note-options';
 import { reportError } from './lib/notices';
-import { isPdfFileName, paperOptions, pdfButtonProgress } from './lib/pdf-view';
+import { isPdfFileName, paperOptions } from './lib/pdf-view';
 import { describePreviewUsage } from './lib/preview-usage';
+import { runButtonProgress } from './lib/print-run-text';
 import {
   expectedPaperKey,
   paperRows,
@@ -58,6 +59,7 @@ import { useMediaQuery } from './view-models/use-media-query';
 import { useMobileStation } from './view-models/use-mobile-station';
 import { useNotices } from './view-models/use-notices';
 import { usePdf } from './view-models/use-pdf';
+import { usePrintPageScan } from './view-models/use-print-page-scan';
 import { usePrinterCommands } from './view-models/use-printer-commands';
 import { usePrinterProfiles } from './view-models/use-printer-profiles';
 import { usePrinters } from './view-models/use-printers';
@@ -106,7 +108,7 @@ export function App() {
   // 打印记录的预览、重打：本机接口的记录按当时的模板和字段（模板删了就不能按原样重打）。
   const reprintModeOf = useCallback(
     (job: JobRecord) =>
-      reprintMode(job, (id) => templates.templates.some((template) => template.id === id), Date.now()),
+      reprintMode(job, (id) => templates.templates.find((template) => template.id === id), Date.now()),
     [templates.templates],
   );
   const historyTarget = useCallback(
@@ -199,10 +201,17 @@ export function App() {
     latestScanRaw: station.scan?.raw ?? null,
     // 查找表、密钥、规则指定的模板改了都会影响这一张：回到工作台时统一按新配置刷新一次。
     onClosed: () => void station.refreshPreview(),
-    onScanIgnored: () => feedback.announce({ kind: 'configuring' }),
+    onScanIgnored: () => feedback.announce({ kind: 'scan-ignored', where: 'config' }),
   });
   const { appView } = config;
   const isWorkbench = isWorkbenchActive(appView.view);
+  const printPageScan = usePrintPageScan({
+    view: appView.view,
+    canReceive: appView.leaveConfirm === null,
+    lineGapMs: settings?.scanLineGapMs ?? DEFAULT_SETTINGS.scanLineGapMs,
+    onScanIgnored: (where) => feedback.announce({ kind: 'scan-ignored', where }),
+  });
+  const printPageSink = { sink: printPageScan.sink, fieldType, pillFlashes: printPageScan.pillFlashes };
 
   // 打印机页打开时检测缺驱动的设备；装好之后立即刷新打印机列表（新打印机出现、驱动纸张的「建议」跟着出现）。
   const refreshPrinters = useCallback(() => void printers.refresh(), [printers.refresh]);
@@ -329,12 +338,12 @@ export function App() {
         }}
         batch={{
           isOpen: isBatchOpen,
-          progress: batchButtonProgress(batch.status),
+          progress: runButtonProgress(batch.status),
           onToggle: isBatchOpen ? appView.close : appView.openBatch,
         }}
         pdf={{
           isOpen: isPdfOpen,
-          progress: pdfButtonProgress(pdf.status),
+          progress: runButtonProgress(pdf.status?.print ?? null),
           onToggle: isPdfOpen ? appView.close : appView.openPdf,
         }}
         mobile={{ view: describeMobileButton(mobile.status), isOpen: isMobileOverlayShown, onToggle: toggleMobile }}
@@ -397,6 +406,20 @@ export function App() {
               onReview={(job) => station.review(historyTarget(job))}
               onReprint={(job) => station.reprint(historyTarget(job))}
               batchFilter={jobLog.batchId}
+              batchLabel={
+                jobLog.batchId === null
+                  ? null
+                  : describeBatchFilter(
+                      jobLog.batchId,
+                      // 表格只在内存里留最近一张：正好是这一批用的那张时才知道文件名。
+                      batch.status?.batchId === jobLog.batchId &&
+                        batch.status.tableId !== null &&
+                        batch.table?.id === batch.status.tableId
+                        ? batch.table.name
+                        : null,
+                    )
+              }
+              batchFailed={jobLog.batchFailed}
               onFilterBatch={jobLog.setBatchId}
               onRetryBatch={(batchId) => {
                 // 打开批量打印页：进度、失败的原因（例如模板删了不能重打）都在那里看。重打放进回调里：
@@ -538,9 +561,11 @@ export function App() {
         </ConfigCenter>
       )}
       {settings !== null && isBatchOpen && (
-        <BatchPage batch={batch} templates={templates.templates} onClose={appView.close} />
+        <BatchPage batch={batch} templates={templates.templates} scan={printPageSink} onClose={appView.close} />
       )}
-      {settings !== null && isPdfOpen && <PdfPage pdf={pdf} paperOptions={pdfPaperOptions} onClose={appView.close} />}
+      {settings !== null && isPdfOpen && (
+        <PdfPage pdf={pdf} paperOptions={pdfPaperOptions} scan={printPageSink} onClose={appView.close} />
+      )}
       {isMobileOverlayShown && (
         <MobileOverlay
           view={describeMobileOverlay(mobile.status, {

@@ -135,7 +135,7 @@ export function installText(view: DriverInstallView, platform: DriverPlatformVie
             tone: 'ok',
             text: `驱动已装好${restart}，新打印机：${state.newPrinters.join('、')}。到上面「纸张 → 打印机」给它分配纸张`,
           }
-        : { tone: 'ok', text: `驱动已装好${restart}，但还没看到新打印机：重新插拔 USB 线后点「重新检测」` };
+        : { tone: 'ok', text: `驱动已装好${restart}，但还没看到新打印机：重新插拔 USB 线后点「重新检查」` };
     }
     case 'failed':
       return { tone: 'error', text: failureText(state.failure, state.exitCode, platform) };
@@ -192,7 +192,7 @@ function failureText(failure: InstallFailure, exitCode: number | null, platform:
         ? '安装程序没能运行，详情见日志：可以到厂家官网下载驱动手动安装'
         : `安装程序报错（退出码 ${exitCode}）：可以到厂家官网下载驱动手动安装`;
     case 'install-timeout':
-      return '安装超过 15 分钟还没结束：等它装完后点「重新检测」';
+      return '安装超过 15 分钟还没结束：等它装完后点「重新检查」';
     case 'internal':
       return '安装驱动时出错，详情见日志';
   }

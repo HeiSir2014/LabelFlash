@@ -9,7 +9,7 @@ import {
   type RowProblem,
   type SerialSettings,
 } from '../../../core/batch/batch-model';
-import type { BatchFailure, BatchPauseReason } from '../../../core/batch/batch-runner';
+import type { BatchFailure } from '../../../core/batch/batch-runner';
 import { usesSerial } from '../../../core/batch/column-mapping';
 import { serialText } from '../../../core/batch/serial';
 import type { BatchStatus } from '../../../shared/batch';
@@ -185,59 +185,21 @@ export function describeSummary({ rowCount, selectedCount, labelCount, problemRo
     .join(' · ');
 }
 
-export interface ProgressView {
-  text: string;
-  /** 0–100。 */
-  percent: number;
-}
+/** 批次号里的开始时间：年月日-时分秒（core 的 batchIdFor）。 */
+const BATCH_ID_TIME = /^\d{4}(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}-[0-9a-f]{4}$/;
 
-const PERCENT = 100;
-
-/** 底部操作条的进度文字：用「已发送」（驱动收下了），不说「打印成功」。 */
-export function describeProgress(status: BatchStatus): ProgressView {
-  const done = status.sent + status.failed;
-  const percent = status.total === 0 ? 0 : Math.round((done / status.total) * PERCENT);
-  const counts = `已发送 ${status.sent} / ${status.total} 张${status.failed > 0 ? ` · 失败 ${status.failed} 张` : ''}`;
-  switch (status.state) {
-    case 'running':
-      return { text: `正在打印 · ${counts}`, percent };
-    case 'paused':
-      return { text: `已暂停（${describePauseReason(status.pauseReason)}）· ${counts}`, percent };
-    case 'canceled':
-      return { text: `已取消 · ${counts}`, percent };
-    case 'done':
-      return { text: `${status.failed > 0 ? '已结束' : '全部已发送'} · ${counts}`, percent };
+/**
+ * 打印记录「只看这一批」时的标题：按开始时间说（批次号就是它编出来的），知道是哪个文件的再加上文件名
+ * （表格只在这次运行的内存里，重启之后就只剩时间）。读不出时间的照原样显示批次号。
+ */
+export function describeBatchFilter(batchId: string, fileName: string | null): string {
+  const match = BATCH_ID_TIME.exec(batchId);
+  if (match === null) {
+    return `批次 ${batchId}`;
   }
-}
-
-export function describePauseReason(reason: BatchPauseReason | null): string {
-  switch (reason) {
-    case 'no-printer':
-      return '这种纸还没有打印机：到「打印机」页分配后点继续';
-    case 'PRINTER_NOT_READY':
-      return '打印机现在不能打印：缺纸、离线或卡纸，处理好后点继续';
-    case 'PRINTER_NOT_FOUND':
-      return '找不到打印机：检查连接后点继续';
-    // 打印机状态在 macOS 上一直是「未知」，拔纸、卡纸不会被认成上面那几种：连续失败几张就自动暂停，
-    // 和「这种纸没有打印机」分开提示，操作员知道要去检查打印机本身，而不是去配置页分配打印机。
-    case 'consecutive-failures':
-      return '连续几张都没打印成功：检查打印机后点继续';
-    // 触发暂停的那一张是超时：驱动没回话不代表没打印，和前一种分开措辞，提醒操作员自己确认有没有出纸，
-    // 而不是直接当成「没打」去重打（重打有重复出纸的风险）。
-    case 'consecutive-failures-after-timeout':
-      return '最后一张可能已经打出来了：看一眼打印机，确认后点继续';
-    case 'operator':
-    case null:
-      return '点继续接着打';
-  }
-}
-
-/** 标题栏「批量打印」按钮上的进度：正在打或暂停时显示「36/120」，其余不显示。 */
-export function batchButtonProgress(status: BatchStatus | null): string | null {
-  if (status === null || (status.state !== 'running' && status.state !== 'paused')) {
-    return null;
-  }
-  return `${status.sent + status.failed}/${status.total}`;
+  const [, month, day, hour, minute] = match;
+  const when = `${Number(month)}月${Number(day)}日 ${hour}:${minute} 开始的一批`;
+  return fileName === null ? when : `${fileName} · ${when}`;
 }
 
 export function serialExample(settings: SerialSettings): string {

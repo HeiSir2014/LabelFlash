@@ -20,7 +20,7 @@
 TRAILER=$'Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01LgHoPxpB2ZvtVDHDUepJjK'
 ```
 
-- **分支**：实施顺序是 1 设计器 → 3 批量 → 2 模板库 → 4 PDF → **5a 本计划** → 5b 诊断 → 5c 驱动 → 6a IPP → 6b 远程。PDF（子项目 4）合进 master 之后，从 master 拉 `feature/printer-commands`。批量、PDF 都改过 `fake-printers.ts`（`printDelayMs` 等）：本计划对它的修改都是追加字段和方法，开工前先读当时的文件，按当时的样子加。
+- **分支**：实施顺序是 1 设计器 → 3 批量 → 2 模板库 → 4 PDF → **5a 本计划** → 5b 诊断 → 5c 驱动 → 6a IPP。PDF（子项目 4）合进 master 之后，从 master 拉 `feature/printer-commands`。批量、PDF 都改过 `fake-printers.ts`（`printDelayMs` 等）：本计划对它的修改都是追加字段和方法，开工前先读当时的文件，按当时的样子加。
 - **不加数据库迁移**：每台打印机的设置和纸张分配一样存在设置表（`settings`，key → JSON，`SqliteSettingsStore`），新的一项 `printerCommands`，读写都经 `sanitizeSettings`。开工时先核对设置仍是这种存法；如果已经变了，停下来问协调者。
 - **视觉验收编号**：固定用 **V80–V83**，追加在 `ITEMS` 当时最后一项之后（批量 V60–V62、PDF V70–V72 之后）。
 - **命名限制**：仓库里不写打印机品牌、型号、厂家网址；指令手册只按书名称呼（《TSPL/TSPL2 编程手册》《ZPL II 编程指南》《EPL2 编程手册》），不写出处网址。测试和假打印机的驱动名用通用写法（`Label Printer TSPL`、`Office Inkjet`）。打印机只叫「热敏标签机」。

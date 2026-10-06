@@ -1,3 +1,4 @@
+import { TEMPLATE_CHANGED_ISSUE } from '../../../core/api/template-fields';
 import type { JobRecord } from '../../../core/types';
 import { canReprint, type ReprintMode } from '../lib/reprint';
 import { describeJobMeta, describeJobStatus } from '../lib/status-text';
@@ -24,12 +25,16 @@ interface JobLogProps {
   onLoadMore: () => void;
   /** 本机接口记录的调用方（密钥名称或网站）；其他记录为 null。 */
   callerOf: (job: JobRecord) => string | null;
-  /** 这条记录能不能、怎么预览和重打（见 lib/reprint.ts）；不能重打（unavailable、expired）时不显示按钮。 */
+  /** 这条记录能不能、怎么预览和重打（见 lib/reprint.ts）；不能重打（unavailable、expired、template-changed）时不显示按钮。 */
   reprintModeOf: (job: JobRecord) => ReprintMode;
   onReview: (job: JobRecord) => void;
   onReprint: (job: JobRecord) => void;
   /** 只看这一批（批次号）；null = 全部。 */
   batchFilter: string | null;
+  /** 这一批给人看的名字（lib/batch-view.ts 的 describeBatchFilter）。 */
+  batchLabel: string | null;
+  /** 这一批还有几张失败的：没有时不显示「重打失败的」。 */
+  batchFailed: number;
   onFilterBatch: (batchId: string | null) => void;
   /** 重打这一批失败的标签（打开批量打印页看进度）。 */
   onRetryBatch: (batchId: string) => void;
@@ -51,6 +56,8 @@ export function JobLog({
   onReview,
   onReprint,
   batchFilter,
+  batchLabel,
+  batchFailed,
   onFilterBatch,
   onRetryBatch,
 }: JobLogProps) {
@@ -63,7 +70,8 @@ export function JobLog({
           type="search"
           className="text-field"
           aria-label="搜索打印记录"
-          placeholder="按扫码内容搜索"
+          // 搜的是打印内容：扫码、本机接口、批量打的内容，PDF 的记录内容里带着文件名。
+          placeholder="搜索打印内容、PDF 文件名"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
         />
@@ -73,10 +81,14 @@ export function JobLog({
       </div>
       {batchFilter !== null && (
         <div className="job-log__batch">
-          <span className="job-log__batch-name">批次 {batchFilter}</span>
-          <button type="button" className="button button--small" onClick={() => onRetryBatch(batchFilter)}>
-            重打失败的
-          </button>
+          <span className="job-log__batch-name" title={`批次号 ${batchFilter}`}>
+            {batchLabel ?? `批次 ${batchFilter}`}
+          </span>
+          {batchFailed > 0 && (
+            <button type="button" className="button button--small" onClick={() => onRetryBatch(batchFilter)}>
+              重打失败的（{batchFailed}）
+            </button>
+          )}
           <button type="button" className="button button--small button--quiet" onClick={() => onFilterBatch(null)}>
             显示全部
           </button>
@@ -106,6 +118,7 @@ export function JobLog({
                 {meta}
               </div>
               {mode === 'expired' && <p className="job-row__hint">PDF 的图只保留 7 天，已过期：重新打开 PDF 再打</p>}
+              {mode === 'template-changed' && <p className="job-row__hint">{TEMPLATE_CHANGED_ISSUE}</p>}
               {(canReprint(mode) || (batchId !== undefined && batchFilter === null)) && (
                 <div className="job-row__actions">
                   {batchId !== undefined && batchFilter === null && (

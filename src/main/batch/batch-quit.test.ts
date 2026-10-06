@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { templateFingerprint } from '../../core/api/template-fields';
 import { CANVAS_TAG } from '../../core/templates/builtin-canvas';
-import { batchQuitDialogText, canceledJobRecords, shouldConfirmBatchQuit, waitForBatchIdle } from './batch-quit';
+import {
+  batchQuitDialogText,
+  canceledJobRecords,
+  quitStep,
+  shouldConfirmBatchQuit,
+  waitForBatchIdle,
+} from './batch-quit';
 
 describe('shouldConfirmBatchQuit', () => {
   test('confirms when labels are still pending', () => {
@@ -14,6 +20,20 @@ describe('shouldConfirmBatchQuit', () => {
 
   test('skips during an OS shutdown even with labels pending', () => {
     expect(shouldConfirmBatchQuit(3, true)).toBe(false);
+  });
+});
+
+describe('quitStep', () => {
+  test('quits at once during a system shutdown without waiting for the cache cleanup', () => {
+    expect(quitStep({ isSystemShutdown: true, needsConfirm: false })).toBe('quit-now');
+  });
+
+  test('cleans the unprinted cache first on an ordinary quit', () => {
+    expect(quitStep({ isSystemShutdown: false, needsConfirm: false })).toBe('discard-cache-then-quit');
+  });
+
+  test('asks first when something is unfinished', () => {
+    expect(quitStep({ isSystemShutdown: false, needsConfirm: true })).toBe('confirm');
   });
 });
 

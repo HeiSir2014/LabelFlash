@@ -48,7 +48,7 @@ import { renderLabelPdf } from './api/pdf-render';
 import { findPortOwner } from './api/port-owner';
 import { handleAppScheme, registerAppScheme } from './app-protocol';
 import { BACKGROUND_UPDATE_CHECK_MS, canUpdateInBackground } from './background-update';
-import { canceledJobRecords, shouldConfirmBatchQuit, waitForBatchIdle } from './batch/batch-quit';
+import { canceledJobRecords, quitStep, shouldConfirmBatchQuit, waitForBatchIdle } from './batch/batch-quit';
 import { BatchStation } from './batch/batch-station';
 import batchReaderPath from './batch/reader-worker?modulePath';
 import { TableReaderHost } from './batch/table-reader-host';
@@ -68,7 +68,7 @@ import { DriverStation } from './drivers/driver-station';
 import { FakeDrivers, parseFakeDrivers, testCatalogKey } from './drivers/fake-drivers';
 import { cleanupOldDownloads, createInstallerDownloader } from './drivers/installer-downloader';
 import { addFirewallRule, discoveryFirewallStatus, firewallStatus } from './firewall';
-import { createGpuCrashHandler, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
+import { createGpuCrashHandler, PendingRelaunch, SOFTWARE_RENDERING_SWITCH } from './gpu-fallback';
 import { registerIpc } from './ipc';
 import type { PendingClient } from './ipp/client-approvals';
 import { IPP_STOP_ON_QUIT_TIMEOUT_MS, ippQuitDialogText, settleWithin } from './ipp/ipp-quit';
@@ -170,6 +170,8 @@ let isQuitting = false;
 // 操作系统正在关机、注销（而不是操作员自己退出程序）：批量打印还有没打的也不弹确认，不能挡着关机。
 // Windows 走 session-end（before-quit 根本不会触发，见下面的处理），这里主要是给 macOS/Linux 用。
 let isSystemShutdown = false;
+// GPU 进程崩溃后排着的「用软件渲染重启」：退出确定要发生时才交给 app.relaunch（见 gpu-fallback.ts）。
+const pendingRelaunch = new PendingRelaunch();
 
 /** 仅开发 / E2E 测试可用：把数据目录指到临时目录，测试之间互不干扰。安装版忽略它。 */
 const USER_DATA_OVERRIDE_ENV = 'CDL_LABELFLASH_USER_DATA';
@@ -198,7 +200,7 @@ if (app.isPackaged) {
 
 /** 托盘、双击桌面快捷方式（second-instance）、点系统通知：窗口到最前并拿到焦点（前台锁见 window-activation.ts）。 */
 function showMainWindow(): void {
-  if (!mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
   bringToFront(mainWindow, process.platform);
@@ -282,7 +284,7 @@ async function bootstrap(): Promise<void> {
     isSoftwareRendering,
     args: process.argv.slice(1),
     canRelaunch: () => !isQuitting,
-    relaunch: (args) => app.relaunch({ args }),
+    relaunch: (args) => pendingRelaunch.request(args),
     quit,
     warn: (message) => console.warn(message),
   });
@@ -699,6 +701,8 @@ async function bootstrap(): Promise<void> {
       // 要问的（没保存的模板、批量打印）都在装之前问过或挡下了：安装引起的退出不再问第二遍。
       readyToQuit = true;
       isQuitting = true;
+      // 安装程序装完会自己带 --updated 启动新版本：不再另外重启一次。
+      pendingRelaunch.cancel();
       relaunch.write(window);
     },
   });
@@ -871,7 +875,9 @@ async function bootstrap(): Promise<void> {
   let isFinishingQuit = false;
   // 用异步版本：确认框开着的这段时间，打印和 IPC 照常响应（同步版本会冻住整个主进程）。
   const showQuitDialog = (options: Electron.MessageBoxOptions) =>
-    mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options);
+    mainWindow && !mainWindow.isDestroyed()
+      ? dialog.showMessageBox(mainWindow, options)
+      : dialog.showMessageBox(options);
 
   /**
    * 模板页有没保存的修改：问「保存并退出 / 不保存退出 / 取消」。保存经界面平常的保存流程往返一次
@@ -912,8 +918,8 @@ async function bootstrap(): Promise<void> {
       return false;
     }
     isConfirmingQuit = true;
-    showMainWindow();
     try {
+      showMainWindow();
       return await templateQuit.confirmBeforeInstall(confirmTemplateQuit);
     } finally {
       isConfirmingQuit = false;
@@ -1006,7 +1012,9 @@ async function bootstrap(): Promise<void> {
 
   app.on('before-quit', (event) => {
     if (readyToQuit) {
+      // 这一次放行，退出确定要发生：GPU 崩溃排着的重启现在才交出去。
       isQuitting = true;
+      pendingRelaunch.commit((args) => app.relaunch({ args }));
       mobile.quit();
       return;
     }
@@ -1018,7 +1026,18 @@ async function bootstrap(): Promise<void> {
     );
     const needsTemplate = templateQuit.shouldConfirm(isSystemShutdown);
     const needsIpp = shouldConfirmBatchQuit(ippSharing.pendingJobs, isSystemShutdown);
-    if (!needsBatchOrPdf && !needsTemplate && !needsIpp) {
+    const step = quitStep({ isSystemShutdown, needsConfirm: needsBatchOrPdf || needsTemplate || needsIpp });
+    if (step === 'quit-now') {
+      // 系统在关机、注销：不拦这次退出去删缓存、停局域网共享（见 quitStep），进程退出时端口自然关掉。
+      // macOS 上 powerMonitor 的 shutdown 和 before-quit 谁先到还没在真 Mac 上核对过（见上面 shutdown 处的说明）：
+      // before-quit 先到的话这里还认不出是关机，照常先收尾再退出。
+      readyToQuit = true;
+      isQuitting = true;
+      pendingRelaunch.cancel();
+      mobile.quit();
+      return;
+    }
+    if (step === 'discard-cache-then-quit') {
       // 没有要确认的，但还要删掉这次出块里没打过的缓存位图（见 discardUnprintedCache）、停局域网共享（告别广播）：
       // 这是异步的，不能让退出真的发生之后才做——进程可能在做完之前就已经退出了。先拦住这一次，做完再调用
       // app.quit() 重新触发：这时 readyToQuit 已经是 true，下一次进这个处理器会直接放行，不会再拦一次。
@@ -1041,12 +1060,13 @@ async function bootstrap(): Promise<void> {
       return;
     }
     isConfirmingQuit = true;
-    showMainWindow();
     // 先问模板（选「取消」没有任何副作用），再问局域网共享（选「仍要退出」也只是记下，最后才停），
     // 最后问批量打印和 PDF（选「仍要退出」会取消它们）：反过来的话，已经取消的批次、PDF 块再也回不去，
     // 前面那一步再选「取消」也没意义了。
+    // 从置位起的每一步都在 try 里：哪一步抛了，finally 都会复位 isConfirmingQuit，下一次退出还能再问。
     void (async () => {
       try {
+        showMainWindow();
         if (needsTemplate && !(await confirmTemplateQuit())) {
           return;
         }
@@ -1067,6 +1087,10 @@ async function bootstrap(): Promise<void> {
         console.error('[quit] the quit confirmation failed, staying open', error);
       } finally {
         isConfirmingQuit = false;
+        // 确认框取消了（或出错没退出）：程序接着用，GPU 崩溃排着的重启作废，下一次退出不能被它变成重启。
+        if (!readyToQuit) {
+          pendingRelaunch.cancel();
+        }
       }
     })();
   });
@@ -1218,8 +1242,8 @@ async function bootstrap(): Promise<void> {
   mainWindow = createMainWindow({
     icon: appIcon,
     placement,
-    // 没有托盘图标时照常关闭：藏起来之后就再也叫不回窗口了。
-    shouldHideOnClose: () => !isQuitting && tray !== null,
+    // 没有托盘图标时不藏（藏起来之后就再也叫不回窗口了），关窗先走退出确认。
+    closeState: () => ({ hasTray: tray !== null, isQuitting }),
     onHidden: () => tray?.notifyHiddenOnce(),
     startup,
   });
@@ -1228,6 +1252,8 @@ async function bootstrap(): Promise<void> {
   mainWindow.on('closed', () => {
     pdfRenderer.close();
     ippRenderer.close();
+    // 已经销毁的窗口不能再拿来弹确认框、到最前（会抛 Object has been destroyed）。
+    mainWindow = null;
   });
   // 窗口关在托盘里的起始时间：关到托盘后的静默更新要等一会儿（background-update.ts）。
   let hiddenSince: number | null = startup === 'tray' ? Date.now() : null;

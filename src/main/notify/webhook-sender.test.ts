@@ -54,7 +54,15 @@ const DELIVERY: Delivery = {
 };
 
 function endpoint(path: string, secretName: string | null = '签名'): WebhookEndpoint {
-  return { id: 'w1', name: 'ERP', url: `${base}${path}`, secretName, events: ['printed'], enabled: true };
+  return {
+    id: 'w1',
+    name: 'ERP',
+    url: `${base}${path}`,
+    secretName,
+    events: ['printed'],
+    sources: ['scan'],
+    enabled: true,
+  };
 }
 
 function createSender(secrets: Record<string, string> = { 签名: SECRET }) {

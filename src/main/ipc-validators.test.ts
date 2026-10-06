@@ -251,6 +251,17 @@ describe('ipc validators', () => {
     expect(() => requireSettingsPatch('x')).toThrow(TypeError);
   });
 
+  // 授权网站只经「允许 / 撤销」的专用通道改；实例编号、上次的端口只由主进程自己写。
+  test('requireSettingsPatch strips the local API fields only the main process may write', () => {
+    const patch = {
+      apiPort: 17700,
+      apiAuthorizedOrigins: ['https://evil.example'],
+      apiInstanceId: '00000000-0000-4000-8000-000000000000',
+      apiLastPort: 17631,
+    };
+    expect(requireSettingsPatch(patch)).toEqual({ apiPort: 17700 });
+  });
+
   // 局域网共享的实例编号、上次的端口是主进程自己记的：界面改不到（实例编号决定打印机的 UUID 和广播的主机名）。
   test('requireSettingsPatch keeps the LAN sharing switch and port but not its own records', () => {
     const patch = { ippSharingEnabled: true, ippPort: 8700, ippLastPort: 9000, ippInstanceId: 'x' };

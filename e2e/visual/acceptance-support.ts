@@ -4,6 +4,7 @@ import { expect, type JSHandle, type Page } from '@playwright/test';
 import type { BrowserWindow, Rectangle } from 'electron';
 import type { BatchStatus } from '../../src/shared/batch';
 import { IpcChannel, type LabelFlashApi } from '../../src/shared/ipc-contract';
+import type { PdfStatus } from '../../src/shared/pdf';
 import type { UpdateStatus } from '../../src/shared/update-status';
 
 /** 视觉验收用到的窗口、本机接口和测试数据操作（验收项本身在 acceptance.visual.ts）。 */
@@ -20,6 +21,11 @@ export const SIZE_1024: Size = { width: 1024, height: 680 };
 export const SIZE_1920: Size = { width: 1920, height: 1080 };
 /** 店里常见的 1366×768 笔记本开 150% 缩放：设计器要在这么小的地方放得下画布、检查器和浮动工具条。 */
 export const SIZE_1366_150: Size = { width: 1366, height: 768, zoom: 1.5 };
+/**
+ * 1366×768 的屏幕开 150% 缩放，页面真正能用的 CSS 宽度：1366 / 1.5 ≈ 911，高度扣掉任务栏约 512。
+ * 窗口最小宽度不超过工作区（window-bounds.ts 的 fitWindowToWorkArea），这样的屏幕上窗口就是 911 宽，标题栏要放得下。
+ */
+export const SIZE_911_150: Size = { width: 911, height: 512, zoom: 1.5 };
 export const ALL_SIZES: readonly Size[] = [SIZE_1280, SIZE_1024, SIZE_1920];
 
 /** 用不存在的打印机提交打印：主进程记一条「找不到打印机」的记录，不会出纸。 */
@@ -76,6 +82,14 @@ export async function pushUpdateStatus(window: WindowHandle, status: UpdateStatu
 export async function pushBatchStatus(window: WindowHandle, status: BatchStatus): Promise<void> {
   await window.evaluate((win, { channel, payload }) => win.webContents.send(channel, payload), {
     channel: IpcChannel.BatchStatusChanged,
+    payload: status,
+  });
+}
+
+/** 直接推一条打印 PDF 的状态（标题栏按钮上的进度），不需要真的打开、打印一个 PDF。 */
+export async function pushPdfStatus(window: WindowHandle, status: PdfStatus): Promise<void> {
+  await window.evaluate((win, { channel, payload }) => win.webContents.send(channel, payload), {
+    channel: IpcChannel.PdfStatusChanged,
     payload: status,
   });
 }

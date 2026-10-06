@@ -2,9 +2,11 @@ import { useCallback, useId } from 'react';
 import type { LabelTemplate } from '../../../../core/templates/template-model';
 import { DEFAULT_PAPER } from '../../../../shared/label-paper';
 import { NO_RENDER_WARNINGS } from '../../../../shared/render-warnings';
-import { describeProgress, describeSummary } from '../../lib/batch-view';
+import { describeSummary } from '../../lib/batch-view';
+import { describeRunProgress } from '../../lib/print-run-text';
 import type { BatchViewModel } from '../../view-models/use-batch';
 import { LabelPreview } from '../LabelPreview';
+import { type PageScanSink, PrintPageScanSink } from '../ScanSinkField';
 import { BatchRows } from './BatchRows';
 import { BatchSetup } from './BatchSetup';
 
@@ -14,16 +16,17 @@ const BATCH_PREVIEW_MAX_SCALE = 3;
 interface BatchPageProps {
   batch: BatchViewModel;
   templates: readonly LabelTemplate[];
+  scan: PageScanSink;
   onClose: () => void;
 }
 
 /** 批量打印页：和配置中心同级，铺满标题栏以下；自上而下五段设置，底部是打印按钮和进度。 */
-export function BatchPage({ batch, templates, onClose }: BatchPageProps) {
+export function BatchPage({ batch, templates, scan, onClose }: BatchPageProps) {
   const previewTitleId = useId();
   // 打开时焦点落到标题：读屏软件读出所在位置，Tab 从页面内容开始（和配置中心一样）。
   const focusTitle = useCallback((title: HTMLHeadingElement | null) => title?.focus(), []);
   const { status, preview } = batch;
-  const progress = status === null ? null : describeProgress(status);
+  const progress = status === null ? null : describeRunProgress(status);
   const isButtonDisabled = batch.labelCount === 0;
   // 按钮点不了（没有要打的标签）时，不管之前有没有别的批打过，都该说清楚为什么点不了——
   // 不能一直显示上一批的旧进度，让操作员以为「打印 0 张」是因为上一批还没完。
@@ -43,6 +46,7 @@ export function BatchPage({ batch, templates, onClose }: BatchPageProps) {
         <h1 ref={focusTitle} className="config-header__title" tabIndex={-1}>
           批量打印
         </h1>
+        <PrintPageScanSink scan={scan} label="扫码内容（批量打印页上不打印）" />
       </div>
       <div className="config-content">
         <div className="config-content__inner batch-page__inner">
@@ -154,12 +158,18 @@ export function BatchPage({ batch, templates, onClose }: BatchPageProps) {
         )}
         {batch.isRunning ? (
           <>
+            {/* 两个按钮不同 key：换成另一个时是新元素，焦点不会留在刚出现的那个上（回车不会立刻点下它）。 */}
             {status?.state === 'paused' ? (
-              <button type="button" className="button button--primary" onClick={() => batch.control('resume')}>
+              <button
+                key="resume"
+                type="button"
+                className="button button--primary"
+                onClick={() => batch.control('resume')}
+              >
                 继续
               </button>
             ) : (
-              <button type="button" className="button" onClick={() => batch.control('pause')}>
+              <button key="pause" type="button" className="button" onClick={() => batch.control('pause')}>
                 暂停
               </button>
             )}

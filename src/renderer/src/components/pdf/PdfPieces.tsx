@@ -1,5 +1,5 @@
 import type { PdfPieceView } from '../../../../shared/pdf';
-import { visibleOrder } from '../../lib/pdf-view';
+import { pieceCaption, visibleOrder } from '../../lib/pdf-view';
 
 interface PdfPiecesProps {
   pieces: readonly PdfPieceView[];
@@ -50,7 +50,7 @@ export function PdfPieces({
               />
             </button>
             <span className="pdf-piece__name">
-              {index + 1}. {name}
+              {index + 1}. {pieceCaption(piece)}
             </span>
             <div className="pdf-piece__actions">
               <button

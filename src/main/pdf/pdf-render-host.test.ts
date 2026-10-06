@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { RenderRequest } from '../../shared/pdf-render-protocol';
-import { PDF_ISSUES, PdfRenderHost, type RenderPort } from './pdf-render-host';
+import { PDF_ISSUES, PdfOpenSupersededError, PdfRenderHost, type RenderPort } from './pdf-render-host';
 
 const A4 = { width: 595, height: 842 };
 
@@ -179,5 +179,47 @@ describe('PdfRenderHost', () => {
   test('refuses to render before a PDF is open', async () => {
     const { host } = createHost();
     await expect(host.render(1, A4, 203)).rejects.toMatchObject({ issue: PDF_ISSUES.gone });
+  });
+});
+
+describe('PdfRenderHost with slow render pages', () => {
+  /** 渲染页由测试决定什么时候建好：两次打开可以交错。 */
+  function createSlowHost() {
+    const pending: ((port: FakePort) => void)[] = [];
+    const host = new PdfRenderHost({
+      openPort: () => new Promise<RenderPort>((resolve) => pending.push(resolve)),
+      openTimeoutMs: 20_000,
+      pageTimeoutMs: 30_000,
+      schedule: () => () => {},
+      log: () => {},
+    });
+    return { host, pending };
+  }
+
+  test('closes the render page of an open that a newer open superseded', async () => {
+    const { host, pending } = createSlowHost();
+    const first = host.open(Uint8Array.of(1));
+    const second = host.open(Uint8Array.of(2));
+    const firstPort = new FakePort();
+    const secondPort = new FakePort();
+    pending[0]?.(firstPort);
+    await expect(first).rejects.toBeInstanceOf(PdfOpenSupersededError);
+    expect(firstPort.closed).toBe(true);
+    pending[1]?.(secondPort);
+    await settle();
+    secondPort.reply({ id: secondPort.sent[0]?.id, kind: 'opened', pageCount: 1, pages: [A4] });
+    expect(await second).toEqual({ pageCount: 1, pages: [A4] });
+    expect(secondPort.closed).toBe(false);
+  });
+
+  test('closes the render page when the document is closed while it opens', async () => {
+    const { host, pending } = createSlowHost();
+    const opening = host.open(Uint8Array.of(1));
+    host.close();
+    const port = new FakePort();
+    pending[0]?.(port);
+    await expect(opening).rejects.toBeInstanceOf(PdfOpenSupersededError);
+    expect(port.closed).toBe(true);
+    expect(port.sent).toEqual([]);
   });
 });

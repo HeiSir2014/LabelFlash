@@ -17,6 +17,26 @@ export function shouldConfirmBatchQuit(pendingLabels: number, isSystemShutdown: 
 }
 
 /**
+ * before-quit 里这一次退出怎么走：
+ * - quit-now：系统在关机、注销，直接放行。删缓存是异步的，要拦住退出再重来，会拖慢关机；
+ *   没打过的缓存位图留给启动时 7 天的清理；
+ * - discard-cache-then-quit：没什么要问的，先删掉这次出块里没打过的缓存位图再退出；
+ * - confirm：有没打完的、没保存的，先问。
+ */
+export function quitStep({
+  isSystemShutdown,
+  needsConfirm,
+}: {
+  isSystemShutdown: boolean;
+  needsConfirm: boolean;
+}): 'quit-now' | 'discard-cache-then-quit' | 'confirm' {
+  if (isSystemShutdown) {
+    return 'quit-now';
+  }
+  return needsConfirm ? 'confirm' : 'discard-cache-then-quit';
+}
+
+/**
  * 点「重启更新」时用：electron-updater 的 quitAndInstall 会在任何确认之前就把安装程序拉起来，
  * 不像正常退出能先弹确认框——批量打印还在打或暂停中时只能直接拒绝安装，让操作员自己先处理这一批。
  */

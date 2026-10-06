@@ -52,6 +52,16 @@ export class PdfRenderError extends Error {
   }
 }
 
+/**
+ * 这次打开在建渲染页的时候被更新的打开、关闭超过了：它建好的渲染页已经关掉。不是错误，调用方按「作废」处理。
+ */
+export class PdfOpenSupersededError extends Error {
+  constructor() {
+    super('a newer open or close superseded this open');
+    this.name = 'PdfOpenSupersededError';
+  }
+}
+
 export interface OpenedPdf {
   pageCount: number;
   /** 每页大小（点）；页数超过上限时为空。 */
@@ -79,10 +89,15 @@ export class PdfRenderHost {
   private port: RenderPort | null = null;
   private nextId = 1;
   private readonly waiting = new Map<number, Waiter>();
+  /**
+   * 每次 open、close 加一。建渲染页要等（新建隐藏窗口），这期间又来一次打开或关闭的话，
+   * 先建好的那个不能再挂上来：不然它会顶掉后来的那个，被顶掉的隐藏窗口没人关，两次打开也都失败。
+   */
+  private generation = 0;
 
   constructor(private readonly deps: PdfRenderHostDeps) {}
 
-  /** 打开一个 PDF（关掉上一个）。打不开时抛 PdfRenderError。 */
+  /** 打开一个 PDF（关掉上一个）。打不开时抛 PdfRenderError；被更新的打开、关闭超过时抛 PdfOpenSupersededError。 */
   open(data: Uint8Array): Promise<OpenedPdf> {
     return this.openWith((id) => ({ id, kind: 'open', data }));
   }
@@ -122,10 +137,15 @@ export class PdfRenderHost {
     return { image: { width: reply.width, height: reply.height, pixels: reply.gray }, dpi: info.dpi };
   }
 
-  /** 关掉上一个文档，开一个新的渲染页。 */
+  /** 关掉上一个文档，开一个新的渲染页；建好之前又有新的打开、关闭时关掉它，抛 PdfOpenSupersededError。 */
   private async attach(): Promise<void> {
     this.close();
+    const generation = this.generation;
     const port = await this.deps.openPort();
+    if (generation !== this.generation) {
+      port.close();
+      throw new PdfOpenSupersededError();
+    }
     this.port = port;
     port.onReply((message) => this.receive(port, message));
     port.onGone(() => {
@@ -166,6 +186,7 @@ export class PdfRenderHost {
 
   /** 关掉渲染页（换文件、关文件、退出时）；还在等的请求都失败。 */
   close(): void {
+    this.generation += 1;
     this.drop(new PdfRenderError(PDF_ISSUES.gone, 'render page closed'));
   }
 

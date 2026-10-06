@@ -256,8 +256,10 @@ describe('IppHttpServer', () => {
   test('derives at most once for a burst of parallel guesses from one address', async () => {
     const { server, verified } = createServer({ password: '1234', verifyDelayMs: 50 });
     const { url } = await start(server);
+    // 留两条连接的余量：正好等于每个地址的连接上限时，客户端偶尔多开一条连接就被服务器按上限断开（macOS 上见过 ECONNRESET），
+    // 测的是「同一地址同时只核对一次密码」，不是连接上限。
     const statuses = await Promise.all(
-      Array.from({ length: IPP_CONNECTION_LIMITS.perAddress }, (_, index) =>
+      Array.from({ length: IPP_CONNECTION_LIMITS.perAddress - 2 }, (_, index) =>
         sendIpp(url, ippRequest(OPERATIONS.printJob), MINIMAL_PDF, basicAuth('x', `guess${index}`)).then(
           (reply) => reply.httpStatus,
         ),

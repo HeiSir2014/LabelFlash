@@ -6,10 +6,9 @@ import type { LabelTemplate } from './templates/template-model';
 
 /**
  * desktop = 扫码枪，history = 从打印记录重打，mobile = 手机，api = 本机接口，batch = 批量打印，
- * pdf / ipp / remote 是后续子项目（PDF 打印、局域网共享打印、远程打印）预留的取值：
- * 先占住数据库的 CHECK 约束和这个联合类型，各自的列和流程由那几个子项目的迁移再加。
+ * pdf = 打印 PDF，ipp = 局域网共享。同时是数据库里 CHECK 约束的取值（migrations.ts 第 6 条）。
  */
-export const PRINT_SOURCES = ['desktop', 'history', 'mobile', 'api', 'batch', 'pdf', 'ipp', 'remote'] as const;
+export const PRINT_SOURCES = ['desktop', 'history', 'mobile', 'api', 'batch', 'pdf', 'ipp'] as const;
 export type PrintSource = (typeof PRINT_SOURCES)[number];
 
 /** 批量打印的一张：哪一批、第几行（从 1 数，不含表头）、这一行的第几份。 */
@@ -146,8 +145,8 @@ export interface JobRecord {
   caller?: string;
   /** 批量打印的一张：批次号、行号、份号；其他来源没有。 */
   batch?: BatchRef;
-  /** 批量打印用的模板指纹（templateFingerprint，字段 + 纸张）：重打时核对模板有没有改过，
-   *  改过（哪怕编号没变）就拒绝按旧样子重打。只有批量打印来源有。 */
+  /** 这一张用的模板的指纹（templateFingerprint，字段 + 纸张）：按记录原样重打（本机接口、批量打印）时核对模板
+   *  有没有改过，改过（哪怕编号没变）就拒绝按旧样子重打。2.0.0 起有模板的记录都写；之前的记录只有批量打印的有。 */
   templateFingerprint?: string;
   /** PDF 打印的一块：文件、页码、第几张、位图编号；其他来源没有。 */
   pdf?: PdfRef;

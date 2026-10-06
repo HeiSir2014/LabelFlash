@@ -1,4 +1,5 @@
 import { type PaperSize, paperKey } from '../shared/paper-sizes';
+import { templateFingerprint } from './api/template-fields';
 import { type DedupGuard, MAX_DEDUP_WINDOW_MS } from './dedup-guard';
 import { type PrintFailure, toPrintFailure } from './errors';
 import type { JobStore } from './job-store';
@@ -65,9 +66,11 @@ interface JobTarget {
   printerName: string;
   paper: string | null;
   templateId: string | null;
+  /** 模板的指纹（字段 + 纸张）：按记录原样重打时核对模板有没有改过。 */
+  templateFingerprint: string | null;
 }
 
-const NO_TARGET: JobTarget = { printerName: '', paper: null, templateId: null };
+const NO_TARGET: JobTarget = { printerName: '', paper: null, templateId: null, templateFingerprint: null };
 
 /**
  * 最多记住多少个码上一次的打印机和模板：一个班次扫几百张，防重复窗口（最长一天）内够用；
@@ -345,7 +348,12 @@ export class PrintService {
       };
     }
     return {
-      target: { printerName: choice.printerName, paper: paperKey(template.paper), templateId: template.id },
+      target: {
+        printerName: choice.printerName,
+        paper: paperKey(template.paper),
+        templateId: template.id,
+        templateFingerprint: templateFingerprint(template),
+      },
       noPrinter: null,
     };
   }
@@ -474,6 +482,9 @@ export class PrintService {
     }
     if (target.templateId !== null) {
       job.templateId = target.templateId;
+    }
+    if (target.templateFingerprint !== null) {
+      job.templateFingerprint = target.templateFingerprint;
     }
     if (scan !== null) {
       job.fields = scan.fields;

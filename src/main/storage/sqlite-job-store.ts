@@ -38,6 +38,7 @@ export class SqliteJobStore implements JobStore {
   private readonly selectById: StatementSync;
   private readonly selectBatchPage: StatementSync;
   private readonly selectBatchFailures: StatementSync;
+  private readonly countBatchFailures: StatementSync;
 
   constructor(
     private readonly db: DatabaseSync,
@@ -90,6 +91,11 @@ export class SqliteJobStore implements JobStore {
           GROUP BY batch_row, batch_copy)
         AND jobs.status = 'failed'
       ORDER BY jobs.batch_row, jobs.batch_copy`);
+    // 和上面同一个判断（每行每份最新一次是失败），只数个数。
+    this.countBatchFailures = db.prepare(`
+      SELECT COUNT(*) AS n FROM jobs
+      WHERE jobs.seq IN (SELECT MAX(seq) FROM jobs WHERE batch_id = :batchId GROUP BY batch_row, batch_copy)
+        AND jobs.status = 'failed'`);
     this.total = this.readCount();
   }
 
@@ -145,11 +151,15 @@ export class SqliteJobStore implements JobStore {
     const hasMore = rows.length > query.limit;
     const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
     const lastRow = pageRows.at(-1);
-    return {
+    const page: JobPage = {
       jobs: pageRows.map(toJobRecord),
       nextCursor: hasMore && lastRow ? readInteger(lastRow, 'seq') : null,
       total: this.total,
     };
+    if (query.batchId !== undefined) {
+      page.batchFailed = readInteger(this.countBatchFailures.get({ batchId: query.batchId }) ?? {}, 'n');
+    }
+    return page;
   }
 
   /** 按编号取一条（重打时用）；已经被环形保留删掉的返回 null。 */

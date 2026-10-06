@@ -35,7 +35,7 @@
 ## 打印（`printing/`）
 
 - **打印适配器** `electron-driver-adapter.ts`：隐藏的 `BrowserWindow`（sandbox，禁用 JS）加载标签 HTML，再调用 `webContents.print` 静默打印。超时时由 `AbortSignal` 销毁这个窗口。
-- **打印机探测** `printer-probe-host.ts`（只在 Windows 上）：常驻一个 PowerShell 进程，用行协议查询打印机状态、驱动纸张、驱动名，并原样发送标签机指令。
+- **打印机探测** `printer-probe-host.ts`（只在 Windows 上）：常驻 PowerShell 进程，用行协议查询。一共两个：一个查打印机状态、驱动纸张、驱动名，并原样发送标签机指令；诊断的慢查询（USB、队列、驱动纸张选项）单独一个（见下面「诊断」），超时出错只重启它，不连累打印。
   - 打印机名和数据都用 base64 编码后传入（「命令 名字 [数据]」），名字转义通配符。
   - 原样发送：第一次用时 `Add-Type` 编译一小段 C#（只用 C# 5 语法），P/Invoke winspool 的 W 版函数，数据类型 RAW；Win32 错误写成 `err win32:<错误码> …`。整段脚本经 `-EncodedCommand` 传入，测试核对命令行不超过 32767 字符。
   - 不要改成每次查询都新启动一个 PowerShell：启动一次约耗 1 秒 CPU。
@@ -58,7 +58,7 @@
 | `scan/sandboxed-regex.ts` | 用户写的正则只在隔离上下文里执行，单条 20ms 超时 |
 | `scan/http-step.ts` | HTTP 查询：`net.fetch`，结果短时缓存，请求头里的 `{密钥:名称}` 在这里替换成明文 |
 | `secrets/` | `safeStorage` 加密（Windows 上是 DPAPI，macOS 上是钥匙串）。密钥明文不写日志、不导出、不回传给界面 |
-| `notify/` | 打印结果通知：先写进本机队列（`webhook-outbox.ts`），后台发送并按退避策略重试，签名用 HMAC-SHA256 |
+| `notify/` | 打印结果通知：按接口选的事件和来源先写进本机队列（`webhook-outbox.ts`），后台发送并按退避策略重试，签名用 HMAC-SHA256；等待队列最多每分钟按条数、天数清理一次 |
 | `voice/` | 语音用 msedge-tts 合成，mp3 按「文本 + 音色 + 语速」缓存；断网时退回提示音 |
 | `logging.ts` | 日志在数据目录的 `logs/labelflash-YYYY-MM-DD.log`，纯文本，时间带时区，保留 14 天；`console.*` 和界面的 console 都会写进去 |
 | `updater.ts` + `update-settings.ts` | 自动更新，只有打包好的 Windows 版（macOS 的 pkg 没有开发者签名，装不了更新）。是否检查（`initialUpdateStatus`）和所有更新行为都在 `update-settings.ts` 里显式设置，不依赖库的默认值。「重启更新」点一次就静默安装（`INSTALL_OPTIONS`），装完由安装程序带 `--updated` 启动新版本；新版本的窗口去哪（到最前，或关在托盘里静默更新的留在托盘）由旧版本写下的 `relaunch-intent.ts` 决定。窗口关到托盘超过 1 分钟、打印队列和本机接口队列都空、手机扫码没开时静默更新（`background-update.ts`） |
@@ -73,10 +73,10 @@
 
 - **分层**：系统命令的输出由 `windows-facts.ts`、`mac-facts.ts` 解析成 core 的「事实」，结论在 core 的 `verdicts.ts`；`windows-diagnosis.ts`、`mac-diagnosis.ts`、`fake-diagnosis.ts` 实现同一个 `DiagnosisSystem`，依赖由构造参数传入；样本在 `testing/fixtures/{windows,mac}/`，按原样保存。
 - **`diagnosis-station.ts`**：打印机名不在系统列表里的，检查只说「已经没有这台了」，修复直接拒绝；修复按 core 的管理员策略核对，同一时间只做一个；检查和修复都写日志，「查不到」的英文原因也写。
-- **Windows**：查询走常驻探测进程（`spooler`、`printer`、`usb`、`jobs`、`paper-options`，回答一行 JSON，长度有上限）；取消本程序的任务用一次性 PowerShell；要管理员的用 `windows-powershell.ts`（防火墙的做法：外层 `Start-Process -Verb RunAs`，内层 Base64，确认框没成退出 1223），提权脚本第一行把 `PSModulePath` 收紧到 `$PSHOME`，只用 .NET 系统程序集和 `[Environment]::SystemDirectory` 下的 `sc.exe`，结果靠退出码带回（`windows-scripts.ts` 的 `SCRIPT_EXIT`）。
+- **Windows**：查询走诊断自己的常驻探测进程（和打印用的那个分开；`spooler`、`printer`、`usb`、`jobs`、`paper-options`，回答一行 JSON，长度有上限）；取消本程序的任务用一次性 PowerShell；要管理员的用 `windows-powershell.ts`（防火墙的做法：外层 `Start-Process -Verb RunAs`，内层 Base64，确认框没成退出 1223），提权脚本第一行把 `PSModulePath` 收紧到 `$PSHOME`，只用 .NET 系统程序集和 `[Environment]::SystemDirectory` 下的 `sc.exe`，结果靠退出码带回（`windows-scripts.ts` 的 `SCRIPT_EXIT`）。
 - **macOS**：`command-runner.ts` 跑命令（参数数组、英文环境、关 stdin、独立会话——CUPS 要密码时不会去终端上等）；改 CUPS 的先以当前用户做，`Forbidden` 时返回 needs-admin，操作员点管理员按钮后经 `osascript … with administrator privileges`（命令、提示经 argv，`shellCommand` 逐个单引号转义）。Get-Jobs 用自己的 ipptool 测试文件（`CUPS_GET_JOBS_TEST`），用时写进临时目录、用完删掉。
 - **账本**：`ElectronDriverAdapter` 和 5a 的 RAW 下发在任务进了系统队列后 `SubmittedJobs.record`，只在内存里。
-- **接缝**：5a（指令集、走纸、校准）和 5c（重装驱动）只经 `seams.ts` 的两个接口，`index.ts` 里接上；5c 合并前 `drivers` 是 null，按钮不出现。
+- **接缝**：5a（指令集、走纸、校准）和 5c（重装驱动）只经 `seams.ts` 的两个接口，`index.ts` 里接上。
 
 ## 批量打印（`batch/`）
 
@@ -168,7 +168,7 @@
 
 | 位置 | Windows | macOS |
 |---|---|---|
-| `index.ts` | 创建常驻探测进程，打印机状态轮询和异常通知都依赖它 | 不创建探测进程，状态按「未知」处理；开发版设置程序坞图标 |
+| `index.ts` | 创建两个常驻探测进程（打印用一个、诊断用一个），打印机状态轮询和异常通知都依赖前一个 | 不创建探测进程，状态按「未知」处理；开发版设置程序坞图标 |
 | `printing/driver-paper.ts` | 读纸张：CIM（`parseCimPaper`）；打开设置：`rundll32 printui.dll` | 读纸张：`ipptool`（`parseIppPaper`）；打开设置：系统设置「打印机与扫描仪」 |
 | `printing/raw-sender.ts` + `printer-identity.ts` | 原样发送：探测进程里 winspool RAW；驱动名：`Get-Printer` 的 DriverName | 原样发送：`lp -o raw`；驱动名：ipptool 的 `printer-make-and-model` |
 | `window.ts` + `src/shared/window-chrome.ts` | 无边框窗口，按钮由界面自绘 | `titleBarStyle: 'hidden'`，保留系统红绿灯 |

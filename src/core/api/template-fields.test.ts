@@ -3,7 +3,7 @@ import { CANVAS_TAG } from '../templates/builtin-canvas';
 import { DEPPON_TWO_PART, PLATFORM_TWO_PART } from '../templates/builtin-waybills';
 import type { QrLabelTemplate } from '../templates/template-model';
 import { PICK_TEMPLATE } from '../testing/templates';
-import { templateFields, templateFingerprint } from './template-fields';
+import { storedTemplateIssue, TEMPLATE_CHANGED_ISSUE, templateFields, templateFingerprint } from './template-fields';
 
 const SLOT = { prefix: '', fontSizeMm: 3, bold: false };
 
@@ -67,6 +67,23 @@ describe('templateFields', () => {
 
 // 批量打印重打失败的标签时用：模板的字段或纸张变了（哪怕编号没变），印出来的东西可能跟当初不一样了，
 // 重打前要能查出来，拒绝按旧样子重打。
+describe('storedTemplateIssue', () => {
+  test('accepts the template a record was printed with', () => {
+    expect(storedTemplateIssue(CANVAS_TAG, templateFingerprint(CANVAS_TAG))).toBeNull();
+  });
+
+  test('refuses a template whose fields or paper changed since the record', () => {
+    const changed = { ...CANVAS_TAG, paper: { ...CANVAS_TAG.paper, widthMm: CANVAS_TAG.paper.widthMm + 1 } };
+    expect(storedTemplateIssue(changed, templateFingerprint(CANVAS_TAG))).toBe(TEMPLATE_CHANGED_ISSUE);
+    expect(TEMPLATE_CHANGED_ISSUE.startsWith('模板改过：')).toBe(true);
+  });
+
+  // 2.0.0 之前的本机接口记录没记指纹：核对不了，照旧按现在的模板重打。
+  test('cannot check records written before fingerprints were stored', () => {
+    expect(storedTemplateIssue(CANVAS_TAG, undefined)).toBeNull();
+  });
+});
+
 describe('templateFingerprint', () => {
   test('stays the same when nothing relevant changed', () => {
     expect(templateFingerprint(CANVAS_TAG)).toBe(templateFingerprint({ ...CANVAS_TAG }));

@@ -204,15 +204,17 @@ describe('migration 6', () => {
     db.close();
   });
 
-  // 后续子项目（PDF 打印、局域网共享、远程打印）要用到的来源：先占住取值，列由各自的迁移再加。
-  test('accepts the sources reserved for later sub-projects', () => {
+  // PDF 打印、局域网共享的来源；异地远程打印不做（2026-10-07 决定），不留 remote 这个取值。
+  test('accepts the PDF and LAN sharing sources and nothing for remote printing', () => {
     const db = openDatabase(':memory:');
-    for (const source of ['pdf', 'ipp', 'remote']) {
-      db.prepare(
-        'INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES (?, 1, ?, ?, ?, ?, 0)',
-      ).run(source, source, 'P', source, 'printed');
+    const insert = db.prepare(
+      'INSERT INTO jobs (id, created_at, raw, printer_name, source, status, forced) VALUES (?, 1, ?, ?, ?, ?, 0)',
+    );
+    for (const source of ['pdf', 'ipp']) {
+      insert.run(source, source, 'P', source, 'printed');
     }
-    expect(db.prepare('SELECT COUNT(*) AS n FROM jobs').get()?.['n']).toBe(3);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM jobs').get()?.['n']).toBe(2);
+    expect(() => insert.run('remote', 'remote', 'P', 'remote', 'printed')).toThrow();
     db.close();
   });
 

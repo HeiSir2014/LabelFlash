@@ -15,6 +15,7 @@ import { RECENT_DELIVERY_COUNT } from '../../src/shared/ipc-contract';
 import { HISTORY_LIMIT_RANGE } from '../../src/shared/settings';
 import {
   allowSlowScannerLines,
+  authorizeWebsite,
   blurActiveElement,
   callApi,
   clickSwitch,
@@ -38,8 +39,10 @@ import {
   formatBounds,
   isSameRectangle,
   pushBatchStatus,
+  pushPdfStatus,
   pushUpdateStatus,
   resize,
+  SIZE_911_150,
   SIZE_1024,
   SIZE_1280,
   SIZE_1366_150,
@@ -268,6 +271,12 @@ const BATCH_PRINTERS: FakePrinterSpec[] = [
     printDelayMs: 300,
   },
 ];
+/** V67：名字很长的打印机，标题栏放不下时打印机胶囊要用省略号收短。 */
+const LONG_NAME_PRINTER: FakePrinterSpec = {
+  name: '仓库一楼发货台左边那台热敏标签机（60×40）',
+  paper: { widthMm: 60, heightMm: 40, dpi: 203 },
+  readiness: { ready: true },
+};
 /** V61：12 行，第 5 行缺颜色（标黄）；表里没有「货架号」（对列标红）。 */
 const BATCH_CSV = [
   '编码,颜色,尺码,备注',
@@ -1282,7 +1291,7 @@ const ITEMS: Item[] = [
     id: 'V36',
     title: '模板编辑器 · 纸张和打印机',
     points:
-      '「基本」区的纸张尺寸下拉框（预设名带适用的快递）、自定义时的宽和高两个输入框、打印机下拉框（「按纸张分配（当前是 …）」、指定的打印机不在这台电脑上时标明）；换纸张后右侧预览的软尺跟着变；模板列表只在纸张不是默认、或模板自己指定了打印机时，才在名字下面写纸张和实际会用的打印机',
+      '「基本」区的纸张尺寸下拉框（预设名带适用的快递）、自定义时的宽和高两个输入框、打印机下拉框（「按纸张分配」，下面一句说这种纸现在分配给哪台；指定的打印机不在这台电脑上时标明）；换纸张后右侧预览的软尺跟着变；模板列表只在纸张不是默认、或模板自己指定了打印机时，才在名字下面写纸张和实际会用的打印机',
     launch: { fakePrinters: PAPER_PRINTERS },
     setup: async ({ page }) => {
       await saveCopyOnPaper(page, '旧电脑的面单', { widthMm: 100, heightMm: 180 }, '旧电脑上的打印机');
@@ -1363,7 +1372,7 @@ const ITEMS: Item[] = [
     setup: async ({ page }) => {
       await callApi(page, 'createApiKey', 'ERP 服务器');
       await callApi(page, 'createApiKey', '仓库面单机');
-      await callApi(page, 'updateSettings', { apiAuthorizedOrigins: ['https://erp.example.com'] });
+      await authorizeWebsite(page, 'https://erp.example.com');
     },
     shots: [
       {
@@ -1504,6 +1513,47 @@ const ITEMS: Item[] = [
         isActive: true,
       });
       await expect(page.getByRole('button', { name: '批量打印' })).toContainText('19999/20000');
+    },
+  },
+  {
+    id: 'V67',
+    title: '标题栏 · 更新、批量和 PDF 的进度同时在',
+    points:
+      '有待安装的更新、批量打印和打印 PDF 都在打时：标题栏不换行、不溢出，窗口按钮（最小化、最大化、关闭）完整留在右边；放不下时打印机胶囊用省略号收短；1100 宽以下更新胶囊只剩「重启更新」、店铺胶囊让出；960 宽以下按钮上的进度数字也让出，打印机胶囊留得下几个字；911 宽（1366×768 屏开 150%）同样不溢出',
+    sizes: [SIZE_1280, SIZE_1024, SIZE_911_150],
+    launch: { fakePrinters: [LONG_NAME_PRINTER] },
+    setup: async ({ page, window }) => {
+      await callApi(page, 'updateSettings', { paperPrinters: { '60x40': LONG_NAME_PRINTER.name } });
+      await page.reload();
+      await expect(page.locator('.printer-chip')).toContainText(LONG_NAME_PRINTER.name);
+      await pushUpdateStatus(window, { state: 'ready', version: '2.0.1' });
+      await pushBatchStatus(window, {
+        batchId: '20261002-143501-a1b2',
+        state: 'running',
+        total: 20000,
+        sent: 12345,
+        failed: 0,
+        pauseReason: null,
+        failures: [],
+        templateName: '通用',
+        tableId: null,
+        isActive: true,
+      });
+      await pushPdfStatus(window, {
+        fileName: 'grid.pdf',
+        processing: null,
+        print: {
+          batchId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+          state: 'paused',
+          total: 800,
+          sent: 456,
+          failed: 0,
+          pauseReason: 'operator',
+        },
+        isActive: true,
+      });
+      await expect(page.locator('.update-pill')).toBeVisible();
+      await expect(page.getByRole('button', { name: /打印 PDF/ })).toContainText('456/800');
     },
   },
   {
@@ -1932,7 +1982,7 @@ const ITEMS: Item[] = [
     id: 'V84',
     title: '打印机 · 诊断 · 全部通过',
     points:
-      '打印机行右侧「诊断」「测试页」并排、不换行；面板在行下面展开、占满整行；顶部「查完了：没发现问题，1 项待确认」和「重新检查」「打测试页」「收起」一行排开；六项依次是后台打印服务、打印机和驱动状态、USB 连接、打印队列、驱动纸张、指令集，标记分别是绿「通过」和橙「待确认」；指令集一项有「走一张纸」「纸张校准」「改指令集」；1024 宽时文字折行、不溢出',
+      '打印机行右侧「诊断」「测试页」并排、不换行；面板在行下面展开、占满整行；顶部「查完了：没发现问题，1 项待确认」和「重新检查」「收起」一行排开（测试页只在打印机行上）；六项依次是后台打印服务、打印机和驱动状态、USB 连接、打印队列、驱动纸张、指令集，标记分别是绿「通过」和橙「待确认」；指令集一项有「走一张纸」「纸张校准」「改指令集」；1024 宽时文字折行、不溢出',
     launch: { fakePrinters: diagnosisPrinters({}) },
     setup: async ({ page }) => {
       await openDiagnosisPanel(page);
@@ -1979,7 +2029,7 @@ const ITEMS: Item[] = [
     id: 'V87',
     title: '打印机 · 驱动（发现缺驱动的设备）',
     points:
-      '「驱动」卡片在打印机卡片下面，标题和「重新检测」同一行；清单那一行「驱动清单：… 签发，1 个型号，有效期到 …」是普通灰字；两台设备各一行：「示例品牌 示例型号 X1」右侧「安装驱动（0.0 MB）」按钮、下面「USB 1234:ABCD · 没装驱动」；另一台「USB 打印支持」没有按钮，下面是通用驱动的指引；长名字省略不撑宽；「驱动清单地址」收起；1024 宽时按钮不换到下一行',
+      '「驱动」卡片在打印机卡片下面，标题和「重新检查」同一行；清单那一行「驱动清单：… 签发，1 个型号，有效期到 …」是普通灰字；两台设备各一行：「示例品牌 示例型号 X1」右侧「安装驱动（0.0 MB）」按钮、下面「USB 1234:ABCD · 没装驱动」；另一台「USB 打印支持」没有按钮，下面是通用驱动的指引；长名字省略不撑宽；「驱动清单地址」收起；1024 宽时按钮不换到下一行',
     launch: { fakePrinters: [], fakeDrivers: fakeDrivers(), driverCatalogKey: DRIVER_KEYS.publicKey },
     setup: async (ctx) => {
       await openDriverCard(ctx, catalogText(DRIVER_KEYS, [catalogModel()]));
@@ -1990,7 +2040,7 @@ const ITEMS: Item[] = [
     id: 'V88',
     title: '打印机 · 驱动（正在安装）',
     points:
-      '安装区淡黄底：步骤「下载 核对 安装 找打印机」前两步绿色、「安装」加粗、最后一步灰；下面一句「请在 Windows 弹出的窗口里点「是」…」完整换行不溢出；没有取消按钮（提权之后取消不了）；设备行的按钮和「重新检测」都灰掉',
+      '安装区淡黄底：步骤「下载 核对 安装 找打印机」前两步绿色、「安装」加粗、最后一步灰；下面一句「请在 Windows 弹出的窗口里点「是」…」完整换行不溢出；没有取消按钮（提权之后取消不了）；设备行的按钮和「重新检查」都灰掉',
     launch: {
       fakePrinters: [],
       fakeDrivers: fakeDrivers({ installDelayMs: DRIVER_INSTALL_HOLD_MS }),

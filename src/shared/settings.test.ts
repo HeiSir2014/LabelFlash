@@ -51,6 +51,7 @@ describe('sanitizeSettings', () => {
           url: 'https://erp.example.com/hooks',
           secretName: 'ERP 签名',
           events: ['printed'],
+          sources: ['scan', 'batch'],
           enabled: true,
         },
       ],

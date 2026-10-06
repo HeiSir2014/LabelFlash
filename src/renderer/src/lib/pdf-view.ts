@@ -1,4 +1,3 @@
-import type { BatchProgress } from '../../../core/batch/batch-runner';
 import { MIN_BOX_FRACTION } from '../../../core/pdf/parse-pdf-request';
 import { type CropMode, type NormalizedBox, PDF_LIMITS } from '../../../core/pdf/pdf-model';
 import { formatPaperName, PAPER_PRESETS, paperKey, parsePaperKey } from '../../../shared/paper-sizes';
@@ -108,6 +107,11 @@ export function printCount(order: readonly string[], removed: ReadonlySet<string
   return visibleOrder(order, removed).length * copies;
 }
 
+/** 缩略图下的说明：页和张分成两段，一眼分得开。 */
+export function pieceCaption({ page, piece }: { page: number; piece: number }): string {
+  return `第 ${page} 页 · 第 ${piece} 张`;
+}
+
 export function describePieces({ total, removed, copies }: { total: number; removed: number; copies: number }): string {
   const parts = [`共 ${total} 张`];
   if (removed > 0) {
@@ -125,62 +129,6 @@ export function parseCopies(text: string): number {
 
 export function describeProcessing({ done, total }: { done: number; total: number }): string {
   return `正在处理第 ${Math.min(done + 1, total)} / ${total} 页…`;
-}
-
-export interface PrintProgressView {
-  text: string;
-  /** 0–100（已发送 + 失败）。 */
-  percent: number;
-  /** 正在打或暂停中：显示暂停、继续、取消。 */
-  isActive: boolean;
-}
-
-/**
- * 暂停原因的文字：和批量打印页（batch-view.ts 的 describePauseReason）说的是同一件事，但这里是
- * 「正在打印」那一行的一部分（`${原因} · 已发送 x / y 张`），所以每一条自己带着「，已暂停：」的衔接语，
- * 不能直接复用那边的半句——按 BatchPauseReason 穷举，多一种取值这里就会类型报错，提醒来补一句。
- */
-const PAUSE_TEXT: Record<NonNullable<BatchProgress['pauseReason']>, string> = {
-  operator: '已暂停（点继续接着打）',
-  'no-printer': '这种纸没有分配打印机，已暂停：到「打印机」页分配后点继续',
-  PRINTER_NOT_READY: '打印机不能用，已暂停：处理好后点继续',
-  PRINTER_NOT_FOUND: '找不到打印机，已暂停：接好后点继续',
-  // 打印机状态在 macOS 上一直是「未知」，拔纸、卡纸不会被认成上面那几种：连续失败几张就自动暂停。
-  'consecutive-failures': '连续几张都没打印成功，已暂停：检查打印机后点继续',
-  // 触发暂停的那一张是超时：驱动没回话不代表没打印，提醒操作员自己确认有没有出纸，不要直接当「没打」重打。
-  'consecutive-failures-after-timeout': '最后一张可能已经打出来了，已暂停：看一眼打印机，确认后点继续',
-};
-
-/** 打印进度的文字（「已发送」= 进了打印队列，不说「打印成功」）。 */
-export function describePdfPrint(progress: BatchProgress): PrintProgressView {
-  const counts = `已发送 ${progress.sent} / ${progress.total} 张`;
-  const percent = progress.total === 0 ? 0 : Math.round(((progress.sent + progress.failed) / progress.total) * 100);
-  switch (progress.state) {
-    case 'running':
-      return { text: `正在打印 · ${counts}`, percent, isActive: true };
-    case 'paused':
-      return { text: `${PAUSE_TEXT[progress.pauseReason ?? 'operator']} · ${counts}`, percent, isActive: true };
-    case 'done':
-      return {
-        text:
-          progress.failed > 0
-            ? `打完了 · ${counts}，${progress.failed} 张失败：在打印记录里重打`
-            : `全部已发送 · ${counts}`,
-        percent: 100,
-        isActive: false,
-      };
-    case 'canceled':
-      return { text: `已取消 · ${counts}`, percent, isActive: false };
-  }
-}
-
-/** 标题栏按钮上的进度（「3/8」）：只在打印中、暂停中显示，关掉 PDF 页也看得到。 */
-export function pdfButtonProgress(status: PdfStatus | null): string | null {
-  const print = status?.print;
-  if (print === undefined || print === null || (print.state !== 'running' && print.state !== 'paused')) {
-    return null;
-  }
-  return `${print.sent}/${print.total}`;
 }
 
 /**

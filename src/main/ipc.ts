@@ -8,6 +8,7 @@ import {
   type OpenDialogOptions,
   shell,
 } from 'electron';
+import { storedTemplateIssue } from '../core/api/template-fields';
 import { BATCH_LIMITS } from '../core/batch/batch-model';
 import { PDF_LIMITS, PDF_PIECE_RETENTION_MS } from '../core/pdf/pdf-model';
 import { pieceTemplate } from '../core/pdf/piece-template';
@@ -228,6 +229,11 @@ export function registerIpc(deps: IpcDeps): void {
     const template = deps.templates.get(job.templateId);
     if (template === null) {
       throw new Error(`Template of job ${job.id} was deleted: ${job.templateId}`);
+    }
+    // 编号没变、字段或纸张改过的模板，不能拿来按旧样子重打（界面按同一个判断不显示按钮）。
+    const issue = storedTemplateIssue(template, job.templateFingerprint);
+    if (issue !== null) {
+      throw new Error(`${issue}（记录 ${job.id}，模板 ${job.templateId}）`);
     }
     return { template, fields: job.fields };
   };

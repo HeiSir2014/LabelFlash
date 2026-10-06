@@ -60,9 +60,11 @@ textarea {
   min-width: 0;
 }
 
+/* 列宽用 minmax(0, 1fr)：默认的 auto 列按内容最宽撑开，标题栏放不下时整页会横向滚动、窗口按钮跑到屏幕外。 */
 .app {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--title-bar-height) minmax(0, 1fr);
   height: 100%;
 }
@@ -82,10 +84,13 @@ textarea {
 }
 
 /* ── 自绘标题栏 ── */
+/* 放不下时由右侧一组收缩（打印机胶囊省略号），标题栏本身不撑宽页面。 */
 .title-bar {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  min-width: 0;
+  overflow: hidden;
   padding-left: var(--space-4);
   background: var(--color-ink);
   color: var(--color-paper);
@@ -115,6 +120,7 @@ textarea {
 
 .title-bar__brand {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--space-2);
 }
@@ -151,6 +157,27 @@ textarea {
   }
 
   .title-bar:not(.title-bar--traffic-lights) .title-bar__shop-name {
+    display: none;
+  }
+}
+
+/*
+ * 1100 宽以下（1024 的最小窗口、1366×768 屏开 150% 时的 911 宽）：更新胶囊只留「重启更新」（完整的话在悬停提示里），
+ * 店铺胶囊让出（「关于」页里有店铺链接）。两个平台一样。
+ */
+@media (max-width: 1099px) {
+  .update-pill__detail,
+  .title-bar__shop {
+    display: none;
+  }
+}
+
+/*
+ * 960 宽以下（911 宽的 1366×768 @150%）：「批量打印」「打印 PDF」按钮上的进度数字也让出，打印机胶囊才留得下名字
+ * （只剩一个点就看不出是哪台）。进度在各自的页面底部照常显示。
+ */
+@media (max-width: 959px) {
+  .batch-button__progress {
     display: none;
   }
 }
@@ -390,6 +417,7 @@ textarea {
 
 .window-controls {
   display: flex;
+  flex: none;
   height: 100%;
   -webkit-app-region: no-drag;
 }
@@ -2342,6 +2370,21 @@ textarea {
 
 .webhook-card__switch {
   margin-right: var(--space-2);
+}
+
+/* 来源一组：去掉 fieldset 默认的框和内边距，和上面的事件开关排在一起 */
+.webhook-editor__sources {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.webhook-editor__sources legend {
+  margin-bottom: var(--space-1);
+  padding: 0;
 }
 
 .webhook-editor__actions {
@@ -5087,6 +5130,11 @@ button.designer-checks__item:hover {
   min-height: 0;
 }
 
+/* .text-field 默认 flex: 1（在横排里分宽度）；放在这一列里会被拉高或压扁，搜索框保持自己的高度。 */
+.batch-preview__list > .text-field {
+  flex: none;
+}
+
 /* 数据表自己滚动（纵向、横向），页面不跟着变宽 */
 .batch-rows {
   flex: 1;
@@ -5404,8 +5452,9 @@ ol.pdf-box-list li {
   image-rendering: pixelated;
 }
 
+/* 说明是给人看的中文，用界面字体（等宽的数据字体排中文又宽又散）。 */
 .pdf-piece__name {
-  font-family: var(--font-data);
+  font-size: 12px;
   white-space: nowrap;
 }
 

@@ -23,7 +23,8 @@ export function describeSharingStatus(status: IppSharingStatus, enabled: boolean
     return {
       tone: 'idle',
       title: '没有开',
-      detail: '打开后，局域网里的电脑可以把这台电脑上的热敏标签机添加为打印机，从任何程序打印（PDF、图片、Word……）。',
+      detail:
+        '打开后，局域网里的电脑可以把这台电脑上的热敏标签机添加为打印机，从任何程序打印（PDF、图片、办公软件……）。',
     };
   }
   const { server } = status;

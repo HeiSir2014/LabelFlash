@@ -215,13 +215,13 @@ CanvasTemplate { kind: 'canvas', id, name, paper, printer, elements: CanvasEleme
 
 ### 8.1 局域网共享（IPP）
 
-- **打印机端**：设置里开「局域网共享」后，本机起一个 IPP/2.0 服务（端口默认 8631，631 在 macOS 上被 CUPS 占着；被占用时自动换，和本机接口一样）。每种已分配打印机的纸张是一台共享打印机：`/printers/<纸张名>`（例如「60×40 标签」「100×180 面单」），用 `bonjour-service` 广播 `_ipp._tcp`。
+- **打印机端**：设置里开「局域网共享」后，本机起一个 IPP/2.0 服务（端口默认 8631，631 在 macOS 上被 CUPS 占着；被占用时自动换，和本机接口一样）。每种已分配打印机的纸张是一台共享打印机：`/printers/<纸张名>`（例如「60×40 标签」「100×180 面单」），用自己写的 mDNS 应答器广播 `_ipp._tcp`。
 - **支持的操作**：`Get-Printer-Attributes`、`Validate-Job`、`Print-Job`、`Get-Jobs`、`Get-Job-Attributes`、`Cancel-Job`；文档格式 `application/pdf`、`image/jpeg`、`image/png`。IPP 编解码自己写（二进制格式简单），用协议规范里的样例做单元测试。
 - **收到的任务**：走子项目 4 的流程（整页 / 去白边，缩放到这张纸），按纸张找打印机，记录来源「局域网共享」并记下对方电脑的地址和用户名。
 - **访问控制**：只对局域网开放（防火墙规则和本机接口一起加）；可选「共享密码」（IPP 基本认证）；新电脑第一次打印时界面顶部询问「允许 / 拒绝」（复用本机接口的网站询问条）。
 - **对方怎么用**：Windows「添加打印机 → 按地址」，用系统自带的 IPP 驱动；macOS 在「打印机与扫描仪」里自动发现。
 - **实现说明**（实施计划 `docs/superpowers/plans/2026-10-02-ipp-sharing.md`，用法和真机验证清单 `docs/lan-sharing.md`）：
-  - IPP 编解码、属性集、任务表、六个操作、PWG / Apple 光栅解码、DNS 报文和 mDNS 应答都在 `src/core/ipp/`、`src/core/mdns/`（纯 TS，用 RFC 8010 附录 A 的报文测）；主进程 `src/main/ipp/` 只接线。
+  - IPP 编解码、属性集、任务表、六个操作、PWG / URF 光栅解码、DNS 报文和 mDNS 应答都在 `src/core/ipp/`、`src/core/mdns/`（纯 TS，用 RFC 8010 附录 A 的报文测）；主进程 `src/main/ipp/` 只接线。
   - 免驱：Windows 的 IPP 类驱动按 IPP Everywhere 认、主要发 PWG Raster；macOS / iOS 系统自带的打印要 `_universal` 子类型和 URF。所以文档格式除了 PDF、JPEG、PNG，还收 `image/pwg-raster` 和 `image/urf`；格式按文件头认。JPEG / PNG 在 PDF 打印的 sandbox 渲染页里解码（IPP 有自己的一个渲染窗口），光栅在主进程里用内存安全的 TS 解。
   - 网址 `/printers/<纸张键>`（不用中文名：纸张键本来就 URL 安全、稳定、唯一）；实例名「60×40 标签 @ 电脑名」；mDNS 主机名 `labelflash-<实例编号前 8 位>.local`。
   - mDNS 不引入库：自己写的应答器只回答本程序的记录（服务类型、两个子类型、实例的 SRV / TXT、自己主机名的 A），只理局域网地址来的包，用对方所在子网那块网卡的地址回答；网卡按本机接口的规则去掉 Hyper-V、WSL、VMware、VPN 等虚拟网卡。

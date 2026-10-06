@@ -22,7 +22,7 @@ const PDF_HEADER = '%PDF-';
 const PDF_HEADER_WINDOW_BYTES = 1024;
 const JPEG_MAGIC = [0xff, 0xd8, 0xff] as const;
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
-/** PWG 5102.4 的同步字 'RaS2'；Apple Raster 的文件头 'UNIRAST\0'。 */
+/** PWG 5102.4 的同步字 'RaS2'；URF 光栅的文件头 'UNIRAST\0'。 */
 const PWG_SYNC = [0x52, 0x61, 0x53, 0x32] as const;
 const URF_MAGIC = [0x55, 0x4e, 0x49, 0x52, 0x41, 0x53, 0x54, 0x00] as const;
 

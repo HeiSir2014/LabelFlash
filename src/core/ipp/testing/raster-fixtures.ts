@@ -1,5 +1,5 @@
 /**
- * 测试用：按 PWG 5102.4 和 Apple Raster 的格式写出光栅文件（行程编码和 CUPS 的解压互为逆过程）。
+ * 测试用：按 PWG 5102.4 和 URF 的格式写出光栅文件（行程编码和 CUPS 的解压互为逆过程）。
  * 只在测试里用，主程序只解不编。
  */
 
@@ -22,7 +22,7 @@ const LITERAL_BASE = 257;
 const BITS_PER_BYTE = 8;
 const GRAY_MID = 128;
 const WHITE = 255;
-/** Apple Raster 页头的大小和几项的位置；颜色空间 0 = sGray，1 = sRGB；单面、普通质量。 */
+/** URF 页头的大小和几项的位置；颜色空间 0 = sGray，1 = sRGB；单面、普通质量。 */
 const URF_PAGE_HEADER_BYTES = 32;
 const URF_DUPLEX_NONE = 1;
 const URF_QUALITY_NORMAL = 4;
@@ -70,7 +70,7 @@ export function pwgHeader(fields: PwgHeaderFields): Uint8Array {
   return header;
 }
 
-/** Apple Raster 的 32 字节页头：位深、颜色空间（0 = sGray，1 = sRGB）、单面、普通质量、宽、高、分辨率。 */
+/** URF 的 32 字节页头：位深、颜色空间（0 = sGray，1 = sRGB）、单面、普通质量、宽、高、分辨率。 */
 export function urfHeader(fields: {
   width: number;
   height: number;

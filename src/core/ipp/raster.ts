@@ -3,7 +3,7 @@ import { PDF_LIMITS } from '../pdf/pdf-model';
 import type { GrayImage } from '../templates/mono-image';
 
 /**
- * PWG Raster（PWG 5102.4，Windows 的 IPP 类驱动发它）和 Apple Raster（URF，系统自带的打印发它）→ 一页页灰度图。
+ * PWG Raster（PWG 5102.4，Windows 的 IPP 类驱动发它）和 URF 光栅（macOS、iOS 系统自带的打印发它）→ 一页页灰度图。
  * 输入来自局域网，不可信：页数、边长、像素数都有上限；输出大小由页头决定，行程编码越界、数据不完整都抛 RasterError。
  * 用生成器一页一页给出，同一时刻只占一页的内存。
  */
@@ -88,7 +88,7 @@ const URF_MAGIC = [0x55, 0x4e, 0x49, 0x52, 0x41, 0x53, 0x54, 0x00] as const;
 const URF_FILE_HEADER_BYTES = 12;
 const URF_PAGE_HEADER_BYTES = 32;
 const URF_OFFSETS = { bitsPerPixel: 0, colorSpace: 1, width: 12, height: 16, dpi: 20 } as const;
-/** Apple Raster 的颜色空间编号（CUPS 的 rawcspace 表）：0 = sGray、4 = W（灰度），1 = sRGB、5 = RGB。 */
+/** URF 的颜色空间编号（CUPS 的 rawcspace 表）：0 = sGray、4 = W（灰度），1 = sRGB、5 = RGB。 */
 const URF_GRAY_SPACES: ReadonlySet<number> = new Set([0, 4]);
 const URF_RGB_SPACES: ReadonlySet<number> = new Set([1, 5]);
 const GRAY_BITS = 8;
@@ -225,10 +225,10 @@ function pwgFormat(header: Uint8Array): PageFormat {
   return format;
 }
 
-/** Apple Raster：'UNIRAST\0' + 页数，然后每页一个 32 字节的页头和压缩数据。 */
+/** URF：'UNIRAST\0' + 页数，然后每页一个 32 字节的页头和压缩数据。 */
 export function readUrf(data: Uint8Array, limits: RasterJobLimits = UNBOUNDED_JOB): Generator<RasterPage> {
   if (!startsWith(data, URF_MAGIC) || data.length < URF_FILE_HEADER_BYTES) {
-    throw new RasterError('not an Apple raster stream');
+    throw new RasterError('not a URF stream');
   }
   const declared = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(URF_MAGIC.length);
   if (declared > RASTER_LIMITS.pages) {
@@ -244,7 +244,7 @@ function urfFormat(header: Uint8Array): PageFormat {
   const isGray = bitsPerPixel === GRAY_BITS && URF_GRAY_SPACES.has(colorSpace);
   const isRgb = bitsPerPixel === RGB_BITS && URF_RGB_SPACES.has(colorSpace);
   if (!(isGray || isRgb)) {
-    throw new RasterError(`unsupported Apple raster color space ${colorSpace} at ${bitsPerPixel} bits per pixel`);
+    throw new RasterError(`unsupported URF color space ${colorSpace} at ${bitsPerPixel} bits per pixel`);
   }
   const format: PageFormat = {
     width: view.getUint32(URF_OFFSETS.width),

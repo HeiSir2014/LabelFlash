@@ -109,7 +109,7 @@ export const IPP_MESSAGES = {
   operation: '不支持这个操作',
   noPrinter: '没有这台共享打印机：它的纸张可能已经不再分配打印机',
   noPrinterUri: '请求里缺少 printer-uri',
-  format: '只能打印 PDF、JPEG、PNG 和 PWG / Apple 光栅',
+  format: '只能打印 PDF、JPEG、PNG 和 PWG / URF 光栅',
   formatMismatch: '文档的内容和声明的格式不一致',
   compression: '不支持压缩的文档',
   noDocument: '没有收到文档',

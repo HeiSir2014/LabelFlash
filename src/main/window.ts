@@ -7,6 +7,7 @@ import { APP_ENTRY_URL } from './bundle-path';
 import { buildContextMenuTemplate } from './context-menu';
 import { forwardRendererConsole } from './logging';
 import { bringToFront } from './window-activation';
+import { type CloseState, closeAction } from './window-close';
 import type { WindowPlacement } from './window-state';
 
 const HOUSING_COLOR = '#E4E7E2';
@@ -19,7 +20,8 @@ export interface MainWindowOptions {
   icon: string;
   /** 打开的位置、尺寸和最小尺寸（见 window-placement.ts）：上次的位置，或鼠标所在屏幕的默认位置。 */
   placement: WindowPlacement;
-  shouldHideOnClose: () => boolean;
+  /** 点关闭时：藏进托盘、先走退出确认，还是放行（window-close.ts）。 */
+  closeState: () => CloseState;
   onHidden: () => void;
   /**
    * 启动时窗口去哪：front = 到最前并拿到焦点（扫码框要有焦点才收得到扫码枪的输入）；
@@ -69,10 +71,18 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
     bringToFront(window, process.platform);
   });
   window.on('close', (event) => {
-    if (options.shouldHideOnClose()) {
-      event.preventDefault();
-      window.hide();
-      options.onHidden();
+    switch (closeAction(options.closeState())) {
+      case 'hide':
+        event.preventDefault();
+        window.hide();
+        options.onHidden();
+        break;
+      case 'quit':
+        event.preventDefault();
+        app.quit();
+        break;
+      case 'close':
+        break;
     }
   });
   const sendMaximized = () => window.webContents.send(IpcChannel.WindowMaximizedChanged, window.isMaximized());

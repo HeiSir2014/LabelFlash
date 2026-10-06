@@ -194,7 +194,7 @@ if (app.isPackaged) {
 
 /** 托盘、双击桌面快捷方式（second-instance）、点系统通知：窗口到最前并拿到焦点（前台锁见 window-activation.ts）。 */
 function showMainWindow(): void {
-  if (!mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
   bringToFront(mainWindow, process.platform);
@@ -783,7 +783,9 @@ async function bootstrap(): Promise<void> {
   let isConfirmingQuit = false;
   // 用异步版本：确认框开着的这段时间，打印和 IPC 照常响应（同步版本会冻住整个主进程）。
   const showQuitDialog = (options: Electron.MessageBoxOptions) =>
-    mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options);
+    mainWindow && !mainWindow.isDestroyed()
+      ? dialog.showMessageBox(mainWindow, options)
+      : dialog.showMessageBox(options);
 
   /**
    * 模板页有没保存的修改：问「保存并退出 / 不保存退出 / 取消」。保存经界面平常的保存流程往返一次
@@ -824,8 +826,8 @@ async function bootstrap(): Promise<void> {
       return false;
     }
     isConfirmingQuit = true;
-    showMainWindow();
     try {
+      showMainWindow();
       return await templateQuit.confirmBeforeInstall(confirmTemplateQuit);
     } finally {
       isConfirmingQuit = false;
@@ -926,11 +928,12 @@ async function bootstrap(): Promise<void> {
       return;
     }
     isConfirmingQuit = true;
-    showMainWindow();
     // 先问模板（选「取消」没有任何副作用），再问批量打印和 PDF（选「仍要退出」会取消它们）：
     // 反过来的话，已经取消的批次、PDF 块再也回不去，模板那一步再选「取消」也没意义了。
+    // 从置位起的每一步都在 try 里：哪一步抛了，finally 都会复位 isConfirmingQuit，下一次退出还能再问。
     void (async () => {
       try {
+        showMainWindow();
         if (needsTemplate && !(await confirmTemplateQuit())) {
           return;
         }
@@ -1103,8 +1106,8 @@ async function bootstrap(): Promise<void> {
   mainWindow = createMainWindow({
     icon: appIcon,
     placement,
-    // 没有托盘图标时照常关闭：藏起来之后就再也叫不回窗口了。
-    shouldHideOnClose: () => !isQuitting && tray !== null,
+    // 没有托盘图标时不藏（藏起来之后就再也叫不回窗口了），关窗先走退出确认。
+    closeState: () => ({ hasTray: tray !== null, isQuitting }),
     onHidden: () => tray?.notifyHiddenOnce(),
     startup,
   });
@@ -1112,6 +1115,8 @@ async function bootstrap(): Promise<void> {
   // 一起关的话，Electron 不会判定「所有窗口都关了」，没有托盘时关闭主窗口就退不出程序，一直在后台挂着。
   mainWindow.on('closed', () => {
     pdfRenderer.close();
+    // 已经销毁的窗口不能再拿来弹确认框、到最前（会抛 Object has been destroyed）。
+    mainWindow = null;
   });
   // 窗口关在托盘里的起始时间：关到托盘后的静默更新要等一会儿（background-update.ts）。
   let hiddenSince: number | null = startup === 'tray' ? Date.now() : null;

@@ -138,8 +138,8 @@ export interface JobRecord {
   caller?: string;
   /** 批量打印的一张：批次号、行号、份号；其他来源没有。 */
   batch?: BatchRef;
-  /** 批量打印用的模板指纹（templateFingerprint，字段 + 纸张）：重打时核对模板有没有改过，
-   *  改过（哪怕编号没变）就拒绝按旧样子重打。只有批量打印来源有。 */
+  /** 这一张用的模板的指纹（templateFingerprint，字段 + 纸张）：按记录原样重打（本机接口、批量打印）时核对模板
+   *  有没有改过，改过（哪怕编号没变）就拒绝按旧样子重打。2.0.0 起有模板的记录都写；之前的记录只有批量打印的有。 */
   templateFingerprint?: string;
   /** PDF 打印的一块：文件、页码、第几张、位图编号；其他来源没有。 */
   pdf?: PdfRef;

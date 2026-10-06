@@ -1,3 +1,4 @@
+import { TEMPLATE_CHANGED_ISSUE } from '../../../core/api/template-fields';
 import type { JobRecord } from '../../../core/types';
 import { canReprint, type ReprintMode } from '../lib/reprint';
 import { describeJobMeta, describeJobStatus } from '../lib/status-text';
@@ -24,7 +25,7 @@ interface JobLogProps {
   onLoadMore: () => void;
   /** 本机接口记录的调用方（密钥名称或网站）；其他记录为 null。 */
   callerOf: (job: JobRecord) => string | null;
-  /** 这条记录能不能、怎么预览和重打（见 lib/reprint.ts）；不能重打（unavailable、expired）时不显示按钮。 */
+  /** 这条记录能不能、怎么预览和重打（见 lib/reprint.ts）；不能重打（unavailable、expired、template-changed）时不显示按钮。 */
   reprintModeOf: (job: JobRecord) => ReprintMode;
   onReview: (job: JobRecord) => void;
   onReprint: (job: JobRecord) => void;
@@ -106,6 +107,7 @@ export function JobLog({
                 {meta}
               </div>
               {mode === 'expired' && <p className="job-row__hint">PDF 的图只保留 7 天，已过期：重新打开 PDF 再打</p>}
+              {mode === 'template-changed' && <p className="job-row__hint">{TEMPLATE_CHANGED_ISSUE}</p>}
               {(canReprint(mode) || (batchId !== undefined && batchFilter === null)) && (
                 <div className="job-row__actions">
                   {batchId !== undefined && batchFilter === null && (

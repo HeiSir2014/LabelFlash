@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { templateFingerprint } from '../../../core/api/template-fields';
 import { PDF_PIECE_RETENTION_MS } from '../../../core/pdf/pdf-model';
+import { PICK_TEMPLATE } from '../../../core/testing/templates';
 import type { JobRecord } from '../../../core/types';
 import { canReprint, reprintMode } from './reprint';
 
@@ -13,8 +15,14 @@ const BASE: JobRecord = {
   status: 'printed',
   forced: false,
 };
-const API_JOB: JobRecord = { ...BASE, source: 'api', templateId: 'custom:t', fields: [{ name: 'a', value: 'b' }] };
-const allTemplates = () => true;
+const API_JOB: JobRecord = {
+  ...BASE,
+  source: 'api',
+  templateId: 'custom:t',
+  fields: [{ name: 'a', value: 'b' }],
+  templateFingerprint: templateFingerprint(PICK_TEMPLATE),
+};
+const allTemplates = () => PICK_TEMPLATE;
 
 describe('reprintMode', () => {
   // 本机接口的记录没有识别规则可用：按当时的模板和字段预览、重打。
@@ -34,7 +42,20 @@ describe('reprintMode', () => {
   });
 
   test('cannot reprint an api job whose template was deleted', () => {
-    expect(reprintMode(API_JOB, (id) => id !== 'custom:t', NOW)).toBe('unavailable');
+    expect(reprintMode(API_JOB, (id) => (id === 'custom:t' ? undefined : PICK_TEMPLATE), NOW)).toBe('unavailable');
+  });
+
+  // 编号没变、字段或纸张改过：不按旧样子重打，说明原因。
+  test('refuses a stored reprint when the template changed since the record', () => {
+    const changed = { ...PICK_TEMPLATE, paper: { widthMm: 100, heightMm: 150 } };
+    expect(reprintMode(API_JOB, () => changed, NOW)).toBe('template-changed');
+    expect(canReprint('template-changed')).toBe(false);
+  });
+
+  test('reprints records written before fingerprints were stored with the current template', () => {
+    const { templateFingerprint: _omitted, ...older } = API_JOB;
+    const changed = { ...PICK_TEMPLATE, paper: { widthMm: 100, heightMm: 150 } };
+    expect(reprintMode(older, () => changed, NOW)).toBe('stored');
   });
 
   test('cannot reprint an api job that has no stored fields', () => {
@@ -70,7 +91,7 @@ describe('reprintMode', () => {
       fields: [],
       pdf: { file: '面单.pdf', page: 1, piece: 1, bitmap: '0f8fad5b-d9cb-469f-a165-70867728950e' },
     };
-    const noTemplates = () => false;
+    const noTemplates = () => undefined;
     expect(reprintMode(pdfJob, noTemplates, NOW + 1)).toBe('stored');
     expect(reprintMode({ ...pdfJob, source: 'history' }, noTemplates, NOW + 1)).toBe('stored');
     expect(reprintMode(pdfJob, noTemplates, NOW + PDF_PIECE_RETENTION_MS)).toBe('expired');

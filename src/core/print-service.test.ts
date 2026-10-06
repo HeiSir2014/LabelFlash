@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { DEFAULT_PAPER } from '../shared/label-paper';
+import { templateFingerprint } from './api/template-fields';
 import { DedupGuard } from './dedup-guard';
 import { PrintError } from './errors';
 import { PrintQueue } from './print-queue';
@@ -679,6 +680,13 @@ describe('PrintService.printFields', () => {
     expect(templateRequests).toEqual([]);
     expect(adapter.printed.at(-1)).toMatchObject({ raw: 'A001', templateId: PICK_TEMPLATE.id, fields });
     expect(store.listRecent(1)[0]).toMatchObject({ source: 'api', caller: 'key:k1', fields, raw: 'A001' });
+  });
+
+  // 重打时按它核对模板有没有改过（字段、纸张），改过就不按旧样子重打。
+  test('records the fingerprint of the template it printed with', async () => {
+    const { service, store } = createHarness();
+    await service.printFields(input);
+    expect(store.listRecent(1)[0]?.templateFingerprint).toBe(templateFingerprint(PICK_TEMPLATE));
   });
 
   test('names the local api as the rule, for the {规则} note variable and notifications', async () => {

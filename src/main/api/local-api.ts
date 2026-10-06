@@ -15,6 +15,7 @@ import {
   type LocalApiStatus,
 } from '../../shared/local-api';
 import type { AppSettings } from '../../shared/settings';
+import { ANY_FREE_PORT, portOrder } from '../net/http-listener';
 import { SqliteApiJobStore } from '../storage/sqlite-api-job-store';
 import { SqliteApiKeyStore } from '../storage/sqlite-api-key-store';
 import { Authenticator } from './authenticator';
@@ -52,9 +53,6 @@ export function apiCandidatePorts(env: NodeJS.ProcessEnv, isPackaged: boolean): 
   return Number.isInteger(port) && port >= 0 && port <= MAX_PORT ? [port] : DEFAULT_PORTS;
 }
 
-/** 最后一个候选：0 = 由系统分配一个空闲端口，保证本机接口总能起来。 */
-const ANY_FREE_PORT = 0;
-
 /**
  * 依次尝试的端口：指定的 → 上次用成功的 → 默认的几个 → 系统分配的空闲端口。
  * 先用上次的，端口就不会因为重启而变来变去，局域网里已经配好这个端口的程序也就不会忽然连不上。
@@ -63,8 +61,7 @@ export function apiPortOrder(
   settings: Pick<AppSettings, 'apiPort' | 'apiLastPort'>,
   candidatePorts: readonly number[],
 ): number[] {
-  const ports = [settings.apiPort, settings.apiLastPort, ...candidatePorts, ANY_FREE_PORT];
-  return [...new Set(ports.filter((port): port is number => port !== null))];
+  return portOrder(settings.apiPort, settings.apiLastPort, candidatePorts);
 }
 
 /** 到时间还没结果就按失败处理（原来的 Promise 照样会结束，只是没人再等它）。 */

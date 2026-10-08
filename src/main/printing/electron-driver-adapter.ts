@@ -3,6 +3,7 @@ import type { SubmittedJobs } from '../../core/diagnosis/submitted-jobs';
 import { PrintError } from '../../core/errors';
 import type { Clock, LabelJob, PrinterInfo } from '../../core/types';
 import { renderWarningTexts } from '../../shared/render-warnings';
+import { driverPrintError } from './driver-print-failure';
 import { renderLabelHtml } from './label-html';
 import { withLabelWindow } from './label-window';
 import { pageSizeMicrons } from './page-size';
@@ -117,7 +118,7 @@ function printSilently(
         if (success) {
           resolve();
         } else {
-          reject(new PrintError('PRINT_ERROR', failureReason));
+          reject(driverPrintError(failureReason));
         }
       },
     );

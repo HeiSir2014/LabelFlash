@@ -150,6 +150,14 @@ describe('describeResult', () => {
   test('timeouts say the label may already be printed', () => {
     expect(describeResult({ status: 'failed', reason: 'PRINT_TIMEOUT' }, NOW).detail).toContain('可能已出纸');
   });
+
+  test('a driver failure shows what the adapter knows, or points at the printer', () => {
+    const canceled = describeResult({ status: 'failed', reason: 'PRINT_ERROR', detail: '打印被取消了' }, NOW);
+    expect(canceled).toMatchObject({ title: '打印失败', detail: '打印被取消了' });
+    expect(describeResult({ status: 'failed', reason: 'PRINT_ERROR' }, NOW).detail).toBe(
+      '打印机驱动报错，检查打印机状态后重试',
+    );
+  });
 });
 
 describe('describeScan', () => {

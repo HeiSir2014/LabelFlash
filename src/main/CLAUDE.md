@@ -34,7 +34,7 @@
 
 ## 打印（`printing/`）
 
-- **打印适配器** `electron-driver-adapter.ts`：隐藏的 `BrowserWindow`（sandbox，禁用 JS）加载标签 HTML，再调用 `webContents.print` 静默打印。超时时由 `AbortSignal` 销毁这个窗口。
+- **打印适配器** `electron-driver-adapter.ts`：隐藏的 `BrowserWindow`（sandbox，禁用 JS）加载标签 HTML，再调用 `webContents.print` 静默打印。超时时由 `AbortSignal` 销毁这个窗口。失败一律记 `PRINT_ERROR`，认得出的原因（任务被取消，例如关掉了虚拟 PDF 打印机的保存对话框）由 `driver-print-failure.ts` 带上给操作员看的说明。
 - **打印机探测** `printer-probe-host.ts`（只在 Windows 上）：常驻 PowerShell 进程，用行协议查询。一共两个：一个查打印机状态、驱动纸张、驱动名，并原样发送标签机指令；诊断的慢查询（USB、队列、驱动纸张选项）单独一个（见下面「诊断」），超时出错只重启它，不连累打印。
   - 打印机名和数据都用 base64 编码后传入（「命令 名字 [数据]」），名字转义通配符。
   - 原样发送：第一次用时 `Add-Type` 编译一小段 C#（只用 C# 5 语法），P/Invoke winspool 的 W 版函数，数据类型 RAW；Win32 错误写成 `err win32:<错误码> …`。整段脚本经 `-EncodedCommand` 传入，测试核对命令行不超过 32767 字符。

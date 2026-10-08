@@ -158,7 +158,8 @@ function failureDetail(reason: PrintFailureReason, detail: string | undefined): 
     case 'PRINT_TIMEOUT':
       return `${PRINT_TIMEOUT_SECONDS} 秒内没有响应，可能已出纸或仍在排队；确认没有出纸再用「强制补打」`;
     case 'PRINT_ERROR':
-      return '打印机驱动报错，检查打印机状态后重试';
+      // 适配器认得出原因时（例如任务被取消）带着说明；认不出就只能请操作员去看打印机。
+      return detail ?? '打印机驱动报错，检查打印机状态后重试';
     case 'LOOKUP_FAILED':
       return lookupFailureDetail(detail);
     case 'TEXT_NOT_FOUND':

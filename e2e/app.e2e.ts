@@ -723,7 +723,9 @@ test('leaves focus in a dropdown when the operator seems idle', async ({ electro
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
   await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
   const template = page.getByRole('combobox', { name: '模板', exact: true });
-  await template.click();
+  // 只给焦点、不点开：页面分不出列表展没展开，规则只看焦点在不在下拉框里。点开的话 macOS 的原生菜单
+  // 会占住主线程，测试结束时关不掉程序。
+  await template.focus();
   await expect(template).toBeFocused();
   await page.waitForTimeout(SCAN_FOCUS_IDLE_MS + IDLE_CHECK_SLACK_MS);
   await expect(template).toBeFocused();

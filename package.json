@@ -1,7 +1,7 @@
 {
   "name": "cdl-labelflash",
   "productName": "CDL-云签速印",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "CDL-云签速印：标签扫码重打",
   "author": "heisir2014 <heisir21@163.com>",
   "private": true,

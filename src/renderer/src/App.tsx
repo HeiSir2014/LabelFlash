@@ -111,10 +111,8 @@ export function App() {
       reprintMode(job, (id) => templates.templates.find((template) => template.id === id), Date.now()),
     [templates.templates],
   );
-  const historyTarget = useCallback(
-    (job: JobRecord): HistoryTarget => ({ raw: job.raw, jobId: reprintModeOf(job) === 'stored' ? job.id : null }),
-    [reprintModeOf],
-  );
+  // 预览、重打都按记录做（主进程决定重新识别还是按存下的标签，见 core/job-reprint.ts）。
+  const historyTarget = (job: JobRecord): HistoryTarget => ({ raw: job.raw, jobId: job.id });
   // 打印机：按纸张分配，模板也可以自己指定（规则见 src/core/printing/resolve-printer.ts）。
   const paperPrinters = settings?.paperPrinters ?? DEFAULT_SETTINGS.paperPrinters;
   const installedNames = useMemo(() => printers.printers.map((printer) => printer.name), [printers.printers]);

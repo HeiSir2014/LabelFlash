@@ -24,11 +24,11 @@ export interface ScanState extends ScanSnapshot {
   /** 递增序号：旧扫描的异步结果不能覆盖新扫描的界面。 */
   seq: number;
   source: RendererPrintSource;
-  /** 按这条打印记录里的模板和字段预览、打印（本机接口的记录，见 lib/reprint.ts）；null = 按内容识别。 */
+  /** 按这条打印记录预览、打印（怎么做由主进程按记录决定，见 core/job-reprint.ts）；null = 扫进来的内容。 */
   jobId: string | null;
 }
 
-/** 从打印记录预览或重打的一条：jobId 不为 null 时按记录里的模板和字段，不重新识别。 */
+/** 从打印记录预览或重打的一条：按记录预览、重打，扫码打的记录也带上当时从标签图上读到的字段。 */
 export interface HistoryTarget {
   raw: string;
   jobId: string | null;
@@ -71,8 +71,8 @@ export function useScanStation({ autoPrint, onJobRecorded, announce }: StationOp
       patchIfCurrent(seq, { isPrinting: true, print: null, hasIpcError: false });
       let result: PrintResult;
       try {
-        // 按记录重打不经过防重复窗口，force 对它没有意义。
-        result = jobId === null ? await window.api.print(raw, { source, force }) : await window.api.reprintJob(jobId);
+        result =
+          jobId === null ? await window.api.print(raw, { source, force }) : await window.api.reprintJob(jobId, force);
       } catch (error) {
         reportError('打印', error);
         patchIfCurrent(seq, { isPrinting: false, hasIpcError: true });

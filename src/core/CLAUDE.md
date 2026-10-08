@@ -19,6 +19,7 @@
 | 模块 | 作用 |
 |---|---|
 | `print-service.ts` | 打印的完整流程：识别 → 门限 → 加工 → 选模板（规则的「按字段换模板」在 `scan/rule-settings.ts`，所以模板在加工之后才定）→ 决定打印机（没有时放开门限）→ 排队打印 → 记录。界面和主进程都只调它；本机接口、批量打印、打印 PDF、局域网共享和按字段重打走 `printFields`：不识别、不加工、不用扫码的防重复窗口，其余（决定打印机、排队、记录）一样。每条有模板的记录都记下模板指纹（`api/template-fields.ts` 的 `templateFingerprint`），按记录原样重打前用 `storedTemplateIssue` 核对模板没改过 |
+| `job-reprint.ts` | 打印记录的「预览」「重打」怎么做：本机接口、批量、PDF、局域网共享的按存下的模板和字段（`reprintsStoredLabel`，界面和主进程共用）；扫码打的按现在的规则重新识别，记录里的字段当手动字段带上（`recordedFieldValues`），图中文字识别用当时读到的值（手机拍的图不存） |
 | `printing/resolve-printer.ts` | 决定打印机：模板指定的（本机有）→ 纸张分配的 → 没有；没有时不打印、不写记录 |
 | `printer-commands/` | 标签机指令：`command-model.ts`（指令集、每种的范围）、`command-set.ts`（按驱动名认，写着两种的不猜，按型号认交给 `drivers/driver-hints.ts` 的 `DriverHints`）、`sanitize-command-config.ts`（存储宽松、IPC 严格）、`tspl.ts` / `zpl.ts` / `epl.ts`（每种一个生成器，输出 ASCII，对照手册的写法测试）、`printer-commands.ts`（分派、范围把关）。每一项为 null 表示不改，不发 |
 | `drivers/` | 驱动安装的纯逻辑：`usb-id.ts`、`catalog-model.ts` + `sanitize-catalog.ts`（在线清单的模型和严格校验，不合格的型号跳过）、`catalog-freshness.ts`（过期、防回滚）、`install-plan.ts`（按平台：安装 / 打开下载页 / 没有安装包 / 不在清单）、`driver-hints.ts`（和 5a、5b 约定的按驱动名查清单的接口）+ `catalog-hints.ts`、`detected-device.ts`、`driver-install-flow.ts`（下载 → 核对 → 提权安装 → 找新打印机，端口注入，假实现在 `testing/fake-driver-ports.ts`） |

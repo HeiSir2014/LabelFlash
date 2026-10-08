@@ -245,10 +245,16 @@ export interface LabelFlashApi {
   /** 纸张校准、走一张纸、打印自检页、恢复出厂设置：按保存的指令集发一次。 */
   runPrinterAction(printerName: string, action: PrinterAction): Promise<PrinterCommandResult>;
   listJobs(query: JobQuery): Promise<JobPage>;
-  /** 按记录里的模板和字段预览（本机接口的记录，见 lib/reprint.ts）；记录或模板不在了会失败。 */
+  /**
+   * 按记录预览（见 core/job-reprint.ts）：本机接口、批量、PDF、局域网共享的按存下的模板和字段；
+   * 扫码打的按现在的规则重新识别，图中文字识别用记录里的值（手机拍的图不存）。记录或模板不在了会失败。
+   */
   previewJob(jobId: string): Promise<LabelPreview>;
-  /** 按记录里的模板和字段重打，来源记为记录重打；打印机按现在的分配决定。 */
-  reprintJob(jobId: string): Promise<PrintResult>;
+  /**
+   * 按记录重打，来源记为记录重打；打印机按现在的分配决定。预览怎么做，重打就怎么做。
+   * force 只对重新识别的那种有意义（强制补打：跳过防重复窗口）；按存下的标签重打本来就不经过防重复窗口。
+   */
+  reprintJob(jobId: string, force: boolean): Promise<PrintResult>;
   getSettings(): Promise<AppSettings>;
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   listTemplates(): Promise<LabelTemplate[]>;

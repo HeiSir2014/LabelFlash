@@ -164,13 +164,16 @@ export class PrintService {
     }
   }
 
-  /** 预览同样执行加工步骤（HTTP 查询的结果会被缓存，紧接着打印时直接用）。 */
-  async preview(raw: string): Promise<PreviewResult> {
+  /**
+   * 预览同样执行加工步骤（HTTP 查询的结果会被缓存，紧接着打印时直接用）。
+   * context：按记录预览时带上记录里的字段（见 job-reprint.ts 的 recordedFieldValues）；平常没有图、没有手动字段。
+   */
+  async preview(raw: string, context: EnrichContext = NO_ENRICH_CONTEXT): Promise<PreviewResult> {
     const recognition = this.recognize(raw);
     if (!recognition.ok) {
       return recognition.result;
     }
-    const enriched = await this.enrich(recognition.scan, NO_ENRICH_CONTEXT);
+    const enriched = await this.enrich(recognition.scan, context);
     const { scan } = enriched;
     // 和打印一样，按加工后的字段决定模板（按字段换模板）。
     const template = this.deps.resolveTemplate(scan);

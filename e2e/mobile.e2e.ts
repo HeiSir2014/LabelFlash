@@ -224,6 +224,48 @@ test('reads the shelf number from the label image a phone sends', async ({ elect
   }
 });
 
+// 手机拍的图不存：从打印记录预览、重打手机打的一张时，货架号用记录里当时读到的，不能因为没有图就丢了。
+test('previews and reprints a phone record with the shelf number read from its image', async ({ electronApp }) => {
+  const { page } = await electronApp.launch({ fakePrinters: [LABEL_PRINTER], fakeOcr: ['A-1-2-3'] });
+  // 内置规则「横杠三段」自带图中文字识别（没认出照常打印），这里不加自己的规则。
+  // 防重复窗口放宽到一分钟：重打一定落在窗口里，测得到「重复」和强制补打。
+  await callApi(page, 'updateSettings', {
+    mobileRelayUrl: relay.baseUrl,
+    paperPrinters: { '60x40': LABEL_PRINTER.name },
+    dedupWindowSeconds: 60,
+  });
+  await page.reload();
+  await expect(page.locator('.scan-bar__input')).toBeFocused();
+  await startMobile(page);
+  const phone = await connectTestPhone(relay, await activeUrl(page));
+  try {
+    await expect.poll(() => hasEvent(phone.events, 'welcomed')).toBe(true);
+    const job = phone.session.submit(RAW, false, { images: [LABEL_IMAGE], fields: [] });
+    await expect.poll(() => resultOf(phone.events, job)?.status).toBe('printed');
+  } finally {
+    phone.session.stop();
+  }
+  await page.keyboard.press('Escape');
+  const record = page.locator('.job-row').first();
+  await expect(record).toContainText('手机');
+
+  await record.getByRole('button', { name: '预览' }).click();
+  const label = page.frameLocator('.label-frame');
+  await expect(label.locator('.prefix')).toHaveText(['编码：', '颜色：', '尺码：', '货架号：']);
+  await expect(label.locator('.value').last()).toHaveText('A-1-2-3');
+
+  // 重打：和扫码一样经过防重复窗口（刚打过，所以是重复），强制补打才打出来。
+  await record.getByRole('button', { name: '重打' }).click();
+  await expect.poll(async () => (await callApi(page, 'listJobs', { limit: 1 })).jobs[0]?.status).toBe('duplicate');
+  await page.getByRole('button', { name: '强制补打' }).click();
+  await page.getByRole('button', { name: '再点一次确认补打' }).click();
+  await expect
+    .poll(async () => (await callApi(page, 'listJobs', { limit: 1 })).jobs[0])
+    .toMatchObject({ source: 'history', status: 'printed', forced: true });
+  const [reprinted] = (await callApi(page, 'listJobs', { limit: 1 })).jobs;
+  expect(reprinted?.fields).toContainEqual({ name: '货架号', value: 'A-1-2-3' });
+});
+
 test('asks the phone for the shelf number it could not read and prints it once typed', async ({ electronApp }) => {
   const { page } = await electronApp.launch({ fakePrinters: [LABEL_PRINTER], fakeOcr: ['尺码：36'] });
   await useShelfRule(page);

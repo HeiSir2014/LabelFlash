@@ -303,6 +303,22 @@ describe('PrintService.preview', () => {
     useEnrich(lookupFails);
     expect(await service.preview(RAW)).toMatchObject({ status: 'ok', lookupFailure: '查询超时' });
   });
+
+  // 按记录预览手机打的一张：没有图，图中文字识别用记录里存的值。
+  test('hands the given fields to the processing steps, and none by default', async () => {
+    const { service, useEnrich } = createHarness();
+    const contexts: EnrichContext[] = [];
+    useEnrich(async (scan, context) => {
+      contexts.push(context);
+      return { scan, traces: [], blocked: null };
+    });
+    await service.preview(RAW, { images: [], manualFields: { 货架号: 'A-1-2-3' } });
+    await service.preview(RAW);
+    expect(contexts).toEqual([
+      { images: [], manualFields: { 货架号: 'A-1-2-3' } },
+      { images: [], manualFields: {} },
+    ]);
+  });
 });
 
 describe('PrintService processing steps', () => {

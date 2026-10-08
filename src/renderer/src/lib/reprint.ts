@@ -1,11 +1,12 @@
 import { storedTemplateIssue } from '../../../core/api/template-fields';
+import { reprintsStoredLabel } from '../../../core/job-reprint';
 import { PDF_PIECE_RETENTION_MS } from '../../../core/pdf/pdf-model';
 import type { LabelTemplate } from '../../../core/templates/template-model';
 import type { JobRecord } from '../../../core/types';
 
 /**
  * 打印记录的「预览」「重打」怎么做：
- * - rescan：扫码来的，照旧按内容重新识别（规则、加工步骤按现在的）；
+ * - rescan：扫码来的，照旧按内容重新识别（规则、加工步骤按现在的；图中文字识别用记录里当时读到的值）；
  * - stored：本机接口、批量打印、PDF 打印来的，没有识别规则可用，按当时的模板和字段（PDF 按缓存的黑白位图）；
  * - expired：PDF 打印的，缓存的位图只留 7 天，已经过期；
  * - template-changed：按当时的模板和字段重打的，模板编号没变但字段或纸张改过（core 的 TEMPLATE_CHANGED_ISSUE）；
@@ -30,7 +31,7 @@ export function reprintMode(
   if (job.pdf !== undefined) {
     return now - job.createdAt < PDF_PIECE_RETENTION_MS ? 'stored' : 'expired';
   }
-  if (job.source !== 'api' && job.source !== 'batch' && job.caller === undefined && job.batch === undefined) {
+  if (!reprintsStoredLabel(job)) {
     return 'rescan';
   }
   const template = job.templateId === undefined ? undefined : templateOf(job.templateId);

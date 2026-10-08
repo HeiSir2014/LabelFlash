@@ -10,10 +10,12 @@ import {
 } from 'electron';
 import { storedTemplateIssue } from '../core/api/template-fields';
 import { BATCH_LIMITS } from '../core/batch/batch-model';
+import { recordedFieldValues, reprintsStoredLabel } from '../core/job-reprint';
 import { PDF_LIMITS, PDF_PIECE_RETENTION_MS } from '../core/pdf/pdf-model';
 import { pieceTemplate } from '../core/pdf/piece-template';
 import { fieldsRuleFor, fieldsScan, type PrintService } from '../core/print-service';
 import type { PrinterChoice } from '../core/printing/resolve-printer';
+import type { EnrichContext } from '../core/scan/enrich';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
 import type { ScanResult } from '../core/scan/scan-result';
 import { DEFAULT_TEMPLATE_ID, GENERIC_TEMPLATE } from '../core/templates/builtin-templates';
@@ -360,8 +362,14 @@ export function registerIpc(deps: IpcDeps): void {
     return deps.printerCommands.run(await requireKnownPrinter(printerName), parsed);
   });
   handle(IpcChannel.ListJobs, (query) => deps.jobs.listPage(requireJobQuery(query)));
+  // 扫码打的记录按现在的规则重新识别；手机拍的图不存，图中文字识别用记录里当时读到的值（见 core/job-reprint.ts）。
+  const rescanContextOf = (job: JobRecord): EnrichContext => ({ images: [], manualFields: recordedFieldValues(job) });
   handle(IpcChannel.PreviewJob, async (jobId) => {
     const job = jobOf(jobId);
+    if (!reprintsStoredLabel(job)) {
+      const result = await deps.service.preview(job.raw, rescanContextOf(job));
+      return renderPreview(result, printTemplateFor(result), await dpiFor(result));
+    }
     const { template, fields } = await labelOf(job);
     const result: PreviewResult = {
       status: 'ok',
@@ -374,8 +382,13 @@ export function registerIpc(deps: IpcDeps): void {
     // PDF 的一块铺满整张纸：自由设计的「靠近纸边」检查对它没有意义，预览上不显示。
     return job.pdf === undefined ? preview : { ...preview, warnings: NO_RENDER_WARNINGS };
   });
-  handle(IpcChannel.ReprintJob, async (jobId) => {
+  handle(IpcChannel.ReprintJob, async (jobId, force) => {
     const job = jobOf(jobId);
+    const isForced = requireBoolean(force, 'force');
+    if (!reprintsStoredLabel(job)) {
+      // 和扫码一样经过防重复窗口；强制补打跳过它。
+      return deps.service.submit({ raw: job.raw, source: 'history', force: isForced, ...rescanContextOf(job) });
+    }
     const { template, fields } = await labelOf(job);
     return deps.service.printFields({
       template,

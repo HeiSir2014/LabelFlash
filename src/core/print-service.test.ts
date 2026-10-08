@@ -12,6 +12,7 @@ import {
   IPP_RULE,
   PDF_RULE,
   PrintService,
+  TEMPLATE_PREVIEW_CONTEXT,
   TEST_RAW,
 } from './print-service';
 import type { PrinterChoice } from './printing/resolve-printer';
@@ -485,6 +486,19 @@ describe('PrintService.printSample', () => {
     expect(adapter.printed[0]?.fields.at(-1)).toEqual({ name: '货架号', value: 'A-01' });
     expect(store.listRecent(10)).toEqual([]);
     expect((await service.submit(request())).status).toBe('printed');
+  });
+
+  // 和模板预览一样：没有手机拍的图，货架号用示例值，打出来看得到它的位置。
+  test('fills the image text fields with the template preview samples', async () => {
+    const { service, useEnrich } = createHarness();
+    const contexts: EnrichContext[] = [];
+    useEnrich(async (scan, context) => {
+      contexts.push(context);
+      return { scan, traces: [], blocked: null };
+    });
+    await service.printSample(RAW, draft);
+    expect(contexts).toEqual([TEMPLATE_PREVIEW_CONTEXT]);
+    expect(TEMPLATE_PREVIEW_CONTEXT).toEqual({ images: [], manualFields: { 货架号: 'A-1-2-3' } });
   });
 
   test('reports content it cannot recognise', async () => {

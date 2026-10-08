@@ -55,6 +55,13 @@ test('loads the UI over app:// and previews a scanned label', async ({ electronA
   await expect(page.getByRole('combobox', { name: '模板', exact: true }).locator('option:checked')).toHaveText(
     '通用（二维码在左）',
   );
+  // 示例里有货架号（手机扫码时从标签图上读）：看得到它印在哪；扫码枪扫的没有图，下面就没有这一行。
+  await expect(page.frameLocator('.label-frame').locator('.prefix')).toHaveText([
+    '编码：',
+    '颜色：',
+    '尺码：',
+    '货架号：',
+  ]);
 
   // 横杠三段：用当前模板（通用），列出编码 / 颜色 / 尺码。
   await scan(page, 'CL5640-TK-图片色-XXL');
@@ -242,9 +249,12 @@ test('previews a template by selecting it, without switching the current templat
   await expect(preview).toHaveClass(/layout-qr-right/);
   await expect(page.locator('.template-item', { hasText: '使用中' })).toContainText('通用（二维码在左）');
 
-  // 预览内容可以改成任意扫码内容。
+  // 预览内容可以改成任意扫码内容；模板预览没有手机拍的图，货架号用示例值。
   await page.getByLabel('预览内容').fill('202609280001');
-  await expect(page.frameLocator('.config-center .label-frame').locator('.value')).toHaveText(['202609280001']);
+  await expect(page.frameLocator('.config-center .label-frame').locator('.value')).toHaveText([
+    '202609280001',
+    'A-1-2-3',
+  ]);
 
   await page.getByRole('button', { name: '返回工作台' }).click();
   await expect(page.getByRole('combobox', { name: '模板', exact: true }).locator('option:checked')).toHaveText(
@@ -495,6 +505,7 @@ test('sends scans in the config center to the test box, or announces that nothin
     'CL5640-TK',
     '图片色',
     'XL',
+    'A-1-2-3',
   ]);
 
   // 通用页没有测试框：哪个输入框都不改，播报「正在配置，没有打印」，「配置中不打印」闪烁提醒。

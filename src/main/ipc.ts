@@ -13,7 +13,7 @@ import { BATCH_LIMITS } from '../core/batch/batch-model';
 import { recordedFieldValues, reprintsStoredLabel } from '../core/job-reprint';
 import { PDF_LIMITS, PDF_PIECE_RETENTION_MS } from '../core/pdf/pdf-model';
 import { pieceTemplate } from '../core/pdf/piece-template';
-import { fieldsRuleFor, fieldsScan, type PrintService } from '../core/print-service';
+import { fieldsRuleFor, fieldsScan, type PrintService, TEMPLATE_PREVIEW_CONTEXT } from '../core/print-service';
 import type { PrinterChoice } from '../core/printing/resolve-printer';
 import type { EnrichContext } from '../core/scan/enrich';
 import { SECRET_LIMITS, secretReference } from '../core/scan/enrich-model';
@@ -310,7 +310,8 @@ export function registerIpc(deps: IpcDeps): void {
       };
       return renderPreview(sample, { template: draft, isBound: false }, await dpiFor(sample));
     }
-    const result = await deps.service.preview(content);
+    // 看模板长什么样：没有手机拍的图，货架号用示例值，读得到货架号的模板都看得到它的位置。
+    const result = await deps.service.preview(content, TEMPLATE_PREVIEW_CONTEXT);
     const draft = sanitizeTemplate(input, DRAFT_TEMPLATE_ID, printTemplateFor(result).template);
     const printer = await deps.choosePrinter(draft);
     const forDraft: PreviewResult = result.status === 'ok' ? { ...result, printer } : result;

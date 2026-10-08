@@ -1,10 +1,10 @@
-import { SAMPLE_LABEL_RAW } from '../../../shared/sample-label';
+import { SAMPLE_LABEL_RAW, SAMPLE_SHELF_NUMBER } from '../../../shared/sample-label';
 import { CANVAS_TAG } from '../builtin-canvas';
 import { barcode, hLine, pairTable, qr, text } from './library-elements';
 import { type LibraryEntry, libraryEntry } from './library-model';
 
 /** 样衣码的示例字段：和内置规则「横杠三段」识别 SAMPLE_LABEL_RAW 的结果一致，再加手机读到的货架号。 */
-const GARMENT_FIELDS = { 编码: 'CL5640-TK', 颜色: '图片色', 尺码: 'XL', 货架号: 'A-1-2-3' } as const;
+const GARMENT_FIELDS = { 编码: 'CL5640-TK', 颜色: '图片色', 尺码: 'XL', 货架号: SAMPLE_SHELF_NUMBER } as const;
 
 /**
  * 服装吊牌。字段名和内置规则「横杠三段」一致：扫样衣码就能打。

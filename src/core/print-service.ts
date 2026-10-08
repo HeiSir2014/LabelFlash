@@ -1,10 +1,12 @@
 import { type PaperSize, paperKey } from '../shared/paper-sizes';
+import { SAMPLE_SHELF_NUMBER } from '../shared/sample-label';
 import { templateFingerprint } from './api/template-fields';
 import { type DedupGuard, MAX_DEDUP_WINDOW_MS } from './dedup-guard';
 import { type PrintFailure, toPrintFailure } from './errors';
 import type { JobStore } from './job-store';
 import type { PrintQueue } from './print-queue';
 import type { PrinterChoice } from './printing/resolve-printer';
+import { SHELF_NUMBER_FIELD } from './scan/builtin-rules';
 import { type EnrichContext, type EnrichResult, NO_ENRICH_CONTEXT } from './scan/enrich';
 import { MAX_RAW_LENGTH, normalizeRaw } from './scan/normalize-raw';
 import type { ScanField, ScanResult } from './scan/scan-result';
@@ -27,6 +29,16 @@ import type {
 } from './types';
 
 export const TEST_RAW = 'TEST-0001-测试色-XL';
+
+/**
+ * 模板预览（工作台没扫码时的示例、模板页、设计器）和「打印一张试试」的加工条件：没有手机拍的图，
+ * 货架号用示例值（当作手动输入的字段，只有规则里有读货架号的「图中文字识别」时才用上），看得到它印在哪。
+ * 正式打印、扫码后的预览不用它：那里只印真的读到的。
+ */
+export const TEMPLATE_PREVIEW_CONTEXT: EnrichContext = {
+  images: [],
+  manualFields: { [SHELF_NUMBER_FIELD]: SAMPLE_SHELF_NUMBER },
+};
 
 /** 所有识别规则都关掉时，测试页仍然要能打：整段内容作为一个字段。 */
 const TEST_FALLBACK_SCAN: ScanResult = {
@@ -414,13 +426,12 @@ export class PrintService {
 
   /** 「打印一张试试」按预览内容打时的识别结果；识别不了、查询被拦下时返回不打的原因。 */
   private async sampleScan(raw: string): Promise<ScanResult | PrintResult> {
-    const preview = await this.preview(raw);
+    const preview = await this.preview(raw, TEMPLATE_PREVIEW_CONTEXT);
     if (preview.status !== 'ok') {
       return preview;
     }
-    // preview() 固定传 NO_ENRICH_CONTEXT（没有图、没有手动字段）：图中文字识别这一步只会被跳过（skip），
-    // 不会拦下（block），所以这里只可能是 HTTP 查询失败，blocked.reason 不会是 TEXT_NOT_FOUND
-    // （见 scan/enrich.ts 的 imageText：context.images.length === 0 时直接 skip，不产生 blocked）。
+    // 模板预览没有图：图中文字识别要么用示例值，要么跳过（skip），不会拦下（block），所以这里只可能是
+    // HTTP 查询失败，blocked.reason 不会是 TEXT_NOT_FOUND（见 scan/enrich.ts 的 imageText：没有图时直接 skip）。
     if (preview.lookupFailure !== null) {
       return { status: 'failed', reason: 'LOOKUP_FAILED', detail: preview.lookupFailure };
     }

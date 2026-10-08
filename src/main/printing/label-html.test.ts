@@ -79,6 +79,21 @@ describe('renderLabelHtml', () => {
     }
   });
 
+  // 内置规则都会读货架号：每个内置模板（标签、面单、自由设计）都给它留了位置，读到就印，没读到时那一行不印。
+  test('every built-in template has a place for the shelf number and hides it when none was read', () => {
+    const withShelf: ScanResult = { ...GARMENT, fields: [...GARMENT.fields, { name: '货架号', value: 'A-1-2-3' }] };
+    const unread: ScanResult = { ...GARMENT, fields: [...GARMENT.fields, { name: '货架号', value: '' }] };
+    for (const template of BUILT_IN_TEMPLATES) {
+      const html = (scan: ScanResult) => renderLabelHtml({ scan, template, printedAt: PRINTED_AT }).html;
+      expect({ template: template.name, printed: html(withShelf).includes('A-1-2-3') }).toEqual({
+        template: template.name,
+        printed: true,
+      });
+      expect(html(unread)).toBe(html(GARMENT));
+      expect(html(GARMENT)).not.toContain('货架号');
+    }
+  });
+
   test('the generic template lists every recognised field with its name', () => {
     const html = render(GENERIC_TEMPLATE, KEY_VALUE);
     expect(html).toContain('>订单号：</span><span class="value"');

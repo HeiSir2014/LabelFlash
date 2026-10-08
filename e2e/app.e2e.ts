@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import { BUILT_IN_WAYBILLS } from '../src/core/templates/builtin-waybills';
 import { estimateTextWidthEm } from '../src/core/templates/text-fit';
 import type { FakePrinterSpec } from '../src/main/printing/fake-printers';
+import { SCAN_FOCUS_IDLE_MS } from '../src/renderer/src/lib/scan-focus';
 import {
   allowSlowScannerLines,
   blurActiveElement,
@@ -22,6 +23,9 @@ import {
 } from './support/app-helpers';
 import { APP_ROOT } from './support/electron-app';
 import { expect, test } from './support/fixtures';
+
+/** 空闲回焦的计时器到点后多等这么久再看：计时器在页面里跑，到点和断言之间要留一点余量。 */
+const IDLE_CHECK_SLACK_MS = 1_000;
 
 /** 选一台假打印机、设好打印方式，重新加载界面让设置生效（打印处理要先用 stubPrinting 换掉）。 */
 async function usePrinter(page: Page, autoPrint: boolean): Promise<void> {
@@ -712,6 +716,19 @@ test('designs a canvas template from scratch and uses it for scans', async ({ el
 });
 
 // 焦点在画布上时扫码：字符不当成快捷键，照样填进「预览内容」，画布按新内容排版。
+// 下拉框展开时鼠标在选项列表上动，页面收不到：10 秒没操作也不能把焦点拉走，不然列表在操作员眼前收起来。
+test('leaves focus in a dropdown when the operator seems idle', async ({ electronApp }) => {
+  const { app, page } = await electronApp.launch();
+  // 空闲回焦只在窗口在前台时生效：先把窗口放到前台，不然这个用例测不到它。
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
+  await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+  const template = page.getByRole('combobox', { name: '模板', exact: true });
+  await template.click();
+  await expect(template).toBeFocused();
+  await page.waitForTimeout(SCAN_FOCUS_IDLE_MS + IDLE_CHECK_SLACK_MS);
+  await expect(template).toBeFocused();
+});
+
 test('keeps the scanner working while the canvas has focus', async ({ electronApp }) => {
   const { page } = await electronApp.launch();
   await openConfig(page, '模板');

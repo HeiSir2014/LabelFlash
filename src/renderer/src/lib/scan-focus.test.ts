@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { IdleWatcher, isScannerCharacter, isTypingField, keepsFocus, SCAN_FOCUS_IDLE_MS } from './scan-focus';
+import {
+  IdleWatcher,
+  isScannerCharacter,
+  isTypingField,
+  keepsFocus,
+  returnsFocusWhenIdle,
+  SCAN_FOCUS_IDLE_MS,
+} from './scan-focus';
 import type { Timers } from './timers';
 
 const KEY = { ctrlKey: false, altKey: false, metaKey: false };
@@ -44,6 +51,20 @@ describe('keepsFocus', () => {
     const outside = { ...element('BUTTON'), closest: () => null };
     expect(keepsFocus(inside)).toBe(true);
     expect(keepsFocus(outside)).toBe(false);
+  });
+});
+
+describe('returnsFocusWhenIdle', () => {
+  // 下拉框展开时，鼠标在弹出的选项列表上动，页面收不到：看着像没人操作，拉回就把正在选的列表收起来了。
+  test('leaves a dropdown alone, since its open list hides the pointer from the page', () => {
+    expect(returnsFocusWhenIdle(element('SELECT'))).toBe(false);
+  });
+
+  test('pulls focus back from everything else, typing fields included', () => {
+    expect(returnsFocusWhenIdle(input('search'))).toBe(true);
+    expect(returnsFocusWhenIdle(element('BUTTON'))).toBe(true);
+    expect(returnsFocusWhenIdle(element('BODY'))).toBe(true);
+    expect(returnsFocusWhenIdle(null)).toBe(true);
   });
 });
 

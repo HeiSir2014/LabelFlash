@@ -60,6 +60,15 @@ export function keepsFocus(target: FocusTarget | null): boolean {
   );
 }
 
+/**
+ * 10 秒没操作时，焦点要不要回到扫码框。下拉框除外：展开时鼠标在弹出的选项列表上移动，页面收不到，
+ * 看起来像没人操作，拉回会把正在选的列表收起来（展开没展开，页面也分不出来）。留在下拉框里不会丢扫码：
+ * 扫码枪的字符照样立即切回扫码框（见 isTypingField）。输入框照旧拉回：操作员可能搜了一半就走开了。
+ */
+export function returnsFocusWhenIdle(target: FocusTarget | null): boolean {
+  return target?.tagName !== 'SELECT';
+}
+
 export interface KeyInfo {
   key: string;
   ctrlKey: boolean;

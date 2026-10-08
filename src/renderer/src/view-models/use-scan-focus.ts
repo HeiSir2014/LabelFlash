@@ -5,6 +5,7 @@ import {
   isScannerCharacter,
   isTypingField,
   keepsFocus,
+  returnsFocusWhenIdle,
   SCAN_FOCUS_IDLE_MS,
 } from '../lib/scan-focus';
 import { WINDOW_TIMERS } from '../lib/timers';
@@ -30,7 +31,7 @@ export function activeFocusTarget(): FocusTarget | null {
  * 扫码框的焦点管理：扫码枪只会往当前焦点里「打字」，焦点不在扫码框，扫到的内容就丢了。
  * - 焦点落到按钮、开关、空白处：0.3 秒后拉回（否则扫码枪的回车会「点击」刚才的按钮）。
  * - 焦点不在输入框（下拉框也不算）时按下可打印字符：立即切到扫码框，这个字符也落进扫码框，一个都不丢。
- * - 窗口在前台、鼠标和键盘都 10 秒没动：回到扫码框（已填的内容不会丢）。
+ * - 窗口在前台、鼠标和键盘都 10 秒没动：回到扫码框（已填的内容不会丢）；焦点在下拉框里时不拉回（可能正展开着）。
  * - 窗口重新获得焦点、焦点不在输入框和下拉框：回到扫码框。
  * - 标了 data-keep-focus 的区域（「手机扫码」浮层）里的按钮不拉回，键盘能在里面操作；关掉浮层时它调用
  *   returnFocusToScanBox 立即回到扫码框。
@@ -57,8 +58,8 @@ export function useScanFocus(isActive: boolean): RefObject<HTMLInputElement | nu
     const idle = new IdleWatcher(
       SCAN_FOCUS_IDLE_MS,
       () => {
-        // 窗口在后台时不动焦点：操作员可能正在别的程序里打字。
-        if (document.hasFocus()) {
+        // 窗口在后台时不动焦点：操作员可能正在别的程序里打字。下拉框可能正展开着，不拉回（见 returnsFocusWhenIdle）。
+        if (document.hasFocus() && returnsFocusWhenIdle(activeFocusTarget())) {
           focusScanInput();
         }
       },

@@ -42,6 +42,19 @@ function batchStatus(page: Page) {
   return page.locator('.batch-actions').getByRole('status');
 }
 
+// 标题栏按钮的点击事件不能被当成「页面切过去之后」的回调调用（曾经每点一次就在日志里留一条未捕获的异常）。
+test('opens the batch and PDF pages from the title bar without a page error', async ({ electronApp }) => {
+  const { page } = await electronApp.launch();
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await openBatch(page);
+  await page.getByRole('button', { name: '打印 PDF' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '打印 PDF' })).toBeVisible();
+  await page.getByRole('button', { name: '打印 PDF' }).click();
+  await expect(page.locator('.scan-bar__input')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('prints the rows of a csv file in order with serials and finds them by batch', async ({ electronApp }) => {
   const { app, page, userData } = await electronApp.launch({ fakePrinters: [LABEL_PRINTER] });
   await assignLabelPrinter(page);

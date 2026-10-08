@@ -337,12 +337,13 @@ export function App() {
         batch={{
           isOpen: isBatchOpen,
           progress: runButtonProgress(batch.status),
-          onToggle: isBatchOpen ? appView.close : appView.openBatch,
+          // 不直接传 openBatch：按钮会把点击事件当第一个参数传进来，被当成「页面切过去之后」的回调调用。
+          onToggle: isBatchOpen ? appView.close : () => appView.openBatch(),
         }}
         pdf={{
           isOpen: isPdfOpen,
           progress: runButtonProgress(pdf.status?.print ?? null),
-          onToggle: isPdfOpen ? appView.close : appView.openPdf,
+          onToggle: isPdfOpen ? appView.close : () => appView.openPdf(),
         }}
         mobile={{ view: describeMobileButton(mobile.status), isOpen: isMobileOverlayShown, onToggle: toggleMobile }}
         onInstallUpdate={updates.install}
